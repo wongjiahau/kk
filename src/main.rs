@@ -1,5 +1,5 @@
 fn main() {
-    println!("{:#?}", tokenize("{#Hello_world => }".to_string()));
+    println!("{:#?}", tokenize("Abc = ".to_string()));
 }
 
 fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
@@ -68,10 +68,10 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                         break;
                     }
                     let next = chars[index + 1];
+                    index += 1;
+                    column_number += 1;
                     if next != c || next == '\n' {
                         result.push(next);
-                        index += 1;
-                        column_number += 1;
                     } else {
                         result.push(c);
                         tokens.push(Token {
@@ -88,7 +88,44 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                 }
             }
             '0'..='9' => {}
-            'A'..='Z' | 'a'..='z' | '_' => {}
+            'A'..='Z' | 'a'..='z' | '_' => {
+                let column_start = column_number;
+                let mut result = c.to_string();
+                loop {
+                    if index == chars_length - 1 {
+                        tokens.push(Token {
+                            token_type: TokenType::Identifier(result.to_string()),
+                            position: Position {
+                                column_start,
+                                column_end: column_number,
+                                line_start: line_number,
+                                line_end: line_number,
+                            },
+                        });
+                        break;
+                    }
+                    let next = chars[index + 1];
+                    match next {
+                        'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => {
+                            result.push(next);
+                            index += 1;
+                            column_number += 1;
+                        }
+                        _ => {
+                            tokens.push(Token {
+                                token_type: TokenType::Identifier(result.to_string()),
+                                position: Position {
+                                    column_start,
+                                    column_end: column_number,
+                                    line_start: line_number,
+                                    line_end: line_number,
+                                },
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
 
             '=' => {
                 let eq_token = Token {
@@ -262,7 +299,24 @@ mod tests {
                 token_type: TokenType::String(string.clone()),
                 position: Position {
                     column_start: 0,
-                    column_end: 30,
+                    column_end: string.len() - 1,
+                    line_start: 0,
+                    line_end: 0
+                }
+            }])
+        )
+    }
+
+    #[test]
+    fn test_tokenize_identifier() {
+        let string = "Hello_world_123".to_string();
+        assert_eq!(
+            tokenize(string.clone()),
+            Ok(vec![Token {
+                token_type: TokenType::Identifier(string.clone()),
+                position: Position {
+                    column_start: 0,
+                    column_end: string.len() - 1,
                     line_start: 0,
                     line_end: 0
                 }
