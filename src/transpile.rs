@@ -21,7 +21,13 @@ pub fn transpile_destructure_pattern(destructure_pattern: DestructurePattern) ->
 }
 
 pub fn transpile_expression(expression: Expression) -> String {
-    match expression {
-        Expression::String(s) => s.representation,
+    match expression.value {
+        ExpressionValue::String(s) => s.representation,
+        ExpressionValue::Variable(v) => v.representation,
+        other => panic!("{:#?}", other), // ExpressionValue::Function { branches } => {
+                                          //     if branches.len() == 1 {
+                                          //         let first_branch = branches[0];
+                                          //     }
+                                          // }
     }
 }

@@ -11,14 +11,10 @@ mod tokenize;
 use tokenize::*;
 
 fn main() {
-    let tokens = tokenize("let x = '123'".to_string());
-    match tokens {
-        Ok(tokens) => match parse_statements(tokens) {
-            Ok(statements) => println!("{}", transpile_statements(statements)),
-            Err(err) => println!("{:#?}", err),
-        },
-        Err(err) => println!("{:#?}", err),
-    }
+    println!(
+        "{:?}",
+        transpile_source("let f = (x: number, y) => 'helo' | x => '2'".to_string())
+    )
 }
 
 pub fn transpile_source(source: String) -> Result<String, ParseError> {
@@ -69,7 +65,7 @@ mod tests {
                         line_start: 0,
                         line_end: 0,
                         column_start: 15,
-                        column_end: 15
+                        column_end: 15,
                     }
                 }
             ])
@@ -156,6 +152,36 @@ mod tests {
         assert_eq!(
             transpile_source("let x = '123'".to_string()),
             Ok("const x = '123'".to_string())
+        )
+    }
+
+    #[test]
+    fn test_let_statement_2() {
+        assert_eq!(
+            transpile_source("let x = y".to_string()),
+            Ok("const x = y".to_string())
+        )
+    }
+
+    #[test]
+    fn test_function_1() {
+        assert_eq!(
+            transpile_source("let x = x => 'yo'".to_string()),
+            Ok("const x = (x) => 'yo'".to_string())
+        )
+    }
+    #[test]
+    fn test_function_2() {
+        assert_eq!(
+            transpile_source("let x = #red => 'red' | #blue => 'blue'".to_string()),
+            Ok("
+const x = (x) => {
+  switch(x.$){
+    case 'red': return 'red'
+    case 'blue': return 'blue'
+  }
+}"
+            .to_string())
         )
     }
 }

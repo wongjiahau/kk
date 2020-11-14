@@ -8,7 +8,27 @@ pub enum Statement {
 }
 
 #[derive(Debug)]
-pub enum TypeAnnotation {}
+pub struct TypeAnnotation {
+    pub _type: Type,
+
+    /// If not defined means not verified
+    pub source: Option<SymbolSource>,
+}
+
+#[derive(Debug)]
+pub enum SymbolSource {
+    BuiltIn,
+    UserDefined {
+        filename: String,
+        position: Position,
+    },
+}
+
+#[derive(Debug)]
+pub enum Type {
+    String,
+    Name(Token),
+}
 
 #[derive(Debug)]
 pub enum DestructurePattern {
@@ -16,8 +36,35 @@ pub enum DestructurePattern {
 }
 
 #[derive(Debug)]
-pub enum Expression {
+pub struct Expression {
+    pub value: ExpressionValue,
+    pub inferred_type: Option<Type>,
+}
+
+#[derive(Debug)]
+pub enum ExpressionValue {
     String(Token),
+    Variable(Token),
+    Function(Function),
+}
+
+#[derive(Debug)]
+pub struct Function {
+    pub branches: Vec<FunctionBranch>,
+}
+
+#[derive(Debug)]
+pub struct FunctionBranch {
+    pub arguments: Vec<FunctionArgument>,
+    pub body: Box<Expression>,
+    pub return_type_annotation: Option<TypeAnnotation>,
+}
+
+#[derive(Debug)]
+pub struct FunctionArgument {
+    pub destructure_pattern: DestructurePattern,
+    pub type_annotation: Option<TypeAnnotation>,
+    pub default_value: Option<Expression>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
