@@ -1,5 +1,167 @@
+use core::slice::Iter;
+use std::iter::Peekable;
+
 fn main() {
-    println!("{:#?}", tokenize("Abc = ".to_string()));
+    let tokens = tokenize("let x = '123'".to_string());
+    match tokens {
+        Ok(tokens) => match parse_statements(tokens) {
+            Ok(statements) => println!("{}", transpile_statements(statements)),
+            Err(err) => println!("{:#?}", err),
+        },
+        Err(err) => println!("{:#?}", err),
+    }
+}
+
+fn transpile_source(source: String) -> Result<String, ParseError> {
+    let tokens = tokenize(source)?;
+    let statements = parse_statements(tokens)?;
+    Ok(transpile_statements(statements))
+}
+
+fn transpile_statements(statements: Vec<Statement>) -> String {
+    statements.into_iter().map(transpile_statement).collect()
+}
+
+fn transpile_statement(statement: Statement) -> String {
+    match statement {
+        Statement::Let { left, right, .. } => format!(
+            "const {} = {}",
+            transpile_destructure_pattern(left),
+            transpile_expression(right)
+        ),
+    }
+}
+
+fn transpile_destructure_pattern(destructure_pattern: DestructurePattern) -> String {
+    match destructure_pattern {
+        DestructurePattern::Identifier(i) => i.representation,
+    }
+}
+
+fn transpile_expression(expression: Expression) -> String {
+    match expression {
+        Expression::String(s) => s.representation,
+    }
+}
+
+#[derive(Debug)]
+enum Statement {
+    Let {
+        left: DestructurePattern,
+        right: Expression,
+        type_annotation: Option<TypeAnnotation>,
+    },
+}
+
+#[derive(Debug)]
+enum TypeAnnotation {}
+
+#[derive(Debug)]
+enum DestructurePattern {
+    Identifier(Token),
+}
+
+#[derive(Debug)]
+enum Expression {
+    String(Token),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ParseError {
+    InvalidToken {
+        invalid_token: Token,
+        error: String,
+        suggestion: Option<String>,
+    },
+    UnexpectedEOF {
+        error: String,
+        suggestion: Option<String>,
+    },
+}
+
+fn parse_statements(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
+    let tokens = tokens
+        .into_iter()
+        .filter(|token| match token.token_type {
+            TokenType::Whitespace | TokenType::Newline => false,
+            _ => true,
+        })
+        .collect::<Vec<Token>>();
+    let mut it = tokens.iter().peekable();
+    let mut statements = Vec::<Statement>::new();
+    while let Some(token) = it.next() {
+        match &token.token_type {
+            TokenType::KeywordLet => {
+                let left = parse_destructure_pattern(&mut it)?;
+                // TODO: eat type annotation
+                eat_token(&mut it, TokenType::Equals)?;
+                let right = parse_expression(&mut it)?;
+                statements.push(Statement::Let {
+                    left,
+                    right,
+                    type_annotation: None,
+                })
+            }
+            TokenType::KeywordType => {}
+            _ => {
+                return Err(ParseError::InvalidToken {
+                    invalid_token: token.clone(),
+                    error: "Expected let or type".to_string(),
+                    suggestion: None,
+                })
+            }
+        }
+    }
+    Ok(statements)
+}
+
+fn eat_token(it: &mut Peekable<Iter<Token>>, token_type: TokenType) -> Result<(), ParseError> {
+    if let Some(token) = it.next() {
+        if token.token_type == token_type {
+            Ok(())
+        } else {
+            Err(ParseError::InvalidToken {
+                invalid_token: token.clone(),
+                error: format!("Expected {:?}", token_type),
+                suggestion: None,
+            })
+        }
+    } else {
+        Err(ParseError::UnexpectedEOF {
+            error: "Expected = but reach EOF".to_string(),
+            suggestion: Some("Add = after here".to_string()),
+        })
+    }
+}
+
+fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
+    if let Some(token) = it.next() {
+        match &token.token_type {
+            TokenType::String(s) => Ok(Expression::String(token.clone())),
+            other => panic!("Cannot parse expression {:#?}", other),
+        }
+    } else {
+        Err(ParseError::UnexpectedEOF {
+            error: "Expected expression".to_string(),
+            suggestion: None,
+        })
+    }
+}
+
+fn parse_destructure_pattern(
+    it: &mut Peekable<Iter<Token>>,
+) -> Result<DestructurePattern, ParseError> {
+    if let Some(token) = it.next() {
+        match &token.token_type {
+            TokenType::Identifier(_) => Ok(DestructurePattern::Identifier(token.clone())),
+            other => panic!("Unimplemented {:#?}", other),
+        }
+    } else {
+        Err(ParseError::UnexpectedEOF {
+            error: "Expected destructure pattern".to_string(),
+            suggestion: None,
+        })
+    }
 }
 
 fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
@@ -20,6 +182,7 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     if index == chars_length - 1 {
                         tokens.push(Token {
                             token_type: TokenType::Tag(result.to_string()),
+                            representation: result.to_string(),
                             position: Position {
                                 column_start,
                                 column_end: column_number,
@@ -39,6 +202,7 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                         _ => {
                             tokens.push(Token {
                                 token_type: TokenType::Tag(result.to_string()),
+                                representation: result.to_string(),
                                 position: Position {
                                     column_start,
                                     column_end: column_number,
@@ -71,6 +235,7 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                 }
                 tokens.push(Token {
                     token_type: TokenType::String(result.to_string()),
+                    representation: result.to_string(),
                     position: Position {
                         column_start,
                         column_end: column_number,
@@ -97,7 +262,8 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     }
                 }
                 tokens.push(Token {
-                    token_type: getTokenType(result),
+                    token_type: get_token_type(result.clone()),
+                    representation: result.to_string(),
                     position: Position {
                         column_start,
                         column_end: column_number,
@@ -110,6 +276,7 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
             '=' => {
                 let eq_token = Token {
                     token_type: TokenType::Equals,
+                    representation: "=".to_string(),
                     position: Position {
                         column_start: column_number,
                         column_end: column_number,
@@ -125,6 +292,7 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                         '>' => {
                             tokens.push(Token {
                                 token_type: TokenType::ArrowRight,
+                                representation: "=>".to_string(),
                                 position: Position {
                                     column_start: column_number,
                                     column_end: column_number + 1,
@@ -147,6 +315,7 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     line_end: line_number,
                 };
                 tokens.push(Token {
+                    representation: other.to_string(),
                     token_type: match other {
                         '{' => TokenType::LeftCurlyBracket,
                         '}' => TokenType::RightCurlyBracket,
@@ -179,30 +348,24 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
     Ok(tokens)
 }
 
-fn getTokenType(s: String) -> TokenType {
-    if (s.eq("let")) {
+fn get_token_type(s: String) -> TokenType {
+    if s.eq("let") {
         TokenType::KeywordLet
-    } else if (s.eq("type")) {
+    } else if s.eq("type") {
         TokenType::KeywordType
     } else {
         TokenType::Identifier(s)
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct ParseError {
-    column: usize,
-    line: usize,
-    message: String,
-}
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 struct Token {
     token_type: TokenType,
     position: Position,
+    representation: String,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum TokenType {
     KeywordLet,
     KeywordType,
@@ -228,7 +391,7 @@ enum TokenType {
     String(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 struct Position {
     line_start: usize,
     line_end: usize,
@@ -245,6 +408,7 @@ mod tests {
             tokenize("=>".to_string()),
             Ok(vec![Token {
                 token_type: TokenType::ArrowRight,
+                representation: "=>".to_string(),
                 position: Position {
                     column_start: 0,
                     column_end: 1,
@@ -262,6 +426,7 @@ mod tests {
             Ok(vec![
                 Token {
                     token_type: TokenType::Tag("#Hello_world123".to_string()),
+                    representation: "#Hello_world123".to_string(),
                     position: Position {
                         column_start: 0,
                         column_end: 14,
@@ -271,6 +436,7 @@ mod tests {
                 },
                 Token {
                     token_type: TokenType::Whitespace,
+                    representation: " ".to_string(),
                     position: Position {
                         line_start: 0,
                         line_end: 0,
@@ -289,6 +455,7 @@ mod tests {
             tokenize(string.clone()),
             Ok(vec![Token {
                 token_type: TokenType::String(string.clone()),
+                representation: string.clone(),
                 position: Position {
                     column_start: 0,
                     column_end: string.len() - 1,
@@ -306,6 +473,7 @@ mod tests {
             tokenize(string.clone()),
             Ok(vec![Token {
                 token_type: TokenType::Identifier(string.clone()),
+                representation: string.clone(),
                 position: Position {
                     column_start: 0,
                     column_end: string.len() - 1,
@@ -318,12 +486,12 @@ mod tests {
 
     #[test]
     fn test_tokenize_keyword() {
-        let string = "let type".to_string();
         assert_eq!(
-            tokenize(string.clone()),
+            tokenize("let type".to_string()),
             Ok(vec![
                 Token {
                     token_type: TokenType::KeywordLet,
+                    representation: "let".to_string(),
                     position: Position {
                         line_start: 0,
                         line_end: 0,
@@ -333,6 +501,7 @@ mod tests {
                 },
                 Token {
                     token_type: TokenType::Whitespace,
+                    representation: " ".to_string(),
                     position: Position {
                         line_start: 0,
                         line_end: 0,
@@ -342,6 +511,7 @@ mod tests {
                 },
                 Token {
                     token_type: TokenType::KeywordType,
+                    representation: "type".to_string(),
                     position: Position {
                         line_start: 0,
                         line_end: 0,
@@ -350,6 +520,14 @@ mod tests {
                     }
                 }
             ])
+        )
+    }
+
+    #[test]
+    fn test_let_statement_1() {
+        assert_eq!(
+            transpile_source("let x = '123'".to_string()),
+            Ok("const x = '123'".to_string())
         )
     }
 }
