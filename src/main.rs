@@ -56,54 +56,34 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                 let mut result = c.to_string();
                 loop {
                     if index == chars_length - 1 {
-                        tokens.push(Token {
-                            token_type: TokenType::String(result.to_string()),
-                            position: Position {
-                                column_start,
-                                column_end: column_number,
-                                line_start: line_number,
-                                line_end: line_number,
-                            },
-                        });
                         break;
-                    }
-                    let next = chars[index + 1];
-                    index += 1;
-                    column_number += 1;
-                    if next != c || next == '\n' {
-                        result.push(next);
                     } else {
-                        result.push(c);
-                        tokens.push(Token {
-                            token_type: TokenType::String(result.to_string()),
-                            position: Position {
-                                column_start,
-                                column_end: column_number,
-                                line_start: line_number,
-                                line_end: line_number,
-                            },
-                        });
-                        break;
+                        let next = chars[index + 1];
+                        index += 1;
+                        column_number += 1;
+                        if next != c || next == '\n' {
+                            result.push(next);
+                        } else {
+                            result.push(c);
+                            break;
+                        }
                     }
                 }
+                tokens.push(Token {
+                    token_type: TokenType::String(result.to_string()),
+                    position: Position {
+                        column_start,
+                        column_end: column_number,
+                        line_start: line_number,
+                        line_end: line_number,
+                    },
+                });
             }
             '0'..='9' => {}
             'A'..='Z' | 'a'..='z' | '_' => {
                 let column_start = column_number;
                 let mut result = c.to_string();
-                loop {
-                    if index == chars_length - 1 {
-                        tokens.push(Token {
-                            token_type: TokenType::Identifier(result.to_string()),
-                            position: Position {
-                                column_start,
-                                column_end: column_number,
-                                line_start: line_number,
-                                line_end: line_number,
-                            },
-                        });
-                        break;
-                    }
+                while index < chars_length - 1 {
                     let next = chars[index + 1];
                     match next {
                         'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => {
@@ -112,19 +92,19 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                             column_number += 1;
                         }
                         _ => {
-                            tokens.push(Token {
-                                token_type: TokenType::Identifier(result.to_string()),
-                                position: Position {
-                                    column_start,
-                                    column_end: column_number,
-                                    line_start: line_number,
-                                    line_end: line_number,
-                                },
-                            });
                             break;
                         }
                     }
                 }
+                tokens.push(Token {
+                    token_type: getTokenType(result),
+                    position: Position {
+                        column_start,
+                        column_end: column_number,
+                        line_start: line_number,
+                        line_end: line_number,
+                    },
+                });
             }
 
             '=' => {
@@ -199,6 +179,16 @@ fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
     Ok(tokens)
 }
 
+fn getTokenType(s: String) -> TokenType {
+    if (s.eq("let")) {
+        TokenType::KeywordLet
+    } else if (s.eq("type")) {
+        TokenType::KeywordType
+    } else {
+        TokenType::Identifier(s)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct ParseError {
     column: usize,
@@ -214,6 +204,8 @@ struct Token {
 
 #[derive(Debug, PartialEq, Eq)]
 enum TokenType {
+    KeywordLet,
+    KeywordType,
     Whitespace,
     LeftCurlyBracket,
     RightCurlyBracket,
@@ -321,6 +313,43 @@ mod tests {
                     line_end: 0
                 }
             }])
+        )
+    }
+
+    #[test]
+    fn test_tokenize_keyword() {
+        let string = "let type".to_string();
+        assert_eq!(
+            tokenize(string.clone()),
+            Ok(vec![
+                Token {
+                    token_type: TokenType::KeywordLet,
+                    position: Position {
+                        line_start: 0,
+                        line_end: 0,
+                        column_start: 0,
+                        column_end: 2
+                    }
+                },
+                Token {
+                    token_type: TokenType::Whitespace,
+                    position: Position {
+                        line_start: 0,
+                        line_end: 0,
+                        column_start: 3,
+                        column_end: 3
+                    }
+                },
+                Token {
+                    token_type: TokenType::KeywordType,
+                    position: Position {
+                        line_start: 0,
+                        line_end: 0,
+                        column_start: 4,
+                        column_end: 7
+                    }
+                }
+            ])
         )
     }
 }
