@@ -84,22 +84,28 @@ pub fn try_parse_function(original_iterator: &mut Peekable<Iter<Token>>) -> Opti
 
 pub fn parse_function(it: &mut Peekable<Iter<Token>>) -> Result<Function, ParseError> {
     let mut branches = Vec::<FunctionBranch>::new();
-    try_eat_token(it, TokenType::Pipe); // Optional preceding pipe operator
+    let first_branch = parse_function_branch(it)?;
     loop {
-        let branch = parse_function_branch(it)?;
-        println!("parse_function branch {:#?}", branch);
-        branches.push(branch);
-        if !try_eat_token(it, TokenType::Pipe) {
-            println!("parse_function break");
-            break;
+        match it.peek() {
+            Some(Token {
+                token_type: TokenType::Backslash,
+                ..
+            }) => {
+                let branch = parse_function_branch(it)?;
+                branches.push(branch);
+            }
+            _ => break,
         }
     }
-    Ok(Function { branches })
+    Ok(Function {
+        first_branch,
+        branches,
+    })
 }
 
 pub fn parse_function_branch(it: &mut Peekable<Iter<Token>>) -> Result<FunctionBranch, ParseError> {
+    eat_token(it, TokenType::Backslash)?;
     let arguments = parse_function_arguments(it)?;
-    println!("parse_function_branch arguments {:#?}", arguments);
     eat_token(it, TokenType::ArrowRight)?;
     let body = parse_expression(it)?;
     // TODO: parse return type annotation
@@ -113,42 +119,23 @@ pub fn parse_function_branch(it: &mut Peekable<Iter<Token>>) -> Result<FunctionB
 pub fn parse_function_arguments(
     it: &mut Peekable<Iter<Token>>,
 ) -> Result<Vec<FunctionArgument>, ParseError> {
-    if let Some(token) = it.peek() {
-        println!("parse_function_arguments it.next {:#?}", token);
-        match token.token_type {
-            TokenType::LeftParenthesis => {
-                let _ = it.next();
-                let mut arguments = Vec::<FunctionArgument>::new();
-                loop {
-                    let argument = parse_function_argument(it)?;
-                    arguments.push(argument);
-
-                    // Allow trailing comma
-                    if try_eat_token(it, TokenType::Comma) {
-                        if try_eat_token(it, TokenType::RightParenthesis) {
-                            break;
-                        }
-                    } else if try_eat_token(it, TokenType::RightParenthesis) {
-                        break;
-                    }
-                }
-                Ok(arguments)
-            }
+    let mut arguments = Vec::<FunctionArgument>::new();
+    let argument = parse_function_argument(it)?;
+    arguments.push(argument);
+    loop {
+        match it.peek() {
+            Some(Token {
+                token_type: TokenType::ArrowRight,
+                ..
+            }) => break,
             _ => {
-                let destructure_pattern = parse_destructure_pattern(it)?;
-                Ok(vec![FunctionArgument {
-                    type_annotation: None,
-                    default_value: None,
-                    destructure_pattern,
-                }])
+                eat_token(it, TokenType::Comma)?;
+                let argument = parse_function_argument(it)?;
+                arguments.push(argument);
             }
         }
-    } else {
-        Err(ParseError::UnexpectedEOF {
-            error: "Expected function arguments but reach EOF".to_string(),
-            suggestion: None,
-        })
     }
+    Ok(arguments)
 }
 
 pub fn parse_function_argument(
@@ -216,7 +203,7 @@ pub fn parse_type_annotation(it: &mut Peekable<Iter<Token>>) -> Result<TypeAnnot
 
 pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
     if let Some(token) = it.peek() {
-        match &token.token_type {
+        match token.clone().token_type {
             TokenType::String(_) => {
                 let token = it.next().unwrap();
                 Ok(Expression {
@@ -224,19 +211,44 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                     inferred_type: Some(Type::String),
                 })
             }
-            other => {
+            TokenType::Identifier(_) => {
+                let token = it.next().unwrap();
+                Ok(Expression {
+                    value: ExpressionValue::Variable(token.clone()),
+                    inferred_type: None,
+                })
+            }
+            TokenType::Backslash => {
                 let function = parse_function(it)?;
                 Ok(Expression {
                     value: ExpressionValue::Function(function),
                     inferred_type: None,
                 })
-                // if let Some(function) = try_parse_function(it) {
-                //     return Ok(Expression {
+            }
+            TokenType::Tag(_) => {
+                let token = it.next().unwrap();
+                Ok(Expression {
+                    value: ExpressionValue::Tag(token.clone()),
+                    inferred_type: Some(Type::Tag(token.clone())),
+                })
+            }
+            _ => {
+                panic!("{:#?}")
+                // match try_parse_function(it) {
+                //     Some(function) => Ok(Expression {
                 //         value: ExpressionValue::Function(function),
                 //         inferred_type: None,
-                //     });
-                // } else {
-                //     panic!("{:#?}", other)
+                //     }),
+                //     None => {
+
+                //     match other {
+                //         TokenType::Identifier(_) => Ok(Expression {
+                //             value: ExpressionValue::Variable(*token.clone()),
+                //             inferred_type: None
+                //         }),
+                //         _ => panic!()
+                //     }
+                //     }
                 // }
             }
         }
@@ -254,6 +266,11 @@ pub fn parse_destructure_pattern(
     if let Some(token) = it.next() {
         match &token.token_type {
             TokenType::Identifier(_) => Ok(DestructurePattern::Identifier(token.clone())),
+            TokenType::Tag(_) => Ok(DestructurePattern::Tag {
+                token: token.clone(),
+                payload: None, // TODO: parse payload
+            }),
+            TokenType::Underscore => Ok(DestructurePattern::Underscore(token.clone())),
             other => panic!("Unimplemented {:#?}", other),
         }
     } else {

@@ -28,11 +28,19 @@ pub enum SymbolSource {
 pub enum Type {
     String,
     Name(Token),
+    Tag(Token),
+    Underscore,
 }
 
 #[derive(Debug)]
 pub enum DestructurePattern {
+    Underscore(Token),
     Identifier(Token),
+    Tag {
+        token: Token,
+        payload: Option<Box<DestructurePattern>>,
+    },
+    // Record
 }
 
 #[derive(Debug)]
@@ -45,11 +53,13 @@ pub struct Expression {
 pub enum ExpressionValue {
     String(Token),
     Variable(Token),
+    Tag(Token),
     Function(Function),
 }
 
 #[derive(Debug)]
 pub struct Function {
+    pub first_branch: FunctionBranch,
     pub branches: Vec<FunctionBranch>,
 }
 
@@ -77,6 +87,10 @@ pub enum ParseError {
     UnexpectedEOF {
         error: String,
         suggestion: Option<String>,
+    },
+    FunctionMissingFirstBranch {
+        token: Token,
+        error: String,
     },
 }
 
@@ -108,6 +122,8 @@ pub enum TokenType {
     Period,
     Comma,
     ArrowRight,
+    Backslash,
+    Underscore,
     Tag(String),
     Identifier(String),
     String(String),

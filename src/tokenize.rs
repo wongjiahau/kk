@@ -167,6 +167,8 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                         '<' => TokenType::LessThan,
                         '>' => TokenType::MoreThan,
                         '|' => TokenType::Pipe,
+                        '\\' => TokenType::Backslash,
+                        '_' => TokenType::Underscore,
                         '\n' => {
                             line_number += 1;
                             column_number = 0;
