@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let x = \\\\x => 'yo'\".to_string())"
+---
+Ok(
+    "const x = (_0)=>{{var x = _0;return \'yo\'}}",
+)

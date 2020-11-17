@@ -10,6 +10,8 @@ use parse::*;
 mod tokenize;
 use tokenize::*;
 
+use insta::assert_debug_snapshot;
+
 fn main() {
     println!(
         "{:?}",
@@ -166,54 +168,26 @@ mod tests {
 
     #[test]
     fn test_function_1() {
-        assert_eq!(
-            transpile_source("let x = x => 'yo'".to_string()),
-            Ok("const x=(x)=>{return 'yo'}".to_string())
-        )
+        assert_debug_snapshot!(transpile_source("let x = \\x => 'yo'".to_string()))
     }
     #[test]
     fn test_function_2() {
-        assert_eq!(
-            transpile_source("let x = #red => 'red' | #blue => 'blue'".to_string()),
-            Ok("
-const x=($0)=>{
-  if($0.$==='red){return {$:'red'}}
-  if($0.$==='blue'){return {$:'blue'}}
-}"
-            .to_string())
-        )
+        assert_debug_snapshot!(transpile_source(
+            "let x = \\#red => 'red' \\ #blue => 'blue'".to_string()
+        ))
     }
 
     #[test]
     fn test_function_3() {
-        assert_eq!(
-            transpile_source("let x = #ok(#some(r)) => r | _ => 'yo'".to_string()),
-            Ok("
-const x = ($0) => {
-    if($0.$==='ok') {
-        if($0._.$==='some') {
-            const $r = $0._._
-            return $r
-        }
-    }
-    return 'yo'
-}"
-            .to_string())
-        )
+        assert_debug_snapshot!(transpile_source(
+            "let x = \\#ok(#some(r)) => r \\ _ => 'yo'".to_string()
+        ))
     }
 
     #[test]
     fn test_function_4() {
-        assert_eq!(
-            transpile_source("let or = \\#false, #false => #false \\ _, _ => #true".to_string()),
-            Ok("
-const x = ($0,$1) => {
-    if($0.$==='false' && $1.$==='false') {
-        return {$:'false'}
-    }
-    return {$:'true'}
-}"
-            .to_string())
-        )
+        assert_debug_snapshot!(transpile_source(
+            "let or = \\#false, #false => #false \\ _, _ => #true".to_string()
+        ))
     }
 }

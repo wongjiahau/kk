@@ -266,10 +266,24 @@ pub fn parse_destructure_pattern(
     if let Some(token) = it.next() {
         match &token.token_type {
             TokenType::Identifier(_) => Ok(DestructurePattern::Identifier(token.clone())),
-            TokenType::Tag(_) => Ok(DestructurePattern::Tag {
-                token: token.clone(),
-                payload: None, // TODO: parse payload
-            }),
+            TokenType::Tag(_) => match it.peek() {
+                Some(Token {
+                    token_type: TokenType::LeftParenthesis,
+                    ..
+                }) => {
+                    eat_token(it, TokenType::LeftParenthesis)?;
+                    let payload = parse_destructure_pattern(it)?;
+                    eat_token(it, TokenType::RightParenthesis)?;
+                    Ok(DestructurePattern::Tag {
+                        token: token.clone(),
+                        payload: Some(Box::new(payload)),
+                    })
+                }
+                _ => Ok(DestructurePattern::Tag {
+                    token: token.clone(),
+                    payload: None,
+                }),
+            },
             TokenType::Underscore => Ok(DestructurePattern::Underscore(token.clone())),
             other => panic!("Unimplemented {:#?}", other),
         }

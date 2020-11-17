@@ -21,11 +21,15 @@ pub fn transpile_destructure_pattern(destructure_pattern: DestructurePattern) ->
     }
 }
 
+fn transpile_tag(tag: String) -> String {
+    tag.as_str()[1..].to_string()
+}
+
 pub fn transpile_expression(expression: Expression) -> String {
     match expression.value {
         ExpressionValue::String(s) => s.representation,
         ExpressionValue::Variable(v) => v.representation,
-        ExpressionValue::Tag(t) => format!("{{$:'{}'}}", t.representation),
+        ExpressionValue::Tag(t) => format!("{{$:'{}'}}", transpile_tag(t.representation)),
         ExpressionValue::Function(Function {
             first_branch,
             branches,
@@ -108,7 +112,8 @@ pub fn transpile_function_destructure_pattern(
             let first = TranspiledDestructurePattern {
                 conditions: vec![format!(
                     "{}.$==='{}'",
-                    from_expression, token.representation
+                    from_expression,
+                    transpile_tag(token.representation)
                 )],
                 bindings: vec![],
             };
