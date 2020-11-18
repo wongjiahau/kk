@@ -201,9 +201,128 @@ pub fn parse_type_annotation(it: &mut Peekable<Iter<Token>>) -> Result<TypeAnnot
     }
 }
 
+pub fn parse_function_call(
+    it: &mut Peekable<Iter<Token>>,
+    first_arg: Expression,
+) -> Result<Expression, ParseError> {
+    let mut pairs: Vec<(Expression, Vec<FunctionCallArgument>)> = vec![];
+    loop {
+        if !try_eat_token(it, TokenType::Period) {
+            pairs.reverse();
+            let (function, arguments) = pairs.pop().unwrap();
+            let mut args = vec![FunctionCallArgument {
+                argument_name: None,
+                value: first_arg,
+            }];
+            args.extend(arguments);
+            let init = Expression {
+                value: ExpressionValue::FunctionCall(FunctionCall {
+                    function: Box::new(function),
+                    arguments: args,
+                }),
+                inferred_type: None,
+            };
+            let result = pairs
+                .into_iter()
+                .fold(init, |first_arg, (function, arguments)| {
+                    let mut args = vec![FunctionCallArgument {
+                        argument_name: None,
+                        value: first_arg,
+                    }];
+                    args.extend(arguments);
+                    Expression {
+                        value: ExpressionValue::FunctionCall(FunctionCall {
+                            function: Box::new(function),
+                            arguments: args,
+                        }),
+                        inferred_type: None,
+                    }
+                });
+            return Ok(result);
+        }
+        match it.peek() {
+            Some(Token {
+                token_type: TokenType::Identifier(_),
+                ..
+            }) => {
+                let token = it.next().unwrap();
+                let function_name = Expression {
+                    value: ExpressionValue::Variable(token.clone()),
+                    inferred_type: None,
+                };
+                match it.peek() {
+                    Some(Token {
+                        token_type: TokenType::LeftParenthesis,
+                        ..
+                    }) => {
+                        let function_call_arguments = parse_function_call_arguments(it)?;
+                        pairs.push((function_name, function_call_arguments))
+                    }
+                    _ => pairs.push((function_name, vec![])),
+                }
+            }
+            Some(Token {
+                token_type: TokenType::LeftParenthesis,
+                ..
+            }) => {
+                eat_token(it, TokenType::LeftParenthesis)?;
+                let function = parse_expression(it)?;
+                eat_token(it, TokenType::RightParenthesis)?;
+                let function_call_arguments = parse_function_call_arguments(it)?;
+                pairs.push((function, function_call_arguments))
+            }
+            Some(_) => {
+                let invalid_token = it.next().unwrap();
+                return Err(ParseError::InvalidToken {
+                    invalid_token: invalid_token.clone(),
+                    error: "Expected variable or left parenthesis".to_string(),
+                    suggestion: None,
+                });
+            }
+            None => {
+                return Err(ParseError::UnexpectedEOF {
+                    error: "Expected variable or left parenthesis".to_string(),
+                    suggestion: None,
+                })
+            }
+        }
+    }
+}
+
+pub fn parse_function_call_arguments(
+    it: &mut Peekable<Iter<Token>>,
+) -> Result<Vec<FunctionCallArgument>, ParseError> {
+    eat_token(it, TokenType::LeftParenthesis)?;
+    let mut result: Vec<FunctionCallArgument> = vec![];
+    loop {
+        let argument_name = try_parse_identifier(it);
+        let value = parse_expression(it)?;
+        result.push(FunctionCallArgument {
+            argument_name,
+            value,
+        });
+
+        if !try_eat_token(it, TokenType::Comma) {
+            break;
+        }
+    }
+    eat_token(it, TokenType::RightParenthesis)?;
+    Ok(result)
+}
+
+pub fn try_parse_identifier(it: &mut Peekable<Iter<Token>>) -> Option<Token> {
+    match it.peek() {
+        Some(Token {
+            token_type: TokenType::Identifier(_),
+            ..
+        }) => Some(it.next().unwrap().clone()),
+        _ => None,
+    }
+}
+
 pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
     if let Some(token) = it.peek() {
-        match token.clone().token_type {
+        match &token.clone().token_type {
             TokenType::String(_) => {
                 let token = it.next().unwrap();
                 Ok(Expression {
@@ -213,10 +332,20 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
             }
             TokenType::Identifier(_) => {
                 let token = it.next().unwrap();
-                Ok(Expression {
+                let variable = Expression {
                     value: ExpressionValue::Variable(token.clone()),
                     inferred_type: None,
-                })
+                };
+                match it.peek() {
+                    Some(Token {
+                        token_type: TokenType::Period,
+                        ..
+                    }) => {
+                        let function_call = parse_function_call(it, variable)?;
+                        Ok(function_call)
+                    }
+                    _ => Ok(variable),
+                }
             }
             TokenType::Backslash => {
                 let function = parse_function(it)?;
@@ -232,8 +361,8 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                     inferred_type: Some(Type::Tag(token.clone())),
                 })
             }
-            _ => {
-                panic!("{:#?}")
+            other => {
+                panic!("{:#?}", other.clone())
                 // match try_parse_function(it) {
                 //     Some(function) => Ok(Expression {
                 //         value: ExpressionValue::Function(function),

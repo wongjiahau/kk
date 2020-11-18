@@ -45,6 +45,18 @@ pub fn transpile_expression(expression: Expression) -> String {
                 .join("\n");
             format!("({})=>{{{}}}", arguments.join(","), branches)
         }
+        ExpressionValue::FunctionCall(FunctionCall {
+            function,
+            arguments,
+        }) => format!(
+            "({})({})",
+            transpile_expression(*function),
+            arguments
+                .into_iter()
+                .map(|argument| transpile_expression(argument.value))
+                .collect::<Vec<String>>()
+                .join(",")
+        ),
     }
 }
 

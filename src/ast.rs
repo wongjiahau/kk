@@ -55,6 +55,19 @@ pub enum ExpressionValue {
     Variable(Token),
     Tag(Token),
     Function(Function),
+    FunctionCall(FunctionCall),
+}
+
+#[derive(Debug)]
+pub struct FunctionCall {
+    pub function: Box<Expression>,
+    pub arguments: Vec<FunctionCallArgument>,
+}
+
+#[derive(Debug)]
+pub struct FunctionCallArgument {
+    pub argument_name: Option<Token>,
+    pub value: Expression,
 }
 
 #[derive(Debug)]

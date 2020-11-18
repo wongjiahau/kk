@@ -10,8 +10,6 @@ use parse::*;
 mod tokenize;
 use tokenize::*;
 
-use insta::assert_debug_snapshot;
-
 fn main() {
     println!(
         "{:?}",
@@ -29,6 +27,8 @@ pub fn transpile_source(source: String) -> Result<String, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use insta::assert_debug_snapshot;
+
     #[test]
     fn test_tokenize_arrow_right() {
         assert_eq!(
@@ -189,5 +189,20 @@ mod tests {
         assert_debug_snapshot!(transpile_source(
             "let or = \\#false, #false => #false \\ _, _ => #true".to_string()
         ))
+    }
+
+    #[test]
+    fn test_function_5() {
+        assert_debug_snapshot!(transpile_source("let square = \\x:number => x".to_string()))
+    }
+
+    #[test]
+    fn test_function_call_1() {
+        assert_debug_snapshot!(transpile_source("let x = y.square.bomb".to_string()))
+    }
+
+    #[test]
+    fn test_function_call_2() {
+        assert_debug_snapshot!(transpile_source("let x = a.times(b).and(c, d)".to_string()))
     }
 }
