@@ -205,4 +205,11 @@ mod tests {
     fn test_function_call_2() {
         assert_debug_snapshot!(transpile_source("let x = a.times(b).and(c, d)".to_string()))
     }
+
+    #[test]
+    fn test_function_call_3() {
+        assert_debug_snapshot!(transpile_source(
+            "let x = x.(\\#ok(x) => a \\#no => b)".to_string()
+        ))
+    }
 }

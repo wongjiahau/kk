@@ -65,7 +65,7 @@ pub fn eat_token(it: &mut Peekable<Iter<Token>>, token_type: TokenType) -> Resul
         }
     } else {
         Err(ParseError::UnexpectedEOF {
-            error: "Expected = but reach EOF".to_string(),
+            error: format!("Expected {:?} but reach EOF", token_type),
             suggestion: Some("Add = after here".to_string()),
         })
     }
@@ -250,16 +250,8 @@ pub fn parse_function_call(
                     value: ExpressionValue::Variable(token.clone()),
                     inferred_type: None,
                 };
-                match it.peek() {
-                    Some(Token {
-                        token_type: TokenType::LeftParenthesis,
-                        ..
-                    }) => {
-                        let function_call_arguments = parse_function_call_arguments(it)?;
-                        pairs.push((function_name, function_call_arguments))
-                    }
-                    _ => pairs.push((function_name, vec![])),
-                }
+                let function_call_arguments = parse_function_call_arguments(it)?;
+                pairs.push((function_name, function_call_arguments))
             }
             Some(Token {
                 token_type: TokenType::LeftParenthesis,
@@ -292,22 +284,30 @@ pub fn parse_function_call(
 pub fn parse_function_call_arguments(
     it: &mut Peekable<Iter<Token>>,
 ) -> Result<Vec<FunctionCallArgument>, ParseError> {
-    eat_token(it, TokenType::LeftParenthesis)?;
-    let mut result: Vec<FunctionCallArgument> = vec![];
-    loop {
-        let argument_name = try_parse_identifier(it);
-        let value = parse_expression(it)?;
-        result.push(FunctionCallArgument {
-            argument_name,
-            value,
-        });
+    match it.peek() {
+        Some(Token {
+            token_type: TokenType::LeftParenthesis,
+            ..
+        }) => {
+            eat_token(it, TokenType::LeftParenthesis)?;
+            let mut result: Vec<FunctionCallArgument> = vec![];
+            loop {
+                // let argument_name = try_parse_identifier(it);
+                let value = parse_expression(it)?;
+                result.push(FunctionCallArgument {
+                    argument_name: None,
+                    value,
+                });
 
-        if !try_eat_token(it, TokenType::Comma) {
-            break;
+                if !try_eat_token(it, TokenType::Comma) {
+                    break;
+                }
+            }
+            eat_token(it, TokenType::RightParenthesis)?;
+            Ok(result)
         }
+        _ => Ok(vec![]),
     }
-    eat_token(it, TokenType::RightParenthesis)?;
-    Ok(result)
 }
 
 pub fn try_parse_identifier(it: &mut Peekable<Iter<Token>>) -> Option<Token> {
