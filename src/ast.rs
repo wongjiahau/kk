@@ -59,6 +59,10 @@ pub enum ExpressionValue {
     Record {
         key_value_pairs: Vec<(Token, Expression)>,
     },
+    Block {
+        statements: Vec<Statement>,
+        return_value: Box<Expression>,
+    },
 }
 
 #[derive(Debug)]

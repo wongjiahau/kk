@@ -67,6 +67,18 @@ pub fn transpile_expression(expression: Expression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
+        ExpressionValue::Block {
+            statements,
+            return_value,
+        } => format!(
+            "(() => {{{};return {}}})()",
+            statements
+                .into_iter()
+                .map(transpile_statement)
+                .collect::<Vec<String>>()
+                .join(";"),
+            transpile_expression(*return_value)
+        ),
     }
 }
 

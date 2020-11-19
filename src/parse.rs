@@ -12,27 +12,52 @@ pub fn parse_statements(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError
         })
         .collect::<Vec<Token>>();
     let mut it = tokens.iter().peekable();
+    parse_statements_(&mut it)
+}
+
+pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement>, ParseError> {
     let mut statements = Vec::<Statement>::new();
-    while let Some(token) = it.next() {
-        match &token.token_type {
-            TokenType::KeywordLet => {
-                let left = parse_destructure_pattern(&mut it)?;
-                // TODO: eat type annotation
-                eat_token(&mut it, TokenType::Equals)?;
-                let right = parse_expression(&mut it)?;
-                statements.push(Statement::Let {
-                    left,
-                    right,
-                    type_annotation: None,
-                })
+    loop {
+        match it.peek() {
+            Some(token) => {
+                match token.token_type {
+                    TokenType::KeywordLet => {
+                        eat_token(it, TokenType::KeywordLet)?;
+                        let left = parse_destructure_pattern(it)?;
+                        // TODO: eat type annotation
+                        eat_token(it, TokenType::Equals)?;
+                        let right = parse_expression(it)?;
+                        statements.push(Statement::Let {
+                            left,
+                            right,
+                            type_annotation: None,
+                        })
+                    }
+                    TokenType::KeywordType => panic!(),
+                    _ => {
+                        if statements.len() > 0 {
+                            break;
+                        } else {
+                            let token = it.next().unwrap();
+                            return Err(ParseError::InvalidToken {
+                                invalid_token: token.clone(),
+                                error: "Expected let or type".to_string(),
+                                suggestion: None,
+                            });
+                        }
+                    }
+                }
             }
-            TokenType::KeywordType => {}
-            _ => {
-                return Err(ParseError::InvalidToken {
-                    invalid_token: token.clone(),
-                    error: "Expected let or type".to_string(),
-                    suggestion: None,
-                })
+            None => {
+                if statements.len() > 0 {
+                    break;
+                } else {
+                    let token = it.next().unwrap();
+                    return Err(ParseError::UnexpectedEOF {
+                        error: "Expected keyword let or type".to_string(),
+                        suggestion: None,
+                    });
+                }
             }
         }
     }
@@ -482,7 +507,15 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
 }
 
 pub fn parse_block(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
-    panic!()
+    let statements = parse_statements_(it)?;
+    let return_value = parse_expression(it)?;
+    Ok(Expression {
+        value: ExpressionValue::Block {
+            statements,
+            return_value: Box::new(return_value),
+        },
+        inferred_type: None,
+    })
 }
 
 pub fn parse_destructure_pattern(

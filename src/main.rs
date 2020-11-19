@@ -221,7 +221,14 @@ mod tests {
     }
 
     #[test]
-    fn test_function_record_1() {
+    fn test_record_1() {
         assert_debug_snapshot!(transpile_source("let x = {a: {b: c}, d: e}".to_string()))
+    }
+
+    #[test]
+    fn test_block_1() {
+        assert_debug_snapshot!(transpile_source(
+            "let x = { let x = a let y = b 'hello world' }".to_string()
+        ))
     }
 }
