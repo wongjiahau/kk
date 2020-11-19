@@ -56,6 +56,9 @@ pub enum ExpressionValue {
     Tag(Token),
     Function(Function),
     FunctionCall(FunctionCall),
+    Record {
+        key_value_pairs: Vec<(Token, Expression)>,
+    },
 }
 
 #[derive(Debug)]

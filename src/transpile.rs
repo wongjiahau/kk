@@ -30,6 +30,16 @@ pub fn transpile_expression(expression: Expression) -> String {
         ExpressionValue::String(s) => s.representation,
         ExpressionValue::Variable(v) => v.representation,
         ExpressionValue::Tag(t) => format!("{{$:'{}'}}", transpile_tag(t.representation)),
+        ExpressionValue::Record { key_value_pairs } => format!(
+            "{{{}}}",
+            key_value_pairs
+                .into_iter()
+                .map(|(key, value)| {
+                    format!("{}: {}", key.representation, transpile_expression(value))
+                })
+                .collect::<Vec<String>>()
+                .join(",")
+        ),
         ExpressionValue::Function(Function {
             first_branch,
             branches,

@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let x = 'hello world'.replace('hello', with: 'bye')\".to_string())"
+---
+Ok(
+    "const x = (replace)(\'hello world\',\'hello\',\'bye\')",
+)

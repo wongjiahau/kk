@@ -397,6 +397,10 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                     inferred_type: None,
                 })
             }
+            TokenType::LeftCurlyBracket => {
+                eat_token(it, TokenType::LeftCurlyBracket)?;
+                parse_record_or_block(it)
+            }
             other => {
                 panic!("{:#?}", other.clone())
                 // match try_parse_function(it) {
@@ -423,6 +427,62 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
             suggestion: None,
         })
     }
+}
+
+pub fn parse_record_or_block(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
+    match it.peek() {
+        Some(Token {
+            token_type: TokenType::Identifier(_),
+            ..
+        }) => parse_record(it),
+        Some(_) => parse_block(it),
+        None => Err(ParseError::UnexpectedEOF {
+            error: "Expected variable or keyword let/type".to_string(),
+            suggestion: None,
+        }),
+    }
+}
+
+pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
+    let mut key_value_pairs: Vec<(Token, Expression)> = Vec::new();
+    loop {
+        match it.peek() {
+            Some(Token {
+                token_type: TokenType::Identifier(_),
+                ..
+            }) => {
+                let key = it.next().unwrap();
+                eat_token(it, TokenType::Colon)?;
+                let value = parse_expression(it)?;
+                key_value_pairs.push((key.clone(), value))
+            }
+            Some(&other) => {
+                return Err(ParseError::InvalidToken {
+                    invalid_token: other.clone(),
+                    error: "Expected identifier".to_string(),
+                    suggestion: None,
+                })
+            }
+            None => {
+                return Err(ParseError::UnexpectedEOF {
+                    error: "Expected identifier".to_string(),
+                    suggestion: None,
+                })
+            }
+        }
+        if !try_eat_token(it, TokenType::Comma) {
+            break;
+        }
+    }
+    eat_token(it, TokenType::RightCurlyBracket)?;
+    Ok(Expression {
+        value: ExpressionValue::Record { key_value_pairs },
+        inferred_type: None,
+    })
+}
+
+pub fn parse_block(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
+    panic!()
 }
 
 pub fn parse_destructure_pattern(

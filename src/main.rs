@@ -219,4 +219,9 @@ mod tests {
             "let x = 'hello world'.replace('hello', with: 'bye')".to_string()
         ))
     }
+
+    #[test]
+    fn test_function_record_1() {
+        assert_debug_snapshot!(transpile_source("let x = {a: {b: c}, d: e}".to_string()))
+    }
 }
