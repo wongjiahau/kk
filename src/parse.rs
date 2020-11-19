@@ -292,12 +292,33 @@ pub fn parse_function_call_arguments(
             eat_token(it, TokenType::LeftParenthesis)?;
             let mut result: Vec<FunctionCallArgument> = vec![];
             loop {
-                // let argument_name = try_parse_identifier(it);
-                let value = parse_expression(it)?;
-                result.push(FunctionCallArgument {
-                    argument_name: None,
-                    value,
-                });
+                let argument_name_or_variable = try_parse_identifier(it);
+                match argument_name_or_variable {
+                    Some(token) => {
+                        if try_eat_token(it, TokenType::Colon) {
+                            let value = parse_expression(it)?;
+                            result.push(FunctionCallArgument {
+                                argument_name: Some(token),
+                                value,
+                            });
+                        } else {
+                            result.push(FunctionCallArgument {
+                                argument_name: None,
+                                value: Expression {
+                                    value: ExpressionValue::Variable(token),
+                                    inferred_type: None,
+                                },
+                            });
+                        }
+                    }
+                    None => {
+                        let value = parse_expression(it)?;
+                        result.push(FunctionCallArgument {
+                            argument_name: None,
+                            value,
+                        })
+                    }
+                }
 
                 if !try_eat_token(it, TokenType::Comma) {
                     break;
@@ -320,45 +341,60 @@ pub fn try_parse_identifier(it: &mut Peekable<Iter<Token>>) -> Option<Token> {
     }
 }
 
+pub fn try_parse_function_call(
+    it: &mut Peekable<Iter<Token>>,
+    first_arg: Expression,
+) -> Result<Expression, ParseError> {
+    match it.peek() {
+        Some(Token {
+            token_type: TokenType::Period,
+            ..
+        }) => {
+            let function_call = parse_function_call(it, first_arg)?;
+            Ok(function_call)
+        }
+        _ => Ok(first_arg),
+    }
+}
+
 pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
     if let Some(token) = it.peek() {
         match &token.clone().token_type {
             TokenType::String(_) => {
                 let token = it.next().unwrap();
-                Ok(Expression {
-                    value: ExpressionValue::String(token.clone()),
-                    inferred_type: Some(Type::String),
-                })
+                try_parse_function_call(
+                    it,
+                    Expression {
+                        value: ExpressionValue::String(token.clone()),
+                        inferred_type: Some(Type::String),
+                    },
+                )
             }
             TokenType::Identifier(_) => {
                 let token = it.next().unwrap();
-                let variable = Expression {
-                    value: ExpressionValue::Variable(token.clone()),
-                    inferred_type: None,
-                };
-                match it.peek() {
-                    Some(Token {
-                        token_type: TokenType::Period,
-                        ..
-                    }) => {
-                        let function_call = parse_function_call(it, variable)?;
-                        Ok(function_call)
-                    }
-                    _ => Ok(variable),
-                }
+                try_parse_function_call(
+                    it,
+                    Expression {
+                        value: ExpressionValue::Variable(token.clone()),
+                        inferred_type: None,
+                    },
+                )
+            }
+            TokenType::Tag(_) => {
+                let token = it.next().unwrap();
+                try_parse_function_call(
+                    it,
+                    Expression {
+                        value: ExpressionValue::Tag(token.clone()),
+                        inferred_type: Some(Type::Tag(token.clone())),
+                    },
+                )
             }
             TokenType::Backslash => {
                 let function = parse_function(it)?;
                 Ok(Expression {
                     value: ExpressionValue::Function(function),
                     inferred_type: None,
-                })
-            }
-            TokenType::Tag(_) => {
-                let token = it.next().unwrap();
-                Ok(Expression {
-                    value: ExpressionValue::Tag(token.clone()),
-                    inferred_type: Some(Type::Tag(token.clone())),
                 })
             }
             other => {

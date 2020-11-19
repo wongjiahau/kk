@@ -212,4 +212,11 @@ mod tests {
             "let x = x.(\\#ok(x) => a \\#no => b)".to_string()
         ))
     }
+
+    #[test]
+    fn test_function_call_4() {
+        assert_debug_snapshot!(transpile_source(
+            "let x = 'hello world'.replace('hello', with: 'bye')".to_string()
+        ))
+    }
 }
