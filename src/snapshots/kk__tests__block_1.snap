@@ -1,7 +1,7 @@
 ---
 source: src/main.rs
-expression: "transpile_source(\"let x = { let x = a let y = b 'hello world' }\".to_string())"
+expression: "transpile_source(\"let x = let x = a let y = b 'hello world'\".to_string())"
 ---
 Ok(
-    "const x = (() => {const x = a;const y = b;return \'hello world\'})()",
+    "const x = (()=>{var $TEMP = a;var x = $TEMP;var $TEMP = b;var y = $TEMP;return \'hello world\'})()",
 )

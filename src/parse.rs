@@ -52,7 +52,7 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
                 if statements.len() > 0 {
                     break;
                 } else {
-                    let token = it.next().unwrap();
+                    let _ = it.next().unwrap();
                     return Err(ParseError::UnexpectedEOF {
                         error: "Expected keyword let or type".to_string(),
                         suggestion: None,
@@ -93,17 +93,6 @@ pub fn eat_token(it: &mut Peekable<Iter<Token>>, token_type: TokenType) -> Resul
             error: format!("Expected {:?} but reach EOF", token_type),
             suggestion: Some("Add = after here".to_string()),
         })
-    }
-}
-
-pub fn try_parse_function(original_iterator: &mut Peekable<Iter<Token>>) -> Option<Function> {
-    let mut it = original_iterator.clone();
-    match parse_function(&mut it) {
-        Ok(func) => {
-            original_iterator.skip(original_iterator.len() - it.len());
-            Some(func)
-        }
-        Err(_) => None,
     }
 }
 
@@ -426,6 +415,7 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                 eat_token(it, TokenType::LeftCurlyBracket)?;
                 parse_record_or_block(it)
             }
+            TokenType::KeywordLet => parse_let_expression(it),
             other => {
                 panic!("{:#?}", other.clone())
                 // match try_parse_function(it) {
@@ -460,7 +450,7 @@ pub fn parse_record_or_block(it: &mut Peekable<Iter<Token>>) -> Result<Expressio
             token_type: TokenType::Identifier(_),
             ..
         }) => parse_record(it),
-        Some(_) => parse_block(it),
+        Some(_) => parse_let_expression(it),
         None => Err(ParseError::UnexpectedEOF {
             error: "Expected variable or keyword let/type".to_string(),
             suggestion: None,
@@ -506,12 +496,16 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
     })
 }
 
-pub fn parse_block(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
-    let statements = parse_statements_(it)?;
+pub fn parse_let_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
+    eat_token(it, TokenType::KeywordLet)?;
+    let left = parse_destructure_pattern(it)?;
+    eat_token(it, TokenType::Equals)?;
+    let right = parse_expression(it)?;
     let return_value = parse_expression(it)?;
     Ok(Expression {
-        value: ExpressionValue::Block {
-            statements,
+        value: ExpressionValue::Let {
+            left,
+            right: Box::new(right),
             return_value: Box::new(return_value),
         },
         inferred_type: None,

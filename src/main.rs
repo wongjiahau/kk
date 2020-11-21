@@ -228,7 +228,20 @@ mod tests {
     #[test]
     fn test_block_1() {
         assert_debug_snapshot!(transpile_source(
-            "let x = { let x = a let y = b 'hello world' }".to_string()
+            "let x = let x = a let y = b 'hello world'".to_string()
+        ))
+    }
+
+    #[test]
+    fn test_monadic_binding_1() {
+        assert_debug_snapshot!(transpile_source(
+            "
+            let f = \\a, b => 
+                let #some(x) = a
+                let #ok(y) = b 
+                x.plus(y)
+            "
+            .to_string()
         ))
     }
 }
