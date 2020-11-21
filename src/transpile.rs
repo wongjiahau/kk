@@ -60,7 +60,6 @@ pub fn transpile_statement(statement: Statement) -> String {
                 let branches = vec![first_branch]
                     .into_iter()
                     .chain(branches.into_iter())
-                    .into_iter()
                     .map(transpile_function_branch)
                     .collect::<Vec<String>>()
                     .join("\n");
@@ -145,13 +144,13 @@ pub fn transpile_statement(statement: Statement) -> String {
         };
         let body = transpile_expression(*function_branch.body);
         let conditions = {
-            if transpiled_destructure_pattern.conditions.len() > 0 {
+            if transpiled_destructure_pattern.conditions.is_empty() {
+                "".to_string()
+            } else {
                 format!(
                     "if({})",
                     transpiled_destructure_pattern.conditions.join(" && "),
                 )
-            } else {
-                "".to_string()
             }
         };
         format!(

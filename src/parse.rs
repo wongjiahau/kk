@@ -35,7 +35,7 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
                     }
                     TokenType::KeywordType => panic!(),
                     _ => {
-                        if statements.len() > 0 {
+                        if !statements.is_empty() {
                             break;
                         } else {
                             let token = it.next().unwrap();
@@ -49,10 +49,9 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
                 }
             }
             None => {
-                if statements.len() > 0 {
+                if !statements.is_empty() {
                     break;
                 } else {
-                    let _ = it.next().unwrap();
                     return Err(ParseError::UnexpectedEOF {
                         error: "Expected keyword let or type".to_string(),
                         suggestion: None,
@@ -99,17 +98,13 @@ pub fn eat_token(it: &mut Peekable<Iter<Token>>, token_type: TokenType) -> Resul
 pub fn parse_function(it: &mut Peekable<Iter<Token>>) -> Result<Function, ParseError> {
     let mut branches = Vec::<FunctionBranch>::new();
     let first_branch = parse_function_branch(it)?;
-    loop {
-        match it.peek() {
-            Some(Token {
-                token_type: TokenType::Backslash,
-                ..
-            }) => {
-                let branch = parse_function_branch(it)?;
-                branches.push(branch);
-            }
-            _ => break,
-        }
+    while let Some(Token {
+        token_type: TokenType::Backslash,
+        ..
+    }) = it.peek()
+    {
+        let branch = parse_function_branch(it)?;
+        branches.push(branch);
     }
     Ok(Function {
         first_branch,
@@ -155,7 +150,7 @@ pub fn parse_function_arguments(
 pub fn parse_function_argument(
     it: &mut Peekable<Iter<Token>>,
 ) -> Result<FunctionArgument, ParseError> {
-    if let Some(_) = it.peek() {
+    if it.peek().is_some() {
         let destructure_pattern = parse_destructure_pattern(it)?;
         let type_annotation = try_parse_colon_type_annotation(it)?;
         let default_value = try_parse_argument_default_value(it)?;
@@ -373,7 +368,7 @@ pub fn try_parse_function_call(
 
 pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
     if let Some(token) = it.peek() {
-        match &token.clone().token_type {
+        match &token.token_type {
             TokenType::String(_) => {
                 let token = it.next().unwrap();
                 try_parse_function_call(
