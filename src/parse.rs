@@ -411,6 +411,10 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                 parse_record_or_block(it)
             }
             TokenType::KeywordLet => parse_let_expression(it),
+            TokenType::Number => Ok(Expression {
+                value: ExpressionValue::Number(it.next().unwrap().clone()),
+                inferred_type: Some(Type::Number),
+            }),
             other => {
                 panic!("{:#?}", other.clone())
                 // match try_parse_function(it) {

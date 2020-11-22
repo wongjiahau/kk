@@ -26,6 +26,7 @@ pub enum SymbolSource {
 
 #[derive(Debug)]
 pub enum Type {
+    Number,
     String,
     Name(Token),
     Tag(Token),
@@ -51,6 +52,7 @@ pub struct Expression {
 
 #[derive(Debug)]
 pub enum ExpressionValue {
+    Number(Token),
     String(Token),
     Variable(Token),
     Tag(Token),
@@ -148,6 +150,7 @@ pub enum TokenType {
     Tag(String),
     Identifier(String),
     String(String),
+    Number,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

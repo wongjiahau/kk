@@ -167,6 +167,11 @@ mod tests {
     }
 
     #[test]
+    fn test_number_literal() {
+        assert_debug_snapshot!(transpile_source("let x = -123.456".to_string()))
+    }
+
+    #[test]
     fn test_function_1() {
         assert_debug_snapshot!(transpile_source("let x = \\x => 'yo'".to_string()))
     }

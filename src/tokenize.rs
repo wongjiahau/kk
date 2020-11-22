@@ -80,7 +80,56 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     },
                 });
             }
-            '0'..='9' => {}
+            '-' | '0'..='9' => {
+                let column_start = column_number;
+                let mut result = c.to_string();
+
+                // parse left
+                while index < chars_length - 1 {
+                    let next = chars[index + 1];
+                    match next {
+                        '0'..='9' => {
+                            result.push(next);
+                            index += 1;
+                            column_number += 1;
+                        }
+                        _ => {
+                            break;
+                        }
+                    }
+                }
+
+                // parse right
+                if index < chars_length - 1 && chars[index + 1] == '.' {
+                    result.push('.');
+                    index += 1;
+                    column_number += 1;
+                    while index < chars_length - 1 {
+                        let next = chars[index + 1];
+                        match next {
+                            '0'..='9' => {
+                                result.push(next);
+                                index += 1;
+                                column_number += 1;
+                            }
+                            _ => {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                tokens.push(Token {
+                    token_type: TokenType::Number,
+                    representation: result.to_string(),
+                    position: Position {
+                        column_start,
+                        column_end: column_number,
+                        line_start: line_number,
+                        line_end: line_number,
+                    },
+                });
+            }
             'A'..='Z' | 'a'..='z' | '_' => {
                 let column_start = column_number;
                 let mut result = c.to_string();

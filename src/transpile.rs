@@ -38,6 +38,7 @@ pub fn transpile_statement(statement: Statement) -> String {
     pub fn transpile_expression(expression: Expression) -> String {
         match expression.value {
             ExpressionValue::String(s) => s.representation,
+            ExpressionValue::Number(n) => n.representation,
             ExpressionValue::Variable(v) => v.representation,
             ExpressionValue::Tag(t) => format!("{{$:'{}'}}", transpile_tag(t.representation)),
             ExpressionValue::Record { key_value_pairs } => format!(
