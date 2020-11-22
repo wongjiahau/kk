@@ -147,9 +147,9 @@ pub enum TokenType {
     ArrowRight,
     Backslash,
     Underscore,
-    Tag(String),
-    Identifier(String),
-    String(String),
+    Tag,
+    Identifier,
+    String,
     Number,
 }
 

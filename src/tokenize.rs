@@ -17,7 +17,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                 loop {
                     if index == chars_length - 1 {
                         tokens.push(Token {
-                            token_type: TokenType::Tag(result.to_string()),
+                            token_type: TokenType::Tag,
                             representation: result.to_string(),
                             position: Position {
                                 column_start,
@@ -37,7 +37,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                         }
                         _ => {
                             tokens.push(Token {
-                                token_type: TokenType::Tag(result.to_string()),
+                                token_type: TokenType::Tag,
                                 representation: result.to_string(),
                                 position: Position {
                                     column_start,
@@ -70,7 +70,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     }
                 }
                 tokens.push(Token {
-                    token_type: TokenType::String(result.to_string()),
+                    token_type: TokenType::String,
                     representation: result.to_string(),
                     position: Position {
                         column_start,
@@ -241,6 +241,6 @@ pub fn get_token_type(s: String) -> TokenType {
     } else if s.eq("type") {
         TokenType::KeywordType
     } else {
-        TokenType::Identifier(s)
+        TokenType::Identifier
     }
 }

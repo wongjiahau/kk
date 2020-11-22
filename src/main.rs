@@ -52,7 +52,7 @@ mod tests {
             tokenize("#Hello_world123 ".to_string()),
             Ok(vec![
                 Token {
-                    token_type: TokenType::Tag("#Hello_world123".to_string()),
+                    token_type: TokenType::Tag,
                     representation: "#Hello_world123".to_string(),
                     position: Position {
                         column_start: 0,
@@ -81,7 +81,7 @@ mod tests {
         assert_eq!(
             tokenize(string.clone()),
             Ok(vec![Token {
-                token_type: TokenType::String(string.clone()),
+                token_type: TokenType::String,
                 representation: string.clone(),
                 position: Position {
                     column_start: 0,
@@ -99,7 +99,7 @@ mod tests {
         assert_eq!(
             tokenize(string.clone()),
             Ok(vec![Token {
-                token_type: TokenType::Identifier(string.clone()),
+                token_type: TokenType::Identifier,
                 representation: string.clone(),
                 position: Position {
                     column_start: 0,

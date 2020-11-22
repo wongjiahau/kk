@@ -196,7 +196,7 @@ pub fn try_parse_colon_type_annotation(
 pub fn parse_type_annotation(it: &mut Peekable<Iter<Token>>) -> Result<TypeAnnotation, ParseError> {
     if let Some(token) = it.next() {
         match token.token_type {
-            TokenType::Identifier(_) => Ok(TypeAnnotation {
+            TokenType::Identifier => Ok(TypeAnnotation {
                 _type: Type::Name(token.clone()),
                 source: None,
             }),
@@ -251,7 +251,7 @@ pub fn parse_function_call(
         }
         match it.peek() {
             Some(Token {
-                token_type: TokenType::Identifier(_),
+                token_type: TokenType::Identifier,
                 ..
             }) => {
                 let token = it.next().unwrap();
@@ -343,7 +343,7 @@ pub fn parse_function_call_arguments(
 pub fn try_parse_identifier(it: &mut Peekable<Iter<Token>>) -> Option<Token> {
     match it.peek() {
         Some(Token {
-            token_type: TokenType::Identifier(_),
+            token_type: TokenType::Identifier,
             ..
         }) => Some(it.next().unwrap().clone()),
         _ => None,
@@ -369,7 +369,7 @@ pub fn try_parse_function_call(
 pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
     if let Some(token) = it.peek() {
         match &token.token_type {
-            TokenType::String(_) => {
+            TokenType::String => {
                 let token = it.next().unwrap();
                 try_parse_function_call(
                     it,
@@ -379,7 +379,7 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                     },
                 )
             }
-            TokenType::Identifier(_) => {
+            TokenType::Identifier => {
                 let token = it.next().unwrap();
                 try_parse_function_call(
                     it,
@@ -389,7 +389,7 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                     },
                 )
             }
-            TokenType::Tag(_) => {
+            TokenType::Tag => {
                 let token = it.next().unwrap();
                 try_parse_function_call(
                     it,
@@ -425,7 +425,7 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                 //     None => {
 
                 //     match other {
-                //         TokenType::Identifier(_) => Ok(Expression {
+                //         TokenType::Identifier => Ok(Expression {
                 //             value: ExpressionValue::Variable(*token.clone()),
                 //             inferred_type: None
                 //         }),
@@ -446,7 +446,7 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
 pub fn parse_record_or_block(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
     match it.peek() {
         Some(Token {
-            token_type: TokenType::Identifier(_),
+            token_type: TokenType::Identifier,
             ..
         }) => parse_record(it),
         Some(_) => parse_let_expression(it),
@@ -462,7 +462,7 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
     loop {
         match it.peek() {
             Some(Token {
-                token_type: TokenType::Identifier(_),
+                token_type: TokenType::Identifier,
                 ..
             }) => {
                 let key = it.next().unwrap();
@@ -516,8 +516,8 @@ pub fn parse_destructure_pattern(
 ) -> Result<DestructurePattern, ParseError> {
     if let Some(token) = it.next() {
         match &token.token_type {
-            TokenType::Identifier(_) => Ok(DestructurePattern::Identifier(token.clone())),
-            TokenType::Tag(_) => match it.peek() {
+            TokenType::Identifier => Ok(DestructurePattern::Identifier(token.clone())),
+            TokenType::Tag => match it.peek() {
                 Some(Token {
                     token_type: TokenType::LeftParenthesis,
                     ..
