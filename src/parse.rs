@@ -425,6 +425,7 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                 })
             }
             TokenType::LeftCurlyBracket => parse_record(it),
+            TokenType::LeftSquareBracket => parse_array(it),
             TokenType::KeywordLet => parse_let_expression(it),
             TokenType::Number => Ok(Expression {
                 value: ExpressionValue::Number(it.next().unwrap().clone()),
@@ -438,6 +439,25 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
             suggestion: None,
         })
     }
+}
+
+pub fn parse_array(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
+    eat_token(it, TokenType::LeftSquareBracket)?;
+    let mut result: Vec<Expression> = Vec::new();
+    loop {
+        if try_eat_token(it, TokenType::RightSquareBracket) {
+            break;
+        }
+        result.push(parse_expression(it)?);
+        if !try_eat_token(it, TokenType::Comma) {
+            eat_token(it, TokenType::RightSquareBracket)?;
+            break;
+        }
+    }
+    Ok(Expression {
+        value: ExpressionValue::Array(result),
+        inferred_type: None,
+    })
 }
 
 pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {

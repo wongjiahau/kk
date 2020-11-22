@@ -172,6 +172,11 @@ mod tests {
     }
 
     #[test]
+    fn test_array_literal_1() {
+        assert_debug_snapshot!(transpile_source("let x = [[],[2],[3,4,],]".to_string()))
+    }
+
+    #[test]
     fn test_function_1() {
         assert_debug_snapshot!(transpile_source("let x = \\x => 'yo'".to_string()))
     }

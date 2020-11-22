@@ -71,6 +71,7 @@ pub enum ExpressionValue {
     Record {
         key_value_pairs: Vec<RecordKeyValue>,
     },
+    Array(Vec<Expression>),
     Let {
         left: DestructurePattern,
         right: Box<Expression>,

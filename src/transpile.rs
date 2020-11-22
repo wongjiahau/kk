@@ -78,6 +78,14 @@ pub fn transpile_statement(statement: Statement) -> String {
                     .collect::<Vec<String>>()
                     .join(",")
             ),
+            ExpressionValue::Array(values) => format!(
+                "[{}]",
+                values
+                    .into_iter()
+                    .map(transpile_expression)
+                    .collect::<Vec<String>>()
+                    .join(",")
+            ),
             ExpressionValue::Let {
                 left,
                 right,
