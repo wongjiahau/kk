@@ -45,7 +45,7 @@ pub fn transpile_statement(statement: Statement) -> String {
                 "{{{}}}",
                 key_value_pairs
                     .into_iter()
-                    .map(|(key, value)| {
+                    .map(|RecordKeyValue { key, value, .. }| {
                         format!("{}: {}", key.representation, transpile_expression(value))
                     })
                     .collect::<Vec<String>>()
@@ -206,6 +206,30 @@ pub fn transpile_statement(statement: Statement) -> String {
                     Some(rest) => join_transpiled_destructure_pattern(first, rest),
                 }
             }
+            DestructurePattern::Record { key_value_pairs } => key_value_pairs.into_iter().fold(
+                TranspiledDestructurePattern {
+                    bindings: vec![],
+                    conditions: vec![],
+                },
+                |result, DestructuredRecordKeyValue { key, as_value, .. }| {
+                    join_transpiled_destructure_pattern(
+                        result,
+                        match as_value {
+                            None => TranspiledDestructurePattern {
+                                bindings: vec![format!(
+                                    "var {} = {}.{}",
+                                    key.representation, from_expression, key.representation
+                                )],
+                                conditions: vec![],
+                            },
+                            Some(destructure_pattern) => transpile_function_destructure_pattern(
+                                destructure_pattern,
+                                format!("{}.{}", from_expression, key.representation),
+                            ),
+                        },
+                    )
+                },
+            ),
         }
     }
 

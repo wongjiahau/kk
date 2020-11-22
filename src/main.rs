@@ -227,7 +227,9 @@ mod tests {
 
     #[test]
     fn test_record_1() {
-        assert_debug_snapshot!(transpile_source("let x = {a: {b: c}, d: e}".to_string()))
+        assert_debug_snapshot!(transpile_source(
+            "let x = {a: int = {b = c}, d = e}".to_string()
+        ))
     }
 
     #[test]
@@ -245,6 +247,16 @@ mod tests {
                 let #some(x) = a
                 let #ok(y) = b 
                 x.plus(y)
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_destructure_record_1() {
+        assert_debug_snapshot!(transpile_source(
+            "
+            let f = \\{a, b= #ok(#some(c))} => a.plus(c)
             "
             .to_string()
         ))

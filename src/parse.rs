@@ -350,6 +350,24 @@ pub fn try_parse_identifier(it: &mut Peekable<Iter<Token>>) -> Option<Token> {
     }
 }
 
+pub fn parse_identifier(it: &mut Peekable<Iter<Token>>) -> Result<Token, ParseError> {
+    match it.peek() {
+        Some(Token {
+            token_type: TokenType::Identifier,
+            ..
+        }) => Ok(it.next().unwrap().clone()),
+        Some(_) => Err(ParseError::InvalidToken {
+            invalid_token: it.next().unwrap().clone(),
+            error: "Expected identifier".to_string(),
+            suggestion: None,
+        }),
+        _ => Err(ParseError::UnexpectedEOF {
+            error: "Expected identifier".to_string(),
+            suggestion: None,
+        }),
+    }
+}
+
 pub fn try_parse_function_call(
     it: &mut Peekable<Iter<Token>>,
     first_arg: Expression,
@@ -458,7 +476,7 @@ pub fn parse_record_or_block(it: &mut Peekable<Iter<Token>>) -> Result<Expressio
 }
 
 pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
-    let mut key_value_pairs: Vec<(Token, Expression)> = Vec::new();
+    let mut key_value_pairs: Vec<RecordKeyValue> = Vec::new();
     loop {
         match it.peek() {
             Some(Token {
@@ -466,9 +484,14 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
                 ..
             }) => {
                 let key = it.next().unwrap();
-                eat_token(it, TokenType::Colon)?;
+                let type_annotation = try_parse_colon_type_annotation(it)?;
+                eat_token(it, TokenType::Equals)?;
                 let value = parse_expression(it)?;
-                key_value_pairs.push((key.clone(), value))
+                key_value_pairs.push(RecordKeyValue {
+                    key: key.clone(),
+                    type_annotation,
+                    value,
+                })
             }
             Some(&other) => {
                 return Err(ParseError::InvalidToken {
@@ -536,6 +559,32 @@ pub fn parse_destructure_pattern(
                 }),
             },
             TokenType::Underscore => Ok(DestructurePattern::Underscore(token.clone())),
+            TokenType::LeftCurlyBracket => {
+                let mut key_value_pairs: Vec<DestructuredRecordKeyValue> = Vec::new();
+                loop {
+                    if try_eat_token(it, TokenType::RightCurlyBracket) {
+                        break;
+                    }
+                    let key = parse_identifier(it)?;
+                    let type_annotation = try_parse_colon_type_annotation(it)?;
+                    let as_value = if try_eat_token(it, TokenType::Equals) {
+                        Some(parse_destructure_pattern(it)?)
+                    } else {
+                        None
+                    };
+                    key_value_pairs.push(DestructuredRecordKeyValue {
+                        key,
+                        type_annotation,
+                        as_value,
+                        spread: None, // TODO: parse spread
+                    });
+                    if !try_eat_token(it, TokenType::Comma) {
+                        eat_token(it, TokenType::RightCurlyBracket)?;
+                        break;
+                    }
+                }
+                Ok(DestructurePattern::Record { key_value_pairs })
+            }
             other => panic!("Unimplemented {:#?}", other),
         }
     } else {

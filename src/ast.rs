@@ -41,7 +41,17 @@ pub enum DestructurePattern {
         token: Token,
         payload: Option<Box<DestructurePattern>>,
     },
-    // Record
+    Record {
+        key_value_pairs: Vec<DestructuredRecordKeyValue>,
+    },
+}
+
+#[derive(Debug)]
+pub struct DestructuredRecordKeyValue {
+    pub key: Token,
+    pub type_annotation: Option<TypeAnnotation>,
+    pub as_value: Option<DestructurePattern>,
+    pub spread: Option<Token>,
 }
 
 #[derive(Debug)]
@@ -59,13 +69,20 @@ pub enum ExpressionValue {
     Function(Function),
     FunctionCall(FunctionCall),
     Record {
-        key_value_pairs: Vec<(Token, Expression)>,
+        key_value_pairs: Vec<RecordKeyValue>,
     },
     Let {
         left: DestructurePattern,
         right: Box<Expression>,
         return_value: Box<Expression>,
     },
+}
+
+#[derive(Debug)]
+pub struct RecordKeyValue {
+    pub key: Token,
+    pub type_annotation: Option<TypeAnnotation>,
+    pub value: Expression,
 }
 
 #[derive(Debug)]
