@@ -157,6 +157,47 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     },
                 });
             }
+            '.' => {
+                let mut result = c.to_string();
+                let column_start = column_number;
+                while index < chars_length - 1 {
+                    let next = chars[index + 1];
+                    match next {
+                        '.' => {
+                            result.push(next);
+                            index += 1;
+                            column_number += 1;
+                        }
+                        _ => {
+                            break;
+                        }
+                    }
+                }
+                let position = Position {
+                    column_start,
+                    column_end: column_number,
+                    line_start: line_number,
+                    line_end: line_number,
+                };
+                match result.len() {
+                    1 => tokens.push(Token {
+                        token_type: TokenType::Period,
+                        representation: result.to_string(),
+                        position,
+                    }),
+                    3 => tokens.push(Token {
+                        token_type: TokenType::Spread,
+                        representation: result.to_string(),
+                        position,
+                    }),
+                    _ => {
+                        return Err(ParseError::InvalidChar {
+                            error: "Only one dot (.) or three dots (...) is acceptable".to_string(),
+                            position,
+                        })
+                    }
+                }
+            }
 
             '=' => {
                 let eq_token = Token {
@@ -211,7 +252,8 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                         ' ' => TokenType::Whitespace,
                         ':' => TokenType::Colon,
                         ';' => TokenType::Semicolon,
-                        '.' => TokenType::Period,
+                        '+' => TokenType::Plus,
+                        '-' => TokenType::Minus,
                         ',' => TokenType::Comma,
                         '<' => TokenType::LessThan,
                         '>' => TokenType::MoreThan,

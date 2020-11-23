@@ -49,8 +49,15 @@ pub fn transpile_expression(expression: Expression) -> String {
             ),
             None => format!("{{$:'{}'}}", transpile_tag(token.representation)),
         },
-        ExpressionValue::Record { key_value_pairs } => format!(
-            "{{{}}}",
+        ExpressionValue::Record {
+            spread,
+            key_value_pairs,
+        } => format!(
+            "{{{}{}}}",
+            match spread {
+                None => "".to_string(),
+                Some(expression) => format!("...({}),", transpile_expression(*expression)),
+            },
             key_value_pairs
                 .into_iter()
                 .map(|RecordKeyValue { key, value, .. }| {

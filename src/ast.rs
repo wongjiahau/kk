@@ -72,6 +72,7 @@ pub enum ExpressionValue {
     Function(Function),
     FunctionCall(FunctionCall),
     Record {
+        spread: Option<Box<Expression>>,
         key_value_pairs: Vec<RecordKeyValue>,
     },
     Array(Vec<Expression>),
@@ -123,6 +124,10 @@ pub struct FunctionArgument {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
+    InvalidChar {
+        position: Position,
+        error: String,
+    },
     InvalidToken {
         invalid_token: Token,
         error: String,
@@ -164,7 +169,10 @@ pub enum TokenType {
     MoreThan,
     Equals,
     Period,
+    Spread,
     Comma,
+    Plus,
+    Minus,
     ArrowRight,
     Backslash,
     Underscore,

@@ -472,6 +472,24 @@ pub fn parse_array(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseEr
 
 pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
     eat_token(it, TokenType::LeftCurlyBracket)?;
+    let spread = if try_eat_token(it, TokenType::Spread) {
+        let expression = parse_expression(it)?;
+        match it.peek() {
+            Some(Token {
+                token_type: TokenType::RightCurlyBracket,
+                ..
+            }) => {
+                try_eat_token(it, TokenType::Comma);
+            }
+            _ => match eat_token(it, TokenType::Comma) {
+                Err(error) => return Err(error),
+                _ => (),
+            },
+        };
+        Some(Box::new(expression))
+    } else {
+        None
+    };
     let mut key_value_pairs: Vec<RecordKeyValue> = Vec::new();
     loop {
         match it.peek() {
@@ -509,7 +527,10 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
     }
     eat_token(it, TokenType::RightCurlyBracket)?;
     Ok(Expression {
-        value: ExpressionValue::Record { key_value_pairs },
+        value: ExpressionValue::Record {
+            spread,
+            key_value_pairs,
+        },
         inferred_type: None,
     })
 }
