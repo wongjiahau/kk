@@ -177,6 +177,11 @@ mod tests {
     }
 
     #[test]
+    fn test_tag_literal_1() {
+        assert_debug_snapshot!(transpile_source("let x = #ok(#some(2))".to_string()))
+    }
+
+    #[test]
     fn test_function_1() {
         assert_debug_snapshot!(transpile_source("let x = \\x => 'yo'".to_string()))
     }

@@ -65,7 +65,10 @@ pub enum ExpressionValue {
     Number(Token),
     String(Token),
     Variable(Token),
-    Tag(Token),
+    Tag {
+        token: Token,
+        payload: Option<Box<Expression>>,
+    },
     Function(Function),
     FunctionCall(FunctionCall),
     Record {

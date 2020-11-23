@@ -40,7 +40,14 @@ pub fn transpile_statement(statement: Statement) -> String {
             ExpressionValue::String(s) => s.representation,
             ExpressionValue::Number(n) => n.representation,
             ExpressionValue::Variable(v) => v.representation,
-            ExpressionValue::Tag(t) => format!("{{$:'{}'}}", transpile_tag(t.representation)),
+            ExpressionValue::Tag { token, payload } => match payload {
+                Some(payload) => format!(
+                    "{{$:'{}',_:{}}}",
+                    transpile_tag(token.representation),
+                    transpile_expression(*payload)
+                ),
+                None => format!("{{$:'{}'}}", transpile_tag(token.representation)),
+            },
             ExpressionValue::Record { key_value_pairs } => format!(
                 "{{{}}}",
                 key_value_pairs

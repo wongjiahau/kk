@@ -409,10 +409,20 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
             }
             TokenType::Tag => {
                 let token = it.next().unwrap();
+                let payload = if try_eat_token(it, TokenType::LeftParenthesis) {
+                    let payload = parse_expression(it)?;
+                    eat_token(it, TokenType::RightParenthesis)?;
+                    Some(Box::new(payload))
+                } else {
+                    None
+                };
                 try_parse_function_call(
                     it,
                     Expression {
-                        value: ExpressionValue::Tag(token.clone()),
+                        value: ExpressionValue::Tag {
+                            token: token.clone(),
+                            payload,
+                        },
                         inferred_type: Some(Type::Tag(token.clone())),
                     },
                 )
