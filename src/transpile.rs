@@ -6,6 +6,7 @@ pub fn transpile_statements(statements: Vec<Statement>) -> String {
 
 pub fn transpile_statement(statement: Statement) -> String {
     match statement {
+        Statement::TypeAlias { .. } => "".to_string(),
         Statement::Let { left, right, .. } => match right.value {
             ExpressionValue::Let { .. } => {
                 return format!(

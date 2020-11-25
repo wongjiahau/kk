@@ -5,14 +5,30 @@ pub enum Statement {
         right: Expression,
         type_annotation: Option<TypeAnnotation>,
     },
+    TypeAlias {
+        left: Token,
+        right: TypeAnnotation,
+        type_variables: Vec<TypeVariable>,
+    },
+}
+
+#[derive(Debug)]
+pub struct TypeVariable {
+    pub token: Token,
 }
 
 #[derive(Debug)]
 pub struct TypeAnnotation {
-    pub _type: Type,
+    pub representation: TypeRepresentation,
 
-    /// If not defined means not verified
-    pub source: Option<SymbolSource>,
+    /// If None means not determined yet
+    pub value: Option<Type>,
+}
+
+#[derive(Debug)]
+pub enum Type {
+    String,
+    Number,
 }
 
 #[derive(Debug)]
@@ -25,12 +41,19 @@ pub enum SymbolSource {
 }
 
 #[derive(Debug)]
-pub enum Type {
-    Number,
-    String,
+pub enum TypeRepresentation {
     Name(Token),
-    Tag(Token),
+    Record {
+        key_value_pairs: Vec<(Token, TypeAnnotation)>,
+    },
+    Tag {
+        token: Token,
+        payload: Option<Box<TypeAnnotation>>,
+    },
     Underscore,
+    Union {
+        type_annotations: Vec<TypeAnnotation>,
+    },
 }
 
 #[derive(Debug)]

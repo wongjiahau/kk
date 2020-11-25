@@ -24,16 +24,27 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
                     TokenType::KeywordLet => {
                         eat_token(it, TokenType::KeywordLet)?;
                         let left = parse_destructure_pattern(it)?;
-                        // TODO: eat type annotation
+                        let type_annotation = try_parse_colon_type_annotation(it)?;
                         eat_token(it, TokenType::Equals)?;
                         let right = parse_expression(it)?;
                         statements.push(Statement::Let {
                             left,
                             right,
-                            type_annotation: None,
+                            type_annotation,
                         })
                     }
-                    TokenType::KeywordType => panic!(),
+                    TokenType::KeywordType => {
+                        eat_token(it, TokenType::KeywordType)?;
+                        let left = parse_identifier(it)?;
+                        // TODO: parse type parameter
+                        eat_token(it, TokenType::Equals)?;
+                        let right = parse_type_annotation(it)?;
+                        statements.push(Statement::TypeAlias {
+                            left,
+                            type_variables: vec![],
+                            right,
+                        })
+                    }
                     _ => {
                         if !statements.is_empty() {
                             break;
@@ -90,7 +101,7 @@ pub fn eat_token(it: &mut Peekable<Iter<Token>>, token_type: TokenType) -> Resul
     } else {
         Err(ParseError::UnexpectedEOF {
             error: format!("Expected {:?} but reach EOF", token_type),
-            suggestion: Some("Add = after here".to_string()),
+            suggestion: None,
         })
     }
 }
@@ -195,12 +206,65 @@ pub fn try_parse_colon_type_annotation(
 }
 
 pub fn parse_type_annotation(it: &mut Peekable<Iter<Token>>) -> Result<TypeAnnotation, ParseError> {
-    if let Some(token) = it.next() {
+    let mut type_annotations = Vec::new();
+    let first_type_annotation = parse_simple_type_annotation(it)?;
+    while try_eat_token(it, TokenType::Pipe) {
+        type_annotations.push(parse_simple_type_annotation(it)?)
+    }
+    if type_annotations.is_empty() {
+        Ok(first_type_annotation)
+    } else {
+        type_annotations.reverse();
+        type_annotations.push(first_type_annotation);
+        type_annotations.reverse();
+        Ok(TypeAnnotation {
+            representation: TypeRepresentation::Union { type_annotations },
+            value: None,
+        })
+    }
+}
+
+pub fn parse_simple_type_annotation(
+    it: &mut Peekable<Iter<Token>>,
+) -> Result<TypeAnnotation, ParseError> {
+    if let Some(token) = it.peek() {
         match token.token_type {
             TokenType::Identifier => Ok(TypeAnnotation {
-                _type: Type::Name(token.clone()),
-                source: None,
+                representation: TypeRepresentation::Name(it.next().unwrap().clone()),
+                value: None,
             }),
+            TokenType::Tag => {
+                let token = it.next().unwrap().clone();
+                let payload = if try_eat_token(it, TokenType::LeftParenthesis) {
+                    let payload = parse_type_annotation(it)?;
+                    eat_token(it, TokenType::RightParenthesis)?;
+                    Some(Box::new(payload))
+                } else {
+                    None
+                };
+                Ok(TypeAnnotation {
+                    representation: TypeRepresentation::Tag { token, payload },
+                    value: None,
+                })
+            }
+            TokenType::LeftCurlyBracket => {
+                eat_token(it, TokenType::LeftCurlyBracket)?;
+                let mut key_value_pairs: Vec<(Token, TypeAnnotation)> = Vec::new();
+                loop {
+                    let key = parse_identifier(it)?;
+                    eat_token(it, TokenType::Colon)?;
+                    let type_annotation = parse_type_annotation(it)?;
+                    key_value_pairs.push((key, type_annotation));
+                    if !try_eat_token(it, TokenType::Comma) {
+                        break;
+                    }
+                }
+                eat_token(it, TokenType::RightCurlyBracket)?;
+                Ok(TypeAnnotation {
+                    representation: TypeRepresentation::Record { key_value_pairs },
+                    value: None,
+                })
+            }
             _ => panic!(),
         }
     } else {
@@ -424,7 +488,7 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
                             token: token.clone(),
                             payload,
                         },
-                        inferred_type: Some(Type::Tag(token.clone())),
+                        inferred_type: None,
                     },
                 )
             }
@@ -482,10 +546,11 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
             }) => {
                 try_eat_token(it, TokenType::Comma);
             }
-            _ => match eat_token(it, TokenType::Comma) {
-                Err(error) => return Err(error),
-                _ => (),
-            },
+            _ => {
+                if let Err(error) = eat_token(it, TokenType::Comma) {
+                    return Err(error);
+                }
+            }
         };
         Some(Box::new(expression))
     } else {

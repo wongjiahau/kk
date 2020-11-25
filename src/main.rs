@@ -274,10 +274,19 @@ mod tests {
     #[test]
     fn test_destructure_record_1() {
         assert_debug_snapshot!(transpile_source(
-            "
-            let f = \\{a, b= #ok(#some(c))} => a.plus(c)
-            "
-            .to_string()
+            "let f = \\{a, b= #ok(#some(c))} => a.plus(c)".to_string()
+        ))
+    }
+
+    #[test]
+    fn test_type_annotation_1() {
+        assert_debug_snapshot!(transpile_source("let x: number = 1".to_string()))
+    }
+
+    #[test]
+    fn test_type_alias_1() {
+        assert_debug_snapshot!(transpile_source(
+            "type Shape = #circle({radius: string}) | #none | #square(number)".to_string()
         ))
     }
 }

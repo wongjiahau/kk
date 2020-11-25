@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"type Shape = #circle({radius: string}) | #none | #square(number)\".to_string())"
+---
+Ok(
+    "",
+)
