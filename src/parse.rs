@@ -115,36 +115,37 @@ pub fn parse_function(it: &mut Peekable<Iter<Token>>) -> Result<Function, ParseE
 pub fn parse_function_branch(it: &mut Peekable<Iter<Token>>) -> Result<FunctionBranch, ParseError> {
     eat_token(it, TokenType::Backslash)?;
     let arguments = parse_function_arguments(it)?;
+    let return_type_annotation = try_parse_colon_type_annotation(it)?;
     eat_token(it, TokenType::ArrowRight)?;
     let body = parse_expression(it)?;
-    // TODO: parse return type annotation
     Ok(FunctionBranch {
         arguments,
         body: Box::new(body),
-        return_type_annotation: None,
+        return_type_annotation,
     })
 }
 
 pub fn parse_function_arguments(
     it: &mut Peekable<Iter<Token>>,
 ) -> Result<Vec<FunctionArgument>, ParseError> {
-    let mut arguments = Vec::<FunctionArgument>::new();
-    let argument = parse_function_argument(it)?;
-    arguments.push(argument);
-    loop {
-        match it.peek() {
-            Some(Token {
-                token_type: TokenType::ArrowRight,
-                ..
-            }) => break,
-            _ => {
+    if try_eat_token(it, TokenType::LeftParenthesis) {
+        let mut arguments = Vec::<FunctionArgument>::new();
+        loop {
+            let argument = parse_function_argument(it)?;
+            arguments.push(argument);
+            if try_eat_token(it, TokenType::RightParenthesis) {
+                break;
+            } else {
                 eat_token(it, TokenType::Comma)?;
-                let argument = parse_function_argument(it)?;
-                arguments.push(argument);
+                if try_eat_token(it, TokenType::RightParenthesis) {
+                    break;
+                }
             }
         }
+        Ok(arguments)
+    } else {
+        Ok(vec![parse_function_argument(it)?])
     }
-    Ok(arguments)
 }
 
 pub fn parse_function_argument(

@@ -202,13 +202,15 @@ mod tests {
     #[test]
     fn test_function_4() {
         assert_debug_snapshot!(transpile_source(
-            "let or = \\#false, #false => #false \\ _, _ => #true".to_string()
+            "let or = \\(#false, #false,) => #false \\(_, _) => #true".to_string()
         ))
     }
 
     #[test]
     fn test_function_5() {
-        assert_debug_snapshot!(transpile_source("let square = \\x:number => x".to_string()))
+        assert_debug_snapshot!(transpile_source(
+            "let square = \\(x: number): number => x".to_string()
+        ))
     }
 
     #[test]
@@ -260,7 +262,7 @@ mod tests {
     fn test_monadic_binding_1() {
         assert_debug_snapshot!(transpile_source(
             "
-            let f = \\a, b => 
+            let f = \\(a, b) => 
                 let #some(x) = a
                 let #ok(y) = b 
                 x.plus(y)
