@@ -606,11 +606,17 @@ pub fn parse_let_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression
     let left = parse_destructure_pattern(it)?;
     eat_token(it, TokenType::Equals)?;
     let right = parse_expression(it)?;
+    let else_return = if try_eat_token(it, TokenType::KeywordElse) {
+        Some(Box::new(parse_expression(it)?))
+    } else {
+        None
+    };
     let return_value = parse_expression(it)?;
     Ok(Expression {
         value: ExpressionValue::Let {
             left,
             right: Box::new(right),
+            else_return,
             return_value: Box::new(return_value),
         },
         inferred_type: None,

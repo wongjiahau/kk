@@ -104,6 +104,7 @@ pub fn transpile_expression(expression: Expression) -> String {
         ExpressionValue::Let {
             left,
             right,
+            else_return,
             return_value,
         } => {
             let temp_placeholder = "$TEMP".to_string(); //TODO: get from symbol table to prevent name clashing
@@ -130,13 +131,22 @@ pub fn transpile_expression(expression: Expression) -> String {
                     return_value
                 )
             } else {
+                let else_return = match else_return {
+                    Some(expression) => format!(
+                        "({})({})",
+                        transpile_expression(*expression),
+                        temp_placeholder
+                    ),
+                    None => temp_placeholder,
+                };
                 format!(
-                    "{};if({}){{{};{}{}}}else{{return $TEMP}}",
+                    "{};if({}){{{};{}{}}}else{{return {}}}",
                     init,
                     conditions.join(" && "),
                     bindings.join(";"),
                     return_now,
                     return_value,
+                    else_return
                 )
             }
         }

@@ -1,6 +1,9 @@
 pub mod ast;
 use ast::*;
 
+// mod unify;
+// use unify::*;
+
 mod transpile;
 use transpile::*;
 
@@ -265,6 +268,20 @@ mod tests {
             let f = \\(a, b) => 
                 let #some(x) = a
                 let #ok(y) = b 
+                x.plus(y)
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_monadic_binding_2() {
+        assert_debug_snapshot!(transpile_source(
+            "
+            let f = \\(a, b) => 
+                let #some(x) = a
+                let #ok(y) = b 
+                    else \\_ => #none
                 x.plus(y)
             "
             .to_string()

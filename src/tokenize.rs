@@ -282,6 +282,8 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordLet
     } else if s.eq("type") {
         TokenType::KeywordType
+    } else if s.eq("else") {
+        TokenType::KeywordElse
     } else {
         TokenType::Identifier
     }

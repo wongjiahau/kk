@@ -29,6 +29,9 @@ pub struct TypeAnnotation {
 pub enum Type {
     String,
     Number,
+    TypeVariable { name: String },
+    Record { key_type_pairs: Vec<(String, Type)> },
+    Compound { name: String, arguments: Vec<Type> },
 }
 
 #[derive(Debug)]
@@ -102,6 +105,7 @@ pub enum ExpressionValue {
     Let {
         left: DestructurePattern,
         right: Box<Expression>,
+        else_return: Option<Box<Expression>>,
         return_value: Box<Expression>,
     },
 }
@@ -177,6 +181,7 @@ pub struct Token {
 pub enum TokenType {
     KeywordLet,
     KeywordType,
+    KeywordElse,
     Whitespace,
     LeftCurlyBracket,
     RightCurlyBracket,
