@@ -1,8 +1,8 @@
 pub mod ast;
 use ast::*;
 
-// mod unify;
-// use unify::*;
+mod unify;
+use unify::*;
 
 mod transpile;
 use transpile::*;
@@ -20,9 +20,34 @@ fn main() {
     )
 }
 
-pub fn transpile_source(source: String) -> Result<String, ParseError> {
+#[derive(Debug)]
+pub enum CompileError {
+    UnifyError(UnifyError),
+    ParseError(ParseError),
+}
+
+pub fn type_check_source(source: String) -> Result<(), CompileError> {
+    match source_to_statements(source) {
+        Err(parse_error) => Err(CompileError::ParseError(parse_error)),
+        Ok(statements) => match unify_program(Program {
+            source: Source::NonFile {
+                env_name: "TESTING".to_string(),
+            },
+            statements,
+        }) {
+            Err(unify_error) => Err(CompileError::UnifyError(unify_error)),
+            Ok(_) => Ok(()),
+        },
+    }
+}
+
+pub fn source_to_statements(source: String) -> Result<Vec<Statement>, ParseError> {
     let tokens = tokenize(source)?;
-    let statements = parse_statements(tokens)?;
+    parse_statements(tokens)
+}
+
+pub fn transpile_source(source: String) -> Result<String, ParseError> {
+    let statements = source_to_statements(source)?;
     // println!("{:#?}", statements);
     Ok(transpile_statements(statements))
 }
@@ -305,5 +330,10 @@ mod tests {
         assert_debug_snapshot!(transpile_source(
             "type Shape = #circle({radius: string}) | #none | #square(number)".to_string()
         ))
+    }
+
+    #[test]
+    fn test_type_check_1() {
+        assert_debug_snapshot!(type_check_source("let x: string = 123".to_string()))
     }
 }

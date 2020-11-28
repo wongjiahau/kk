@@ -17,7 +17,7 @@ pub struct TypeVariable {
     pub token: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeAnnotation {
     pub representation: TypeRepresentation,
 
@@ -25,13 +25,25 @@ pub struct TypeAnnotation {
     pub value: Option<Type>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Type {
+    NotInferred,
     String,
     Number,
-    TypeVariable { name: String },
-    Record { key_type_pairs: Vec<(String, Type)> },
-    Compound { name: String, arguments: Vec<Type> },
+    TypeVariable {
+        name: String,
+    },
+    Record {
+        key_type_pairs: Vec<(String, Type)>,
+    },
+    Compound {
+        name: String,
+        arguments: Vec<Type>,
+    },
+    Tag {
+        tagname: String,
+        payload: Option<Box<Type>>,
+    },
 }
 
 #[derive(Debug)]
@@ -43,7 +55,7 @@ pub enum SymbolSource {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeRepresentation {
     Name(Token),
     Record {
@@ -59,7 +71,7 @@ pub enum TypeRepresentation {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DestructurePattern {
     Underscore(Token),
     Identifier(Token),
@@ -72,7 +84,7 @@ pub enum DestructurePattern {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DestructuredRecordKeyValue {
     pub key: Token,
     pub type_annotation: Option<TypeAnnotation>,
@@ -208,6 +220,18 @@ pub enum TokenType {
     Identifier,
     String,
     Number,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Source {
+    File { path: String },
+    NonFile { env_name: String },
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Location {
+    pub source: Source,
+    pub position: Position,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
