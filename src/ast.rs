@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Let {
         left: DestructurePattern,
@@ -12,7 +12,7 @@ pub enum Statement {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeVariable {
     pub token: Token,
 }
@@ -27,10 +27,16 @@ pub struct TypeAnnotation {
 
 #[derive(Debug, Clone)]
 pub enum Type {
-    NotInferred,
     String,
     Number,
-    TypeVariable {
+
+    /// Cannot be specialized during type inference
+    DeclaredTypeVariable {
+        name: String,
+    },
+
+    /// Can be specialized during type inference
+    ImplicitTypeVariable {
         name: String,
     },
     Record {
@@ -44,9 +50,20 @@ pub enum Type {
         tagname: String,
         payload: Option<Box<Type>>,
     },
+    Alias {
+        name: String,
+    },
+    Function(FunctionType),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct FunctionType {
+    pub type_variables: Vec<String>,
+    pub arguments_types: Vec<Type>,
+    pub return_type: Box<Type>,
+}
+
+#[derive(Debug, Clone)]
 pub enum SymbolSource {
     BuiltIn,
     UserDefined {
@@ -92,13 +109,13 @@ pub struct DestructuredRecordKeyValue {
     pub spread: Option<Token>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub value: ExpressionValue,
     pub inferred_type: Option<Type>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExpressionValue {
     Number(Token),
     String(Token),
@@ -122,43 +139,37 @@ pub enum ExpressionValue {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecordKeyValue {
     pub key: Token,
     pub type_annotation: Option<TypeAnnotation>,
     pub value: Expression,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionCall {
     pub function: Box<Expression>,
-    pub arguments: Vec<FunctionCallArgument>,
+    pub arguments: Vec<Expression>,
 }
 
-#[derive(Debug)]
-pub struct FunctionCallArgument {
-    pub argument_name: Option<Token>,
-    pub value: Expression,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub first_branch: FunctionBranch,
     pub branches: Vec<FunctionBranch>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionBranch {
+    pub start_token: Token,
     pub arguments: Vec<FunctionArgument>,
     pub body: Box<Expression>,
     pub return_type_annotation: Option<TypeAnnotation>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionArgument {
     pub destructure_pattern: DestructurePattern,
     pub type_annotation: Option<TypeAnnotation>,
-    pub default_value: Option<Expression>,
 }
 
 #[derive(Debug, PartialEq, Eq)]

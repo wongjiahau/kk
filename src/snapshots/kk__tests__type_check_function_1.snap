@@ -1,0 +1,23 @@
+---
+source: src/main.rs
+expression: "type_check_source(\"\n            let f = \n                \\\\(x: number) => 1\n                \\\\(x, y) => 1\n            \".to_string())"
+---
+Err(
+    UnifyError(
+        InvalidFunctionArgumentLength {
+            location: Location {
+                source: NonFile {
+                    env_name: "TESTING",
+                },
+                position: Position {
+                    line_start: 3,
+                    line_end: 3,
+                    column_start: 25,
+                    column_end: 28,
+                },
+            },
+            expected_length: 1,
+            actual_length: 2,
+        },
+    ),
+)

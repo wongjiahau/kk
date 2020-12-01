@@ -87,10 +87,13 @@ pub fn try_eat_token(it: &mut Peekable<Iter<Token>>, token_type: TokenType) -> b
     }
 }
 
-pub fn eat_token(it: &mut Peekable<Iter<Token>>, token_type: TokenType) -> Result<(), ParseError> {
+pub fn eat_token(
+    it: &mut Peekable<Iter<Token>>,
+    token_type: TokenType,
+) -> Result<Token, ParseError> {
     if let Some(token) = it.next() {
         if token.token_type == token_type {
-            Ok(())
+            Ok(token.clone())
         } else {
             Err(ParseError::InvalidToken {
                 invalid_token: token.clone(),
@@ -127,9 +130,10 @@ pub fn parse_function_branch(it: &mut Peekable<Iter<Token>>) -> Result<FunctionB
     eat_token(it, TokenType::Backslash)?;
     let arguments = parse_function_arguments(it)?;
     let return_type_annotation = try_parse_colon_type_annotation(it)?;
-    eat_token(it, TokenType::ArrowRight)?;
+    let start_token = eat_token(it, TokenType::ArrowRight)?;
     let body = parse_expression(it)?;
     Ok(FunctionBranch {
+        start_token,
         arguments,
         body: Box::new(body),
         return_type_annotation,
@@ -165,30 +169,15 @@ pub fn parse_function_argument(
     if it.peek().is_some() {
         let destructure_pattern = parse_destructure_pattern(it)?;
         let type_annotation = try_parse_colon_type_annotation(it)?;
-        let default_value = try_parse_argument_default_value(it)?;
         Ok(FunctionArgument {
             destructure_pattern,
             type_annotation,
-            default_value,
         })
     } else {
         Err(ParseError::UnexpectedEOF {
             error: "Expected function arguments but reach EOF".to_string(),
             suggestion: Some("Add = after here".to_string()),
         })
-    }
-}
-
-pub fn try_parse_argument_default_value(
-    it: &mut Peekable<Iter<Token>>,
-) -> Result<Option<Expression>, ParseError> {
-    if try_eat_token(it, TokenType::Equals) {
-        match parse_expression(it) {
-            Ok(expression) => Ok(Some(expression)),
-            Err(error) => Err(error),
-        }
-    } else {
-        Ok(None)
     }
 }
 
@@ -279,15 +268,19 @@ pub fn parse_function_call(
     it: &mut Peekable<Iter<Token>>,
     first_arg: Expression,
 ) -> Result<Expression, ParseError> {
-    let mut pairs: Vec<(Expression, Vec<FunctionCallArgument>)> = vec![];
+    struct Pair {
+        function: Expression,
+        arguments: Vec<Expression>,
+    }
+    let mut pairs: Vec<Pair> = vec![];
     loop {
         if !try_eat_token(it, TokenType::Period) {
             pairs.reverse();
-            let (function, arguments) = pairs.pop().unwrap();
-            let mut args = vec![FunctionCallArgument {
-                argument_name: None,
-                value: first_arg,
-            }];
+            let Pair {
+                function,
+                arguments,
+            } = pairs.pop().unwrap();
+            let mut args = vec![first_arg];
             args.extend(arguments);
             let init = Expression {
                 value: ExpressionValue::FunctionCall(FunctionCall {
@@ -296,13 +289,14 @@ pub fn parse_function_call(
                 }),
                 inferred_type: None,
             };
-            let result = pairs
-                .into_iter()
-                .fold(init, |first_arg, (function, arguments)| {
-                    let mut args = vec![FunctionCallArgument {
-                        argument_name: None,
-                        value: first_arg,
-                    }];
+            let result = pairs.into_iter().fold(
+                init,
+                |first_arg,
+                 Pair {
+                     function,
+                     arguments,
+                 }| {
+                    let mut args = vec![first_arg];
                     args.extend(arguments);
                     Expression {
                         value: ExpressionValue::FunctionCall(FunctionCall {
@@ -311,7 +305,8 @@ pub fn parse_function_call(
                         }),
                         inferred_type: None,
                     }
-                });
+                },
+            );
             return Ok(result);
         }
         match it.peek() {
@@ -325,7 +320,10 @@ pub fn parse_function_call(
                     inferred_type: None,
                 };
                 let function_call_arguments = parse_function_call_arguments(it)?;
-                pairs.push((function_name, function_call_arguments))
+                pairs.push(Pair {
+                    function: function_name,
+                    arguments: function_call_arguments,
+                })
             }
             Some(Token {
                 token_type: TokenType::LeftParenthesis,
@@ -335,7 +333,10 @@ pub fn parse_function_call(
                 let function = parse_expression(it)?;
                 eat_token(it, TokenType::RightParenthesis)?;
                 let function_call_arguments = parse_function_call_arguments(it)?;
-                pairs.push((function, function_call_arguments))
+                pairs.push(Pair {
+                    function,
+                    arguments: function_call_arguments,
+                })
             }
             Some(_) => {
                 let invalid_token = it.next().unwrap();
@@ -357,43 +358,16 @@ pub fn parse_function_call(
 
 pub fn parse_function_call_arguments(
     it: &mut Peekable<Iter<Token>>,
-) -> Result<Vec<FunctionCallArgument>, ParseError> {
+) -> Result<Vec<Expression>, ParseError> {
     match it.peek() {
         Some(Token {
             token_type: TokenType::LeftParenthesis,
             ..
         }) => {
             eat_token(it, TokenType::LeftParenthesis)?;
-            let mut result: Vec<FunctionCallArgument> = vec![];
+            let mut result: Vec<Expression> = vec![];
             loop {
-                let argument_name_or_variable = try_parse_identifier(it);
-                match argument_name_or_variable {
-                    Some(token) => {
-                        if try_eat_token(it, TokenType::Colon) {
-                            let value = parse_expression(it)?;
-                            result.push(FunctionCallArgument {
-                                argument_name: Some(token),
-                                value,
-                            });
-                        } else {
-                            result.push(FunctionCallArgument {
-                                argument_name: None,
-                                value: Expression {
-                                    value: ExpressionValue::Variable(token),
-                                    inferred_type: None,
-                                },
-                            });
-                        }
-                    }
-                    None => {
-                        let value = parse_expression(it)?;
-                        result.push(FunctionCallArgument {
-                            argument_name: None,
-                            value,
-                        })
-                    }
-                }
-
+                result.push(parse_expression(it)?);
                 if !try_eat_token(it, TokenType::Comma) {
                     break;
                 }
@@ -402,16 +376,6 @@ pub fn parse_function_call_arguments(
             Ok(result)
         }
         _ => Ok(vec![]),
-    }
-}
-
-pub fn try_parse_identifier(it: &mut Peekable<Iter<Token>>) -> Option<Token> {
-    match it.peek() {
-        Some(Token {
-            token_type: TokenType::Identifier,
-            ..
-        }) => Some(it.next().unwrap().clone()),
-        _ => None,
     }
 }
 

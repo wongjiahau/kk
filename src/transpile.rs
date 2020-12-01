@@ -89,7 +89,7 @@ pub fn transpile_expression(expression: Expression) -> String {
             transpile_expression(*function),
             arguments
                 .into_iter()
-                .map(|argument| transpile_expression(argument.value))
+                .map(transpile_expression)
                 .collect::<Vec<String>>()
                 .join(",")
         ),

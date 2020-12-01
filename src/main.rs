@@ -1,6 +1,8 @@
 pub mod ast;
 use ast::*;
 
+mod environment;
+
 mod unify;
 use unify::*;
 
@@ -259,13 +261,6 @@ mod tests {
     }
 
     #[test]
-    fn test_function_call_4() {
-        assert_debug_snapshot!(transpile_source(
-            "let x = 'hello world'.replace('hello', with: 'bye')".to_string()
-        ))
-    }
-
-    #[test]
     fn test_record_1() {
         assert_debug_snapshot!(transpile_source(
             "let x = {a: int = {b = c}, d = e}".to_string()
@@ -333,7 +328,61 @@ mod tests {
     }
 
     #[test]
-    fn test_type_check_1() {
+    fn test_type_check_simple_1() {
         assert_debug_snapshot!(type_check_source("let x: string = 123".to_string()))
     }
+
+    #[test]
+    fn test_type_check_simple_2() {
+        assert_debug_snapshot!(type_check_source("let x: number = 123".to_string()))
+    }
+
+    #[test]
+    fn test_type_check_function_1() {
+        assert_debug_snapshot!(type_check_source(
+            "
+            let f = 
+                \\(x: number) => 1
+                \\(x, y) => 1
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_type_check_function_2() {
+        assert_debug_snapshot!(type_check_source(
+            "
+            let x = 2
+            let f = 'hi'.x
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_type_check_function_3() {
+        assert_debug_snapshot!(type_check_source(
+            "
+            let identity = \\x => x
+            let x = 'hello'.identity
+            let y: number = x
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
+    // #[test]
+    // fn test_type_check_function_4() {
+    //     assert_debug_snapshot!(type_check_source(
+    //         "
+    //         let as = \\x => x
+    //         let x: number = 'hello'.as<number>
+    //         "
+    //         .trim()
+    //         .to_string()
+    //     ))
+    // }
 }
