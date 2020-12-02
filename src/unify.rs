@@ -20,6 +20,24 @@ pub fn unify_program(program: Program) -> Result<(), UnifyError> {
 
 #[derive(Debug)]
 pub enum UnifyError {
+    RecordKeyTypeMismatch {
+        location: Location,
+        key: String,
+        expected_key_type: Type,
+        actual_key_type: Type,
+        expected_record_type: Vec<(String, Type)>,
+        actual_record_type: Vec<(String, Type)>,
+    },
+    RecordExtraneousKeys {
+        extraneous_keys: Vec<String>,
+        location: Location,
+        expected_type: Type,
+    },
+    RecordMissingKeys {
+        missing_keys: Vec<String>,
+        location: Location,
+        expected_type: Type,
+    },
     CannotInvokeNonFunction {
         location: Location,
         actual_type: Type,
@@ -61,14 +79,15 @@ pub fn unify_statement(
             right,
             type_annotation,
         } => {
-            let type_annotation_type = type_annotation_to_type(environment, &type_annotation)?;
+            let type_annotation_type =
+                optional_type_annotation_to_type(environment, &type_annotation)?;
             let right_type = infer_expression_type(environment, &right.value)?;
 
             // 1. Check if right matches type annotation
             let right_type = match type_annotation_type {
                 Some(type_annotation_type) => {
                     let location = get_expression_location(environment, &right.value);
-                    let (_, right_type) =
+                    let right_type =
                         unify_type(environment, type_annotation_type, right_type, location)?;
                     right_type
                 }
@@ -99,6 +118,28 @@ pub fn get_expression_position(expression_value: &ExpressionValue) -> Position {
         ExpressionValue::String(token)
         | ExpressionValue::Number(token)
         | ExpressionValue::Variable(token) => token.position.clone(),
+        ExpressionValue::Record {
+            open_curly_bracket,
+            closing_curly_bracket,
+            ..
+        } => Position {
+            line_start: open_curly_bracket.position.line_start,
+            column_start: open_curly_bracket.position.column_start,
+            line_end: closing_curly_bracket.position.line_end,
+            column_end: closing_curly_bracket.position.column_end,
+        },
+        ExpressionValue::FunctionCall(function_call) => {
+            let first_argument = function_call.arguments.first().unwrap();
+            let last_argument = function_call.arguments.last().unwrap();
+            let first_position = get_expression_position(&first_argument.value);
+            let last_position = get_expression_position(&last_argument.value);
+            Position {
+                line_start: first_position.line_start,
+                column_start: first_position.column_start,
+                line_end: last_position.line_end,
+                column_end: last_position.column_end,
+            }
+        }
         other => panic!("{:#?}", other),
     }
 }
@@ -108,19 +149,109 @@ pub fn unify_type(
     expected: Type,
     actual: Type,
     location: Location,
-) -> Result<(Type, Type), UnifyError> {
+) -> Result<Type, UnifyError> {
     let expected = environment.resolve_type_alias(expected)?;
     let actual = environment.resolve_type_alias(actual)?;
 
     match (expected.clone(), actual.clone()) {
-        (Type::String, Type::String) => Ok((expected, actual)),
-        (Type::Number, Type::Number) => Ok((expected, actual)),
+        (Type::String, Type::String) => Ok(Type::String),
+        (Type::Number, Type::Number) => Ok(Type::Number),
         (Type::ImplicitTypeVariable { name: _ }, Type::ImplicitTypeVariable { name: _ }) => {
             panic!("mismatch?")
         }
         (Type::ImplicitTypeVariable { name }, other_type) => {
             environment.specialized_type_variable(name, other_type.clone());
-            Ok((other_type.clone(), other_type))
+            Ok(other_type)
+        }
+        (
+            Type::Record {
+                key_type_pairs: mut expected_key_type_pairs,
+            },
+            Type::Record {
+                key_type_pairs: mut actual_key_type_pairs,
+            },
+        ) => {
+            let mut expected_keys = expected_key_type_pairs
+                .clone()
+                .into_iter()
+                .map(|(key, _)| key);
+
+            let mut actual_keys = actual_key_type_pairs
+                .clone()
+                .into_iter()
+                .map(|(key, _)| key);
+
+            // 1. Find for missing keys
+            let missing_keys: Vec<String> = expected_keys
+                .clone()
+                .filter(|expected_key| !actual_keys.any(|actual_key| *expected_key == actual_key))
+                .collect();
+
+            if !missing_keys.is_empty() {
+                return Err(UnifyError::RecordMissingKeys {
+                    missing_keys,
+                    expected_type: Type::Record {
+                        key_type_pairs: expected_key_type_pairs,
+                    },
+                    location,
+                });
+            }
+
+            // 2. Find for extraneous keys
+            let extraneous_keys: Vec<String> = actual_keys
+                .filter(|actual_key| !expected_keys.any(|expected_key| expected_key == *actual_key))
+                .collect();
+
+            if !extraneous_keys.is_empty() {
+                return Err(UnifyError::RecordExtraneousKeys {
+                    extraneous_keys,
+                    expected_type: Type::Record {
+                        key_type_pairs: expected_key_type_pairs,
+                    },
+                    location,
+                });
+            }
+
+            // 3. If no missing keys and no extraneous keys, that means all keys are present
+            //    Therefore we can happily zip them and expect them to align properly after sorting
+            expected_key_type_pairs.sort_by(|(key1, _), (key2, _)| key1.cmp(key2));
+
+            actual_key_type_pairs.sort_by(|(key1, _), (key2, _)| key1.cmp(key2));
+
+            let zipped = expected_key_type_pairs
+                .clone()
+                .into_iter()
+                .zip(actual_key_type_pairs.clone().into_iter());
+
+            let mut key_type_pairs: Vec<(String, Type)> = Vec::new();
+            for ((key, expected_type), (_, actual_type)) in zipped {
+                // TODO: Should pass in more specific location here
+                match unify_type(
+                    environment,
+                    expected_type.clone(),
+                    actual_type.clone(),
+                    location.clone(),
+                ) {
+                    Ok(type_value) => key_type_pairs.push((key, type_value)),
+                    Err(UnifyError::TypeMismatch {
+                        expected_type,
+                        actual_type,
+                        ..
+                    }) => {
+                        return Err(UnifyError::RecordKeyTypeMismatch {
+                            key,
+                            expected_key_type: expected_type,
+                            actual_key_type: actual_type,
+                            expected_record_type: expected_key_type_pairs,
+                            actual_record_type: actual_key_type_pairs,
+                            location,
+                        })
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+
+            Ok(Type::Record { key_type_pairs })
         }
         _ => Err(UnifyError::TypeMismatch {
             location,
@@ -153,7 +284,6 @@ pub fn infer_expression_type(
             let first_function_branch_type =
                 unify_function_branch(environment, &function.first_branch)?;
 
-            println!("{:#?}", first_function_branch_type);
             let mut result_function_type = first_function_branch_type;
 
             for function_branch in &function.branches {
@@ -166,8 +296,7 @@ pub fn infer_expression_type(
         ExpressionValue::FunctionCall(function_call) => {
             let function_type = infer_expression_type(environment, &function_call.function.value)?;
             match function_type {
-                Type::Function(function_type) => {
-                    let mut function_type = function_type.clone();
+                Type::Function(mut function_type) => {
                     // instatiate type variables with a non-conflicting name in current environment
                     for type_variable_name in function_type.type_variables.clone() {
                         let new_name = environment.instantiate_type_variable();
@@ -216,12 +345,23 @@ pub fn infer_expression_type(
                     Ok(return_type)
                 }
                 other => Err(UnifyError::CannotInvokeNonFunction {
-                    actual_type: other.clone(),
+                    actual_type: other,
                     location: get_expression_location(environment, &function_call.function.value),
                 }),
             }
         }
-        _ => panic!(),
+        ExpressionValue::Record {
+            key_value_pairs, ..
+        } => {
+            let mut key_type_pairs: Vec<(String, Type)> = Vec::new();
+            for RecordKeyValue { key, value, .. } in key_value_pairs {
+                // TODO: match with type annotation
+                let value_type = infer_expression_type(environment, &value.value)?;
+                key_type_pairs.push((key.representation.clone(), value_type))
+            }
+            Ok(Type::Record { key_type_pairs })
+        }
+        other => panic!("{:#?}", other),
     }
 }
 
@@ -254,8 +394,8 @@ pub fn rewrite_function_type_type_variable(
             })
             .collect(),
         return_type: Box::new(rewrite_type_variable_as_type_alias(
-            from_name.clone(),
-            to_name.clone(),
+            from_name,
+            to_name,
             *function_type.return_type,
         )),
     }
@@ -279,6 +419,24 @@ pub fn rewrite_type_variable_as_type_alias(
                 Type::ImplicitTypeVariable { name }
             }
         }
+        Type::Record { key_type_pairs } => Type::Record {
+            key_type_pairs: key_type_pairs
+                .into_iter()
+                .map(|(key, type_value)| {
+                    (
+                        key,
+                        rewrite_type_variable_as_type_alias(
+                            from_name.clone(),
+                            to_name.clone(),
+                            type_value,
+                        ),
+                    )
+                })
+                .collect(),
+        },
+        Type::String => Type::String,
+        Type::Number => Type::Number,
+        Type::Alias { name } => Type::Alias { name },
         other => panic!("{:#?}", other),
     }
 }
@@ -324,14 +482,16 @@ pub fn unify_function_branch(
         arguments_types.push(unify_function_argument(&mut environment, &argument)?)
     }
     let body_type = infer_expression_type(&mut environment, &function_branch.body.value)?;
-    let return_type =
-        type_annotation_to_type(&mut environment, &function_branch.return_type_annotation)?;
+    let return_type = optional_type_annotation_to_type(
+        &mut environment,
+        &function_branch.return_type_annotation,
+    )?;
 
     let type_variables = environment.get_implicit_type_variables();
     match return_type {
         Some(return_type) => {
             let location = get_expression_location(&environment, &function_branch.body.value);
-            let (return_type, _) = unify_type(&mut environment, return_type, body_type, location)?;
+            let return_type = unify_type(&mut environment, return_type, body_type, location)?;
             Ok(FunctionType {
                 arguments_types,
                 return_type: Box::new(return_type),
@@ -351,7 +511,7 @@ pub fn unify_function_argument(
     function_argument: &FunctionArgument,
 ) -> Result<Type, UnifyError> {
     let type_annotation_type =
-        type_annotation_to_type(environment, &function_argument.type_annotation)?;
+        optional_type_annotation_to_type(environment, &function_argument.type_annotation)?;
 
     match type_annotation_type {
         Some(type_annotation_type) => Ok(unify_destructure_pattern(
@@ -363,27 +523,44 @@ pub fn unify_function_argument(
     }
 }
 
-pub fn type_annotation_to_type(
+pub fn optional_type_annotation_to_type(
     environment: &mut Environment,
     type_annotation: &Option<TypeAnnotation>,
 ) -> Result<Option<Type>, UnifyError> {
     match type_annotation {
+        Some(type_annotation) => Ok(Some(type_annotation_to_type(environment, type_annotation)?)),
         None => Ok(None),
-        Some(type_annotation) => match &type_annotation.representation {
-            TypeRepresentation::Name(token) => {
-                if let Ok(ty) = environment.get_type_symbol(&token) {
-                    Ok(Some(ty.type_value.clone()))
-                } else {
-                    Err(UnifyError::UnknownTypeSymbol {
-                        location: Location {
-                            source: environment.source.clone(),
-                            position: token.position.clone(),
-                        },
-                    })
-                }
+    }
+}
+
+pub fn type_annotation_to_type(
+    environment: &mut Environment,
+    type_annotation: &TypeAnnotation,
+) -> Result<Type, UnifyError> {
+    match &type_annotation.representation {
+        TypeRepresentation::Name(token) => {
+            if let Ok(ty) = environment.get_type_symbol(&token) {
+                Ok(ty.type_value)
+            } else {
+                Err(UnifyError::UnknownTypeSymbol {
+                    location: Location {
+                        source: environment.source.clone(),
+                        position: token.position.clone(),
+                    },
+                })
             }
-            _ => panic!(),
-        },
+        }
+        TypeRepresentation::Record {
+            key_type_annotation_pairs,
+        } => {
+            let mut key_type_pairs: Vec<(String, Type)> = Vec::new();
+            for (key, type_annotation) in key_type_annotation_pairs {
+                let type_value = type_annotation_to_type(environment, &type_annotation)?;
+                key_type_pairs.push((key.representation.clone(), type_value))
+            }
+            Ok(Type::Record { key_type_pairs })
+        }
+        _ => panic!(),
     }
 }
 
@@ -402,6 +579,26 @@ pub fn infer_destructure_pattern(
                 Some(payload) => Some(Box::new(infer_destructure_pattern(environment, payload)?)),
             },
         }),
+        DestructurePattern::Record { key_value_pairs } => {
+            let mut key_type_pairs: Vec<(String, Type)> = Vec::new();
+            for DestructuredRecordKeyValue { key, as_value, .. } in key_value_pairs {
+                // TODO: spread
+                // TODO: match against type annotation
+                let name = key.representation.clone();
+                match as_value {
+                    Some(destructure_pattern) => {
+                        let type_value =
+                            infer_destructure_pattern(environment, destructure_pattern)?;
+                        key_type_pairs.push((name, type_value))
+                    }
+                    None => {
+                        let type_variable = environment.introduce_type_variable(&key)?;
+                        key_type_pairs.push((name, type_variable))
+                    }
+                }
+            }
+            Ok(Type::Record { key_type_pairs })
+        }
         _ => panic!(),
     }
 }
@@ -452,75 +649,5 @@ pub fn unify_destructure_pattern(
             expression_type: expression_type.clone(),
             destructure_pattern: destructure_pattern.clone(),
         }),
-        // DestructurePattern::Record { key_value_pairs } => {
-        //     let result: Vec<(Token, InferDestructurePatternResult)> = key_value_pairs
-        //         .into_iter()
-        //         .map(
-        //             |DestructuredRecordKeyValue {
-        //                  key,
-        //                  type_annotation,
-        //                  as_value,
-        //                  spread,
-        //              }| {
-        //                 let InferDestructurePatternResult {
-        //                     mut symbols,
-        //                     inferred_type,
-        //                 } = match as_value {
-        //                     Some(as_value) => infer_destructure_pattern(environment, as_value),
-        //                     None => InferDestructurePatternResult {
-        //                         inferred_type: Type::NotInferred,
-        //                         symbols: vec![Symbol {
-        //                             name: key.clone().representation.to_string(),
-        //                             declaration: Some(key.clone()),
-        //                             annotated_type: type_annotation,
-        //                             actual_type: None,
-        //                             usage_references: vec![],
-        //                         }],
-        //                     },
-        //                 };
-        //                 match spread {
-        //                     None => (),
-        //                     Some(token) => {
-        //                         symbols.push(Symbol {
-        //                             name: token.representation.to_string(),
-        //                             declaration: Some(token),
-        //                             annotated_type: None,
-        //                             actual_type: None,
-        //                             usage_references: vec![],
-        //                         });
-        //                     }
-        //                 }
-        //                 (
-        //                     key,
-        //                     InferDestructurePatternResult {
-        //                         symbols,
-        //                         inferred_type,
-        //                     },
-        //                 )
-        //             },
-        //         )
-        //         .collect();
-        //     InferDestructurePatternResult {
-        //         symbols: result
-        //             .clone()
-        //             .into_iter()
-        //             .flat_map(|(_, InferDestructurePatternResult { symbols, .. })| symbols)
-        //             .collect(),
-        //         inferred_type: Type::Record {
-        //             key_type_pairs: result
-        //                 .into_iter()
-        //                 .map(
-        //                     |(key, InferDestructurePatternResult { inferred_type, .. })| {
-        //                         (key.representation, inferred_type)
-        //                     },
-        //                 )
-        //                 .collect(),
-        //         },
-        //     }
-        // }
-        // DestructurePattern::Underscore(_) => InferDestructurePatternResult {
-        //     symbols: vec![],
-        //     inferred_type: Type::NotInferred,
-        // },
     }
 }

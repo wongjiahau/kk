@@ -49,12 +49,23 @@ impl<'a> Environment<'a> {
                 };
                 self.resolve_type_alias(self.get_type_symbol(&token)?.type_value)
             }
+            Type::Record { key_type_pairs } => {
+                let mut resolved_key_type_pairs: Vec<(String, Type)> = Vec::new();
+                for (key, type_value) in key_type_pairs {
+                    resolved_key_type_pairs.push((key, self.resolve_type_alias(type_value)?))
+                }
+                Ok(Type::Record {
+                    key_type_pairs: resolved_key_type_pairs,
+                })
+            }
             _ => Ok(type_value),
         }
     }
 
     fn get_next_type_variable_name(&mut self) -> String {
-        format!("@TVAR{}", self.type_variable_index)
+        let name = format!("@TVAR{}", self.type_variable_index);
+        self.type_variable_index += 1;
+        name
     }
 
     pub fn specialized_type_variable(&mut self, type_variable_name: String, to_type: Type) {
@@ -85,7 +96,6 @@ impl<'a> Environment<'a> {
 
     pub fn introduce_type_variable(&mut self, variable_name: &Token) -> Result<Type, UnifyError> {
         let name = self.get_next_type_variable_name();
-        self.type_variable_index += 1;
         let type_value = Type::ImplicitTypeVariable { name: name.clone() };
         self.insert_value_symbol(
             &variable_name,

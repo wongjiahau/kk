@@ -76,7 +76,7 @@ pub enum SymbolSource {
 pub enum TypeRepresentation {
     Name(Token),
     Record {
-        key_value_pairs: Vec<(Token, TypeAnnotation)>,
+        key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
     },
     Tag {
         token: Token,
@@ -127,8 +127,10 @@ pub enum ExpressionValue {
     Function(Function),
     FunctionCall(FunctionCall),
     Record {
+        open_curly_bracket: Token,
         spread: Option<Box<Expression>>,
         key_value_pairs: Vec<RecordKeyValue>,
+        closing_curly_bracket: Token,
     },
     Array(Vec<Expression>),
     Let {

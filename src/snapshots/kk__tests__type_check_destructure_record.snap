@@ -1,0 +1,44 @@
+---
+source: src/main.rs
+expression: "type_check_source(\"\n            let f = \\\\{x, y = {z}} => {x, z}\n            let x: {x: string, z: number} = {x = 'hi', y = {z = 3}}.f\n            let y: {x: string, z: number} = {x = 2, y = {z = 3}}.f\n            \".trim().to_string())"
+---
+Err(
+    UnifyError(
+        RecordKeyTypeMismatch {
+            location: Location {
+                source: NonFile {
+                    env_name: "TESTING",
+                },
+                position: Position {
+                    line_start: 2,
+                    line_end: 2,
+                    column_start: 45,
+                    column_end: 64,
+                },
+            },
+            key: "x",
+            expected_key_type: String,
+            actual_key_type: Number,
+            expected_record_type: [
+                (
+                    "x",
+                    String,
+                ),
+                (
+                    "z",
+                    Number,
+                ),
+            ],
+            actual_record_type: [
+                (
+                    "x",
+                    Number,
+                ),
+                (
+                    "z",
+                    Number,
+                ),
+            ],
+        },
+    ),
+)

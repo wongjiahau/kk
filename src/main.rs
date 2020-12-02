@@ -374,12 +374,25 @@ mod tests {
         ))
     }
 
+    #[test]
+    fn test_type_check_destructure_record() {
+        assert_debug_snapshot!(type_check_source(
+            "
+            let f = \\{x, y = {z}} => {x, z}
+            let x: {x: string, z: number} = {x = 'hi', y = {z = 3}}.f
+            let y: {x: string, z: number} = {x = 2, y = {z = 3}}.f
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
     // #[test]
-    // fn test_type_check_function_4() {
+    // fn test_generic_function_with_specified_type_variable() {
     //     assert_debug_snapshot!(type_check_source(
     //         "
-    //         let as = \\x => x
-    //         let x: number = 'hello'.as<number>
+    //         let as = \\<T>(x: T): T => x
+    //         let x = 'hello'.as<number>
     //         "
     //         .trim()
     //         .to_string()

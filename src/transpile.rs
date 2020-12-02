@@ -53,6 +53,7 @@ pub fn transpile_expression(expression: Expression) -> String {
         ExpressionValue::Record {
             spread,
             key_value_pairs,
+            ..
         } => format!(
             "{{{}{}}}",
             match spread {
