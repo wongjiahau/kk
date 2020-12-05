@@ -23,7 +23,7 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
                 match token.token_type {
                     TokenType::KeywordLet => {
                         eat_token(it, TokenType::KeywordLet)?;
-                        let left = parse_destructure_pattern(it)?;
+                        let left = eat_token(it, TokenType::Identifier)?;
                         let type_annotation = try_parse_colon_type_annotation(it)?;
                         eat_token(it, TokenType::Equals)?;
                         let right = parse_expression(it)?;

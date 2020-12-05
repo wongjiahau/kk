@@ -11,25 +11,18 @@ pub fn transpile_statement(statement: Statement) -> String {
             ExpressionValue::Let { .. } => {
                 return format!(
                     "const {} = (()=>{{{}}})()",
-                    transpile_destructure_pattern(left),
+                    left.representation,
                     transpile_expression(right)
                 )
             }
             _ => {
                 return format!(
                     "const {} = {}",
-                    transpile_destructure_pattern(left),
+                    left.representation,
                     transpile_expression(right)
                 )
             }
         },
-    }
-}
-
-pub fn transpile_destructure_pattern(destructure_pattern: DestructurePattern) -> String {
-    match destructure_pattern {
-        DestructurePattern::Identifier(i) => i.representation,
-        _ => panic!(),
     }
 }
 

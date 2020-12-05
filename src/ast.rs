@@ -1,7 +1,7 @@
 #[derive(Debug, Clone)]
 pub enum Statement {
     Let {
-        left: DestructurePattern,
+        left: Token,
         right: Expression,
         type_annotation: Option<TypeAnnotation>,
     },
@@ -29,14 +29,7 @@ pub struct TypeAnnotation {
 pub enum Type {
     String,
     Number,
-
-    /// Cannot be specialized during type inference
-    DeclaredTypeVariable {
-        name: String,
-    },
-
-    /// Can be specialized during type inference
-    ImplicitTypeVariable {
+    TypeVariable {
         name: String,
     },
     Record {
@@ -57,8 +50,13 @@ pub enum Type {
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionType {
+pub struct TypeScheme {
     pub type_variables: Vec<String>,
+    pub type_value: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionType {
     pub arguments_types: Vec<Type>,
     pub return_type: Box<Type>,
 }
