@@ -1,5 +1,4 @@
 use crate::ast::*;
-
 use core::slice::Iter;
 use std::iter::Peekable;
 
@@ -127,10 +126,10 @@ pub fn parse_function(it: &mut Peekable<Iter<Token>>) -> Result<Function, ParseE
 }
 
 pub fn parse_function_branch(it: &mut Peekable<Iter<Token>>) -> Result<FunctionBranch, ParseError> {
-    eat_token(it, TokenType::Backslash)?;
+    let start_token = eat_token(it, TokenType::Backslash)?;
     let arguments = parse_function_arguments(it)?;
     let return_type_annotation = try_parse_colon_type_annotation(it)?;
-    let start_token = eat_token(it, TokenType::ArrowRight)?;
+    eat_token(it, TokenType::ArrowRight)?;
     let body = parse_expression(it)?;
     Ok(FunctionBranch {
         start_token,
@@ -206,10 +205,7 @@ pub fn parse_type_annotation(it: &mut Peekable<Iter<Token>>) -> Result<TypeAnnot
         type_annotations.reverse();
         type_annotations.push(first_type_annotation);
         type_annotations.reverse();
-        Ok(TypeAnnotation {
-            representation: TypeRepresentation::Union { type_annotations },
-            value: None,
-        })
+        Ok(TypeAnnotation::Union { type_annotations })
     }
 }
 
@@ -218,10 +214,7 @@ pub fn parse_simple_type_annotation(
 ) -> Result<TypeAnnotation, ParseError> {
     if let Some(token) = it.peek() {
         match token.token_type.clone() {
-            TokenType::Identifier => Ok(TypeAnnotation {
-                representation: TypeRepresentation::Name(it.next().unwrap().clone()),
-                value: None,
-            }),
+            TokenType::Identifier => Ok(TypeAnnotation::Name(it.next().unwrap().clone())),
             TokenType::Tag => {
                 let token = it.next().unwrap().clone();
                 let payload = if try_eat_token(it, TokenType::LeftParenthesis) {
@@ -231,13 +224,10 @@ pub fn parse_simple_type_annotation(
                 } else {
                     None
                 };
-                Ok(TypeAnnotation {
-                    representation: TypeRepresentation::Tag { token, payload },
-                    value: None,
-                })
+                Ok(TypeAnnotation::Tag { token, payload })
             }
             TokenType::LeftCurlyBracket => {
-                eat_token(it, TokenType::LeftCurlyBracket)?;
+                let open_curly_bracket = eat_token(it, TokenType::LeftCurlyBracket)?;
                 let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = Vec::new();
                 loop {
                     let key = parse_identifier(it)?;
@@ -248,12 +238,32 @@ pub fn parse_simple_type_annotation(
                         break;
                     }
                 }
-                eat_token(it, TokenType::RightCurlyBracket)?;
-                Ok(TypeAnnotation {
-                    representation: TypeRepresentation::Record {
-                        key_type_annotation_pairs,
-                    },
-                    value: None,
+                let closing_curly_bracket = eat_token(it, TokenType::RightCurlyBracket)?;
+                Ok(TypeAnnotation::Record {
+                    open_curly_bracket,
+                    key_type_annotation_pairs,
+                    closing_curly_bracket,
+                })
+            }
+            TokenType::Backslash => {
+                let start_token = eat_token(it, TokenType::Backslash)?;
+                let arguments_types = if try_eat_token(it, TokenType::LeftParenthesis) {
+                    let mut arguments = vec![parse_type_annotation(it)?];
+                    if try_eat_token(it, TokenType::Comma) {
+                        arguments.push(parse_type_annotation(it)?)
+                    }
+                    eat_token(it, TokenType::RightParenthesis)?;
+                    arguments
+                } else {
+                    vec![parse_type_annotation(it)?]
+                };
+
+                eat_token(it, TokenType::ArrowRight)?;
+                let return_type = parse_type_annotation(it)?;
+                Ok(TypeAnnotation::Function {
+                    start_token,
+                    arguments_types,
+                    return_type: Box::new(return_type),
                 })
             }
             other => panic!("{:#?}", other),

@@ -11,6 +11,19 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
         let c = chars[index];
         let is_last_char = index == chars_length - 1;
         match c {
+            '_' => {
+                let result = Token {
+                    token_type: TokenType::Underscore,
+                    representation: "_".to_string(),
+                    position: Position {
+                        column_start: column_number,
+                        column_end: column_number,
+                        line_start: line_number,
+                        line_end: line_number,
+                    },
+                };
+                tokens.push(result)
+            }
             '#' => {
                 let column_start = column_number;
                 let mut result = "#".to_string();
@@ -130,7 +143,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     },
                 });
             }
-            'A'..='Z' | 'a'..='z' | '_' => {
+            'A'..='Z' | 'a'..='z' => {
                 let column_start = column_number;
                 let mut result = c.to_string();
                 while index < chars_length - 1 {

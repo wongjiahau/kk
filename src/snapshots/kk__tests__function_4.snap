@@ -1,7 +1,7 @@
 ---
 source: src/main.rs
-expression: "transpile_source(\"let or = \\\\#false, #false => #false \\\\ _, _ => #true\".to_string())"
+expression: "transpile_source(\"let or = \\\\(#false, #false,) => #false \\\\(_, _) => #true\".to_string())"
 ---
 Ok(
-    "const or = (_0,_1)=>{if(_0.$===\'false\' && _1.$===\'false\'){;return {$:\'false\'}}\n{var _ = _0;var _ = _1;return {$:\'true\'}}}",
+    "const or = (_0,_1)=>{if(_0.$===\'false\' && _1.$===\'false\'){;return {$:\'false\'}}\n{;return {$:\'true\'}}}",
 )

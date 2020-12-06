@@ -12,7 +12,7 @@ Err(
                 position: Position {
                     line_start: 3,
                     line_end: 3,
-                    column_start: 25,
+                    column_start: 17,
                     column_end: 28,
                 },
             },

@@ -18,17 +18,10 @@ pub struct TypeVariable {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypeAnnotation {
-    pub representation: TypeRepresentation,
-
-    /// If None means not determined yet
-    pub value: Option<Type>,
-}
-
-#[derive(Debug, Clone)]
 pub enum Type {
     String,
     Number,
+    Underscore,
     TypeVariable {
         name: String,
     },
@@ -39,14 +32,27 @@ pub enum Type {
         name: String,
         arguments: Vec<Type>,
     },
-    Tag {
-        tagname: String,
-        payload: Option<Box<Type>>,
-    },
     Alias {
         name: String,
     },
     Function(FunctionType),
+    Union {
+        tags: Vec<TagType>,
+        bound: UnionTypeBound,
+        catch_all: bool,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum UnionTypeBound {
+    Exact,
+    AtLeast,
+}
+
+#[derive(Debug, Clone)]
+pub struct TagType {
+    pub tagname: String,
+    pub payload: Option<Box<Type>>,
 }
 
 #[derive(Debug, Clone)]
@@ -71,10 +77,12 @@ pub enum SymbolSource {
 }
 
 #[derive(Debug, Clone)]
-pub enum TypeRepresentation {
+pub enum TypeAnnotation {
     Name(Token),
     Record {
+        open_curly_bracket: Token,
         key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
+        closing_curly_bracket: Token,
     },
     Tag {
         token: Token,
@@ -83,6 +91,11 @@ pub enum TypeRepresentation {
     Underscore,
     Union {
         type_annotations: Vec<TypeAnnotation>,
+    },
+    Function {
+        start_token: Token,
+        arguments_types: Vec<TypeAnnotation>,
+        return_type: Box<TypeAnnotation>,
     },
 }
 
@@ -245,7 +258,7 @@ pub struct Location {
     pub position: Position,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Position {
     pub line_start: usize,
     pub line_end: usize,

@@ -106,8 +106,6 @@ pub fn infer_statement(
             // 2. Generalize if possible
             let right_type_scheme = generalize_type(right_type);
 
-            // println!("{} = {:#?}", left.representation, right_type_scheme);
-
             // 3. Unify left with right_type and populate parent environment with bindings found in left
             environment.insert_value_symbol(
                 &left,
@@ -146,12 +144,7 @@ pub fn infer_statement(
                 },
             )
         }
-    }?;
-
-    // reset type variable index
-    // environment.reset_type_variable_index();
-
-    Ok(())
+    }
 }
 
 pub fn generalize_type(type_value: Type) -> TypeScheme {
@@ -246,7 +239,7 @@ pub fn unify_type(
             expected_type,
             actual_type,
         }) => {
-            // println!("{:#?}", environment);
+            println!("{:#?}", environment);
             Err(UnifyError::TypeMismatch {
                 location,
                 expected_type: environment.apply_subtitution_to_type(&expected_type),
@@ -267,20 +260,9 @@ pub fn unify_type_(
         (Type::String, Type::String) => Ok(Type::String),
         (Type::Number, Type::Number) => Ok(Type::Number),
         (Type::Underscore, other) | (other, Type::Underscore) => Ok(other),
-        (Type::TypeVariable { name: name1 }, Type::TypeVariable { name: name2 }) => {
-            if name1 != name2 {
-                environment.update_substitution(
-                    name1,
-                    Type::TypeVariable { name: name2 },
-                    location,
-                )?;
-            }
-            Ok(actual.clone())
-        }
         (Type::TypeVariable { name }, other_type) | (other_type, Type::TypeVariable { name }) => {
             if type_variable_occurs_in_type(&name, &other_type) {
-                panic!("circular type substitution found, left={:#?}, actual_type={:#?}, expected_type={:#?} location={:#?}", 
-                       name, other_type, expected, location)
+                panic!("circular type substitution found")
             } else {
                 environment.update_substitution(name, other_type.clone(), location)?;
                 Ok(other_type)
@@ -403,40 +385,24 @@ pub fn unify_type_(
                 catch_all: false,
             },
         ) => {
-            let mut expected_tags_iter = expected_tags.clone().into_iter();
+            let expected_tags = expected_tags.clone().iter();
             // Check that every tag in actual_tags appear in expected_tags
-            let non_existent_tag = actual_tags.clone().into_iter().find(|actual_tag| {
-                !expected_tags_iter.any(|expected_tag| expected_tag.tagname == actual_tag.tagname)
+            let non_existent_tag= actual_tags.into_iter().find(|actual_tag| {
+                !expected_tags.any(|expected_tag| expected_tag.tagname == actual_tag.tagname)
             });
             match non_existent_tag {
-                Some(_) => Err(UnifyError::TypeMismatch {
-                    expected_type: Type::Union {
-                        tags: expected_tags,
-                        bound: UnionTypeBound::Exact,
-                        catch_all: false,
-                    },
-                    actual_type: Type::Union {
-                        tags: actual_tags,
-                        bound: UnionTypeBound::AtLeast,
-                        catch_all: false,
-                    },
-                    location,
-                }),
-                None => Ok(Type::Union {
-                    tags: expected_tags,
-                    bound: UnionTypeBound::Exact,
-                    catch_all: false,
-                }),
+                Some(non_existent_tag) => Err(panic!()),
+                None => Ok(Type::Union {tags: expected_tags, bound: UnionTypeBound::Exact, catch_all: false})
             }
-        }
+        },
         (
             Type::Union {
-                tags: _,
+                tags: expected_tags,
                 bound: UnionTypeBound::Exact,
                 catch_all: false,
             },
             Type::Union {
-                tags: _,
+                tags: actual_tags,
                 bound: UnionTypeBound::Exact,
                 catch_all: false,
             },
@@ -542,8 +508,6 @@ pub fn infer_expression_type(
                 }),
             };
 
-            // println!("function_type = {:#?}", function_type);
-
             unify_function_type(
                 environment,
                 &function_type,
@@ -570,91 +534,64 @@ pub fn infer_expression_type(
             }
 
             // Close all unbounded union types
+
             Ok(close_union_type(Type::Function(
                 environment.apply_subtitution_to_function_type(&function_type),
             )))
         }
         ExpressionValue::FunctionCall(function_call) => {
+            let expected_function_type =
+                match infer_expression_type(environment, &function_call.function.value)? {
+                    Type::Function(function) => Ok(Type::Function(function)),
+                    Type::TypeVariable { name } => Ok(Type::TypeVariable { name }),
+                    other => Err(UnifyError::CannotInvokeNonFunction {
+                        location: get_expression_location(
+                            environment,
+                            &function_call.function.value,
+                        ),
+                        actual_type: other.clone(),
+                    }),
+                }?;
+
             // Check if expression being invoked is a function
-            match infer_expression_type(environment, &function_call.function.value)? {
-                Type::Function(expected_function_type) => {
-                    // Tally arguments length
-                    if function_call.arguments.len() != expected_function_type.arguments_types.len()
-                    {
-                        return Err(UnifyError::InvalidFunctionArgumentLength {
-                            location: get_expression_location(
-                                environment,
-                                &ExpressionValue::FunctionCall(function_call.clone()),
-                            ),
-                            actual_length: function_call.arguments.len(),
-                            expected_length: expected_function_type.arguments_types.len(),
-                        });
-                    }
-
-                    // Unify the type of each argument
-                    expected_function_type
-                        .arguments_types
-                        .into_iter()
-                        .zip(function_call.arguments.clone().into_iter())
-                        .map(|(expected_argument_type, actual_argument)| {
-                            let actual_argument_type =
-                                infer_expression_type(environment, &actual_argument.value)?;
-                            unify_type(
-                                environment,
-                                &expected_argument_type,
-                                &actual_argument_type,
-                                get_expression_location(environment, &actual_argument.value),
-                            )
-                        })
-                        .collect::<Result<Vec<Type>, UnifyError>>()?;
-
-                    Ok(environment
-                        .apply_subtitution_to_type(expected_function_type.return_type.as_ref()))
-                }
-                Type::TypeVariable { name } => {
-                    let expected_function_type = Type::TypeVariable {
-                        name: environment.get_next_type_variable_name(),
-                    };
-
-                    let location = get_expression_location(
-                        environment,
-                        &ExpressionValue::FunctionCall(function_call.clone()),
-                    );
-
-                    unify_type(
-                        environment,
-                        &Type::TypeVariable { name },
-                        &expected_function_type,
-                        location.clone(),
-                    )?;
-
-                    let return_type = Type::TypeVariable {
-                        name: environment.get_next_type_variable_name(),
-                    };
-                    let actual_function_type = Type::Function(FunctionType {
-                        arguments_types: function_call
-                            .arguments
-                            .clone()
-                            .into_iter()
-                            .map(|argument| infer_expression_type(environment, &argument.value))
-                            .collect::<Result<Vec<Type>, UnifyError>>()?,
-                        return_type: Box::new(return_type.clone()),
-                    });
-
-                    unify_type(
-                        environment,
-                        &actual_function_type,
-                        &expected_function_type,
-                        location,
-                    )?;
-
-                    Ok(environment.apply_subtitution_to_type(&return_type))
-                }
+            let expected_function_type = match expected_function_type {
+                Type::Function(function_type) => Ok(function_type),
                 other => Err(UnifyError::CannotInvokeNonFunction {
                     location: get_expression_location(environment, &function_call.function.value),
-                    actual_type: other.clone(),
+                    actual_type: other,
                 }),
+            }?;
+
+            // Tally arguments length
+            if function_call.arguments.len() != expected_function_type.arguments_types.len() {
+                return Err(UnifyError::InvalidFunctionArgumentLength {
+                    location: get_expression_location(
+                        environment,
+                        &ExpressionValue::FunctionCall(function_call.clone()),
+                    ),
+                    actual_length: function_call.arguments.len(),
+                    expected_length: expected_function_type.arguments_types.len(),
+                });
             }
+
+            // Unify the type of each argument
+            expected_function_type
+                .arguments_types
+                .into_iter()
+                .zip(function_call.arguments.clone().into_iter())
+                .map(|(expected_argument_type, actual_argument)| {
+                    let actual_argument_type =
+                        infer_expression_type(environment, &actual_argument.value)?;
+                    unify_type(
+                        environment,
+                        &expected_argument_type,
+                        &actual_argument_type,
+                        get_expression_location(environment, &actual_argument.value),
+                    )
+                })
+                .collect::<Result<Vec<Type>, UnifyError>>()?;
+
+            Ok(environment.apply_subtitution_to_type(expected_function_type.return_type.as_ref()))
 
             // match expected_function_type {
             //     Type::Function(mut function_type) => {
@@ -752,17 +689,19 @@ pub fn close_union_type(type_value: Type) -> Type {
             arguments_types: arguments_types.into_iter().map(close_union_type).collect(),
             return_type: Box::new(close_union_type(*return_type)),
         }),
-        Type::TypeVariable { name } => Type::TypeVariable { name },
-        Type::Number => Type::Number,
-        Type::String => Type::String,
-        Type::Record { key_type_pairs } => Type::Record {
-            key_type_pairs: key_type_pairs
-                .into_iter()
-                .map(|(key, type_value)| (key, close_union_type(type_value)))
-                .collect(),
-        },
         other => panic!("{:#?}", other),
     }
+}
+
+pub fn infer_expressions(
+    environment: &mut Environment,
+    expressions: &Vec<Expression>,
+) -> Result<Vec<Type>, UnifyError> {
+    let value_types = expressions
+        .into_iter()
+        .map(|argument| Ok(infer_expression_type(environment, &argument.value)?))
+        .collect::<Result<Vec<Type>, UnifyError>>()?;
+    Ok(value_types)
 }
 
 // pub fn rewrite_function_type_type_variable(
@@ -991,7 +930,7 @@ pub fn type_annotation_to_type(
                 Err(UnifyError::UnknownTypeSymbol {
                     location: Location {
                         source: environment.source.clone(),
-                        position: token.position,
+                        position: token.position.clone(),
                     },
                 })
             }
@@ -1001,7 +940,7 @@ pub fn type_annotation_to_type(
             ..
         } => {
             let key_type_pairs = key_type_annotation_pairs
-                .iter()
+                .into_iter()
                 .map(|(key, type_annotation)| {
                     let type_value = type_annotation_to_type(environment, &type_annotation)?;
                     Ok((key.representation.clone(), type_value))
@@ -1025,24 +964,24 @@ pub fn type_annotation_to_type(
         }
         TypeAnnotation::Union { type_annotations } => {
             // Make sure that only all the types are either a union or tag
-            let tag_types = type_annotations.iter().fold(
-                Ok(vec![]),
-                |result, type_annotation| match result {
-                    Ok(current_tags) => {
-                        match type_annotation_to_type(environment, type_annotation)? {
-                            Type::Union { tags, .. } => join_union_tags(current_tags, tags),
-                            other => Err(UnifyError::CannotUnionNonTagType {
-                                the_non_union_type: other,
-                                location: get_type_annotation_location(
-                                    environment,
-                                    type_annotation,
-                                ),
-                            }),
+            let tag_types =
+                type_annotations
+                    .into_iter()
+                    .fold(Ok(vec![]), |result, type_annotation| match result {
+                        Ok(current_tags) => {
+                            match type_annotation_to_type(environment, type_annotation)? {
+                                Type::Union { tags, .. } => join_union_tags(current_tags, tags),
+                                other => Err(UnifyError::CannotUnionNonTagType {
+                                    the_non_union_type: other.clone(),
+                                    location: get_type_annotation_location(
+                                        environment,
+                                        type_annotation,
+                                    ),
+                                }),
+                            }
                         }
-                    }
-                    Err(unify_error) => Err(unify_error),
-                },
-            )?;
+                        Err(unify_error) => Err(unify_error),
+                    })?;
 
             // TODO: check for duplicated tags
 
@@ -1058,7 +997,7 @@ pub fn type_annotation_to_type(
             ..
         } => {
             let arguments_types = arguments_types
-                .iter()
+                .into_iter()
                 .map(|argument_type| type_annotation_to_type(environment, argument_type))
                 .collect::<Result<Vec<Type>, UnifyError>>()?;
 
@@ -1121,6 +1060,7 @@ pub fn infer_destructure_pattern(
             Ok(Type::Record { key_type_pairs })
         }
         DestructurePattern::Underscore(_) => Ok(Type::Underscore),
+        other => panic!("{:#?}", other),
     }
 }
 
@@ -1130,7 +1070,13 @@ pub fn unify_destructure_pattern(
     expression_type: &Type,
 ) -> Result<Type, UnifyError> {
     match (destructure_pattern, expression_type) {
-        (DestructurePattern::Tag { payload: None, .. }, Type::Union { .. }) => {
+        (
+            DestructurePattern::Tag {
+                payload: None,
+                token,
+            },
+            Type::Union { .. },
+        ) => {
             panic!()
             // if token.representation == *tagname {
             //     Ok(Type::Tag(TagType {
@@ -1260,7 +1206,7 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
                 })
         }
         Type::Union { tags, .. } => tags
-            .iter()
+            .into_iter()
             .flat_map(|tag_type| match &tag_type.payload {
                 Some(payload) => get_free_type_variables_in_type(&payload),
                 None => HashSet::new(),
