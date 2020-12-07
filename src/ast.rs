@@ -22,31 +22,26 @@ pub enum Type {
     String,
     Number,
     Underscore,
-    TypeVariable {
-        name: String,
-    },
-    Record {
-        key_type_pairs: Vec<(String, Type)>,
-    },
-    Compound {
-        name: String,
-        arguments: Vec<Type>,
-    },
-    Alias {
-        name: String,
-    },
+    TypeVariable { name: String },
+    Record { key_type_pairs: Vec<(String, Type)> },
+    Compound { name: String, arguments: Vec<Type> },
+    Alias { name: String },
     Function(FunctionType),
-    Union {
-        tags: Vec<TagType>,
-        bound: UnionTypeBound,
-        catch_all: bool,
-    },
+    Union(UnionType),
+}
+
+#[derive(Debug, Clone)]
+pub struct UnionType {
+    pub tags: Vec<TagType>,
+    pub bound: UnionTypeBound,
+    pub catch_all: bool,
 }
 
 #[derive(Debug, Clone)]
 pub enum UnionTypeBound {
     Exact,
     AtLeast,
+    AtMost,
 }
 
 #[derive(Debug, Clone)]

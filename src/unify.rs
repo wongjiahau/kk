@@ -23,6 +23,25 @@ pub fn unify_program(program: Program) -> Result<(), UnifyError> {
 
 #[derive(Debug)]
 pub enum UnifyError {
+    FunctionTypeArgumentMismatch {
+        argument_index: usize,
+        unify_error: Box<UnifyError>,
+        expected_function_type: FunctionType,
+        actual_function_type: FunctionType,
+        location: Location,
+    },
+    FunctionReturnTypeMismatch {
+        unify_error: Box<UnifyError>,
+        expected_function_type: FunctionType,
+        actual_function_type: FunctionType,
+        location: Location,
+    },
+    UnionTypeMismatch {
+        expected_union_type: UnionType,
+        missing_tags: Vec<TagType>,
+        extraneous_tags: Vec<TagType>,
+        location: Location,
+    },
     CannotUnionNonTagType {
         the_non_union_type: Type,
         location: Location,
@@ -287,6 +306,14 @@ pub fn unify_type_(
             }
         }
         (Type::Function(expected_function), Type::Function(actual_function)) => {
+            // Make all union types exact
+            // This is necessary to catch extraneous or missing cases in pattern matching
+            let expected_function =
+                update_union_type_in_function_type(expected_function, &UnionTypeBound::Exact);
+
+            let actual_function =
+                update_union_type_in_function_type(actual_function, &UnionTypeBound::Exact);
+
             let function_type =
                 unify_function_type(environment, &expected_function, &actual_function, location)?;
             Ok(Type::Function(function_type))
@@ -376,76 +403,170 @@ pub fn unify_type_(
             Ok(Type::Record { key_type_pairs })
         }
         (
-            Type::Union {
+            Type::Union(UnionType {
                 tags: expected_tags,
                 bound: UnionTypeBound::AtLeast,
                 catch_all: false,
-            },
-            Type::Union {
+            }),
+            Type::Union(UnionType {
                 tags: actual_tags,
                 bound: _,
                 catch_all: false,
-            },
-        ) => Ok(Type::Union {
+            }),
+        ) => Ok(Type::Union(UnionType {
             tags: join_union_tags(expected_tags, actual_tags)?,
-            bound: UnionTypeBound::Exact,
+            bound: UnionTypeBound::AtMost,
             catch_all: false,
-        }),
+        })),
         (
-            Type::Union {
+            Type::Union(UnionType {
+                tags: expected_tags,
+                bound: UnionTypeBound::AtMost,
+                catch_all: false,
+            }),
+            Type::Union(UnionType {
+                tags: actual_tags,
+                bound: actual_union_type_bound,
+                catch_all,
+            }),
+        ) => {
+            let CompareTagsResult {
+                extraneous_tags, ..
+            } = compare_tags(&expected_tags, &actual_tags);
+
+            if extraneous_tags.is_empty() {
+                Ok(Type::Union(UnionType {
+                    tags: expected_tags,
+                    bound: UnionTypeBound::AtMost,
+                    catch_all: false,
+                }))
+            } else {
+                Err(UnifyError::TypeMismatch {
+                    location,
+                    expected_type: Type::Union(UnionType {
+                        tags: expected_tags,
+                        bound: UnionTypeBound::AtMost,
+                        catch_all: false,
+                    }),
+                    actual_type: Type::Union(UnionType {
+                        tags: actual_tags,
+                        bound: actual_union_type_bound,
+                        catch_all,
+                    }),
+                })
+            }
+        }
+        (
+            Type::Union(UnionType {
                 tags: expected_tags,
                 bound: UnionTypeBound::Exact,
-                catch_all: false,
-            },
-            Type::Union {
+                ..
+            }),
+            Type::Union(UnionType {
                 tags: actual_tags,
-                bound: UnionTypeBound::AtLeast,
-                catch_all: false,
-            },
+                bound: _,
+                catch_all,
+            }),
         ) => {
-            let mut expected_tags_iter = expected_tags.clone().into_iter();
-            // Check that every tag in actual_tags appear in expected_tags
-            let non_existent_tag = actual_tags.clone().into_iter().find(|actual_tag| {
-                !expected_tags_iter.any(|expected_tag| expected_tag.tagname == actual_tag.tagname)
-            });
-            match non_existent_tag {
-                Some(_) => Err(UnifyError::TypeMismatch {
-                    expected_type: Type::Union {
+            let CompareTagsResult {
+                missing_tags,
+                extraneous_tags,
+            } = compare_tags(&expected_tags, &actual_tags);
+
+            if (!catch_all && !missing_tags.is_empty()) || !extraneous_tags.is_empty() {
+                return Err(UnifyError::UnionTypeMismatch {
+                    expected_union_type: UnionType {
                         tags: expected_tags,
                         bound: UnionTypeBound::Exact,
                         catch_all: false,
                     },
-                    actual_type: Type::Union {
-                        tags: actual_tags,
-                        bound: UnionTypeBound::AtLeast,
-                        catch_all: false,
-                    },
+                    missing_tags,
+                    extraneous_tags,
                     location,
-                }),
-                None => Ok(Type::Union {
+                });
+            }
+
+            // Check for payload type
+            let mut expected_tags = expected_tags;
+            let mut actual_tags = actual_tags;
+            expected_tags.sort_by(|a, b| a.tagname.cmp(&b.tagname));
+            actual_tags.sort_by(|a, b| a.tagname.cmp(&b.tagname));
+
+            let zipped = expected_tags
+                .clone()
+                .into_iter()
+                .zip(actual_tags.into_iter());
+            let unify_error = zipped
+                .map(
+                    |(expected_tag, actual_tag)| match (expected_tag, actual_tag) {
+                        (
+                            TagType {
+                                payload: Some(expected_payload),
+                                ..
+                            },
+                            TagType {
+                                payload: Some(actual_payload),
+                                ..
+                            },
+                        ) => {
+                            unify_type(
+                                environment,
+                                &expected_payload,
+                                &actual_payload,
+                                location.clone(),
+                            )?;
+                            Ok(())
+                        }
+                        (TagType { payload: None, .. }, TagType { payload: None, .. }) => Ok(()),
+                        (_, _) => panic!("mismatch, one expected payload, the other dont have"),
+                    },
+                )
+                .collect::<Result<Vec<()>, UnifyError>>();
+
+            match unify_error {
+                Ok(_) => Ok(Type::Union(UnionType {
                     tags: expected_tags,
                     bound: UnionTypeBound::Exact,
                     catch_all: false,
-                }),
+                })),
+                Err(_) => panic!("Some tag payload type not matched"),
             }
         }
-        (
-            Type::Union {
-                tags: _,
-                bound: UnionTypeBound::Exact,
-                catch_all: false,
-            },
-            Type::Union {
-                tags: _,
-                bound: UnionTypeBound::Exact,
-                catch_all: false,
-            },
-        ) => panic!(),
         _ => Err(UnifyError::TypeMismatch {
             location,
             expected_type: expected.clone(),
             actual_type: actual.clone(),
         }),
+    }
+}
+
+pub struct CompareTagsResult {
+    pub missing_tags: Vec<TagType>,
+    pub extraneous_tags: Vec<TagType>,
+}
+
+pub fn compare_tags(expected_tags: &Vec<TagType>, actual_tags: &Vec<TagType>) -> CompareTagsResult {
+    let mut expected_tags_iter = expected_tags.clone().into_iter();
+    let mut actual_tags_iter = actual_tags.clone().into_iter();
+    let missing_tags = expected_tags
+        .clone()
+        .into_iter()
+        .filter(|expected_tag| {
+            !actual_tags_iter.any(|actual_tag| actual_tag.tagname == expected_tag.tagname)
+        })
+        .collect::<Vec<TagType>>();
+
+    let extraneous_tags = actual_tags
+        .clone()
+        .into_iter()
+        .filter(|actual_tag| {
+            !expected_tags_iter.any(|expected_tag| expected_tag.tagname == actual_tag.tagname)
+        })
+        .collect::<Vec<TagType>>();
+
+    CompareTagsResult {
+        missing_tags,
+        extraneous_tags,
     }
 }
 
@@ -476,11 +597,11 @@ pub fn infer_expression_type(
                     None => None,
                 },
             };
-            Ok(Type::Union {
+            Ok(Type::Union(UnionType {
                 tags: vec![tag_type],
                 bound: UnionTypeBound::AtLeast,
                 catch_all: false,
-            })
+            }))
         }
         ExpressionValue::Variable(variable) => {
             if let Some(symbol) = environment.get_value_symbol(&variable.representation) {
@@ -569,10 +690,14 @@ pub fn infer_expression_type(
                 )?;
             }
 
+            let function_type =
+                Type::Function(environment.apply_subtitution_to_function_type(&function_type));
+
             // Close all unbounded union types
-            Ok(close_union_type(Type::Function(
-                environment.apply_subtitution_to_function_type(&function_type),
-            )))
+            Ok(update_union_type_in_type(
+                function_type,
+                &UnionTypeBound::AtMost,
+            ))
         }
         ExpressionValue::FunctionCall(function_call) => {
             // Check if expression being invoked is a function
@@ -737,28 +862,39 @@ pub fn infer_expression_type(
     Ok(environment.apply_subtitution_to_type(&result))
 }
 
-/// Mark the bound of all union type within this type as Exact
-pub fn close_union_type(type_value: Type) -> Type {
+pub fn update_union_type_in_function_type(
+    FunctionType {
+        arguments_types,
+        return_type,
+    }: FunctionType,
+    bound: &UnionTypeBound,
+) -> FunctionType {
+    FunctionType {
+        arguments_types: arguments_types
+            .into_iter()
+            .map(|argument_type| update_union_type_in_type(argument_type, bound))
+            .collect(),
+        return_type: Box::new(update_union_type_in_type(*return_type, bound)),
+    }
+}
+
+pub fn update_union_type_in_type(type_value: Type, bound: &UnionTypeBound) -> Type {
     match type_value {
-        Type::Union { tags, .. } => Type::Union {
+        Type::Union(UnionType { tags, .. }) => Type::Union(UnionType {
             tags,
-            bound: UnionTypeBound::Exact,
+            bound: bound.clone(),
             catch_all: false,
-        },
-        Type::Function(FunctionType {
-            arguments_types,
-            return_type,
-        }) => Type::Function(FunctionType {
-            arguments_types: arguments_types.into_iter().map(close_union_type).collect(),
-            return_type: Box::new(close_union_type(*return_type)),
         }),
+        Type::Function(function_type) => {
+            Type::Function(update_union_type_in_function_type(function_type, bound))
+        }
         Type::TypeVariable { name } => Type::TypeVariable { name },
         Type::Number => Type::Number,
         Type::String => Type::String,
         Type::Record { key_type_pairs } => Type::Record {
             key_type_pairs: key_type_pairs
                 .into_iter()
-                .map(|(key, type_value)| (key, close_union_type(type_value)))
+                .map(|(key, type_value)| (key, update_union_type_in_type(type_value, bound)))
                 .collect(),
         },
         other => panic!("{:#?}", other),
@@ -843,44 +979,69 @@ pub fn close_union_type(type_value: Type) -> Type {
 
 pub fn unify_function_type(
     environment: &mut Environment,
-    expected_function: &FunctionType,
-    actual_function: &FunctionType,
+    expected_function_type: &FunctionType,
+    actual_function_type: &FunctionType,
     location: Location,
 ) -> Result<FunctionType, UnifyError> {
     // compare arguments length
-    if expected_function.arguments_types.len() != actual_function.arguments_types.len() {
+    if expected_function_type.arguments_types.len() != actual_function_type.arguments_types.len() {
         return Err(UnifyError::InvalidFunctionArgumentLength {
             location,
-            expected_length: expected_function.arguments_types.len(),
-            actual_length: actual_function.arguments_types.len(),
+            expected_length: expected_function_type.arguments_types.len(),
+            actual_length: actual_function_type.arguments_types.len(),
         });
     }
 
     // unify every argument type
-    let zipped = expected_function
+    let zipped = expected_function_type
         .clone()
         .arguments_types
         .into_iter()
-        .zip(actual_function.arguments_types.clone().into_iter());
+        .zip(actual_function_type.arguments_types.clone().into_iter());
 
-    let arguments_types = zipped
-        .map(|(expected_type, actual_type)| {
-            unify_type(environment, &expected_type, &actual_type, location.clone())
+    let unify_argument_type_result = zipped
+        .enumerate()
+        .map(|(index, (expected_type, actual_type))| {
+            match unify_type(environment, &expected_type, &actual_type, location.clone()) {
+                Ok(type_value) => Ok(type_value),
+                Err(unify_error) => Err((index, unify_error)),
+            }
         })
-        .collect::<Result<Vec<Type>, UnifyError>>()?;
+        .collect::<Result<Vec<Type>, (usize, UnifyError)>>();
 
-    // unify return type
-    let return_type = unify_type(
-        environment,
-        expected_function.return_type.as_ref(),
-        actual_function.return_type.as_ref(),
-        location.clone(),
-    )?;
-
-    Ok(FunctionType {
-        arguments_types,
-        return_type: Box::new(return_type),
-    })
+    match unify_argument_type_result {
+        Ok(arguments_types) => {
+            // unify return type
+            match unify_type(
+                environment,
+                expected_function_type.return_type.as_ref(),
+                actual_function_type.return_type.as_ref(),
+                location.clone(),
+            ) {
+                Ok(return_type) => Ok(FunctionType {
+                    arguments_types,
+                    return_type: Box::new(return_type),
+                }),
+                Err(unify_error) => Err(UnifyError::FunctionReturnTypeMismatch {
+                    unify_error: Box::new(unify_error),
+                    location,
+                    expected_function_type: environment
+                        .apply_subtitution_to_function_type(expected_function_type),
+                    actual_function_type: environment
+                        .apply_subtitution_to_function_type(actual_function_type),
+                }),
+            }
+        }
+        Err((argument_index, unify_error)) => Err(UnifyError::FunctionTypeArgumentMismatch {
+            argument_index,
+            unify_error: Box::new(unify_error),
+            location,
+            expected_function_type: environment
+                .apply_subtitution_to_function_type(expected_function_type),
+            actual_function_type: environment
+                .apply_subtitution_to_function_type(actual_function_type),
+        }),
+    }
 }
 
 pub fn get_function_branch_position(function_branch: &FunctionBranch) -> Position {
@@ -889,11 +1050,11 @@ pub fn get_function_branch_position(function_branch: &FunctionBranch) -> Positio
 }
 
 pub fn infer_function_branch(
-    environment: &mut Environment,
+    parent_environment: &mut Environment,
     function_branch: &FunctionBranch,
 ) -> Result<FunctionType, UnifyError> {
     // Initialize new environment for this function branch
-    let mut environment = Environment::new(&environment);
+    let mut environment = Environment::new(&parent_environment);
 
     let arguments_types = function_branch
         .arguments
@@ -929,23 +1090,9 @@ pub fn infer_function_branch(
         }),
     }?;
 
+    // pass back the substitution to parent environment
+
     Ok(environment.apply_subtitution_to_function_type(&result))
-
-    // // remap instantiated type variables
-    // let arguments_types = function_type
-    //     .arguments_types
-    //     .into_iter()
-    //     .map(|argument_type| environment.resolve_type_alias(argument_type))
-    //     .collect::<Result<Vec<Type>, UnifyError>>()?;
-
-    // let return_type = environment.resolve_type_alias(*function_type.return_type)?;
-
-    // println!("{:#?}", environment);
-
-    // Ok(FunctionType {
-    //     arguments_types,
-    //     return_type: Box::new(return_type),
-    // })
 }
 
 pub fn unify_function_argument(
@@ -1014,14 +1161,14 @@ pub fn type_annotation_to_type(
                 Some(payload) => Some(Box::new(type_annotation_to_type(environment, payload)?)),
                 None => None,
             };
-            Ok(Type::Union {
+            Ok(Type::Union(UnionType {
                 tags: vec![TagType {
                     tagname: token.representation.clone(),
                     payload,
                 }],
-                bound: UnionTypeBound::Exact,
+                bound: UnionTypeBound::AtMost,
                 catch_all: false,
-            })
+            }))
         }
         TypeAnnotation::Union { type_annotations } => {
             // Make sure that only all the types are either a union or tag
@@ -1030,7 +1177,9 @@ pub fn type_annotation_to_type(
                 |result, type_annotation| match result {
                     Ok(current_tags) => {
                         match type_annotation_to_type(environment, type_annotation)? {
-                            Type::Union { tags, .. } => join_union_tags(current_tags, tags),
+                            Type::Union(UnionType { tags, .. }) => {
+                                join_union_tags(current_tags, tags)
+                            }
                             other => Err(UnifyError::CannotUnionNonTagType {
                                 the_non_union_type: other,
                                 location: get_type_annotation_location(
@@ -1046,11 +1195,11 @@ pub fn type_annotation_to_type(
 
             // TODO: check for duplicated tags
 
-            Ok(Type::Union {
+            Ok(Type::Union(UnionType {
                 tags: tag_types,
-                bound: UnionTypeBound::Exact,
+                bound: UnionTypeBound::AtMost,
                 catch_all: false,
-            })
+            }))
         }
         TypeAnnotation::Function {
             arguments_types,
@@ -1091,11 +1240,11 @@ pub fn infer_destructure_pattern(
                     }
                 },
             };
-            Ok(Type::Union {
+            Ok(Type::Union(UnionType {
                 tags: vec![tag_type],
                 bound: UnionTypeBound::AtLeast,
                 catch_all: false,
-            })
+            }))
         }
         DestructurePattern::Record { key_value_pairs } => {
             let key_type_pairs: Vec<(String, Type)> = key_value_pairs
@@ -1259,7 +1408,7 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
                     result.into_iter().chain(type_variables).collect()
                 })
         }
-        Type::Union { tags, .. } => tags
+        Type::Union(UnionType { tags, .. }) => tags
             .iter()
             .flat_map(|tag_type| match &tag_type.payload {
                 Some(payload) => get_free_type_variables_in_type(&payload),

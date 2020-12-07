@@ -421,11 +421,40 @@ let z: string = 'hello'.map(constant)
         ))
     }
 
+    #[test]
+    fn test_unify_function_branches_2() {
+        assert_debug_snapshot!(type_check_source(
+            "
+            type Boolean = #true | #false
+            let and: \\(Boolean, Boolean) => Boolean = 
+              \\(#bomb, #true) => #true
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_unify_function_branches_3() {
+        // missing case
+        assert_debug_snapshot!(type_check_source(
+            "
+            type Boolean = #true | #false
+            let result = \\(x: Boolean) => x.(
+                \\#true => 1
+                \\#false => 'yo'
+            )
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
     // #[test]
     // fn test_generic_function_with_specified_type_variable() {
     //     assert_debug_snapshot!(type_check_source(
     //         "
-    //         let as = \\<T>(x: T): T => x
+    //         let as<T> = \\(x: T): T => x
     //         let x = 'hello'.as<number>
     //         "
     //         .trim()

@@ -4,12 +4,14 @@ use crate::unify::UnifyError;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
+type Substitution = HashMap<String, SubstitutionItem>;
+
 #[derive(Debug, Clone)]
 pub struct Environment<'a> {
     parent: Option<&'a Environment<'a>>,
     value_symbols: RefCell<HashMap<String, ValueSymbol>>,
     type_symbols: RefCell<HashMap<String, TypeSymbol>>,
-    type_variable_substitutions: RefCell<HashMap<String, SubstitutionItem>>,
+    type_variable_substitutions: RefCell<Substitution>,
     type_variable_index: Cell<usize>,
     pub source: Source,
 }
@@ -167,18 +169,18 @@ impl<'a> Environment<'a> {
                     .collect(),
             },
             Type::Underscore => Type::Underscore,
-            Type::Union {
+            Type::Union(UnionType {
                 tags,
                 bound,
                 catch_all,
-            } => Type::Union {
+            }) => Type::Union(UnionType {
                 bound: bound.clone(),
                 catch_all: *catch_all,
                 tags: tags
                     .into_iter()
                     .map(|tag_type| self.apply_subtitution_to_tag_type(&tag_type))
                     .collect(),
-            },
+            }),
             other => panic!("substitution_apply_to({:#?})", other),
         }
     }
