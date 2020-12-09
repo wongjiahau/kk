@@ -450,6 +450,80 @@ let z: string = 'hello'.map(constant)
         ))
     }
 
+    #[test]
+    fn test_let_monadic_binding_number() {
+        assert_debug_snapshot!(type_check_source(
+            // expected number, got string at 'bomb'
+            "
+            let guess = \\x => 
+                let 0 = x
+                'bomb'
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
+    // #[test]
+    // fn test_let_monadic_binding_string() {
+    //     assert_debug_snapshot!(type_check_source(
+    //         "
+    //         type Option<T> = #true | #false
+    //         let add = \\(x: Boolean) => x.(
+    //             \\#true => 1
+    //             \\#false => 'yo'
+    //         )
+    //         "
+    //         .trim()
+    //         .to_string()
+    //     ))
+    // }
+
+    // #[test]
+    // fn test_let_monadic_binding_array() {
+    //     assert_debug_snapshot!(type_check_source(
+    //         "
+    //         type Option<T> = #true | #false
+    //         let add = \\(x: Boolean) => x.(
+    //             \\#true => 1
+    //             \\#false => 'yo'
+    //         )
+    //         "
+    //         .trim()
+    //         .to_string()
+    //     ))
+    // }
+
+    // #[test]
+    // fn test_let_monadic_binding_tagged_union() {
+    //     assert_debug_snapshot!(type_check_source(
+    //         "
+    //         type Option<T> = #true | #false
+    //         let add = \\(x: Boolean) => x.(
+    //             \\#true => 1
+    //             \\#false => 'yo'
+    //         )
+    //         "
+    //         .trim()
+    //         .to_string()
+    //     ))
+    // }
+
+    // #[test]
+    // fn test_let_monadic_binding_generic_tagged_union() {
+    //     assert_debug_snapshot!(type_check_source(
+    //         "
+    //         type Option<T> = #true | #false
+    //         let add = \\(x: Boolean) => x.(
+    //             \\#true => 1
+    //             \\#false => 'yo'
+    //         )
+    //         "
+    //         .trim()
+    //         .to_string()
+    //     ))
+    // }
+
     // #[test]
     // fn test_generic_function_with_specified_type_variable() {
     //     assert_debug_snapshot!(type_check_source(

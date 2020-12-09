@@ -608,8 +608,8 @@ pub fn parse_let_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression
         value: ExpressionValue::Let {
             left,
             right: Box::new(right),
-            else_return,
-            return_value: Box::new(return_value),
+            false_branch: else_return,
+            true_branch: Box::new(return_value),
         },
         inferred_type: None,
     })
@@ -666,6 +666,7 @@ pub fn parse_destructure_pattern(
                 }
                 Ok(DestructurePattern::Record { key_value_pairs })
             }
+            TokenType::Number => Ok(DestructurePattern::Number(token.clone())),
             other => panic!("Unimplemented {:#?}", other),
         }
     } else {

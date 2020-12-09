@@ -98,8 +98,8 @@ pub fn transpile_expression(expression: Expression) -> String {
         ExpressionValue::Let {
             left,
             right,
-            else_return,
-            return_value,
+            false_branch: else_return,
+            true_branch: return_value,
         } => {
             let temp_placeholder = "$TEMP".to_string(); //TODO: get from symbol table to prevent name clashing
             let TranspiledDestructurePattern {
@@ -201,6 +201,10 @@ pub fn transpile_function_destructure_pattern(
     from_expression: String,
 ) -> TranspiledDestructurePattern {
     match destructure_pattern {
+        DestructurePattern::Number(token) => TranspiledDestructurePattern {
+            conditions: vec![format!("{} === {}", token.representation, from_expression)],
+            bindings: vec![],
+        },
         DestructurePattern::Underscore(_) => TranspiledDestructurePattern {
             conditions: vec![],
             bindings: vec![],

@@ -212,6 +212,24 @@ pub fn join_position(start_position: Position, end_position: Position) -> Positi
     }
 }
 
+pub fn get_destructure_pattern_location(
+    environment: &Environment,
+    destructure_pattern: &DestructurePattern,
+) -> Location {
+    let position = get_destructure_pattern_position(destructure_pattern);
+    Location {
+        source: environment.source.clone(),
+        position,
+    }
+}
+
+pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern) -> Position {
+    match destructure_pattern {
+        DestructurePattern::Number(token) => token.position,
+        _ => panic!(),
+    }
+}
+
 pub fn get_expression_location(
     environment: &Environment,
     expression_value: &ExpressionValue,
@@ -646,6 +664,34 @@ pub fn infer_expression_type(
                 })
             }
         }
+        ExpressionValue::Let {
+            left,
+            right,
+            false_branch,
+            true_branch,
+        } => {
+            let left_type = infer_destructure_pattern(environment, left)?;
+            let right_type = infer_expression_type(environment, &right.value)?;
+            unify_type(
+                environment,
+                &right_type,
+                &left_type,
+                get_destructure_pattern_location(environment, &left),
+            )?;
+            let false_branch_type = match false_branch {
+                Some(false_branch) => infer_expression_type(environment, &false_branch.value)?,
+                None => right_type,
+            };
+            let true_branch_type = infer_expression_type(environment, &true_branch.value)?;
+            unify_type(
+                environment,
+                &false_branch_type,
+                &true_branch_type,
+                get_expression_location(environment, &true_branch.value),
+            )?;
+
+            Ok(environment.apply_subtitution_to_type(&false_branch_type))
+        }
         ExpressionValue::Function(function) => {
             let first_function_branch_type =
                 infer_function_branch(environment, &function.first_branch)?;
@@ -780,69 +826,6 @@ pub fn infer_expression_type(
                     actual_type: other.clone(),
                 }),
             }
-
-            // match expected_function_type {
-            //     Type::Function(mut function_type) => {
-            //         // instatiate type variables with a non-conflicting name in current environment
-            //         for type_variable_name in function_type.type_variables.clone() {
-            //             let new_name = environment.instantiate_type_variable();
-            //             function_type = rewrite_function_type_type_variable(
-            //                 type_variable_name,
-            //                 new_name,
-            //                 function_type,
-            //             );
-            //         }
-
-            //         // tally argument lengths
-            //         if function_type.arguments_types.len() != function_call.arguments.len() {
-            //             return Err(UnifyError::InvalidFunctionArgumentLength {
-            //                 location: get_expression_location(
-            //                     environment,
-            //                     &function_call.function.value,
-            //                 ),
-            //                 expected_length: function_type.arguments_types.len(),
-            //                 actual_length: function_call.arguments.len(),
-            //             });
-            //         }
-
-            //         // unify argument
-            //         let argument_types_value_types = function_type
-            //             .arguments_types
-            //             .into_iter()
-            //             .zip(value_types.into_iter());
-
-            //         let _ = argument_types_value_types
-            //             .into_iter()
-            //             .map(|(argument_type, (value, value_type))| {
-            //                 unify_type(
-            //                     environment,
-            //                     argument_type,
-            //                     value_type,
-            //                     get_expression_location(environment, &value),
-            //                 )
-            //             })
-            //             .collect::<Result<Vec<_>, UnifyError>>()?;
-
-            //         let return_type = environment.resolve_type_alias(*function_type.return_type)?;
-            //         Ok(return_type)
-            //     }
-            //     Type::ImplicitTypeVariable { name } => {
-            //         let function_type = Type::Function(FunctionType {
-            //             arguments_types: value_types
-            //                 .into_iter()
-            //                 .map(|(_, type_value)| type_value)
-            //                 .collect(),
-            //             return_type: Box::new(environment.introduce_type_variable(None)?),
-            //             type_variables: Vec::new(),
-            //         });
-            //         environment.specialized_type_variable(name, function_type.clone());
-            //         Ok(function_type)
-            //     }
-            //     other => Err(UnifyError::CannotInvokeNonFunction {
-            //         actual_type: other,
-            //         location: get_expression_location(environment, &function_call.function.value),
-            //     }),
-            // }
         }
         ExpressionValue::Record {
             key_value_pairs, ..
@@ -1227,6 +1210,7 @@ pub fn infer_destructure_pattern(
     destructure_pattern: &DestructurePattern,
 ) -> Result<Type, UnifyError> {
     match destructure_pattern {
+        DestructurePattern::Number(_) => Ok(Type::Number),
         DestructurePattern::Identifier(identifier) => {
             environment.introduce_type_variable(Some(&identifier))
         }

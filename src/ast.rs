@@ -96,6 +96,7 @@ pub enum TypeAnnotation {
 
 #[derive(Debug, Clone)]
 pub enum DestructurePattern {
+    Number(Token),
     Underscore(Token),
     Identifier(Token),
     Tag {
@@ -142,8 +143,8 @@ pub enum ExpressionValue {
     Let {
         left: DestructurePattern,
         right: Box<Expression>,
-        else_return: Option<Box<Expression>>,
-        return_value: Box<Expression>,
+        true_branch: Box<Expression>,
+        false_branch: Option<Box<Expression>>,
     },
 }
 
