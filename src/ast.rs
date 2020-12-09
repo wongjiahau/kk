@@ -96,6 +96,7 @@ pub enum TypeAnnotation {
 
 #[derive(Debug, Clone)]
 pub enum DestructurePattern {
+    String(Token),
     Number(Token),
     Underscore(Token),
     Identifier(Token),
@@ -183,6 +184,9 @@ pub struct FunctionArgument {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
+    ExpectedDestructurePattern {
+        token: Token
+    },
     InvalidChar {
         position: Position,
         error: String,

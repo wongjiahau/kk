@@ -201,6 +201,10 @@ pub fn transpile_function_destructure_pattern(
     from_expression: String,
 ) -> TranspiledDestructurePattern {
     match destructure_pattern {
+        DestructurePattern::String(token) => TranspiledDestructurePattern {
+            conditions: vec![format!("{} === {}", token.representation, from_expression)],
+            bindings: vec![],
+        },
         DestructurePattern::Number(token) => TranspiledDestructurePattern {
             conditions: vec![format!("{} === {}", token.representation, from_expression)],
             bindings: vec![],

@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let f = \\\\x => let 'yo' = x 'hey'\".to_string())"
+---
+Ok(
+    "const f = (_0)=>{{var x = _0;var $TEMP = x;if(\'yo\' === $TEMP){;return \'hey\'}else{return $TEMP}}}",
+)

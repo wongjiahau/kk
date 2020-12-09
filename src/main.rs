@@ -334,6 +334,19 @@ mod test_transpile {
         ))
     }
 
+    #[test]
+    fn transpile_let_destructure_number_1() {
+        assert_debug_snapshot!(transpile_source(
+            "let f = \\x => let 2 = x 10".to_string()
+        ))
+    }
+
+    #[test]
+    fn transpile_let_destructure_string_1() {
+        assert_debug_snapshot!(transpile_source(
+            "let f = \\x => let 'yo' = x 'hey'".to_string()
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -476,6 +489,21 @@ let z: string = 'hello'.map(constant)
             .to_string()
         ))
     }
+
+    #[test]
+    fn test_let_monadic_binding_string() {
+        assert_debug_snapshot!(type_check_source(
+            // expected string, got number at 2
+            "
+            let guess = \\x => 
+                let 'yo' = x
+                2
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
 
     // #[test]
     // fn test_let_monadic_binding_string() {

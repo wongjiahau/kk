@@ -667,7 +667,8 @@ pub fn parse_destructure_pattern(
                 Ok(DestructurePattern::Record { key_value_pairs })
             }
             TokenType::Number => Ok(DestructurePattern::Number(token.clone())),
-            other => panic!("Unimplemented {:#?}", other),
+            TokenType::String => Ok(DestructurePattern::String(token.clone())),
+            _ => Err(ParseError::ExpectedDestructurePattern {token: token.clone()})
         }
     } else {
         Err(ParseError::UnexpectedEOF {

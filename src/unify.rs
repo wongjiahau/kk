@@ -226,6 +226,7 @@ pub fn get_destructure_pattern_location(
 pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern) -> Position {
     match destructure_pattern {
         DestructurePattern::Number(token) => token.position,
+        DestructurePattern::String(token) => token.position,
         _ => panic!(),
     }
 }
@@ -1210,6 +1211,7 @@ pub fn infer_destructure_pattern(
     destructure_pattern: &DestructurePattern,
 ) -> Result<Type, UnifyError> {
     match destructure_pattern {
+        DestructurePattern::String(_) => Ok(Type::String),
         DestructurePattern::Number(_) => Ok(Type::Number),
         DestructurePattern::Identifier(identifier) => {
             environment.introduce_type_variable(Some(&identifier))
