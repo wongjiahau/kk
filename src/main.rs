@@ -55,9 +55,8 @@ pub fn transpile_source(source: String) -> Result<String, ParseError> {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_tokenize {
     use super::*;
-    use insta::assert_debug_snapshot;
 
     #[test]
     fn test_tokenize_arrow_right() {
@@ -179,6 +178,14 @@ mod tests {
             ])
         )
     }
+
+
+}
+
+#[cfg(test)]
+mod test_transpile {
+    use super::*;
+    use insta::assert_debug_snapshot;
 
     #[test]
     fn test_let_statement_1() {
@@ -327,6 +334,12 @@ mod tests {
         ))
     }
 
+}
+
+#[cfg(test)]
+mod test_type_check {
+    use super::*;
+    use insta::assert_debug_snapshot;
     #[test]
     fn test_type_check_simple_1() {
         assert_debug_snapshot!(type_check_source("let x: string = 123".to_string()))

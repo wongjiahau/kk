@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let x = x.(\\\\#ok(x) => a \\\\#no => b)\".to_string())"
+---
+Ok(
+    "const x = ((_0)=>{if(_0.$===\'ok\'){var x = _0._;return a}\nif(_0.$===\'no\'){;return b}})(x)",
+)

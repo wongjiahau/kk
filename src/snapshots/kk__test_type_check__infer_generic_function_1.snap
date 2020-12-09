@@ -1,0 +1,23 @@
+---
+source: src/main.rs
+expression: "type_check_source(\"\nlet identity = \\\\x => x\nlet constant = \\\\x => 2\nlet map = \\\\(x, f) => x.f\nlet x: string = 'hello'.map(identity)\nlet y: string = 'hello'.map(\\\\a => 'yo')\nlet z: string = 'hello'.map(constant)\n            \".trim().to_string())"
+---
+Err(
+    UnifyError(
+        TypeMismatch {
+            location: Location {
+                source: NonFile {
+                    env_name: "TESTING",
+                },
+                position: Position {
+                    line_start: 5,
+                    line_end: 5,
+                    column_start: 17,
+                    column_end: 36,
+                },
+            },
+            expected_type: String,
+            actual_type: Number,
+        },
+    ),
+)

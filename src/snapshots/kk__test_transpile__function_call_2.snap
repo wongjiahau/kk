@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let x = a.times(b).and(c, d)\".to_string())"
+---
+Ok(
+    "const x = (and)((times)(a,b),c,d)",
+)

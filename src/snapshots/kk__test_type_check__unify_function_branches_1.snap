@@ -1,0 +1,49 @@
+---
+source: src/main.rs
+expression: "type_check_source(\"\n            let and = \n              \\\\(#a, #x) => #true\n              \\\\(#b, #y) => #false\n            let a = #a.and(#x)\n            let b = #a.and(#y)\n            let c = #b.and(#x)\n            let d = #b.and(#y)\n            let e = #bomb.and(#y)\n            \".trim().to_string())"
+---
+Err(
+    UnifyError(
+        TypeMismatch {
+            location: Location {
+                source: NonFile {
+                    env_name: "TESTING",
+                },
+                position: Position {
+                    line_start: 7,
+                    line_end: 7,
+                    column_start: 21,
+                    column_end: 25,
+                },
+            },
+            expected_type: Union(
+                UnionType {
+                    tags: [
+                        TagType {
+                            tagname: "#a",
+                            payload: None,
+                        },
+                        TagType {
+                            tagname: "#b",
+                            payload: None,
+                        },
+                    ],
+                    bound: AtMost,
+                    catch_all: false,
+                },
+            ),
+            actual_type: Union(
+                UnionType {
+                    tags: [
+                        TagType {
+                            tagname: "#bomb",
+                            payload: None,
+                        },
+                    ],
+                    bound: AtLeast,
+                    catch_all: false,
+                },
+            ),
+        },
+    ),
+)
