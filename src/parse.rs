@@ -73,16 +73,18 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
     Ok(statements)
 }
 
-pub fn try_eat_token(it: &mut Peekable<Iter<Token>>, token_type: TokenType) -> bool {
+pub fn try_eat_token(it: &mut Peekable<Iter<Token>>, token_type: TokenType) -> Option<Token> {
     if let Some(token) = it.peek() {
         if token.token_type == token_type {
-            let _ = it.next();
-            true
+            match it.next() {
+                Some(token) => Some(token.clone()),
+                None => None,
+            }
         } else {
-            false
+            None
         }
     } else {
-        false
+        None
     }
 }
 
@@ -142,16 +144,16 @@ pub fn parse_function_branch(it: &mut Peekable<Iter<Token>>) -> Result<FunctionB
 pub fn parse_function_arguments(
     it: &mut Peekable<Iter<Token>>,
 ) -> Result<Vec<FunctionArgument>, ParseError> {
-    if try_eat_token(it, TokenType::LeftParenthesis) {
+    if try_eat_token(it, TokenType::LeftParenthesis).is_some() {
         let mut arguments = Vec::<FunctionArgument>::new();
         loop {
             let argument = parse_function_argument(it)?;
             arguments.push(argument);
-            if try_eat_token(it, TokenType::RightParenthesis) {
+            if try_eat_token(it, TokenType::RightParenthesis).is_some() {
                 break;
             } else {
                 eat_token(it, TokenType::Comma)?;
-                if try_eat_token(it, TokenType::RightParenthesis) {
+                if try_eat_token(it, TokenType::RightParenthesis).is_some() {
                     break;
                 }
             }
@@ -183,7 +185,7 @@ pub fn parse_function_argument(
 pub fn try_parse_colon_type_annotation(
     it: &mut Peekable<Iter<Token>>,
 ) -> Result<Option<TypeAnnotation>, ParseError> {
-    if try_eat_token(it, TokenType::Colon) {
+    if try_eat_token(it, TokenType::Colon).is_some() {
         match parse_type_annotation(it) {
             Ok(type_annotation) => Ok(Some(type_annotation)),
             Err(error) => Err(error),
@@ -196,7 +198,7 @@ pub fn try_parse_colon_type_annotation(
 pub fn parse_type_annotation(it: &mut Peekable<Iter<Token>>) -> Result<TypeAnnotation, ParseError> {
     let mut type_annotations = Vec::new();
     let first_type_annotation = parse_simple_type_annotation(it)?;
-    while try_eat_token(it, TokenType::Pipe) {
+    while try_eat_token(it, TokenType::Pipe).is_some() {
         type_annotations.push(parse_simple_type_annotation(it)?)
     }
     if type_annotations.is_empty() {
@@ -217,7 +219,7 @@ pub fn parse_simple_type_annotation(
             TokenType::Identifier => Ok(TypeAnnotation::Name(it.next().unwrap().clone())),
             TokenType::Tag => {
                 let token = it.next().unwrap().clone();
-                let payload = if try_eat_token(it, TokenType::LeftParenthesis) {
+                let payload = if try_eat_token(it, TokenType::LeftParenthesis).is_some() {
                     let payload = parse_type_annotation(it)?;
                     eat_token(it, TokenType::RightParenthesis)?;
                     Some(Box::new(payload))
@@ -234,7 +236,7 @@ pub fn parse_simple_type_annotation(
                     eat_token(it, TokenType::Colon)?;
                     let type_annotation = parse_type_annotation(it)?;
                     key_type_annotation_pairs.push((key, type_annotation));
-                    if !try_eat_token(it, TokenType::Comma) {
+                    if !try_eat_token(it, TokenType::Comma).is_some() {
                         break;
                     }
                 }
@@ -247,9 +249,9 @@ pub fn parse_simple_type_annotation(
             }
             TokenType::Backslash => {
                 let start_token = eat_token(it, TokenType::Backslash)?;
-                let arguments_types = if try_eat_token(it, TokenType::LeftParenthesis) {
+                let arguments_types = if try_eat_token(it, TokenType::LeftParenthesis).is_some() {
                     let mut arguments = vec![parse_type_annotation(it)?];
-                    if try_eat_token(it, TokenType::Comma) {
+                    if try_eat_token(it, TokenType::Comma).is_some() {
                         arguments.push(parse_type_annotation(it)?)
                     }
                     eat_token(it, TokenType::RightParenthesis)?;
@@ -286,7 +288,7 @@ pub fn parse_function_call(
     }
     let mut pairs: Vec<Pair> = vec![];
     loop {
-        if !try_eat_token(it, TokenType::Period) {
+        if !try_eat_token(it, TokenType::Period).is_some() {
             pairs.reverse();
             let Pair {
                 function,
@@ -380,7 +382,7 @@ pub fn parse_function_call_arguments(
             let mut result: Vec<Expression> = vec![];
             loop {
                 result.push(parse_expression(it)?);
-                if !try_eat_token(it, TokenType::Comma) {
+                if !try_eat_token(it, TokenType::Comma).is_some() {
                     break;
                 }
             }
@@ -468,13 +470,18 @@ pub fn parse_simple_expression(it: &mut Peekable<Iter<Token>>) -> Result<Express
             }
             TokenType::Tag => {
                 let token = it.next().unwrap();
-                let payload = if try_eat_token(it, TokenType::LeftParenthesis) {
-                    let payload = parse_expression(it)?;
-                    eat_token(it, TokenType::RightParenthesis)?;
-                    Some(Box::new(payload))
-                } else {
-                    None
-                };
+                let payload =
+                    if let Some(left_parenthesis) = try_eat_token(it, TokenType::LeftParenthesis) {
+                        let value = parse_expression(it)?;
+                        let right_parenthesis = eat_token(it, TokenType::RightParenthesis)?;
+                        Some(Box::new(TagPayload {
+                            left_parenthesis,
+                            right_parenthesis,
+                            value,
+                        }))
+                    } else {
+                        None
+                    };
                 Ok(Expression {
                     value: ExpressionValue::Tag {
                         token: token.clone(),
@@ -503,11 +510,11 @@ pub fn parse_array(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseEr
     eat_token(it, TokenType::LeftSquareBracket)?;
     let mut result: Vec<Expression> = Vec::new();
     loop {
-        if try_eat_token(it, TokenType::RightSquareBracket) {
+        if try_eat_token(it, TokenType::RightSquareBracket).is_some() {
             break;
         }
         result.push(parse_expression(it)?);
-        if !try_eat_token(it, TokenType::Comma) {
+        if !try_eat_token(it, TokenType::Comma).is_some() {
             eat_token(it, TokenType::RightSquareBracket)?;
             break;
         }
@@ -520,7 +527,7 @@ pub fn parse_array(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseEr
 
 pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
     let open_curly_bracket = eat_token(it, TokenType::LeftCurlyBracket)?;
-    let spread = if try_eat_token(it, TokenType::Spread) {
+    let spread = if try_eat_token(it, TokenType::Spread).is_some() {
         let expression = parse_expression(it)?;
         match it.peek() {
             Some(Token {
@@ -548,7 +555,7 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
             }) => {
                 let key = it.next().unwrap();
                 let type_annotation = try_parse_colon_type_annotation(it)?;
-                let value = if try_eat_token(it, TokenType::Equals) {
+                let value = if try_eat_token(it, TokenType::Equals).is_some() {
                     parse_expression(it)?
                 } else {
                     Expression {
@@ -577,7 +584,7 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
                 })
             }
         }
-        if !try_eat_token(it, TokenType::Comma) {
+        if !try_eat_token(it, TokenType::Comma).is_some() {
             break;
         }
     }
@@ -598,7 +605,7 @@ pub fn parse_let_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression
     let left = parse_destructure_pattern(it)?;
     eat_token(it, TokenType::Equals)?;
     let right = parse_expression(it)?;
-    let else_return = if try_eat_token(it, TokenType::KeywordElse) {
+    let else_return = if try_eat_token(it, TokenType::KeywordElse).is_some() {
         Some(Box::new(parse_expression(it)?))
     } else {
         None
@@ -626,12 +633,16 @@ pub fn parse_destructure_pattern(
                     token_type: TokenType::LeftParenthesis,
                     ..
                 }) => {
-                    eat_token(it, TokenType::LeftParenthesis)?;
-                    let payload = parse_destructure_pattern(it)?;
-                    eat_token(it, TokenType::RightParenthesis)?;
+                    let left_parenthesis = eat_token(it, TokenType::LeftParenthesis)?;
+                    let destructure_pattern = parse_destructure_pattern(it)?;
+                    let right_parenthesis = eat_token(it, TokenType::RightParenthesis)?;
                     Ok(DestructurePattern::Tag {
                         token: token.clone(),
-                        payload: Some(Box::new(payload)),
+                        payload: Some(Box::new(DestructurePatternTagPayload {
+                            left_parenthesis,
+                            right_parenthesis,
+                            destructure_pattern,
+                        })),
                     })
                 }
                 _ => Ok(DestructurePattern::Tag {
@@ -643,12 +654,12 @@ pub fn parse_destructure_pattern(
             TokenType::LeftCurlyBracket => {
                 let mut key_value_pairs: Vec<DestructuredRecordKeyValue> = Vec::new();
                 loop {
-                    if try_eat_token(it, TokenType::RightCurlyBracket) {
+                    if try_eat_token(it, TokenType::RightCurlyBracket).is_some() {
                         break;
                     }
                     let key = parse_identifier(it)?;
                     let type_annotation = try_parse_colon_type_annotation(it)?;
-                    let as_value = if try_eat_token(it, TokenType::Equals) {
+                    let as_value = if try_eat_token(it, TokenType::Equals).is_some() {
                         Some(parse_destructure_pattern(it)?)
                     } else {
                         None
@@ -659,7 +670,7 @@ pub fn parse_destructure_pattern(
                         as_value,
                         spread: None, // TODO: parse spread
                     });
-                    if !try_eat_token(it, TokenType::Comma) {
+                    if !try_eat_token(it, TokenType::Comma).is_some() {
                         eat_token(it, TokenType::RightCurlyBracket)?;
                         break;
                     }
@@ -668,7 +679,9 @@ pub fn parse_destructure_pattern(
             }
             TokenType::Number => Ok(DestructurePattern::Number(token.clone())),
             TokenType::String => Ok(DestructurePattern::String(token.clone())),
-            _ => Err(ParseError::ExpectedDestructurePattern {token: token.clone()})
+            _ => Err(ParseError::ExpectedDestructurePattern {
+                token: token.clone(),
+            }),
         }
     } else {
         Err(ParseError::UnexpectedEOF {

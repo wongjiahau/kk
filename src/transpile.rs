@@ -39,7 +39,7 @@ pub fn transpile_expression(expression: Expression) -> String {
             Some(payload) => format!(
                 "{{$:'{}',_:{}}}",
                 transpile_tag(token.representation),
-                transpile_expression(*payload)
+                transpile_expression(payload.value)
             ),
             None => format!("{{$:'{}'}}", transpile_tag(token.representation)),
         },
@@ -231,8 +231,8 @@ pub fn transpile_function_destructure_pattern(
             };
             let rest = match payload {
                 None => None,
-                Some(destructure_pattern) => Some(transpile_function_destructure_pattern(
-                    *destructure_pattern,
+                Some(payload) => Some(transpile_function_destructure_pattern(
+                    payload.destructure_pattern,
                     format!("{}._", from_expression),
                 )),
             };

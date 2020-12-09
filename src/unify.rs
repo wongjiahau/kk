@@ -23,6 +23,14 @@ pub fn unify_program(program: Program) -> Result<(), UnifyError> {
 
 #[derive(Debug)]
 pub enum UnifyError {
+    LetElseMustBeSingleArgumentFunction {
+        location: Location,
+        actual_type: Type,
+    },
+    LetElseMustBeFunction {
+        location: Location,
+        actual_type: Type,
+    },
     FunctionTypeArgumentMismatch {
         argument_index: usize,
         unify_error: Box<UnifyError>,
@@ -227,6 +235,10 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
     match destructure_pattern {
         DestructurePattern::Number(token) => token.position,
         DestructurePattern::String(token) => token.position,
+        DestructurePattern::Tag { token, payload } => match payload {
+            Some(payload) => join_position(token.position, payload.right_parenthesis.position),
+            None => token.position,
+        },
         _ => panic!(),
     }
 }
@@ -247,7 +259,10 @@ pub fn get_expression_position(expression_value: &ExpressionValue) -> Position {
         ExpressionValue::String(token)
         | ExpressionValue::Number(token)
         | ExpressionValue::Variable(token) => token.position.clone(),
-        ExpressionValue::Tag { token, .. } => token.position.clone(),
+        ExpressionValue::Tag { token, payload } => match payload {
+            Some(payload) => join_position(token.position, payload.right_parenthesis.position),
+            None => token.position,
+        },
         ExpressionValue::Record {
             open_curly_bracket,
             closing_curly_bracket,
@@ -611,7 +626,7 @@ pub fn infer_expression_type(
                 payload: match payload {
                     Some(payload) => Some(Box::new(infer_expression_type(
                         environment,
-                        &payload.value,
+                        &payload.value.value,
                     )?)),
                     None => None,
                 },
@@ -680,7 +695,51 @@ pub fn infer_expression_type(
                 get_destructure_pattern_location(environment, &left),
             )?;
             let false_branch_type = match false_branch {
-                Some(false_branch) => infer_expression_type(environment, &false_branch.value)?,
+                Some(false_branch) => {
+                    match infer_expression_type(environment, &false_branch.value)? {
+                        Type::TypeVariable { name } => Ok(Type::TypeVariable { name }),
+                        Type::Function(function_type) => {
+                            if let Some(_) = function_type.arguments_types.get(0) {
+                                if function_type.arguments_types.len() != 1 {
+                                    return Err(UnifyError::LetElseMustBeSingleArgumentFunction {
+                                        actual_type: Type::Function(function_type.clone()),
+                                        location: get_expression_location(
+                                            environment,
+                                            &false_branch.value,
+                                        ),
+                                    });
+                                } else {
+                                    let return_type = Type::TypeVariable {
+                                        name: environment.get_next_type_variable_name(),
+                                    };
+                                    let expected_function_type = FunctionType {
+                                        arguments_types: vec![right_type],
+                                        return_type: Box::new(return_type.clone()),
+                                    };
+                                    unify_function_type(
+                                        environment,
+                                        &expected_function_type,
+                                        &function_type,
+                                        get_expression_location(environment, &false_branch.value),
+                                    )?;
+                                    Ok(environment.apply_subtitution_to_type(&return_type))
+                                }
+                            } else {
+                                return Err(UnifyError::LetElseMustBeSingleArgumentFunction {
+                                    actual_type: Type::Function(function_type.clone()),
+                                    location: get_expression_location(
+                                        environment,
+                                        &false_branch.value,
+                                    ),
+                                });
+                            }
+                        }
+                        other => Err(UnifyError::LetElseMustBeFunction {
+                            actual_type: other.clone(),
+                            location: get_expression_location(environment, &false_branch.value),
+                        }),
+                    }?
+                }
                 None => right_type,
             };
             let true_branch_type = infer_expression_type(environment, &true_branch.value)?;
@@ -841,7 +900,21 @@ pub fn infer_expression_type(
 
             Ok(Type::Record { key_type_pairs })
         }
-        other => panic!("{:#?}", other),
+        ExpressionValue::Array(elements) => {
+            let element_type = Type::TypeVariable {
+                name: environment.get_next_type_variable_name(),
+            };
+            for element in elements {
+                let actual_element_type = &infer_expression_type(environment, &element.value)?;
+                unify_type(
+                    environment,
+                    &element_type,
+                    actual_element_type,
+                    get_expression_location(environment, &element.value),
+                )?;
+            }
+            Ok(environment.apply_subtitution_to_type(&element_type))
+        }
     }?;
     Ok(environment.apply_subtitution_to_type(&result))
 }
@@ -1221,9 +1294,10 @@ pub fn infer_destructure_pattern(
                 tagname: token.representation.clone(),
                 payload: match payload {
                     None => None,
-                    Some(payload) => {
-                        Some(Box::new(infer_destructure_pattern(environment, payload)?))
-                    }
+                    Some(payload) => Some(Box::new(infer_destructure_pattern(
+                        environment,
+                        &payload.destructure_pattern,
+                    )?)),
                 },
             };
             Ok(Type::Union(UnionType {

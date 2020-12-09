@@ -1,0 +1,34 @@
+---
+source: src/main.rs
+expression: "type_check_source(\"let x = [1, #hey]\".trim().to_string())"
+---
+Err(
+    UnifyError(
+        TypeMismatch {
+            location: Location {
+                source: NonFile {
+                    env_name: "TESTING",
+                },
+                position: Position {
+                    line_start: 0,
+                    line_end: 0,
+                    column_start: 12,
+                    column_end: 15,
+                },
+            },
+            expected_type: Number,
+            actual_type: Union(
+                UnionType {
+                    tags: [
+                        TagType {
+                            tagname: "#hey",
+                            payload: None,
+                        },
+                    ],
+                    bound: AtLeast,
+                    catch_all: false,
+                },
+            ),
+        },
+    ),
+)

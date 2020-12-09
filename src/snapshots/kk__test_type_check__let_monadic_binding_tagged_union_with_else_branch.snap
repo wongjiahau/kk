@@ -1,0 +1,81 @@
+---
+source: src/main.rs
+expression: "type_check_source(\"\n            let f = \\\\x => \n                let #some(yo) = x else \\\\'walao' => 10\n                2\n            \".trim().to_string())"
+---
+Err(
+    UnifyError(
+        FunctionTypeArgumentMismatch {
+            argument_index: 0,
+            unify_error: TypeMismatch {
+                location: Location {
+                    source: NonFile {
+                        env_name: "TESTING",
+                    },
+                    position: Position {
+                        line_start: 1,
+                        line_end: 1,
+                        column_start: 40,
+                        column_end: 53,
+                    },
+                },
+                expected_type: Union(
+                    UnionType {
+                        tags: [
+                            TagType {
+                                tagname: "#some",
+                                payload: Some(
+                                    TypeVariable {
+                                        name: "@TVAR1",
+                                    },
+                                ),
+                            },
+                        ],
+                        bound: AtLeast,
+                        catch_all: false,
+                    },
+                ),
+                actual_type: String,
+            },
+            expected_function_type: FunctionType {
+                arguments_types: [
+                    Union(
+                        UnionType {
+                            tags: [
+                                TagType {
+                                    tagname: "#some",
+                                    payload: Some(
+                                        TypeVariable {
+                                            name: "@TVAR1",
+                                        },
+                                    ),
+                                },
+                            ],
+                            bound: AtLeast,
+                            catch_all: false,
+                        },
+                    ),
+                ],
+                return_type: TypeVariable {
+                    name: "@TVAR4",
+                },
+            },
+            actual_function_type: FunctionType {
+                arguments_types: [
+                    String,
+                ],
+                return_type: Number,
+            },
+            location: Location {
+                source: NonFile {
+                    env_name: "TESTING",
+                },
+                position: Position {
+                    line_start: 1,
+                    line_end: 1,
+                    column_start: 40,
+                    column_end: 53,
+                },
+            },
+        },
+    ),
+)

@@ -178,8 +178,6 @@ mod test_tokenize {
             ])
         )
     }
-
-
 }
 
 #[cfg(test)]
@@ -336,9 +334,7 @@ mod test_transpile {
 
     #[test]
     fn transpile_let_destructure_number_1() {
-        assert_debug_snapshot!(transpile_source(
-            "let f = \\x => let 2 = x 10".to_string()
-        ))
+        assert_debug_snapshot!(transpile_source("let f = \\x => let 2 = x 10".to_string()))
     }
 
     #[test]
@@ -504,51 +500,37 @@ let z: string = 'hello'.map(constant)
         ))
     }
 
-
-    // #[test]
-    // fn test_let_monadic_binding_string() {
-    //     assert_debug_snapshot!(type_check_source(
-    //         "
-    //         type Option<T> = #true | #false
-    //         let add = \\(x: Boolean) => x.(
-    //             \\#true => 1
-    //             \\#false => 'yo'
-    //         )
-    //         "
-    //         .trim()
-    //         .to_string()
-    //     ))
-    // }
-
     // #[test]
     // fn test_let_monadic_binding_array() {
-    //     assert_debug_snapshot!(type_check_source(
-    //         "
-    //         type Option<T> = #true | #false
-    //         let add = \\(x: Boolean) => x.(
-    //             \\#true => 1
-    //             \\#false => 'yo'
-    //         )
-    //         "
-    //         .trim()
-    //         .to_string()
-    //     ))
     // }
 
-    // #[test]
-    // fn test_let_monadic_binding_tagged_union() {
-    //     assert_debug_snapshot!(type_check_source(
-    //         "
-    //         type Option<T> = #true | #false
-    //         let add = \\(x: Boolean) => x.(
-    //             \\#true => 1
-    //             \\#false => 'yo'
-    //         )
-    //         "
-    //         .trim()
-    //         .to_string()
-    //     ))
-    // }
+    #[test]
+    fn test_let_monadic_binding_tagged_union() {
+        assert_debug_snapshot!(type_check_source(
+            // expected union, got number at 2
+            "
+            let f = \\x => 
+                let #some(yo) = x
+                2
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_let_monadic_binding_tagged_union_with_else_branch() {
+        assert_debug_snapshot!(type_check_source(
+            // expected union, got string at 'walao'
+            "
+            let f = \\x => 
+                let #some(yo) = x else \\'walao' => 10
+                2
+            "
+            .trim()
+            .to_string()
+        ))
+    }
 
     // #[test]
     // fn test_let_monadic_binding_generic_tagged_union() {
@@ -576,4 +558,10 @@ let z: string = 'hello'.map(constant)
     //         .to_string()
     //     ))
     // }
+    //
+
+    #[test]
+    fn array_homogeneous_element_1() {
+        assert_debug_snapshot!(type_check_source("let x = [1, #hey]".trim().to_string()))
+    }
 }

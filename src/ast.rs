@@ -102,11 +102,18 @@ pub enum DestructurePattern {
     Identifier(Token),
     Tag {
         token: Token,
-        payload: Option<Box<DestructurePattern>>,
+        payload: Option<Box<DestructurePatternTagPayload>>,
     },
     Record {
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct DestructurePatternTagPayload {
+    pub left_parenthesis: Token,
+    pub destructure_pattern: DestructurePattern,
+    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -130,7 +137,7 @@ pub enum ExpressionValue {
     Variable(Token),
     Tag {
         token: Token,
-        payload: Option<Box<Expression>>,
+        payload: Option<Box<TagPayload>>,
     },
     Function(Function),
     FunctionCall(FunctionCall),
@@ -147,6 +154,13 @@ pub enum ExpressionValue {
         true_branch: Box<Expression>,
         false_branch: Option<Box<Expression>>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct TagPayload {
+    pub left_parenthesis: Token,
+    pub value: Expression,
+    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -185,7 +199,7 @@ pub struct FunctionArgument {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
     ExpectedDestructurePattern {
-        token: Token
+        token: Token,
     },
     InvalidChar {
         position: Position,
