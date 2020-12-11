@@ -522,19 +522,29 @@ pub fn parse_simple_expression(it: &mut Peekable<Iter<Token>>) -> Result<Express
 }
 
 pub fn parse_array(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
-    eat_token(it, TokenType::LeftSquareBracket)?;
-    let mut result: Vec<Expression> = Vec::new();
+    let left_square_bracket = eat_token(it, TokenType::LeftSquareBracket)?;
+    let mut elements: Vec<Expression> = Vec::new();
     loop {
-        if try_eat_token(it, TokenType::RightSquareBracket).is_some() {
-            break;
-        }
-        result.push(parse_expression(it)?);
+        match it.peek() {
+            Some(Token {
+                token_type: TokenType::RightSquareBracket,
+                ..
+            }) => {
+                break;
+            }
+            _ => {}
+        };
+        elements.push(parse_expression(it)?);
         if try_eat_token(it, TokenType::Comma).is_none() {
-            eat_token(it, TokenType::RightSquareBracket)?;
             break;
         }
     }
-    Ok(Expression::Array(result))
+    let right_square_bracket = eat_token(it, TokenType::RightSquareBracket)?;
+    Ok(Expression::Array {
+        left_square_bracket,
+        elements,
+        right_square_bracket,
+    })
 }
 
 pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {

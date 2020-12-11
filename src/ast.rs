@@ -90,7 +90,7 @@ pub enum TypeAnnotation {
         token: Token,
         payload: Option<TagTypeAnnotationPayload>,
     },
-    Underscore,
+    Underscore(Token),
     Union {
         type_annotations: Vec<TypeAnnotation>,
     },
@@ -157,7 +157,11 @@ pub enum Expression {
         key_value_pairs: Vec<RecordKeyValue>,
         right_curly_bracket: Token,
     },
-    Array(Vec<Expression>),
+    Array {
+        left_square_bracket: Token,
+        elements: Vec<Expression>,
+        right_square_bracket: Token,
+    },
     Let {
         let_keyword: Token,
         left: DestructurePattern,

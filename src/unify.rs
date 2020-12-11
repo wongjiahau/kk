@@ -232,6 +232,15 @@ pub fn get_type_annotation_location(
 
 pub fn get_type_annotation_position(type_annotation: &TypeAnnotation) -> Position {
     match type_annotation {
+        TypeAnnotation::Underscore(token) => token.position,
+        TypeAnnotation::Function {
+            start_token,
+            return_type,
+            ..
+        } => join_position(
+            start_token.position,
+            get_type_annotation_position(return_type.as_ref()),
+        ),
         TypeAnnotation::Record {
             left_curly_bracket,
             right_curly_bracket,
@@ -267,7 +276,6 @@ pub fn get_type_annotation_position(type_annotation: &TypeAnnotation) -> Positio
                 join_position(name.position, arguments.right_angular_bracket.position)
             }
         },
-        other => panic!("{:#?}", other),
     }
 }
 
@@ -322,6 +330,11 @@ pub fn get_expression_location(
 
 pub fn get_expression_position(expression_value: &Expression) -> Position {
     match expression_value {
+        Expression::Array {
+            left_square_bracket,
+            right_square_bracket,
+            ..
+        } => join_position(left_square_bracket.position, right_square_bracket.position),
         Expression::String(token) | Expression::Number(token) | Expression::Variable(token) => {
             token.position
         }
@@ -354,7 +367,6 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             true_branch,
             ..
         } => join_position(let_keyword.position, get_expression_position(&true_branch)),
-        other => panic!("{:#?}", other),
     }
 }
 
@@ -637,7 +649,7 @@ pub fn unify_type_(
                 .clone()
                 .into_iter()
                 .zip(actual_tags.into_iter());
-            let unify_error = zipped
+            zipped
                 .map(
                     |(expected_tag, actual_tag)| match (expected_tag, actual_tag) {
                         (
@@ -659,19 +671,20 @@ pub fn unify_type_(
                             Ok(())
                         }
                         (TagType { payload: None, .. }, TagType { payload: None, .. }) => Ok(()),
-                        (_, _) => panic!("mismatch, one expected payload, the other dont have"),
+                        (expected_tag_type, actual_tag_type) => Err(UnifyError::TagTypeMismatch {
+                            expected_tag_type,
+                            actual_tag_type,
+                            location: location.clone(),
+                        }),
                     },
                 )
-                .collect::<Result<Vec<()>, UnifyError>>();
+                .collect::<Result<Vec<()>, UnifyError>>()?;
 
-            match unify_error {
-                Ok(_) => Ok(Type::Union(UnionType {
-                    tags: expected_tags,
-                    bound: UnionTypeBound::Exact,
-                    catch_all: false,
-                })),
-                Err(_) => panic!("Some tag payload type not matched"),
-            }
+            Ok(Type::Union(UnionType {
+                tags: expected_tags,
+                bound: UnionTypeBound::Exact,
+                catch_all: false,
+            }))
         }
         _ => Err(UnifyError::TypeMismatch {
             location,
@@ -1126,7 +1139,7 @@ pub fn infer_expression_type(
 
             Ok(Type::Record { key_type_pairs })
         }
-        Expression::Array(elements) => {
+        Expression::Array { elements, .. } => {
             let element_type = Type::TypeVariable {
                 name: environment.get_next_type_variable_name(),
             };
@@ -1165,6 +1178,7 @@ pub fn update_union_type_in_function_type(
 
 pub fn update_union_type_in_type(type_value: Type, bound: &UnionTypeBound) -> Type {
     match type_value {
+        Type::Underscore => Type::Underscore,
         Type::Union(UnionType { tags, .. }) => Type::Union(UnionType {
             tags,
             bound: bound.clone(),
@@ -1187,7 +1201,6 @@ pub fn update_union_type_in_type(type_value: Type, bound: &UnionTypeBound) -> Ty
                 .map(|argument| update_union_type_in_type(argument, bound))
                 .collect(),
         },
-        other => panic!("{:#?}", other),
     }
 }
 
@@ -1287,16 +1300,10 @@ pub fn infer_function_branch(
         Some(return_type) => {
             let location = get_expression_location(&environment, &function_branch.body);
             unify_type(&mut environment, &return_type, &body_type, location)?;
-
-            panic!("not implemented")
-
-            // let result = FunctionType {
-            //     arguments_types,
-            //     return_type: Box::new(return_type),
-            // };
-            // Ok(substitution1
-            //     .compose(substitution2)
-            //     .apply_to(Type::Function(result)))
+            Ok(FunctionType {
+                arguments_types,
+                return_type: Box::new(environment.apply_subtitution_to_type(&return_type)),
+            })
         }
         None => Ok(FunctionType {
             arguments_types,
@@ -1305,7 +1312,6 @@ pub fn infer_function_branch(
     }?;
 
     // pass back the substitution to parent environment
-
     Ok(environment.apply_subtitution_to_function_type(&result))
 }
 
@@ -1318,19 +1324,6 @@ pub fn unify_function_argument(
 
     match type_annotation_type {
         Some(type_annotation_type) => {
-            // let type_value = match type_annotation_type {
-            //     Type::Compound {name, arguments} => {
-            //         let name = environment.get_next_type_variable_name();
-            //         Type::Compound {
-            //             name,
-            //             arguments: arguments.into_iter().map(|argument| {
-
-            //             })
-            //         }
-            //     },
-            //     other => other
-            // };
-            // instantiate type variable
             let actual_type =
                 infer_destructure_pattern(environment, &function_argument.destructure_pattern)?;
 
@@ -1363,6 +1356,7 @@ pub fn type_annotation_to_type(
     type_annotation: &TypeAnnotation,
 ) -> Result<Type, UnifyError> {
     match &type_annotation {
+        TypeAnnotation::Underscore(_) => Ok(Type::Underscore),
         TypeAnnotation::Named { name, arguments } => {
             if let Ok(symbol) = environment.get_type_symbol(&name) {
                 let arguments = match arguments {
@@ -1483,7 +1477,6 @@ pub fn type_annotation_to_type(
                 return_type: Box::new(return_type),
             }))
         }
-        other => panic!("{:#?}", other),
     }
 }
 
@@ -1593,7 +1586,31 @@ fn substitute_type_variable_in_type(
                 })
                 .collect(),
         },
-        Type::Union(_) => panic!(), // _ => in_type.clone(),
+        Type::Union(UnionType {
+            bound,
+            catch_all,
+            tags,
+        }) => Type::Union(UnionType {
+            bound: bound.clone(),
+            catch_all: *catch_all,
+            tags: tags
+                .into_iter()
+                .map(|TagType { tagname, payload }| match payload {
+                    None => TagType {
+                        tagname: tagname.to_string(),
+                        payload: None,
+                    },
+                    Some(payload) => TagType {
+                        tagname: tagname.to_string(),
+                        payload: Some(Box::new(substitute_type_variable_in_type(
+                            from_type_variable,
+                            to_type,
+                            payload.as_ref(),
+                        ))),
+                    },
+                })
+                .collect(),
+        }), // _ => in_type.clone(),
     }
 }
 
@@ -1609,6 +1626,7 @@ fn substitute_type_variable_in_type(
 
 fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
     match type_value {
+        Type::Underscore => HashSet::new(),
         Type::TypeVariable { name } => {
             let mut result: HashSet<String> = HashSet::new();
             result.insert(name.clone());
@@ -1653,7 +1671,6 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
             .iter()
             .flat_map(get_free_type_variables_in_type)
             .collect(),
-        other => panic!("get_free_Type_variables_in_type({:#?})", other),
     }
 }
 

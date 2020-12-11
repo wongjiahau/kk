@@ -88,9 +88,9 @@ pub fn transpile_expression(expression: Expression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
-        Expression::Array(values) => format!(
+        Expression::Array { elements, .. } => format!(
             "[{}]",
-            values
+            elements
                 .into_iter()
                 .map(transpile_expression)
                 .collect::<Vec<String>>()
