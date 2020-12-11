@@ -500,6 +500,34 @@ let z: string = 'hello'.map(constant)
         ))
     }
 
+    #[test]
+    fn test_let_monadic_binding_null() {
+        assert_debug_snapshot!(type_check_source(
+            // expected string, got number at 2
+            "
+            let f = \\x => 
+                let null = x
+                2
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_let_monadic_binding_boolean() {
+        assert_debug_snapshot!(type_check_source(
+            // expected string, got number at 2
+            "
+            let guess = \\x => 
+                let true = x
+                2
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
     // #[test]
     // fn test_let_monadic_binding_array() {
     // }
@@ -592,6 +620,28 @@ let z: string = 'hello'.map(constant)
         assert_debug_snapshot!(type_check_source(
             "
          let x = {a: string = 2}
+         "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn boolean_literal() {
+        assert_debug_snapshot!(type_check_source(
+            "
+         let x: boolean = true
+         let y: number = false
+         "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn null_literal() {
+        assert_debug_snapshot!(type_check_source(
+            "
+         let x: null = null
+         let y: number = null
          "
             .to_string()
         ))

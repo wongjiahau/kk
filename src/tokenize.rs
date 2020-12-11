@@ -297,6 +297,12 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordType
     } else if s.eq("else") {
         TokenType::KeywordElse
+    } else if s.eq("true") {
+        TokenType::KeywordTrue
+    } else if s.eq("false") {
+        TokenType::KeywordFalse
+    } else if s.eq("null") {
+        TokenType::KeywordNull
     } else {
         TokenType::Identifier
     }

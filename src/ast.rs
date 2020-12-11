@@ -112,6 +112,8 @@ pub struct TagTypeAnnotationPayload {
 pub enum DestructurePattern {
     String(Token),
     Number(Token),
+    Boolean(Token),
+    Null(Token),
     Underscore(Token),
     Identifier(Token),
     Tag {
@@ -142,6 +144,11 @@ pub struct DestructuredRecordKeyValue {
 
 #[derive(Debug, Clone)]
 pub enum Expression {
+    Null(Token),
+    Boolean {
+        token: Token,
+        value: bool,
+    },
     Number(Token),
     String(Token),
     Variable(Token),
@@ -247,6 +254,9 @@ pub enum TokenType {
     KeywordLet,
     KeywordType,
     KeywordElse,
+    KeywordNull,
+    KeywordTrue,
+    KeywordFalse,
     Whitespace,
     LeftCurlyBracket,
     RightCurlyBracket,

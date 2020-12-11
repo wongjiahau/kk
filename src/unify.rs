@@ -304,7 +304,9 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
         DestructurePattern::Number(token)
         | DestructurePattern::String(token)
         | DestructurePattern::Identifier(token)
-        | DestructurePattern::Underscore(token) => token.position,
+        | DestructurePattern::Underscore(token)
+        | DestructurePattern::Boolean(token)
+        | DestructurePattern::Null(token) => token.position,
         DestructurePattern::Tag { token, payload } => match payload {
             Some(payload) => join_position(token.position, payload.right_parenthesis.position),
             None => token.position,
@@ -335,9 +337,11 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             right_square_bracket,
             ..
         } => join_position(left_square_bracket.position, right_square_bracket.position),
-        Expression::String(token) | Expression::Number(token) | Expression::Variable(token) => {
-            token.position
-        }
+        Expression::String(token)
+        | Expression::Number(token)
+        | Expression::Variable(token)
+        | Expression::Null(token)
+        | Expression::Boolean { token, .. } => token.position,
         Expression::Tag { token, payload } => match payload {
             Some(payload) => join_position(token.position, payload.right_parenthesis.position),
             None => token.position,
@@ -830,6 +834,8 @@ pub fn infer_expression_type(
     expression: &Expression,
 ) -> Result<Type, UnifyError> {
     let result = match expression {
+        Expression::Null(_) => Ok(null_type()),
+        Expression::Boolean { .. } => Ok(boolean_type()),
         Expression::String(_) => Ok(string_type()),
         Expression::Number(_) => Ok(number_type()),
         Expression::Tag { token, payload } => {
@@ -1487,6 +1493,8 @@ pub fn infer_destructure_pattern(
     match destructure_pattern {
         DestructurePattern::String(_) => Ok(string_type()),
         DestructurePattern::Number(_) => Ok(number_type()),
+        DestructurePattern::Boolean(_) => Ok(boolean_type()),
+        DestructurePattern::Null(_) => Ok(null_type()),
         DestructurePattern::Identifier(identifier) => {
             environment.introduce_type_variable(Some(&identifier))
         }
@@ -1594,7 +1602,7 @@ fn substitute_type_variable_in_type(
             bound: bound.clone(),
             catch_all: *catch_all,
             tags: tags
-                .into_iter()
+                .iter()
                 .map(|TagType { tagname, payload }| match payload {
                     None => TagType {
                         tagname: tagname.to_string(),

@@ -229,7 +229,7 @@ pub fn parse_simple_type_annotation(
 ) -> Result<TypeAnnotation, ParseError> {
     if let Some(token) = it.next() {
         match token.token_type.clone() {
-            TokenType::Identifier => {
+            TokenType::Identifier | TokenType::KeywordNull => {
                 let name = token.clone();
                 let arguments =
                     if let Some(left_angular_bracket) = try_eat_token(it, TokenType::LessThan) {
@@ -511,6 +511,15 @@ pub fn parse_simple_expression(it: &mut Peekable<Iter<Token>>) -> Result<Express
             TokenType::LeftCurlyBracket => parse_record(it),
             TokenType::LeftSquareBracket => parse_array(it),
             TokenType::Number => Ok(Expression::Number(it.next().unwrap().clone())),
+            TokenType::KeywordTrue => Ok(Expression::Boolean {
+                token: it.next().unwrap().clone(),
+                value: true,
+            }),
+            TokenType::KeywordFalse => Ok(Expression::Boolean {
+                token: it.next().unwrap().clone(),
+                value: false,
+            }),
+            TokenType::KeywordNull => Ok(Expression::Null(it.next().unwrap().clone())),
             other => panic!("{:#?}", other.clone()),
         }
     } else {
@@ -525,14 +534,12 @@ pub fn parse_array(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseEr
     let left_square_bracket = eat_token(it, TokenType::LeftSquareBracket)?;
     let mut elements: Vec<Expression> = Vec::new();
     loop {
-        match it.peek() {
-            Some(Token {
-                token_type: TokenType::RightSquareBracket,
-                ..
-            }) => {
-                break;
-            }
-            _ => {}
+        if let Some(Token {
+            token_type: TokenType::RightSquareBracket,
+            ..
+        }) = it.peek()
+        {
+            break;
         };
         elements.push(parse_expression(it)?);
         if try_eat_token(it, TokenType::Comma).is_none() {
@@ -697,6 +704,10 @@ pub fn parse_destructure_pattern(
             }
             TokenType::Number => Ok(DestructurePattern::Number(token.clone())),
             TokenType::String => Ok(DestructurePattern::String(token.clone())),
+            TokenType::KeywordTrue | TokenType::KeywordFalse => {
+                Ok(DestructurePattern::Boolean(token.clone()))
+            }
+            TokenType::KeywordNull => Ok(DestructurePattern::Null(token.clone())),
             _ => Err(ParseError::ExpectedDestructurePattern {
                 token: token.clone(),
             }),

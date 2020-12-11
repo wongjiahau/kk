@@ -350,9 +350,24 @@ pub fn string_type() -> Type {
         arguments: vec![],
     }
 }
+
 pub fn number_type() -> Type {
     Type::Named {
         name: "number".to_string(),
+        arguments: vec![],
+    }
+}
+
+pub fn boolean_type() -> Type {
+    Type::Named {
+        name: "boolean".to_string(),
+        arguments: vec![],
+    }
+}
+
+pub fn null_type() -> Type {
+    Type::Named {
+        name: "null".to_string(),
         arguments: vec![],
     }
 }
@@ -384,6 +399,30 @@ fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
             type_scheme: TypeScheme {
                 type_variables: vec![],
                 type_value: number_type(),
+            },
+            usage_references: vec![],
+        },
+    );
+
+    hash_map.insert(
+        "null".to_string(),
+        TypeSymbol {
+            declaration: Declaration::BuiltIn,
+            type_scheme: TypeScheme {
+                type_variables: vec![],
+                type_value: null_type(),
+            },
+            usage_references: vec![],
+        },
+    );
+
+    hash_map.insert(
+        "boolean".to_string(),
+        TypeSymbol {
+            declaration: Declaration::BuiltIn,
+            type_scheme: TypeScheme {
+                type_variables: vec![],
+                type_value: boolean_type(),
             },
             usage_references: vec![],
         },

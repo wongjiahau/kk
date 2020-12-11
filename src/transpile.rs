@@ -32,6 +32,14 @@ fn transpile_tag(tag: String) -> String {
 
 pub fn transpile_expression(expression: Expression) -> String {
     match expression {
+        Expression::Null(_) => "null".to_string(),
+        Expression::Boolean { value, .. } => {
+            if value {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
         Expression::String(s) => s.representation,
         Expression::Number(n) => n.representation,
         Expression::Variable(v) => v.representation,
@@ -203,11 +211,10 @@ pub fn transpile_function_destructure_pattern(
     from_expression: String,
 ) -> TranspiledDestructurePattern {
     match destructure_pattern {
-        DestructurePattern::String(token) => TranspiledDestructurePattern {
-            conditions: vec![format!("{} === {}", token.representation, from_expression)],
-            bindings: vec![],
-        },
-        DestructurePattern::Number(token) => TranspiledDestructurePattern {
+        DestructurePattern::Number(token)
+        | DestructurePattern::String(token)
+        | DestructurePattern::Boolean(token)
+        | DestructurePattern::Null(token) => TranspiledDestructurePattern {
             conditions: vec![format!("{} === {}", token.representation, from_expression)],
             bindings: vec![],
         },
