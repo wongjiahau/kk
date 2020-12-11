@@ -576,4 +576,24 @@ let z: string = 'hello'.map(constant)
     fn array_homogeneous_element_1() {
         assert_debug_snapshot!(type_check_source("let x = [1, #hey]".trim().to_string()))
     }
+
+    #[test]
+    fn type_annotation_function_return_type() {
+        assert_debug_snapshot!(type_check_source(
+            "
+         let f = \\(x): number => 'hi'
+         "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn type_annotation_record_property_type() {
+        assert_debug_snapshot!(type_check_source(
+            "
+         let x = {a: string = 2}
+         "
+            .to_string()
+        ))
+    }
 }

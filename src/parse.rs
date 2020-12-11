@@ -231,19 +231,24 @@ pub fn parse_simple_type_annotation(
         match token.token_type.clone() {
             TokenType::Identifier => {
                 let name = token.clone();
-                let arguments = if try_eat_token(it, TokenType::LessThan).is_some() {
-                    let mut arguments = vec![];
-                    loop {
-                        arguments.push(parse_type_annotation(it)?);
-                        if try_eat_token(it, TokenType::Comma).is_none() {
-                            break;
+                let arguments =
+                    if let Some(left_angular_bracket) = try_eat_token(it, TokenType::LessThan) {
+                        let mut arguments = vec![];
+                        loop {
+                            arguments.push(parse_type_annotation(it)?);
+                            if try_eat_token(it, TokenType::Comma).is_none() {
+                                break;
+                            }
                         }
-                    }
-                    eat_token(it, TokenType::MoreThan)?;
-                    arguments
-                } else {
-                    vec![]
-                };
+                        let right_angular_bracket = eat_token(it, TokenType::MoreThan)?;
+                        Some(NamedTypeAnnotationArguments {
+                            left_angular_bracket,
+                            arguments,
+                            right_angular_bracket,
+                        })
+                    } else {
+                        None
+                    };
                 Ok(TypeAnnotation::Named { name, arguments })
             }
             TokenType::Tag => {

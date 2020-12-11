@@ -357,6 +357,13 @@ pub fn number_type() -> Type {
     }
 }
 
+pub fn array_type(element_type: Type) -> Type {
+    Type::Named {
+        name: "Array".to_string(),
+        arguments: vec![element_type],
+    }
+}
+
 fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
     let mut hash_map = HashMap::new();
     hash_map.insert(
@@ -377,6 +384,21 @@ fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
             type_scheme: TypeScheme {
                 type_variables: vec![],
                 type_value: number_type(),
+            },
+            usage_references: vec![],
+        },
+    );
+
+    let array_type_variable = "T".to_string();
+    hash_map.insert(
+        "Array".to_string(),
+        TypeSymbol {
+            declaration: Declaration::BuiltIn,
+            type_scheme: TypeScheme {
+                type_variables: vec![array_type_variable.clone()],
+                type_value: array_type(Type::TypeVariable {
+                    name: array_type_variable,
+                }),
             },
             usage_references: vec![],
         },

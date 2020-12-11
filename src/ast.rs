@@ -69,10 +69,17 @@ pub enum SymbolSource {
 }
 
 #[derive(Debug, Clone)]
+pub struct NamedTypeAnnotationArguments {
+    pub left_angular_bracket: Token,
+    pub arguments: Vec<TypeAnnotation>,
+    pub right_angular_bracket: Token,
+}
+
+#[derive(Debug, Clone)]
 pub enum TypeAnnotation {
     Named {
         name: Token,
-        arguments: Vec<TypeAnnotation>,
+        arguments: Option<NamedTypeAnnotationArguments>,
     },
     Record {
         left_curly_bracket: Token,

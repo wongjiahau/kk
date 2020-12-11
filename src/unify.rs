@@ -261,6 +261,12 @@ pub fn get_type_annotation_position(type_annotation: &TypeAnnotation) -> Positio
                 join_position(position, position)
             }
         },
+        TypeAnnotation::Named { name, arguments } => match arguments {
+            None => join_position(name.position, name.position),
+            Some(arguments) => {
+                join_position(name.position, arguments.right_angular_bracket.position)
+            }
+        },
         other => panic!("{:#?}", other),
     }
 }
@@ -1092,10 +1098,30 @@ pub fn infer_expression_type(
         } => {
             let key_type_pairs = key_value_pairs
                 .iter()
-                .map(|RecordKeyValue { key, value, .. }| {
-                    let value_type = infer_expression_type(environment, &value)?;
-                    Ok((key.representation.clone(), value_type))
-                })
+                .map(
+                    |RecordKeyValue {
+                         key,
+                         value,
+                         type_annotation,
+                     }| {
+                        let value_type = infer_expression_type(environment, &value)?;
+                        match type_annotation {
+                            Some(type_annotation) => {
+                                let type_annotation =
+                                    type_annotation_to_type(environment, type_annotation)?;
+                                unify_type(
+                                    environment,
+                                    &type_annotation,
+                                    &value_type,
+                                    get_expression_location(environment, &value),
+                                )?;
+                                Ok(())
+                            }
+                            None => Ok(()),
+                        }?;
+                        Ok((key.representation.clone(), value_type))
+                    },
+                )
                 .collect::<Result<Vec<(String, Type)>, UnifyError>>()?;
 
             Ok(Type::Record { key_type_pairs })
@@ -1113,7 +1139,9 @@ pub fn infer_expression_type(
                     get_expression_location(environment, &element),
                 )?;
             }
-            Ok(environment.apply_subtitution_to_type(&element_type))
+            Ok(array_type(
+                environment.apply_subtitution_to_type(&element_type),
+            ))
         }
     }?;
     Ok(environment.apply_subtitution_to_type(&result))
@@ -1337,10 +1365,13 @@ pub fn type_annotation_to_type(
     match &type_annotation {
         TypeAnnotation::Named { name, arguments } => {
             if let Ok(symbol) = environment.get_type_symbol(&name) {
-                let arguments = arguments
-                    .iter()
-                    .map(|argument| type_annotation_to_type(environment, argument))
-                    .collect::<Result<Vec<Type>, UnifyError>>()?;
+                let arguments = match arguments {
+                    None => vec![],
+                    Some(NamedTypeAnnotationArguments { arguments, .. }) => arguments
+                        .iter()
+                        .map(|argument| type_annotation_to_type(environment, argument))
+                        .collect::<Result<Vec<Type>, UnifyError>>()?,
+                };
 
                 if symbol.type_scheme.type_variables.len() != arguments.len() {
                     Err(UnifyError::TypeArgumentsLengthMismatch {
@@ -1554,7 +1585,7 @@ fn substitute_type_variable_in_type(
         },
         Type::Underscore => Type::Underscore,
         Type::Named { name, arguments } => Type::Named {
-            name:name.to_string(),
+            name: name.to_string(),
             arguments: arguments
                 .iter()
                 .map(|argument| {

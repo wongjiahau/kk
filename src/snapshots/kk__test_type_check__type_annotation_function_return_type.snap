@@ -1,0 +1,29 @@
+---
+source: src/main.rs
+expression: "type_check_source(\"\n         let f = \\\\(x): number => 'hi'\n         \".to_string())"
+---
+Err(
+    UnifyError(
+        TypeMismatch {
+            location: Location {
+                source: NonFile {
+                    env_name: "TESTING",
+                },
+                position: Position {
+                    line_start: 1,
+                    line_end: 1,
+                    column_start: 34,
+                    column_end: 37,
+                },
+            },
+            expected_type: Named {
+                name: "number",
+                arguments: [],
+            },
+            actual_type: Named {
+                name: "string",
+                arguments: [],
+            },
+        },
+    ),
+)
