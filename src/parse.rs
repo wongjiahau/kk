@@ -36,11 +36,24 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
                         eat_token(it, TokenType::KeywordType)?;
                         let left = parse_identifier(it)?;
                         // TODO: parse type parameter
+                        let type_variables = if try_eat_token(it, TokenType::LessThan).is_some() {
+                            let mut type_variables = vec![];
+                            loop {
+                                type_variables.push(parse_identifier(it)?);
+                                if try_eat_token(it, TokenType::LessThan).is_none() {
+                                    break;
+                                }
+                            }
+                            eat_token(it, TokenType::MoreThan)?;
+                            type_variables
+                        } else {
+                            vec![]
+                        };
                         eat_token(it, TokenType::Equals)?;
                         let right = parse_type_annotation(it)?;
                         statements.push(Statement::TypeAlias {
                             left,
-                            type_variables: vec![],
+                            type_variables,
                             right,
                         })
                     }
@@ -214,41 +227,62 @@ pub fn parse_type_annotation(it: &mut Peekable<Iter<Token>>) -> Result<TypeAnnot
 pub fn parse_simple_type_annotation(
     it: &mut Peekable<Iter<Token>>,
 ) -> Result<TypeAnnotation, ParseError> {
-    if let Some(token) = it.peek() {
+    if let Some(token) = it.next() {
         match token.token_type.clone() {
-            TokenType::Identifier => Ok(TypeAnnotation::Name(it.next().unwrap().clone())),
-            TokenType::Tag => {
-                let token = it.next().unwrap().clone();
-                let payload = if try_eat_token(it, TokenType::LeftParenthesis).is_some() {
-                    let payload = parse_type_annotation(it)?;
-                    eat_token(it, TokenType::RightParenthesis)?;
-                    Some(Box::new(payload))
+            TokenType::Identifier => {
+                let name = token.clone();
+                let arguments = if try_eat_token(it, TokenType::LessThan).is_some() {
+                    let mut arguments = vec![];
+                    loop {
+                        arguments.push(parse_type_annotation(it)?);
+                        if try_eat_token(it, TokenType::Comma).is_none() {
+                            break;
+                        }
+                    }
+                    eat_token(it, TokenType::MoreThan)?;
+                    arguments
                 } else {
-                    None
+                    vec![]
                 };
+                Ok(TypeAnnotation::Named { name, arguments })
+            }
+            TokenType::Tag => {
+                let token = token.clone();
+                let payload =
+                    if let Some(left_parenthesis) = try_eat_token(it, TokenType::LeftParenthesis) {
+                        let payload = parse_type_annotation(it)?;
+                        let right_parenthesis = eat_token(it, TokenType::RightParenthesis)?;
+                        Some(TagTypeAnnotationPayload {
+                            left_parenthesis,
+                            right_parenthesis,
+                            payload: Box::new(payload),
+                        })
+                    } else {
+                        None
+                    };
                 Ok(TypeAnnotation::Tag { token, payload })
             }
             TokenType::LeftCurlyBracket => {
-                let open_curly_bracket = eat_token(it, TokenType::LeftCurlyBracket)?;
+                let left_curly_bracket = token.clone();
                 let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = Vec::new();
                 loop {
                     let key = parse_identifier(it)?;
                     eat_token(it, TokenType::Colon)?;
                     let type_annotation = parse_type_annotation(it)?;
                     key_type_annotation_pairs.push((key, type_annotation));
-                    if !try_eat_token(it, TokenType::Comma).is_some() {
+                    if try_eat_token(it, TokenType::Comma).is_none() {
                         break;
                     }
                 }
-                let closing_curly_bracket = eat_token(it, TokenType::RightCurlyBracket)?;
+                let right_curly_bracket = eat_token(it, TokenType::RightCurlyBracket)?;
                 Ok(TypeAnnotation::Record {
-                    open_curly_bracket,
+                    left_curly_bracket,
                     key_type_annotation_pairs,
-                    closing_curly_bracket,
+                    right_curly_bracket,
                 })
             }
             TokenType::Backslash => {
-                let start_token = eat_token(it, TokenType::Backslash)?;
+                let start_token = token.clone();
                 let arguments_types = if try_eat_token(it, TokenType::LeftParenthesis).is_some() {
                     let mut arguments = vec![parse_type_annotation(it)?];
                     if try_eat_token(it, TokenType::Comma).is_some() {
@@ -288,7 +322,7 @@ pub fn parse_function_call(
     }
     let mut pairs: Vec<Pair> = vec![];
     loop {
-        if !try_eat_token(it, TokenType::Period).is_some() {
+        if try_eat_token(it, TokenType::Period).is_none() {
             pairs.reverse();
             let Pair {
                 function,
@@ -296,13 +330,10 @@ pub fn parse_function_call(
             } = pairs.pop().unwrap();
             let mut args = vec![first_arg];
             args.extend(arguments);
-            let init = Expression {
-                value: ExpressionValue::FunctionCall(FunctionCall {
-                    function: Box::new(function),
-                    arguments: args,
-                }),
-                inferred_type: None,
-            };
+            let init = Expression::FunctionCall(FunctionCall {
+                function: Box::new(function),
+                arguments: args,
+            });
             let result = pairs.into_iter().fold(
                 init,
                 |first_arg,
@@ -312,13 +343,10 @@ pub fn parse_function_call(
                  }| {
                     let mut args = vec![first_arg];
                     args.extend(arguments);
-                    Expression {
-                        value: ExpressionValue::FunctionCall(FunctionCall {
-                            function: Box::new(function),
-                            arguments: args,
-                        }),
-                        inferred_type: None,
-                    }
+                    Expression::FunctionCall(FunctionCall {
+                        function: Box::new(function),
+                        arguments: args,
+                    })
                 },
             );
             return Ok(result);
@@ -329,10 +357,7 @@ pub fn parse_function_call(
                 ..
             }) => {
                 let token = it.next().unwrap();
-                let function_name = Expression {
-                    value: ExpressionValue::Variable(token.clone()),
-                    inferred_type: None,
-                };
+                let function_name = Expression::Variable(token.clone());
                 let function_call_arguments = parse_function_call_arguments(it)?;
                 pairs.push(Pair {
                     function: function_name,
@@ -382,7 +407,7 @@ pub fn parse_function_call_arguments(
             let mut result: Vec<Expression> = vec![];
             loop {
                 result.push(parse_expression(it)?);
-                if !try_eat_token(it, TokenType::Comma).is_some() {
+                if try_eat_token(it, TokenType::Comma).is_none() {
                     break;
                 }
             }
@@ -432,10 +457,7 @@ pub fn parse_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, Pa
         match &token.token_type {
             TokenType::Backslash => {
                 let function = parse_function(it)?;
-                Ok(Expression {
-                    value: ExpressionValue::Function(function),
-                    inferred_type: None,
-                })
+                Ok(Expression::Function(Box::new(function)))
             }
             TokenType::KeywordLet => parse_let_expression(it),
             _ => {
@@ -456,17 +478,11 @@ pub fn parse_simple_expression(it: &mut Peekable<Iter<Token>>) -> Result<Express
         match &token.token_type {
             TokenType::String => {
                 let token = it.next().unwrap();
-                Ok(Expression {
-                    value: ExpressionValue::String(token.clone()),
-                    inferred_type: Some(Type::String),
-                })
+                Ok(Expression::String(token.clone()))
             }
             TokenType::Identifier => {
                 let token = it.next().unwrap();
-                Ok(Expression {
-                    value: ExpressionValue::Variable(token.clone()),
-                    inferred_type: None,
-                })
+                Ok(Expression::Variable(token.clone()))
             }
             TokenType::Tag => {
                 let token = it.next().unwrap();
@@ -482,20 +498,14 @@ pub fn parse_simple_expression(it: &mut Peekable<Iter<Token>>) -> Result<Express
                     } else {
                         None
                     };
-                Ok(Expression {
-                    value: ExpressionValue::Tag {
-                        token: token.clone(),
-                        payload,
-                    },
-                    inferred_type: None,
+                Ok(Expression::Tag {
+                    token: token.clone(),
+                    payload,
                 })
             }
             TokenType::LeftCurlyBracket => parse_record(it),
             TokenType::LeftSquareBracket => parse_array(it),
-            TokenType::Number => Ok(Expression {
-                value: ExpressionValue::Number(it.next().unwrap().clone()),
-                inferred_type: Some(Type::Number),
-            }),
+            TokenType::Number => Ok(Expression::Number(it.next().unwrap().clone())),
             other => panic!("{:#?}", other.clone()),
         }
     } else {
@@ -514,19 +524,16 @@ pub fn parse_array(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseEr
             break;
         }
         result.push(parse_expression(it)?);
-        if !try_eat_token(it, TokenType::Comma).is_some() {
+        if try_eat_token(it, TokenType::Comma).is_none() {
             eat_token(it, TokenType::RightSquareBracket)?;
             break;
         }
     }
-    Ok(Expression {
-        value: ExpressionValue::Array(result),
-        inferred_type: None,
-    })
+    Ok(Expression::Array(result))
 }
 
 pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
-    let open_curly_bracket = eat_token(it, TokenType::LeftCurlyBracket)?;
+    let left_curly_bracket = eat_token(it, TokenType::LeftCurlyBracket)?;
     let spread = if try_eat_token(it, TokenType::Spread).is_some() {
         let expression = parse_expression(it)?;
         match it.peek() {
@@ -558,10 +565,7 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
                 let value = if try_eat_token(it, TokenType::Equals).is_some() {
                     parse_expression(it)?
                 } else {
-                    Expression {
-                        inferred_type: None,
-                        value: ExpressionValue::Variable(key.clone()),
-                    }
+                    Expression::Variable(key.clone())
                 };
 
                 key_value_pairs.push(RecordKeyValue {
@@ -584,24 +588,21 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
                 })
             }
         }
-        if !try_eat_token(it, TokenType::Comma).is_some() {
+        if try_eat_token(it, TokenType::Comma).is_none() {
             break;
         }
     }
-    let closing_curly_bracket = eat_token(it, TokenType::RightCurlyBracket)?;
-    Ok(Expression {
-        value: ExpressionValue::Record {
-            spread,
-            key_value_pairs,
-            open_curly_bracket,
-            closing_curly_bracket,
-        },
-        inferred_type: None,
+    let right_curly_bracket = eat_token(it, TokenType::RightCurlyBracket)?;
+    Ok(Expression::Record {
+        spread,
+        key_value_pairs,
+        left_curly_bracket,
+        right_curly_bracket,
     })
 }
 
 pub fn parse_let_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
-    eat_token(it, TokenType::KeywordLet)?;
+    let let_keyword = eat_token(it, TokenType::KeywordLet)?;
     let left = parse_destructure_pattern(it)?;
     eat_token(it, TokenType::Equals)?;
     let right = parse_expression(it)?;
@@ -611,14 +612,12 @@ pub fn parse_let_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression
         None
     };
     let return_value = parse_expression(it)?;
-    Ok(Expression {
-        value: ExpressionValue::Let {
-            left,
-            right: Box::new(right),
-            false_branch: else_return,
-            true_branch: Box::new(return_value),
-        },
-        inferred_type: None,
+    Ok(Expression::Let {
+        let_keyword,
+        left,
+        right: Box::new(right),
+        false_branch: else_return,
+        true_branch: Box::new(return_value),
     })
 }
 
@@ -670,12 +669,16 @@ pub fn parse_destructure_pattern(
                         as_value,
                         spread: None, // TODO: parse spread
                     });
-                    if !try_eat_token(it, TokenType::Comma).is_some() {
-                        eat_token(it, TokenType::RightCurlyBracket)?;
+                    if try_eat_token(it, TokenType::Comma).is_none() {
                         break;
                     }
                 }
-                Ok(DestructurePattern::Record { key_value_pairs })
+                let right_curly_bracket = eat_token(it, TokenType::RightCurlyBracket)?;
+                Ok(DestructurePattern::Record {
+                    left_curly_bracket: token.clone(),
+                    key_value_pairs,
+                    right_curly_bracket,
+                })
             }
             TokenType::Number => Ok(DestructurePattern::Number(token.clone())),
             TokenType::String => Ok(DestructurePattern::String(token.clone())),

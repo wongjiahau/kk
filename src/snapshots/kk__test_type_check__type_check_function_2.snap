@@ -16,7 +16,10 @@ Err(
                     column_end: 26,
                 },
             },
-            actual_type: Number,
+            actual_type: Named {
+                name: "number",
+                arguments: [],
+            },
         },
     ),
 )

@@ -532,20 +532,32 @@ let z: string = 'hello'.map(constant)
         ))
     }
 
-    // #[test]
-    // fn test_let_monadic_binding_generic_tagged_union() {
-    //     assert_debug_snapshot!(type_check_source(
-    //         "
-    //         type Option<T> = #true | #false
-    //         let add = \\(x: Boolean) => x.(
-    //             \\#true => 1
-    //             \\#false => 'yo'
-    //         )
-    //         "
-    //         .trim()
-    //         .to_string()
-    //     ))
-    // }
+    #[test]
+    fn test_let_monadic_binding_generic_tagged_union_1() {
+        assert_debug_snapshot!(type_check_source(
+            " 
+            type Option<T> = #some(T) | #none
+            let add = \\(x: Option<number>) =>             
+                let #some(y) = x
+                y
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_pattern_match_generic_tagged_union() {
+        assert_debug_snapshot!(type_check_source(
+            " 
+            type Option<T> = #some(T) | #none
+            let add = \\(x: Option<number>) => x.(
+                \\#some(x) => x
+                \\#false => 2
+            )
+            "
+            .to_string()
+        ))
+    }
 
     // #[test]
     // fn test_generic_function_with_specified_type_variable() {

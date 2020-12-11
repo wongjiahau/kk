@@ -1,6 +1,6 @@
 ---
 source: src/main.rs
-expression: "type_check_source(\"\n            let f = \\\\x => \n                let #some(yo) = x\n                2\n            \".trim().to_string())"
+expression: "type_check_source(\" \n            type Option<T> = #some(T) | #none\n            let add = \\\\(x: Option<number>) =>             \n                let #some(y) = x\n                y\n            \".to_string())"
 ---
 Err(
     UnifyError(
@@ -10,8 +10,8 @@ Err(
                     env_name: "TESTING",
                 },
                 position: Position {
-                    line_start: 2,
-                    line_end: 2,
+                    line_start: 4,
+                    line_end: 4,
                     column_start: 17,
                     column_end: 17,
                 },
@@ -22,13 +22,18 @@ Err(
                         TagType {
                             tagname: "#some",
                             payload: Some(
-                                TypeVariable {
-                                    name: "@TVAR1",
+                                Named {
+                                    name: "number",
+                                    arguments: [],
                                 },
                             ),
                         },
+                        TagType {
+                            tagname: "#none",
+                            payload: None,
+                        },
                     ],
-                    bound: AtLeast,
+                    bound: AtMost,
                     catch_all: false,
                 },
             ),

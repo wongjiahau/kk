@@ -17,26 +17,44 @@ Err(
                 },
             },
             key: "x",
-            expected_key_type: String,
-            actual_key_type: Number,
+            expected_key_type: Named {
+                name: "string",
+                arguments: [],
+            },
+            actual_key_type: Named {
+                name: "number",
+                arguments: [],
+            },
             expected_record_type: [
                 (
                     "x",
-                    String,
+                    Named {
+                        name: "string",
+                        arguments: [],
+                    },
                 ),
                 (
                     "z",
-                    Number,
+                    Named {
+                        name: "number",
+                        arguments: [],
+                    },
                 ),
             ],
             actual_record_type: [
                 (
                     "x",
-                    Number,
+                    Named {
+                        name: "number",
+                        arguments: [],
+                    },
                 ),
                 (
                     "z",
-                    Number,
+                    Named {
+                        name: "number",
+                        arguments: [],
+                    },
                 ),
             ],
         },

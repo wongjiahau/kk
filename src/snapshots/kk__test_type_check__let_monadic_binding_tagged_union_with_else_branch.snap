@@ -34,7 +34,10 @@ Err(
                         catch_all: false,
                     },
                 ),
-                actual_type: String,
+                actual_type: Named {
+                    name: "string",
+                    arguments: [],
+                },
             },
             expected_function_type: FunctionType {
                 arguments_types: [
@@ -61,9 +64,15 @@ Err(
             },
             actual_function_type: FunctionType {
                 arguments_types: [
-                    String,
+                    Named {
+                        name: "string",
+                        arguments: [],
+                    },
                 ],
-                return_type: Number,
+                return_type: Named {
+                    name: "number",
+                    arguments: [],
+                },
             },
             location: Location {
                 source: NonFile {

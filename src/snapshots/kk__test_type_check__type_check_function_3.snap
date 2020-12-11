@@ -16,8 +16,14 @@ Err(
                     column_end: 29,
                 },
             },
-            expected_type: Number,
-            actual_type: String,
+            expected_type: Named {
+                name: "number",
+                arguments: [],
+            },
+            actual_type: Named {
+                name: "string",
+                arguments: [],
+            },
         },
     ),
 )

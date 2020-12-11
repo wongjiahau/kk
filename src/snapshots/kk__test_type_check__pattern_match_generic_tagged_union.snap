@@ -1,0 +1,63 @@
+---
+source: src/main.rs
+expression: "type_check_source(\" \n            type Option<T> = #some(T) | #none\n            let add = \\\\(x: Option<number>) => x.(\n                \\\\#some(x) => x\n                \\\\#false => 2\n            )\n            \".to_string())"
+---
+Err(
+    UnifyError(
+        TypeMismatch {
+            location: Location {
+                source: NonFile {
+                    env_name: "TESTING",
+                },
+                position: Position {
+                    line_start: 2,
+                    line_end: 2,
+                    column_start: 47,
+                    column_end: 47,
+                },
+            },
+            expected_type: Union(
+                UnionType {
+                    tags: [
+                        TagType {
+                            tagname: "#some",
+                            payload: Some(
+                                Named {
+                                    name: "number",
+                                    arguments: [],
+                                },
+                            ),
+                        },
+                        TagType {
+                            tagname: "#false",
+                            payload: None,
+                        },
+                    ],
+                    bound: AtMost,
+                    catch_all: false,
+                },
+            ),
+            actual_type: Union(
+                UnionType {
+                    tags: [
+                        TagType {
+                            tagname: "#some",
+                            payload: Some(
+                                Named {
+                                    name: "number",
+                                    arguments: [],
+                                },
+                            ),
+                        },
+                        TagType {
+                            tagname: "#none",
+                            payload: None,
+                        },
+                    ],
+                    bound: AtMost,
+                    catch_all: false,
+                },
+            ),
+        },
+    ),
+)

@@ -17,8 +17,14 @@ Err(
                         column_end: 31,
                     },
                 },
-                expected_type: Number,
-                actual_type: String,
+                expected_type: Named {
+                    name: "number",
+                    arguments: [],
+                },
+                actual_type: Named {
+                    name: "string",
+                    arguments: [],
+                },
             },
             expected_function_type: FunctionType {
                 arguments_types: [
@@ -39,7 +45,10 @@ Err(
                         },
                     ),
                 ],
-                return_type: Number,
+                return_type: Named {
+                    name: "number",
+                    arguments: [],
+                },
             },
             actual_function_type: FunctionType {
                 arguments_types: [
@@ -56,7 +65,10 @@ Err(
                         },
                     ),
                 ],
-                return_type: String,
+                return_type: Named {
+                    name: "string",
+                    arguments: [],
+                },
             },
             location: Location {
                 source: NonFile {

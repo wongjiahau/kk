@@ -7,8 +7,8 @@ pub fn transpile_statements(statements: Vec<Statement>) -> String {
 pub fn transpile_statement(statement: Statement) -> String {
     match statement {
         Statement::TypeAlias { .. } => "".to_string(),
-        Statement::Let { left, right, .. } => match right.value {
-            ExpressionValue::Let { .. } => {
+        Statement::Let { left, right, .. } => match right {
+            Expression::Let { .. } => {
                 return format!(
                     "const {} = (()=>{{{}}})()",
                     left.representation,
@@ -31,11 +31,11 @@ fn transpile_tag(tag: String) -> String {
 }
 
 pub fn transpile_expression(expression: Expression) -> String {
-    match expression.value {
-        ExpressionValue::String(s) => s.representation,
-        ExpressionValue::Number(n) => n.representation,
-        ExpressionValue::Variable(v) => v.representation,
-        ExpressionValue::Tag { token, payload } => match payload {
+    match expression {
+        Expression::String(s) => s.representation,
+        Expression::Number(n) => n.representation,
+        Expression::Variable(v) => v.representation,
+        Expression::Tag { token, payload } => match payload {
             Some(payload) => format!(
                 "{{$:'{}',_:{}}}",
                 transpile_tag(token.representation),
@@ -43,7 +43,7 @@ pub fn transpile_expression(expression: Expression) -> String {
             ),
             None => format!("{{$:'{}'}}", transpile_tag(token.representation)),
         },
-        ExpressionValue::Record {
+        Expression::Record {
             spread,
             key_value_pairs,
             ..
@@ -61,10 +61,11 @@ pub fn transpile_expression(expression: Expression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
-        ExpressionValue::Function(Function {
-            first_branch,
-            branches,
-        }) => {
+        Expression::Function(function) => {
+            let Function {
+                first_branch,
+                branches,
+            } = *function;
             let number_of_args = first_branch.arguments.len();
             let arguments: Vec<String> = (0..number_of_args).map(|x| format!("_{}", x)).collect();
             let branches = vec![first_branch]
@@ -75,7 +76,7 @@ pub fn transpile_expression(expression: Expression) -> String {
                 .join("\n");
             format!("({})=>{{{}}}", arguments.join(","), branches)
         }
-        ExpressionValue::FunctionCall(FunctionCall {
+        Expression::FunctionCall(FunctionCall {
             function,
             arguments,
         }) => format!(
@@ -87,7 +88,7 @@ pub fn transpile_expression(expression: Expression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
-        ExpressionValue::Array(values) => format!(
+        Expression::Array(values) => format!(
             "[{}]",
             values
                 .into_iter()
@@ -95,11 +96,12 @@ pub fn transpile_expression(expression: Expression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
-        ExpressionValue::Let {
+        Expression::Let {
             left,
             right,
             false_branch: else_return,
             true_branch: return_value,
+            ..
         } => {
             let temp_placeholder = "$TEMP".to_string(); //TODO: get from symbol table to prevent name clashing
             let TranspiledDestructurePattern {
@@ -111,8 +113,8 @@ pub fn transpile_expression(expression: Expression) -> String {
                 temp_placeholder,
                 transpile_expression(*right)
             );
-            let return_now = match return_value.value {
-                ExpressionValue::Let { .. } => "",
+            let return_now = match *return_value {
+                Expression::Let { .. } => "",
                 _ => "return ",
             };
             let return_value = transpile_expression(*return_value);
@@ -166,8 +168,8 @@ pub fn transpile_function_branch(function_branch: FunctionBranch) -> String {
             join_transpiled_destructure_pattern,
         );
 
-    let return_now = match function_branch.body.value {
-        ExpressionValue::Let { .. } => "",
+    let return_now = match *function_branch.body {
+        Expression::Let { .. } => "",
         _ => "return ",
     };
     let body = transpile_expression(*function_branch.body);
@@ -241,7 +243,9 @@ pub fn transpile_function_destructure_pattern(
                 Some(rest) => join_transpiled_destructure_pattern(first, rest),
             }
         }
-        DestructurePattern::Record { key_value_pairs } => key_value_pairs.into_iter().fold(
+        DestructurePattern::Record {
+            key_value_pairs, ..
+        } => key_value_pairs.into_iter().fold(
             TranspiledDestructurePattern {
                 bindings: vec![],
                 conditions: vec![],

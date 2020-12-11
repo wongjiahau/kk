@@ -115,8 +115,7 @@ impl<'a> Environment<'a> {
                     self.update_substitution(name, terminal_type, location)
                 }
                 _ => {
-                    let unified_type =
-                        unify_type(self, &terminal_type, &type_value, location.clone())?;
+                    let unified_type = unify_type(self, &terminal_type, &type_value, location)?;
 
                     let substitution_item = match unified_type {
                         Type::TypeVariable { name } => SubstitutionItem::TypeVariable(name),
@@ -149,8 +148,6 @@ impl<'a> Environment<'a> {
      */
     pub fn apply_subtitution_to_type(&self, type_value: &Type) -> Type {
         match type_value {
-            Type::String => Type::String,
-            Type::Number => Type::Number,
             Type::TypeVariable { name } => {
                 match self.get_type_variable_terminal_type(name.clone(), name.clone()) {
                     Some(type_value) => self.apply_subtitution_to_type(&type_value),
@@ -162,7 +159,7 @@ impl<'a> Environment<'a> {
             }
             Type::Record { key_type_pairs } => Type::Record {
                 key_type_pairs: key_type_pairs
-                    .into_iter()
+                    .iter()
                     .map(|(key, type_value)| {
                         (key.clone(), self.apply_subtitution_to_type(type_value))
                     })
@@ -177,11 +174,17 @@ impl<'a> Environment<'a> {
                 bound: bound.clone(),
                 catch_all: *catch_all,
                 tags: tags
-                    .into_iter()
+                    .iter()
                     .map(|tag_type| self.apply_subtitution_to_tag_type(&tag_type))
                     .collect(),
             }),
-            other => panic!("substitution_apply_to({:#?})", other),
+            Type::Named { name, arguments } => Type::Named {
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.apply_subtitution_to_type(&argument))
+                    .collect(),
+            },
         }
     }
 
@@ -296,13 +299,13 @@ impl<'a> Environment<'a> {
             Err(UnifyError::UnknownTypeSymbol {
                 location: Location {
                     source: self.source.clone(),
-                    position: token.position.clone(),
+                    position: token.position,
                 },
             })
         }
     }
 
-    pub fn get_value_symbol(&self, name: &String) -> Option<ValueSymbol> {
+    pub fn get_value_symbol(&self, name: &str) -> Option<ValueSymbol> {
         if let Some(value_symbol) = self.value_symbols.borrow().get(name) {
             Some(value_symbol.clone())
         } else if let Some(parent) = &self.parent {
@@ -341,6 +344,19 @@ pub struct UsageReference {
     source: Source,
 }
 
+pub fn string_type() -> Type {
+    Type::Named {
+        name: "string".to_string(),
+        arguments: vec![],
+    }
+}
+pub fn number_type() -> Type {
+    Type::Named {
+        name: "number".to_string(),
+        arguments: vec![],
+    }
+}
+
 fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
     let mut hash_map = HashMap::new();
     hash_map.insert(
@@ -349,7 +365,7 @@ fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
             declaration: Declaration::BuiltIn,
             type_scheme: TypeScheme {
                 type_variables: vec![],
-                type_value: Type::String,
+                type_value: string_type(),
             },
             usage_references: vec![],
         },
@@ -360,7 +376,7 @@ fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
             declaration: Declaration::BuiltIn,
             type_scheme: TypeScheme {
                 type_variables: vec![],
-                type_value: Type::Number,
+                type_value: number_type(),
             },
             usage_references: vec![],
         },

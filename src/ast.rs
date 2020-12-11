@@ -8,7 +8,7 @@ pub enum Statement {
     TypeAlias {
         left: Token,
         right: TypeAnnotation,
-        type_variables: Vec<TypeVariable>,
+        type_variables: Vec<Token>,
     },
 }
 
@@ -19,13 +19,10 @@ pub struct TypeVariable {
 
 #[derive(Debug, Clone)]
 pub enum Type {
-    String,
-    Number,
     Underscore,
     TypeVariable { name: String },
     Record { key_type_pairs: Vec<(String, Type)> },
-    Compound { name: String, arguments: Vec<Type> },
-    Alias { name: String },
+    Named { name: String, arguments: Vec<Type> },
     Function(FunctionType),
     Union(UnionType),
 }
@@ -73,15 +70,18 @@ pub enum SymbolSource {
 
 #[derive(Debug, Clone)]
 pub enum TypeAnnotation {
-    Name(Token),
+    Named {
+        name: Token,
+        arguments: Vec<TypeAnnotation>,
+    },
     Record {
-        open_curly_bracket: Token,
+        left_curly_bracket: Token,
         key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
-        closing_curly_bracket: Token,
+        right_curly_bracket: Token,
     },
     Tag {
         token: Token,
-        payload: Option<Box<TypeAnnotation>>,
+        payload: Option<TagTypeAnnotationPayload>,
     },
     Underscore,
     Union {
@@ -95,6 +95,13 @@ pub enum TypeAnnotation {
 }
 
 #[derive(Debug, Clone)]
+pub struct TagTypeAnnotationPayload {
+    pub left_parenthesis: Token,
+    pub payload: Box<TypeAnnotation>,
+    pub right_parenthesis: Token,
+}
+
+#[derive(Debug, Clone)]
 pub enum DestructurePattern {
     String(Token),
     Number(Token),
@@ -105,7 +112,9 @@ pub enum DestructurePattern {
         payload: Option<Box<DestructurePatternTagPayload>>,
     },
     Record {
+        left_curly_bracket: Token,
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
+        right_curly_bracket: Token,
     },
 }
 
@@ -125,13 +134,7 @@ pub struct DestructuredRecordKeyValue {
 }
 
 #[derive(Debug, Clone)]
-pub struct Expression {
-    pub value: ExpressionValue,
-    pub inferred_type: Option<Type>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ExpressionValue {
+pub enum Expression {
     Number(Token),
     String(Token),
     Variable(Token),
@@ -139,16 +142,17 @@ pub enum ExpressionValue {
         token: Token,
         payload: Option<Box<TagPayload>>,
     },
-    Function(Function),
+    Function(Box<Function>),
     FunctionCall(FunctionCall),
     Record {
-        open_curly_bracket: Token,
+        left_curly_bracket: Token,
         spread: Option<Box<Expression>>,
         key_value_pairs: Vec<RecordKeyValue>,
-        closing_curly_bracket: Token,
+        right_curly_bracket: Token,
     },
     Array(Vec<Expression>),
     Let {
+        let_keyword: Token,
         left: DestructurePattern,
         right: Box<Expression>,
         true_branch: Box<Expression>,

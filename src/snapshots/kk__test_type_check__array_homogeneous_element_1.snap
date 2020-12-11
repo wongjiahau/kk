@@ -16,7 +16,10 @@ Err(
                     column_end: 15,
                 },
             },
-            expected_type: Number,
+            expected_type: Named {
+                name: "number",
+                arguments: [],
+            },
             actual_type: Union(
                 UnionType {
                     tags: [
