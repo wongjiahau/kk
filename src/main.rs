@@ -16,6 +16,7 @@ mod tokenize;
 use tokenize::*;
 
 fn main() {
+    println!("{}", execute("let x = 2".to_string()));
     println!(
         "{:?}",
         transpile_source("let f = (x: number, y) => 'helo' | x => '2'".to_string())
@@ -52,6 +53,23 @@ pub fn transpile_source(source: String) -> Result<String, ParseError> {
     let statements = source_to_statements(source)?;
     // println!("{:#?}", statements);
     Ok(transpile_statements(statements))
+}
+
+pub fn execute(source: String) -> String {
+    let statements = source_to_statements(source).unwrap();
+    // println!("{:#?}", statements);
+    let javascript = transpile_statements(statements);
+    use std::process::Command;
+    let output = Command::new("node")
+        .arg(format!("-e \"{}\"", javascript))
+        .output()
+        .expect("failed to execute process");
+    vec![
+        format!("status = {}", output.status),
+        format!("stdout = {}", String::from_utf8_lossy(&output.stdout)),
+        format!("stderr = {}", String::from_utf8_lossy(&output.stderr)),
+    ]
+    .join("\n")
 }
 
 #[cfg(test)]
@@ -343,6 +361,84 @@ mod test_transpile {
             "let f = \\x => let 'yo' = x 'hey'".to_string()
         ))
     }
+
+    #[test]
+    fn transpiled_destructured_array_1() {
+        assert_debug_snapshot!(transpile_source(
+            "let head = \\xs => 
+                let [head, ...] = xs else \\_ => #none
+                #some(head)
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn transpiled_destructured_array_2() {
+        assert_debug_snapshot!(transpile_source(
+            "let tail = \\xs => 
+                let [_, ...tail] = xs
+                tail
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn transpiled_destructured_array_3() {
+        assert_debug_snapshot!(transpile_source(
+            "let init = \\xs => 
+                let [...init, _] = xs
+                init
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn transpiled_destructured_array_4() {
+        assert_debug_snapshot!(transpile_source(
+            "let last = \\xs => 
+                let [..., last] = xs else \\_ => #none
+                #some(last)
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn transpiled_destructured_array_5() {
+        assert_debug_snapshot!(transpile_source(
+            "let arrayEmpty = 
+                \\[] => true
+                \\_ => false
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn transpiled_destructured_array_6() {
+        assert_debug_snapshot!(transpile_source(
+            "let arrayOnlyOneElement = 
+                \\[_] => true
+                \\_ => false
+            "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn transpiled_destructured_array_7() {
+        // expected error, cannot have more than one spread
+        assert_debug_snapshot!(transpile_source(
+            "let arrayOnlyOneElement = 
+                \\[a,...b,...c,d] => true
+                \\_ => false
+            "
+            .to_string()
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -528,9 +624,18 @@ let z: string = 'hello'.map(constant)
         ))
     }
 
-    // #[test]
-    // fn test_let_monadic_binding_array() {
-    // }
+    #[test]
+    fn test_let_monadic_binding_array() {
+        assert_debug_snapshot!(type_check_source(
+            "
+            let f = \\x =>
+              let [a, ...b, c] = x
+              let y: string = b
+              1
+        "
+            .to_string()
+        ))
+    }
 
     #[test]
     fn test_let_monadic_binding_tagged_union() {

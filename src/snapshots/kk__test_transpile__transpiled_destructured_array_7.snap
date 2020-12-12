@@ -1,0 +1,18 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let arrayOnlyOneElement = \n                \\\\[a,...b,...c,d] => true\n                \\\\_ => false\n            \".to_string())"
+---
+Err(
+    ArrayCannotContainMoreThanOneSpread {
+        extraneous_spread: Token {
+            token_type: Spread,
+            position: Position {
+                line_start: 1,
+                line_end: 1,
+                column_start: 26,
+                column_end: 28,
+            },
+            representation: "...",
+        },
+    },
+)

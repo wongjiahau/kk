@@ -626,6 +626,11 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
 pub fn parse_let_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseError> {
     let let_keyword = eat_token(it, TokenType::KeywordLet)?;
     let left = parse_destructure_pattern(it)?;
+    let type_annotation = if try_eat_token(it, TokenType::Colon).is_some() {
+        Some(parse_type_annotation(it)?)
+    } else {
+        None
+    };
     eat_token(it, TokenType::Equals)?;
     let right = parse_expression(it)?;
     let else_return = if try_eat_token(it, TokenType::KeywordElse).is_some() {
@@ -636,7 +641,8 @@ pub fn parse_let_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression
     let return_value = parse_expression(it)?;
     Ok(Expression::Let {
         let_keyword,
-        left,
+        left: Box::new(left),
+        type_annotation,
         right: Box::new(right),
         false_branch: else_return,
         true_branch: Box::new(return_value),
@@ -708,6 +714,53 @@ pub fn parse_destructure_pattern(
                 Ok(DestructurePattern::Boolean(token.clone()))
             }
             TokenType::KeywordNull => Ok(DestructurePattern::Null(token.clone())),
+            TokenType::LeftSquareBracket => {
+                let left_square_bracket = token.clone();
+                let mut initial_elements: Vec<DestructurePattern> = Vec::new();
+                let mut tail_elements: Vec<DestructurePattern> = Vec::new();
+                let mut spread: Option<DestructurePatternArraySpread> = None;
+                loop {
+                    match it.peek() {
+                        Some(Token {
+                            token_type: TokenType::RightSquareBracket,
+                            ..
+                        }) => break,
+                        Some(Token {
+                            token_type: TokenType::Spread,
+                            ..
+                        }) => {
+                            if spread.is_some() {
+                                return Err(ParseError::ArrayCannotContainMoreThanOneSpread {
+                                    extraneous_spread: it.next().unwrap().clone(),
+                                });
+                            } else {
+                                spread = Some(DestructurePatternArraySpread {
+                                    spread_symbol: eat_token(it, TokenType::Spread)?,
+                                    binding: try_eat_token(it, TokenType::Identifier),
+                                })
+                            }
+                        }
+                        _ => {
+                            let destructure_pattern = parse_destructure_pattern(it)?;
+                            match spread {
+                                Some(_) => tail_elements.push(destructure_pattern),
+                                None => initial_elements.push(destructure_pattern),
+                            }
+                        }
+                    }
+                    if try_eat_token(it, TokenType::Comma).is_none() {
+                        break;
+                    }
+                }
+                let right_square_bracket = eat_token(it, TokenType::RightSquareBracket)?;
+                Ok(DestructurePattern::Array {
+                    left_square_bracket,
+                    right_square_bracket,
+                    initial_elements,
+                    spread,
+                    tail_elements,
+                })
+            }
             _ => Err(ParseError::ExpectedDestructurePattern {
                 token: token.clone(),
             }),

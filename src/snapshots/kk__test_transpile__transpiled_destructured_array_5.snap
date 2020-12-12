@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let arrayEmpty = \n                \\\\[] => true\n                \\\\_ => false\n            \".to_string())"
+---
+Ok(
+    "const arrayEmpty = (_0)=>{if(_0.length === 0){;return true}\n{;return false}}",
+)

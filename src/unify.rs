@@ -316,6 +316,11 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
             right_curly_bracket,
             ..
         } => join_position(left_curly_bracket.position, right_curly_bracket.position),
+        DestructurePattern::Array {
+            left_square_bracket,
+            right_square_bracket,
+            ..
+        } => join_position(left_square_bracket.position, right_square_bracket.position),
     }
 }
 
@@ -903,16 +908,31 @@ pub fn infer_expression_type(
             right,
             false_branch,
             true_branch,
+            type_annotation,
             ..
         } => {
             let left_type = infer_destructure_pattern(environment, left)?;
             let right_type = infer_expression_type(environment, &right)?;
 
+            match type_annotation {
+                None => Ok(()),
+                Some(type_annotation) => {
+                    let type_annotation = type_annotation_to_type(environment, type_annotation)?;
+                    unify_type(
+                        environment,
+                        &type_annotation,
+                        &left_type,
+                        get_destructure_pattern_location(environment, &left),
+                    )?;
+                    Ok(())
+                }
+            }?;
+
             unify_type(
                 environment,
                 &left_type,
                 &right_type,
-                get_destructure_pattern_location(environment, &left),
+                get_expression_location(environment, &right),
             )?;
             let false_branch_type = match false_branch {
                 None => right_type,
@@ -1514,6 +1534,53 @@ pub fn infer_destructure_pattern(
                 bound: UnionTypeBound::AtLeast,
                 catch_all: false,
             }))
+        }
+        DestructurePattern::Array {
+            initial_elements,
+            tail_elements,
+            spread,
+            ..
+        } => {
+            let element_type = Type::TypeVariable {
+                name: environment.get_next_type_variable_name(),
+            };
+            let all_elements = initial_elements
+                .iter()
+                .chain(tail_elements.iter())
+                .collect::<Vec<&DestructurePattern>>();
+
+            for destructure_pattern in all_elements {
+                let inferred_element_type =
+                    &infer_destructure_pattern(environment, &destructure_pattern)?;
+                unify_type(
+                    environment,
+                    &element_type,
+                    inferred_element_type,
+                    get_destructure_pattern_location(environment, destructure_pattern),
+                )?;
+            }
+            let result_type = array_type(environment.apply_subtitution_to_type(&element_type));
+            match spread {
+                Some(DestructurePatternArraySpread {
+                    binding: Some(binding),
+                    ..
+                }) => environment.insert_value_symbol(
+                    binding,
+                    ValueSymbol {
+                        declaration: Declaration::UserDefined(
+                            environment.source.clone(),
+                            binding.clone(),
+                        ),
+                        actual_type: TypeScheme {
+                            type_value: result_type.clone(),
+                            type_variables: vec![],
+                        },
+                        usage_references: vec![],
+                    },
+                ),
+                _ => Ok(()),
+            }?;
+            Ok(result_type)
         }
         DestructurePattern::Record {
             key_value_pairs, ..

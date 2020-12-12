@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let arrayOnlyOneElement = \n                \\\\[_] => true\n                \\\\_ => false\n            \".to_string())"
+---
+Ok(
+    "const arrayOnlyOneElement = (_0)=>{if(_0.length === 1 && _0[0] !== undefined){;return true}\n{;return false}}",
+)

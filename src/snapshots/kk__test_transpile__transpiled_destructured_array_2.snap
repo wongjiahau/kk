@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let tail = \\\\xs => \n                let [_, ...tail] = xs\n                tail\n            \".to_string())"
+---
+Ok(
+    "const tail = (_0)=>{{var xs = _0;var $TEMP = xs;if($TEMP[0] !== undefined){var tail = $TEMP.slice(1, $TEMP.length - 0);return tail}else{return $TEMP}}}",
+)

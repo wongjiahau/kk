@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let last = \\\\xs => \n                let [..., last] = xs else \\\\_ => #none\n                #some(last)\n            \".to_string())"
+---
+Ok(
+    "const last = (_0)=>{{var xs = _0;var $TEMP = xs;if($TEMP[$TEMP.length - 1] !== undefined){var last = $TEMP[$TEMP.length - 1];return {$:\'some\',_:last}}else{return ((_0)=>{{;return {$:\'none\'}}})($TEMP)}}}",
+)

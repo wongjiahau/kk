@@ -1,0 +1,33 @@
+---
+source: src/main.rs
+expression: "type_check_source(\"\n            let f = \\\\x =>\n              let [a, ...b, c] = x\n              let y: string = b\n              1\n        \".to_string())"
+---
+Err(
+    UnifyError(
+        TypeMismatch {
+            location: Location {
+                source: NonFile {
+                    env_name: "TESTING",
+                },
+                position: Position {
+                    line_start: 3,
+                    line_end: 3,
+                    column_start: 31,
+                    column_end: 31,
+                },
+            },
+            expected_type: Named {
+                name: "string",
+                arguments: [],
+            },
+            actual_type: Named {
+                name: "Array",
+                arguments: [
+                    TypeVariable {
+                        name: "@TVAR2",
+                    },
+                ],
+            },
+        },
+    ),
+)

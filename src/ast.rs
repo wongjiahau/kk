@@ -125,6 +125,19 @@ pub enum DestructurePattern {
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
         right_curly_bracket: Token,
     },
+    Array {
+        left_square_bracket: Token,
+        right_square_bracket: Token,
+        initial_elements: Vec<DestructurePattern>,
+        spread: Option<DestructurePatternArraySpread>,
+        tail_elements: Vec<DestructurePattern>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct DestructurePatternArraySpread {
+    pub spread_symbol: Token,
+    pub binding: Option<Token>,
 }
 
 #[derive(Debug, Clone)]
@@ -171,7 +184,8 @@ pub enum Expression {
     },
     Let {
         let_keyword: Token,
-        left: DestructurePattern,
+        left: Box<DestructurePattern>,
+        type_annotation: Option<TypeAnnotation>,
         right: Box<Expression>,
         true_branch: Box<Expression>,
         false_branch: Option<Box<Expression>>,
@@ -220,6 +234,9 @@ pub struct FunctionArgument {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
+    ArrayCannotContainMoreThanOneSpread {
+        extraneous_spread: Token,
+    },
     ExpectedDestructurePattern {
         token: Token,
     },

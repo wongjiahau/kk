@@ -1,0 +1,7 @@
+---
+source: src/main.rs
+expression: "transpile_source(\"let init = \\\\xs => \n                let [...init, _] = xs\n                init\n            \".to_string())"
+---
+Ok(
+    "const init = (_0)=>{{var xs = _0;var $TEMP = xs;if($TEMP[$TEMP.length - 1] !== undefined){var init = $TEMP.slice(0, $TEMP.length - 1);return init}else{return $TEMP}}}",
+)
