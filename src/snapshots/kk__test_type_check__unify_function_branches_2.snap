@@ -4,24 +4,9 @@ expression: "type_check_source(\"\n            type Boolean = #true | #false\n  
 ---
 Err(
     UnifyError(
-        FunctionTypeArgumentMismatch {
-            argument_index: 0,
-            unify_error: UnionTypeMismatch {
-                expected_union_type: UnionType {
-                    tags: [
-                        TagType {
-                            tagname: "#true",
-                            payload: None,
-                        },
-                        TagType {
-                            tagname: "#false",
-                            payload: None,
-                        },
-                    ],
-                    bound: Exact,
-                    catch_all: false,
-                },
-                missing_tags: [
+        UnionTypeMismatch {
+            expected_union_type: UnionType {
+                tags: [
                     TagType {
                         tagname: "#true",
                         payload: None,
@@ -31,116 +16,25 @@ Err(
                         payload: None,
                     },
                 ],
-                extraneous_tags: [
-                    TagType {
-                        tagname: "#bomb",
-                        payload: None,
-                    },
-                ],
-                location: Location {
-                    source: NonFile {
-                        env_name: "TESTING",
-                    },
-                    position: Position {
-                        line_start: 2,
-                        line_end: 2,
-                        column_start: 15,
-                        column_end: 38,
-                    },
+                bound: Exact,
+                catch_all: false,
+            },
+            missing_tags: [
+                TagType {
+                    tagname: "#true",
+                    payload: None,
                 },
-            },
-            expected_function_type: FunctionType {
-                arguments_types: [
-                    Union(
-                        UnionType {
-                            tags: [
-                                TagType {
-                                    tagname: "#true",
-                                    payload: None,
-                                },
-                                TagType {
-                                    tagname: "#false",
-                                    payload: None,
-                                },
-                            ],
-                            bound: Exact,
-                            catch_all: false,
-                        },
-                    ),
-                    Union(
-                        UnionType {
-                            tags: [
-                                TagType {
-                                    tagname: "#true",
-                                    payload: None,
-                                },
-                                TagType {
-                                    tagname: "#false",
-                                    payload: None,
-                                },
-                            ],
-                            bound: Exact,
-                            catch_all: false,
-                        },
-                    ),
-                ],
-                return_type: Union(
-                    UnionType {
-                        tags: [
-                            TagType {
-                                tagname: "#true",
-                                payload: None,
-                            },
-                            TagType {
-                                tagname: "#false",
-                                payload: None,
-                            },
-                        ],
-                        bound: Exact,
-                        catch_all: false,
-                    },
-                ),
-            },
-            actual_function_type: FunctionType {
-                arguments_types: [
-                    Union(
-                        UnionType {
-                            tags: [
-                                TagType {
-                                    tagname: "#bomb",
-                                    payload: None,
-                                },
-                            ],
-                            bound: Exact,
-                            catch_all: false,
-                        },
-                    ),
-                    Union(
-                        UnionType {
-                            tags: [
-                                TagType {
-                                    tagname: "#true",
-                                    payload: None,
-                                },
-                            ],
-                            bound: Exact,
-                            catch_all: false,
-                        },
-                    ),
-                ],
-                return_type: Union(
-                    UnionType {
-                        tags: [
-                            TagType {
-                                tagname: "#true",
-                                payload: None,
-                            },
-                        ],
-                        bound: Exact,
-                        catch_all: false,
-                    },
-                ),
-            },
+                TagType {
+                    tagname: "#false",
+                    payload: None,
+                },
+            ],
+            extraneous_tags: [
+                TagType {
+                    tagname: "#bomb",
+                    payload: None,
+                },
+            ],
             location: Location {
                 source: NonFile {
                     env_name: "TESTING",

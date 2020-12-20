@@ -1,0 +1,19 @@
+error: Type mismatch
+  --> tests/compiler/enum_1.kk:1:16
+   |
+...
+ 8 |   let xs = #cons({
+   |  ________________^
+...  |
+14 | | })
+   | |__^
+   |
+
++----------------------+-------------------------+
+|    EXPECTED TYPE     |       ACTUAL TYPE       |
++----------------------+-------------------------+
+| {                    |   {                     |
+|   current: number    |     current: number     |
+|   next: List<number> | >   next: List<boolean> |
+| }                    |   }                     |
++----------------------+-------------------------+

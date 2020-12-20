@@ -1,259 +1,178 @@
 use crate::ast::*;
+use peeking_take_while::PeekableExt;
+
+#[derive(Debug, Clone)]
+pub struct Character {
+    index: usize,
+    line_number: usize,
+    column_number: usize,
+    value: char,
+}
 
 pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
-    let mut line_number: usize = 0;
-    let mut column_number: usize = 0;
-    let mut index: usize = 0;
+    let characters: Vec<Character> = input
+        .split('\n')
+        .enumerate()
+        .flat_map(|(line_number, line)| {
+            let mut characters = line.chars().into_iter().collect::<Vec<char>>();
+            characters.push('\n');
+            characters
+                .into_iter()
+                .enumerate()
+                .map(move |(column_number, character)| (character, line_number, column_number))
+                .collect::<Vec<(char, usize, usize)>>()
+        })
+        .enumerate()
+        .map(
+            |(index, (character, line_number, column_number))| Character {
+                index,
+                value: character,
+                line_number,
+                column_number,
+            },
+        )
+        .collect::<Vec<Character>>();
+
+    let mut it = characters.into_iter().peekable();
     let mut tokens = Vec::<Token>::new();
-    let chars: Vec<char> = input.chars().collect();
-    let chars_length = chars.len();
-    while index < chars_length {
-        let c = chars[index];
-        let is_last_char = index == chars_length - 1;
-        match c {
-            '_' => {
-                let result = Token {
-                    token_type: TokenType::Underscore,
-                    representation: "_".to_string(),
-                    position: Position {
-                        column_start: column_number,
-                        column_end: column_number,
-                        line_start: line_number,
-                        line_end: line_number,
-                    },
-                };
-                tokens.push(result)
-            }
+
+    while let Some(character) = it.next() {
+        match character.value {
+            '_' => tokens.push(Token {
+                token_type: TokenType::Underscore,
+                representation: "_".to_string(),
+                position: make_position(character, None),
+            }),
             '#' => {
-                let column_start = column_number;
-                let mut result = "#".to_string();
-                loop {
-                    if index == chars_length - 1 {
-                        tokens.push(Token {
-                            token_type: TokenType::Tag,
-                            representation: result.to_string(),
-                            position: Position {
-                                column_start,
-                                column_end: column_number,
-                                line_start: line_number,
-                                line_end: line_number,
-                            },
-                        });
-                        break;
-                    }
-                    let next = chars[index + 1];
-                    match next {
-                        'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => {
-                            result.push(next);
-                            index += 1;
-                            column_number += 1;
-                        }
-                        _ => {
-                            tokens.push(Token {
-                                token_type: TokenType::Tag,
-                                representation: result.to_string(),
-                                position: Position {
-                                    column_start,
-                                    column_end: column_number,
-                                    line_start: line_number,
-                                    line_end: line_number,
-                                },
-                            });
-                            break;
-                        }
-                    };
-                }
+                let tagname: Vec<Character> = it
+                    .by_ref()
+                    .peeking_take_while(|charcater| {
+                        charcater.value.is_alphanumeric() || charcater.value == '_'
+                    })
+                    .collect();
+
+                tokens.push(Token {
+                    token_type: TokenType::Tag,
+                    representation: "#".to_string() + &stringify(tagname.clone()),
+                    position: make_position(character, tagname.last()),
+                })
             }
             '\'' | '"' => {
-                let column_start = column_number;
-                let mut result = c.to_string();
-                loop {
-                    if index == chars_length - 1 {
-                        break;
-                    } else {
-                        let next = chars[index + 1];
-                        index += 1;
-                        column_number += 1;
-                        if next != c || next == '\n' {
-                            result.push(next);
-                        } else {
-                            result.push(c);
-                            break;
-                        }
-                    }
-                }
-                tokens.push(Token {
-                    token_type: TokenType::String,
-                    representation: result.to_string(),
-                    position: Position {
-                        column_start,
-                        column_end: column_number,
-                        line_start: line_number,
-                        line_end: line_number,
-                    },
-                });
-            }
-            '-' | '0'..='9' => {
-                let column_start = column_number;
-                let mut result = c.to_string();
+                let quote = character.value;
+                let content: Vec<Character> = it
+                    .by_ref()
+                    .peeking_take_while(|character| character.value != quote)
+                    .collect();
 
-                // parse left
-                while index < chars_length - 1 {
-                    let next = chars[index + 1];
-                    match next {
-                        '0'..='9' => {
-                            result.push(next);
-                            index += 1;
-                            column_number += 1;
-                        }
-                        _ => {
-                            break;
-                        }
-                    }
-                }
-
-                // parse right
-                if index < chars_length - 1 && chars[index + 1] == '.' {
-                    result.push('.');
-                    index += 1;
-                    column_number += 1;
-                    while index < chars_length - 1 {
-                        let next = chars[index + 1];
-                        match next {
-                            '0'..='9' => {
-                                result.push(next);
-                                index += 1;
-                                column_number += 1;
-                            }
-                            _ => {
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                tokens.push(Token {
-                    token_type: TokenType::Number,
-                    representation: result.to_string(),
-                    position: Position {
-                        column_start,
-                        column_end: column_number,
-                        line_start: line_number,
-                        line_end: line_number,
-                    },
-                });
-            }
-            'A'..='Z' | 'a'..='z' => {
-                let column_start = column_number;
-                let mut result = c.to_string();
-                while index < chars_length - 1 {
-                    let next = chars[index + 1];
-                    match next {
-                        'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => {
-                            result.push(next);
-                            index += 1;
-                            column_number += 1;
-                        }
-                        _ => {
-                            break;
-                        }
-                    }
-                }
-                tokens.push(Token {
-                    token_type: get_token_type(result.clone()),
-                    representation: result.to_string(),
-                    position: Position {
-                        column_start,
-                        column_end: column_number,
-                        line_start: line_number,
-                        line_end: line_number,
-                    },
-                });
-            }
-            '.' => {
-                let mut result = c.to_string();
-                let column_start = column_number;
-                while index < chars_length - 1 {
-                    let next = chars[index + 1];
-                    match next {
-                        '.' => {
-                            result.push(next);
-                            index += 1;
-                            column_number += 1;
-                        }
-                        _ => {
-                            break;
-                        }
-                    }
-                }
-                let position = Position {
-                    column_start,
-                    column_end: column_number,
-                    line_start: line_number,
-                    line_end: line_number,
-                };
-                match result.len() {
-                    1 => tokens.push(Token {
-                        token_type: TokenType::Period,
-                        representation: result.to_string(),
-                        position,
+                match it.by_ref().next() {
+                    Some(_ending_quote) => tokens.push(Token {
+                        token_type: TokenType::String,
+                        representation: format!("\"{}\"", stringify(content.clone())),
+                        position: make_position(character, content.last()),
                     }),
-                    3 => tokens.push(Token {
-                        token_type: TokenType::Spread,
-                        representation: result.to_string(),
-                        position,
-                    }),
-                    _ => {
-                        return Err(ParseError::InvalidChar {
-                            error: "Only one dot (.) or three dots (...) is acceptable".to_string(),
-                            position,
+                    None => {
+                        return Err(ParseError::UnterminatedString {
+                            position: make_position(character, content.last()),
                         })
                     }
                 }
             }
+            '-' | '0'..='9' => {
+                let intergral = it
+                    .by_ref()
+                    .peeking_take_while(|character| character.value.is_digit(10))
+                    .collect::<Vec<Character>>();
 
-            '=' => {
-                let eq_token = Token {
-                    token_type: TokenType::Equals,
-                    representation: "=".to_string(),
-                    position: Position {
-                        column_start: column_number,
-                        column_end: column_number,
-                        line_start: line_number,
-                        line_end: line_number,
-                    },
+                let fractional = match it.by_ref().peek() {
+                    Some(Character { value: '.', .. }) => {
+                        let _ = it.next();
+                        let characters = it
+                            .by_ref()
+                            .peeking_take_while(|character| character.value.is_digit(10))
+                            .collect::<Vec<Character>>();
+                        Some(characters)
+                    }
+                    _ => None,
                 };
-                if is_last_char {
-                    tokens.push(eq_token);
-                } else {
-                    let next = chars[index + 1];
-                    match next {
-                        '>' => {
-                            tokens.push(Token {
-                                token_type: TokenType::ArrowRight,
-                                representation: "=>".to_string(),
-                                position: Position {
-                                    column_start: column_number,
-                                    column_end: column_number + 1,
-                                    line_start: line_number,
-                                    line_end: line_number,
-                                },
-                            });
-                            index += 1;
-                            column_number += 1;
-                        }
-                        _ => tokens.push(eq_token),
+                tokens.push(Token {
+                    token_type: TokenType::Number,
+                    representation: match &fractional {
+                        Some(fractional) => format!(
+                            "{}{}.{}",
+                            character.value,
+                            stringify(intergral.clone()),
+                            stringify(fractional.clone())
+                        ),
+                        None => format!("{}{}", character.value, stringify(intergral.clone())),
+                    },
+                    position: make_position(
+                        character,
+                        match &fractional {
+                            Some(fractional) => fractional.last(),
+                            None => intergral.last(),
+                        },
+                    ),
+                })
+            }
+            'A'..='Z' | 'a'..='z' => {
+                let characters = it
+                    .by_ref()
+                    .peeking_take_while(|character| {
+                        character.value.is_alphanumeric() || character.value == '_'
+                    })
+                    .collect::<Vec<Character>>();
+
+                let representation =
+                    format!("{}{}", character.value, stringify(characters.clone()));
+                tokens.push(Token {
+                    token_type: get_token_type(representation.clone()),
+                    representation,
+                    position: make_position(character, characters.last()),
+                })
+            }
+            '.' => {
+                let dots = it
+                    .by_ref()
+                    .peeking_take_while(|character| character.value == '.')
+                    .collect::<Vec<Character>>();
+
+                match dots.len() {
+                    0 => tokens.push(Token {
+                        token_type: TokenType::Period,
+                        representation: ".".to_string(),
+                        position: make_position(character, None),
+                    }),
+                    2 => tokens.push(Token {
+                        token_type: TokenType::Spread,
+                        representation: "...".to_string(),
+                        position: make_position(character, dots.last()),
+                    }),
+                    _ => {
+                        return Err(ParseError::InvalidChar {
+                            error: "Only one dot (.) or three dots (...) is acceptable".to_string(),
+                            position: make_position(character, dots.last()),
+                        })
                     }
                 }
             }
+            '=' => match it.peek() {
+                Some(Character { value: '>', .. }) => {
+                    let greater_than_character = it.by_ref().next();
+                    tokens.push(Token {
+                        token_type: TokenType::ArrowRight,
+                        representation: "=>".to_string(),
+                        position: make_position(character, greater_than_character.as_ref()),
+                    })
+                }
+                _ => tokens.push(Token {
+                    token_type: TokenType::Equals,
+                    representation: "=".to_string(),
+                    position: make_position(character, None),
+                }),
+            },
             other => {
-                let position = Position {
-                    column_start: column_number,
-                    column_end: column_number,
-                    line_start: line_number,
-                    line_end: line_number,
-                };
                 tokens.push(Token {
+                    position: make_position(character, None),
                     representation: other.to_string(),
                     token_type: match other {
                         '{' => TokenType::LeftCurlyBracket,
@@ -273,21 +192,37 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                         '|' => TokenType::Pipe,
                         '\\' => TokenType::Backslash,
                         '_' => TokenType::Underscore,
-                        '\n' => {
-                            line_number += 1;
-                            column_number = 0;
-                            TokenType::Newline
-                        }
+                        '\n' => TokenType::Newline,
                         _ => panic!(),
                     },
-                    position,
                 });
             }
-        };
-        column_number += 1;
-        index += 1;
+        }
     }
     Ok(tokens)
+}
+
+pub fn make_position(first: Character, last: Option<&Character>) -> Position {
+    let last = match last {
+        Some(character) => character,
+        None => &first,
+    };
+    Position {
+        column_start: first.column_number,
+        column_end: last.column_number,
+        line_start: first.line_number,
+        line_end: last.line_number,
+        character_index_start: first.index,
+        character_index_end: last.index,
+    }
+}
+
+pub fn stringify(characters: Vec<Character>) -> String {
+    characters
+        .into_iter()
+        .map(|character| character.value.to_string())
+        .collect::<Vec<String>>()
+        .join("")
 }
 
 pub fn get_token_type(s: String) -> TokenType {
@@ -295,6 +230,8 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordLet
     } else if s.eq("type") {
         TokenType::KeywordType
+    } else if s.eq("enum") {
+        TokenType::KeywordEnum
     } else if s.eq("else") {
         TokenType::KeywordElse
     } else if s.eq("true") {

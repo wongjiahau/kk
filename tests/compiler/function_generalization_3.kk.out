@@ -1,0 +1,14 @@
+error: Type mismatch
+ --> tests/compiler/function_generalization_3.kk:1:17
+  |
+...
+6 | let z: string = 'hello'.map(constant)
+  |                 ^^^^^^^^^^^^^^^^^^^^^
+  |
+
++---------------+-------------+
+| EXPECTED TYPE | ACTUAL TYPE |
++---------------+-------------+
+| string        | > number    |
++---------------+-------------+
+

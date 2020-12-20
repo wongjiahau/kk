@@ -22,18 +22,26 @@ pub fn unify_program(program: Program) -> Result<(), UnifyError> {
 }
 
 #[derive(Debug)]
-pub enum UnifyError {
+pub struct UnifyError {
+    pub position: Position,
+    pub kind: UnifyErrorKind,
+}
+
+#[derive(Debug)]
+pub enum UnifyErrorKind {
+    ThisTagDoesNotRequirePayload,
+    ThisTagRequiresPaylod {
+        payload_type: Type,
+    },
+    UnreachableCase,
     TypeArgumentsLengthMismatch {
         expected_length: usize,
         actual_length: usize,
-        location: Location,
     },
     LetElseMustBeSingleArgumentFunction {
-        location: Location,
         actual_type: Type,
     },
     LetElseMustBeFunction {
-        location: Location,
         actual_type: Type,
     },
     FunctionTypeArgumentMismatch {
@@ -41,26 +49,21 @@ pub enum UnifyError {
         unify_error: Box<UnifyError>,
         expected_function_type: FunctionType,
         actual_function_type: FunctionType,
-        location: Location,
     },
     FunctionReturnTypeMismatch {
         unify_error: Box<UnifyError>,
         expected_function_type: FunctionType,
         actual_function_type: FunctionType,
-        location: Location,
     },
     UnionTypeMismatch {
         expected_union_type: UnionType,
         missing_tags: Vec<TagType>,
         extraneous_tags: Vec<TagType>,
-        location: Location,
     },
     CannotUnionNonTagType {
         the_non_union_type: Type,
-        location: Location,
     },
     RecordKeyTypeMismatch {
-        location: Location,
         key: String,
         expected_key_type: Type,
         actual_key_type: Type,
@@ -69,16 +72,13 @@ pub enum UnifyError {
     },
     RecordExtraneousKeys {
         extraneous_keys: Vec<String>,
-        location: Location,
         expected_type: Type,
     },
     RecordMissingKeys {
         missing_keys: Vec<String>,
-        location: Location,
         expected_type: Type,
     },
     CannotInvokeNonFunction {
-        location: Location,
         actual_type: Type,
     },
     DuplicatedIdentifier {
@@ -87,23 +87,16 @@ pub enum UnifyError {
         then_declared_at: Declaration,
     },
     InvalidFunctionArgumentLength {
-        location: Location,
         expected_length: usize,
         actual_length: usize,
     },
-    UnknownTypeSymbol {
-        location: Location,
-    },
-    UnknownValueSymbol {
-        location: Location,
-    },
+    UnknownTypeSymbol,
+    UnknownValueSymbol,
     TypeMismatch {
-        location: Location,
         expected_type: Type,
         actual_type: Type,
     },
     TagTypeMismatch {
-        location: Location,
         expected_tag_type: TagType,
         actual_tag_type: TagType,
     },
@@ -133,8 +126,8 @@ pub fn infer_statement(
             // 1. Check if right matches type annotation
             let right_type = match type_annotation_type {
                 Some(type_annotation_type) => {
-                    let location = get_expression_location(environment, &right);
-                    unify_type(environment, &type_annotation_type, &right_type, location)?;
+                    let position = get_expression_position(&right);
+                    unify_type(environment, &type_annotation_type, &right_type, position)?;
                     right_type
                 }
                 None => right_type,
@@ -157,7 +150,7 @@ pub fn infer_statement(
 
             Ok(())
         }
-        Statement::TypeAlias {
+        Statement::Type {
             left,
             right,
             type_variables,
@@ -176,7 +169,7 @@ pub fn infer_statement(
                             type_variables: vec![],
                         },
                         declaration: Declaration::UserDefined(
-                            environment.source.clone(),
+                            current_environment.source.clone(),
                             type_variable.clone(),
                         ),
                         usage_references: vec![],
@@ -203,6 +196,113 @@ pub fn infer_statement(
                 },
             )
         }
+        Statement::Enum {
+            name,
+            type_variables,
+            tags,
+        } => {
+            // 1. Add this enum into environment first, to allow recursive definition
+            let enum_type = Type::Named {
+                name: name.representation.clone(),
+                arguments: type_variables
+                    .clone()
+                    .into_iter()
+                    .map(|type_variable| Type::TypeVariable {
+                        name: type_variable.representation,
+                    })
+                    .collect(),
+            };
+            let type_variable_names = type_variables
+                .clone()
+                .into_iter()
+                .map(|type_variable| type_variable.representation)
+                .collect::<Vec<String>>();
+
+            environment.insert_type_symbol(
+                &name,
+                TypeSymbol {
+                    declaration: Declaration::UserDefined(environment.source.clone(), name.clone()),
+                    type_scheme: TypeScheme {
+                        type_variables: type_variable_names.clone(),
+                        type_value: enum_type.clone(),
+                    },
+                    usage_references: vec![],
+                },
+            )?;
+
+            let source = environment.source.clone();
+
+            // 2. Populate type variables into current environment
+            let mut current_environment = Environment::new(environment);
+            for type_variable in type_variables.clone() {
+                current_environment.insert_type_symbol(
+                    &type_variable,
+                    TypeSymbol {
+                        type_scheme: TypeScheme {
+                            type_value: Type::TypeVariable {
+                                name: type_variable.clone().representation,
+                            },
+                            type_variables: vec![],
+                        },
+                        declaration: Declaration::UserDefined(
+                            source.clone(),
+                            type_variable.clone(),
+                        ),
+                        usage_references: vec![],
+                    },
+                )?;
+            }
+
+            // 3. Add each tags into the value environment
+            let value_symbols = tags
+                .iter()
+                .map(|tag| {
+                    let declaration = Declaration::UserDefined(source.clone(), tag.tagname.clone());
+                    match &tag.payload {
+                        Some(payload) => {
+                            // validate type annotation
+                            let paylod_type_value = type_annotation_to_type(
+                                &mut current_environment,
+                                payload.type_annotation.as_ref(),
+                            )?;
+
+                            Ok((
+                                &tag.tagname,
+                                ValueSymbol {
+                                    declaration,
+                                    usage_references: vec![],
+                                    actual_type: TypeScheme {
+                                        type_variables: type_variable_names.clone(),
+                                        type_value: Type::Function(FunctionType {
+                                            first_argument_type: Box::new(paylod_type_value),
+                                            rest_arguments_types: vec![],
+                                            return_type: Box::new(enum_type.clone()),
+                                        }),
+                                    },
+                                },
+                            ))
+                        }
+                        None => Ok((
+                            &tag.tagname,
+                            ValueSymbol {
+                                declaration,
+                                usage_references: vec![],
+                                actual_type: TypeScheme {
+                                    type_variables: type_variable_names.clone(),
+                                    type_value: enum_type.clone(),
+                                },
+                            },
+                        )),
+                    }
+                })
+                .collect::<Result<Vec<(&Token, ValueSymbol)>, UnifyError>>()?;
+
+            value_symbols
+                .into_iter()
+                .map(|(token, value_symbol)| environment.insert_value_symbol(token, value_symbol))
+                .collect::<Result<Vec<()>, UnifyError>>()?;
+            Ok(())
+        }
     }?;
 
     // reset type variable index
@@ -216,17 +316,6 @@ pub fn generalize_type(type_value: Type) -> TypeScheme {
     TypeScheme {
         type_variables: type_variables.into_iter().collect(),
         type_value,
-    }
-}
-
-pub fn get_type_annotation_location(
-    environment: &Environment,
-    type_annotation: &TypeAnnotation,
-) -> Location {
-    let position = get_type_annotation_position(type_annotation);
-    Location {
-        source: environment.source.clone(),
-        position,
     }
 }
 
@@ -263,13 +352,6 @@ pub fn get_type_annotation_position(type_annotation: &TypeAnnotation) -> Positio
                 ),
             }
         }
-        TypeAnnotation::Tag { token, payload } => match payload {
-            Some(payload) => join_position(token.position, payload.right_parenthesis.position),
-            None => {
-                let position = token.position;
-                join_position(position, position)
-            }
-        },
         TypeAnnotation::Named { name, arguments } => match arguments {
             None => join_position(name.position, name.position),
             Some(arguments) => {
@@ -285,17 +367,8 @@ pub fn join_position(start_position: Position, end_position: Position) -> Positi
         column_start: start_position.column_start,
         line_end: end_position.line_end,
         column_end: end_position.column_end,
-    }
-}
-
-pub fn get_destructure_pattern_location(
-    environment: &Environment,
-    destructure_pattern: &DestructurePattern,
-) -> Location {
-    let position = get_destructure_pattern_position(destructure_pattern);
-    Location {
-        source: environment.source.clone(),
-        position,
+        character_index_start: start_position.character_index_start,
+        character_index_end: end_position.character_index_end,
     }
 }
 
@@ -324,17 +397,6 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
     }
 }
 
-pub fn get_expression_location(
-    environment: &Environment,
-    expression_value: &Expression,
-) -> Location {
-    let position = get_expression_position(expression_value);
-    Location {
-        source: environment.source.clone(),
-        position,
-    }
-}
-
 pub fn get_expression_position(expression_value: &Expression) -> Position {
     match expression_value {
         Expression::Array {
@@ -357,10 +419,14 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             ..
         } => join_position(left_curly_bracket.position, right_curly_bracket.position),
         Expression::FunctionCall(function_call) => {
-            let first_argument = function_call.arguments.first().unwrap();
-            let last_argument = function_call.arguments.last().unwrap();
+            let first_argument = function_call.first_argument.as_ref();
             let start_position = get_expression_position(&first_argument);
-            let end_position = get_expression_position(&last_argument);
+            let end_position = match &function_call.rest_arguments {
+                Some(FunctionCallRestArguments {
+                    right_parenthesis, ..
+                }) => right_parenthesis.position,
+                None => get_expression_position(function_call.function.as_ref()),
+            };
             join_position(start_position, end_position)
         }
         Expression::Function(function) => {
@@ -383,19 +449,24 @@ pub fn unify_type(
     environment: &mut Environment,
     expected: &Type,
     actual: &Type,
-    location: Location,
+    position: Position,
 ) -> Result<Type, UnifyError> {
-    match unify_type_(environment, expected, actual, location) {
-        Err(UnifyError::TypeMismatch {
-            location,
-            expected_type,
-            actual_type,
+    match unify_type_(environment, expected, actual, position) {
+        Err(UnifyError {
+            position,
+            kind:
+                UnifyErrorKind::TypeMismatch {
+                    expected_type,
+                    actual_type,
+                },
         }) => {
             // println!("{:#?}", environment);
-            Err(UnifyError::TypeMismatch {
-                location,
-                expected_type: environment.apply_subtitution_to_type(&expected_type),
-                actual_type: environment.apply_subtitution_to_type(&actual_type),
+            Err(UnifyError {
+                position,
+                kind: UnifyErrorKind::TypeMismatch {
+                    expected_type: environment.apply_subtitution_to_type(&expected_type),
+                    actual_type: environment.apply_subtitution_to_type(&actual_type),
+                },
             })
         }
         other => other,
@@ -406,7 +477,7 @@ pub fn unify_type_(
     environment: &mut Environment,
     expected: &Type,
     actual: &Type,
-    location: Location,
+    position: Position,
 ) -> Result<Type, UnifyError> {
     match (expected.clone(), actual.clone()) {
         (
@@ -420,15 +491,17 @@ pub fn unify_type_(
             },
         ) => {
             if expected_name != actual_name {
-                Err(UnifyError::TypeMismatch {
-                    location,
-                    expected_type: Type::Named {
-                        name: expected_name,
-                        arguments: expected_arguments,
-                    },
-                    actual_type: Type::Named {
-                        name: actual_name,
-                        arguments: actual_arguments,
+                Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::TypeMismatch {
+                        expected_type: Type::Named {
+                            name: expected_name,
+                            arguments: expected_arguments,
+                        },
+                        actual_type: Type::Named {
+                            name: actual_name,
+                            arguments: actual_arguments,
+                        },
                     },
                 })
             } else if expected_arguments.len() != actual_arguments.len() {
@@ -439,7 +512,7 @@ pub fn unify_type_(
                     .into_iter()
                     .zip(actual_arguments.into_iter())
                     .map(|(expected_type, actual_type)| {
-                        unify_type(environment, &expected_type, &actual_type, location.clone())
+                        unify_type(environment, &expected_type, &actual_type, position)
                     })
                     .collect::<Result<Vec<Type>, UnifyError>>()?;
                 Ok(Type::Named {
@@ -454,7 +527,7 @@ pub fn unify_type_(
                 environment.update_substitution(
                     name1,
                     Type::TypeVariable { name: name2 },
-                    location,
+                    position,
                 )?;
             }
             Ok(actual.clone())
@@ -462,9 +535,9 @@ pub fn unify_type_(
         (Type::TypeVariable { name }, other_type) | (other_type, Type::TypeVariable { name }) => {
             if type_variable_occurs_in_type(&name, &other_type) {
                 panic!("circular type substitution found, left={:#?}, actual_type={:#?}, expected_type={:#?} location={:#?}", 
-                       name, other_type, expected, location)
+                       name, other_type, expected, position)
             } else {
-                environment.update_substitution(name, other_type.clone(), location)?;
+                environment.update_substitution(name, other_type.clone(), position)?;
                 Ok(other_type)
             }
         }
@@ -478,7 +551,7 @@ pub fn unify_type_(
                 update_union_type_in_function_type(actual_function, &UnionTypeBound::Exact);
 
             let function_type =
-                unify_function_type(environment, &expected_function, &actual_function, location)?;
+                unify_function_type(environment, &expected_function, &actual_function, position)?;
             Ok(Type::Function(function_type))
         }
         (
@@ -506,12 +579,14 @@ pub fn unify_type_(
                 .collect();
 
             if !missing_keys.is_empty() {
-                return Err(UnifyError::RecordMissingKeys {
-                    missing_keys,
-                    expected_type: Type::Record {
-                        key_type_pairs: expected_key_type_pairs,
+                return Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::RecordMissingKeys {
+                        missing_keys,
+                        expected_type: Type::Record {
+                            key_type_pairs: expected_key_type_pairs,
+                        },
                     },
-                    location,
                 });
             }
 
@@ -521,13 +596,26 @@ pub fn unify_type_(
                 .collect();
 
             if !extraneous_keys.is_empty() {
-                return Err(UnifyError::RecordExtraneousKeys {
-                    extraneous_keys,
-                    expected_type: Type::Record {
-                        key_type_pairs: expected_key_type_pairs,
+                return Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::TypeMismatch {
+                        expected_type: Type::Record {
+                            key_type_pairs: expected_key_type_pairs,
+                        },
+                        actual_type: Type::Record {
+                            key_type_pairs: actual_key_type_pairs,
+                        },
                     },
-                    location,
                 });
+                // return Err(UnifyError {
+                //     position,
+                //     kind: UnifyErrorKind::RecordExtraneousKeys {
+                //         extraneous_keys,
+                //         expected_type: Type::Record {
+                //             key_type_pairs: expected_key_type_pairs,
+                //         },
+                //     },
+                // });
             }
 
             // 3. If no missing keys and no extraneous keys, that means all keys are present
@@ -544,19 +632,25 @@ pub fn unify_type_(
             let key_type_pairs = zipped
                 .map(|((key, expected_type), (_, actual_type))| {
                     // TODO: Should pass in more specific location here
-                    match unify_type(environment, &expected_type, &actual_type, location.clone()) {
+                    match unify_type(environment, &expected_type, &actual_type, position) {
                         Ok(_) => Ok((key, expected_type)),
-                        Err(UnifyError::TypeMismatch {
-                            expected_type,
-                            actual_type,
-                            ..
-                        }) => Err(UnifyError::RecordKeyTypeMismatch {
-                            key,
-                            expected_key_type: expected_type,
-                            actual_key_type: actual_type,
-                            expected_record_type: expected_key_type_pairs.clone(),
-                            actual_record_type: actual_key_type_pairs.clone(),
-                            location: location.clone(),
+                        Err(UnifyError {
+                            position: _,
+                            kind: UnifyErrorKind::TypeMismatch { .. },
+                        }) => Err(UnifyError {
+                            position,
+                            kind: UnifyErrorKind::TypeMismatch {
+                                expected_type: Type::Record {
+                                    key_type_pairs: expected_key_type_pairs.clone()
+                                },
+                                actual_type: Type::Record{
+                                    key_type_pairs: actual_key_type_pairs.clone()
+                                }
+                                // expected_key_type: expected_type,
+                                // actual_key_type: actual_type,
+                                // expected_record_type: expected_key_type_pairs.clone(),
+                                // actual_record_type: actual_key_type_pairs.clone(),
+                            },
                         }),
                         Err(other) => Err(other),
                     }
@@ -576,7 +670,7 @@ pub fn unify_type_(
                 catch_all: false,
             }),
         ) => Ok(Type::Union(UnionType {
-            tags: join_union_tags(environment, expected_tags, actual_tags, location)?,
+            tags: join_union_tags(environment, expected_tags, actual_tags, position)?,
             bound: UnionTypeBound::AtMost,
             catch_all: false,
         })),
@@ -603,18 +697,20 @@ pub fn unify_type_(
                     catch_all: false,
                 }))
             } else {
-                Err(UnifyError::TypeMismatch {
-                    location,
-                    expected_type: Type::Union(UnionType {
-                        tags: expected_tags,
-                        bound: UnionTypeBound::AtMost,
-                        catch_all: false,
-                    }),
-                    actual_type: Type::Union(UnionType {
-                        tags: actual_tags,
-                        bound: actual_union_type_bound,
-                        catch_all,
-                    }),
+                Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::TypeMismatch {
+                        expected_type: Type::Union(UnionType {
+                            tags: expected_tags,
+                            bound: UnionTypeBound::AtMost,
+                            catch_all: false,
+                        }),
+                        actual_type: Type::Union(UnionType {
+                            tags: actual_tags,
+                            bound: actual_union_type_bound,
+                            catch_all,
+                        }),
+                    },
                 })
             }
         }
@@ -636,15 +732,17 @@ pub fn unify_type_(
             } = compare_tags(&expected_tags, &actual_tags);
 
             if (!catch_all && !missing_tags.is_empty()) || !extraneous_tags.is_empty() {
-                return Err(UnifyError::UnionTypeMismatch {
-                    expected_union_type: UnionType {
-                        tags: expected_tags,
-                        bound: UnionTypeBound::Exact,
-                        catch_all: false,
+                return Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::UnionTypeMismatch {
+                        expected_union_type: UnionType {
+                            tags: expected_tags,
+                            bound: UnionTypeBound::Exact,
+                            catch_all: false,
+                        },
+                        missing_tags,
+                        extraneous_tags,
                     },
-                    missing_tags,
-                    extraneous_tags,
-                    location,
                 });
             }
 
@@ -675,15 +773,17 @@ pub fn unify_type_(
                                 environment,
                                 &expected_payload,
                                 &actual_payload,
-                                location.clone(),
+                                position,
                             )?;
                             Ok(())
                         }
                         (TagType { payload: None, .. }, TagType { payload: None, .. }) => Ok(()),
-                        (expected_tag_type, actual_tag_type) => Err(UnifyError::TagTypeMismatch {
-                            expected_tag_type,
-                            actual_tag_type,
-                            location: location.clone(),
+                        (expected_tag_type, actual_tag_type) => Err(UnifyError {
+                            position,
+                            kind: UnifyErrorKind::TagTypeMismatch {
+                                expected_tag_type,
+                                actual_tag_type,
+                            },
                         }),
                     },
                 )
@@ -695,10 +795,12 @@ pub fn unify_type_(
                 catch_all: false,
             }))
         }
-        _ => Err(UnifyError::TypeMismatch {
-            location,
-            expected_type: expected.clone(),
-            actual_type: actual.clone(),
+        _ => Err(UnifyError {
+            position,
+            kind: UnifyErrorKind::TypeMismatch {
+                expected_type: expected.clone(),
+                actual_type: actual.clone(),
+            },
         }),
     }
 }
@@ -718,12 +820,7 @@ pub fn rewrite_type_variable_in_type(
         }
         Type::Named { name, arguments } => Type::Named {
             name,
-            arguments: arguments
-                .into_iter()
-                .map(|argument| {
-                    rewrite_type_variable_in_type(from_type_variable, to_type, argument)
-                })
-                .collect(),
+            arguments: rewrite_type_variable_in_types(from_type_variable, to_type, arguments),
         },
         Type::Underscore => Type::Underscore,
         Type::Union(UnionType {
@@ -738,8 +835,50 @@ pub fn rewrite_type_variable_in_type(
                 .map(|tag| rewrite_type_variable_in_tag_type(from_type_variable, to_type, tag))
                 .collect(),
         }),
-        other => panic!("{:#?}", other),
+        Type::Function(FunctionType {
+            first_argument_type,
+            rest_arguments_types,
+            return_type,
+        }) => Type::Function(FunctionType {
+            first_argument_type: Box::new(rewrite_type_variable_in_type(
+                from_type_variable,
+                to_type,
+                *first_argument_type,
+            )),
+            rest_arguments_types: rewrite_type_variable_in_types(
+                from_type_variable,
+                to_type,
+                rest_arguments_types,
+            ),
+            return_type: Box::new(rewrite_type_variable_in_type(
+                from_type_variable,
+                to_type,
+                *return_type,
+            )),
+        }),
+        Type::Record { key_type_pairs } => Type::Record {
+            key_type_pairs: key_type_pairs
+                .into_iter()
+                .map(|(key, type_value)| {
+                    (
+                        key,
+                        rewrite_type_variable_in_type(from_type_variable, to_type, type_value),
+                    )
+                })
+                .collect(),
+        },
     }
+}
+
+pub fn rewrite_type_variable_in_types(
+    from_type_variable: &str,
+    to_type: &Type,
+    in_types: Vec<Type>,
+) -> Vec<Type> {
+    in_types
+        .into_iter()
+        .map(|type_value| rewrite_type_variable_in_type(from_type_variable, to_type, type_value))
+        .collect()
 }
 
 pub fn rewrite_type_variable_in_tag_type(
@@ -794,7 +933,7 @@ pub fn join_union_tags(
     environment: &mut Environment,
     left: Vec<TagType>,
     right: Vec<TagType>,
-    location: Location,
+    position: Position,
 ) -> Result<Vec<TagType>, UnifyError> {
     // check for incompatible tags, i.e. tags with the same name but with non-unifiable payload
 
@@ -817,14 +956,17 @@ pub fn join_union_tags(
                             environment,
                             left_payload.as_ref(),
                             right_payload.as_ref(),
-                            location.clone(),
+                            position,
                         )?;
                         Ok(())
                     }
-                    (_, _) => Err(UnifyError::TagTypeMismatch {
-                        location: location.clone(),
-                        expected_tag_type: left_tag_type.clone(),
-                        actual_tag_type: matching_tag.clone(),
+                    (None, None) => Ok(()),
+                    (_, _) => Err(UnifyError {
+                        position,
+                        kind: UnifyErrorKind::TagTypeMismatch {
+                            expected_tag_type: left_tag_type.clone(),
+                            actual_tag_type: matching_tag.clone(),
+                        },
                     }),
                 },
             }
@@ -832,6 +974,87 @@ pub fn join_union_tags(
         .collect::<Result<Vec<()>, UnifyError>>()?;
 
     Ok(left.into_iter().chain(right.into_iter()).collect())
+}
+
+pub struct TagPayloadType {
+    left_parenthesis: Token,
+    type_value: Type,
+    position: Position,
+    right_parenthesis: Token,
+}
+
+pub fn infer_tag_type(
+    environment: &mut Environment,
+    tagname: &Token,
+    payload: Option<TagPayloadType>,
+) -> Result<Type, UnifyError> {
+    // Look up constructor
+    let constructor = match environment.get_value_symbol(&tagname.representation) {
+        Some(value_symbol) => value_symbol,
+        None => {
+            return Err(UnifyError {
+                position: tagname.position,
+                kind: UnifyErrorKind::UnknownValueSymbol,
+            })
+        }
+    };
+
+    // initiate type variables
+    let type_variables = constructor
+        .actual_type
+        .type_variables
+        .iter()
+        .map(|_| environment.get_next_type_variable_name())
+        .collect::<Vec<String>>();
+
+    let constructor_type = constructor
+        .actual_type
+        .type_variables
+        .iter()
+        .zip(type_variables.iter())
+        .fold(
+            constructor.actual_type.type_value.clone(),
+            |result_type, (from_type_variable, to_type_variable)| {
+                rewrite_type_variable_in_type(
+                    from_type_variable,
+                    &Type::TypeVariable {
+                        name: to_type_variable.clone(),
+                    },
+                    result_type,
+                )
+            },
+        );
+
+    match constructor_type {
+        Type::Named { .. } => match payload {
+            Some(payload) => Err(UnifyError {
+                position: join_position(
+                    payload.left_parenthesis.position,
+                    payload.right_parenthesis.position,
+                ),
+                kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
+            }),
+            None => Ok(constructor_type),
+        },
+        Type::Function(function_type) => match payload {
+            None => Err(UnifyError {
+                position: tagname.position,
+                kind: UnifyErrorKind::ThisTagRequiresPaylod {
+                    payload_type: *function_type.first_argument_type,
+                },
+            }),
+            Some(payload) => {
+                unify_type(
+                    environment,
+                    function_type.first_argument_type.as_ref(),
+                    &payload.type_value,
+                    payload.position,
+                )?;
+                Ok(*function_type.return_type)
+            }
+        },
+        other => panic!("Compiler error, did not expect tag type to be {:#?}", other),
+    }
 }
 
 pub fn infer_expression_type(
@@ -844,21 +1067,20 @@ pub fn infer_expression_type(
         Expression::String(_) => Ok(string_type()),
         Expression::Number(_) => Ok(number_type()),
         Expression::Tag { token, payload } => {
-            let tag_type = TagType {
-                tagname: token.representation.clone(),
-                payload: match payload {
-                    Some(payload) => Some(Box::new(infer_expression_type(
-                        environment,
-                        &payload.value,
-                    )?)),
-                    None => None,
-                },
-            };
-            Ok(Type::Union(UnionType {
-                tags: vec![tag_type],
-                bound: UnionTypeBound::AtLeast,
-                catch_all: false,
-            }))
+            let payload = match payload {
+                None => Ok(None),
+                Some(payload) => {
+                    let type_value = infer_expression_type(environment, &payload.value)?;
+                    Ok(Some(TagPayloadType {
+                        left_parenthesis: payload.left_parenthesis.clone(),
+                        type_value,
+                        position: get_expression_position(&payload.value),
+                        right_parenthesis: payload.right_parenthesis.clone(),
+                    }))
+                }
+            }?;
+
+            infer_tag_type(environment, token, payload)
         }
         Expression::Variable(variable) => {
             if let Some(symbol) = environment.get_value_symbol(&variable.representation) {
@@ -895,11 +1117,9 @@ pub fn infer_expression_type(
 
                 Ok(type_value)
             } else {
-                Err(UnifyError::UnknownValueSymbol {
-                    location: Location {
-                        source: environment.source.clone(),
-                        position: variable.position,
-                    },
+                Err(UnifyError {
+                    position: variable.position,
+                    kind: UnifyErrorKind::UnknownValueSymbol,
                 })
             }
         }
@@ -911,7 +1131,10 @@ pub fn infer_expression_type(
             type_annotation,
             ..
         } => {
-            let left_type = infer_destructure_pattern(environment, left)?;
+            let left_type = environment.introduce_type_variable(None)?;
+            let inferred_left_type = infer_destructure_pattern(environment, left)?;
+            let left_location = get_destructure_pattern_position(&left);
+            unify_type(environment, &left_type, &inferred_left_type, left_location)?;
             let right_type = infer_expression_type(environment, &right)?;
 
             match type_annotation {
@@ -922,55 +1145,59 @@ pub fn infer_expression_type(
                         environment,
                         &type_annotation,
                         &left_type,
-                        get_destructure_pattern_location(environment, &left),
+                        get_destructure_pattern_position(&left),
                     )?;
                     Ok(())
                 }
             }?;
 
-            unify_type(
-                environment,
-                &left_type,
-                &right_type,
-                get_expression_location(environment, &right),
-            )?;
             let false_branch_type = match false_branch {
-                None => right_type,
+                None => {
+                    unify_type(
+                        environment,
+                        &left_type,
+                        &right_type,
+                        get_expression_position(&right),
+                    )?;
+                    right_type.clone()
+                }
                 Some(false_branch) => match infer_expression_type(environment, &false_branch)? {
                     Type::TypeVariable { name } => Ok(Type::TypeVariable { name }),
                     Type::Function(function_type) => {
-                        if function_type.arguments_types.get(0).is_some() {
-                            if function_type.arguments_types.len() != 1 {
-                                return Err(UnifyError::LetElseMustBeSingleArgumentFunction {
-                                    actual_type: Type::Function(function_type),
-                                    location: get_expression_location(environment, &false_branch),
-                                });
-                            } else {
-                                let return_type = Type::TypeVariable {
-                                    name: environment.get_next_type_variable_name(),
-                                };
-                                let expected_function_type = FunctionType {
-                                    arguments_types: vec![right_type],
-                                    return_type: Box::new(return_type.clone()),
-                                };
-                                unify_function_type(
-                                    environment,
-                                    &expected_function_type,
-                                    &function_type,
-                                    get_expression_location(environment, &false_branch),
-                                )?;
-                                Ok(environment.apply_subtitution_to_type(&return_type))
-                            }
+                        if function_type.rest_arguments_types.is_empty() {
+                            unify_type(
+                                environment,
+                                &left_type,
+                                function_type.first_argument_type.as_ref(),
+                                get_destructure_pattern_position(&left),
+                            )?;
+
+                            unify_type(
+                                environment,
+                                &update_union_type_in_type(
+                                    environment.apply_subtitution_to_type(&left_type),
+                                    &UnionTypeBound::Exact,
+                                ),
+                                &update_union_type_in_type(
+                                    right_type.clone(),
+                                    &UnionTypeBound::Exact,
+                                ),
+                                get_expression_position(&right),
+                            )?;
+
+                            Ok(*function_type.return_type)
                         } else {
-                            return Err(UnifyError::LetElseMustBeSingleArgumentFunction {
-                                actual_type: Type::Function(function_type),
-                                location: get_expression_location(environment, &false_branch),
+                            return Err(UnifyError {
+                                position: get_expression_position(&false_branch),
+                                kind: UnifyErrorKind::LetElseMustBeSingleArgumentFunction {
+                                    actual_type: Type::Function(function_type),
+                                },
                             });
                         }
                     }
-                    other => Err(UnifyError::LetElseMustBeFunction {
-                        actual_type: other,
-                        location: get_expression_location(environment, &false_branch),
+                    other => Err(UnifyError {
+                        position: get_expression_position(&false_branch),
+                        kind: UnifyErrorKind::LetElseMustBeFunction { actual_type: other },
                     }),
                 }?,
             };
@@ -988,12 +1215,29 @@ pub fn infer_expression_type(
             //     "true_branch_type = {:#?}",
             //     environment.apply_subtitution_to_type(&true_branch_type)
             // );
-            unify_type(
-                environment,
-                &false_branch_type,
-                &true_branch_type,
-                get_expression_location(environment, &true_branch),
-            )?;
+            //
+
+            println!("right_type = {:#?}", right_type);
+            println!("left_type = {:#?}", left_type);
+
+            match **left {
+                DestructurePattern::Identifier(_) | DestructurePattern::Underscore(_) => {
+                    if let Some(false_branch) = false_branch {
+                        return Err(UnifyError {
+                            position: get_expression_position(false_branch.as_ref()),
+                            kind: UnifyErrorKind::UnreachableCase,
+                        });
+                    }
+                }
+                _ => {
+                    unify_type(
+                        environment,
+                        &false_branch_type,
+                        &true_branch_type,
+                        get_expression_position(&true_branch),
+                    )?;
+                }
+            };
 
             Ok(environment.apply_subtitution_to_type(&false_branch_type))
         }
@@ -1002,8 +1246,9 @@ pub fn infer_expression_type(
                 infer_function_branch(environment, &function.first_branch)?;
 
             let function_type = FunctionType {
-                arguments_types: first_function_branch_type
-                    .arguments_types
+                first_argument_type: Box::new(environment.introduce_type_variable(None)?),
+                rest_arguments_types: first_function_branch_type
+                    .rest_arguments_types
                     .iter()
                     .map(|_| Type::TypeVariable {
                         name: environment.get_next_type_variable_name(),
@@ -1020,25 +1265,14 @@ pub fn infer_expression_type(
                 environment,
                 &function_type,
                 &first_function_branch_type,
-                Location {
-                    source: environment.source.clone(),
-                    position: get_function_branch_position(&function.first_branch),
-                },
+                get_function_branch_position(&function.first_branch),
             )?;
 
             // Unify function branches
             for function_branch in &function.branches {
                 let actual_function_type = infer_function_branch(environment, function_branch)?;
                 let position = get_function_branch_position(function_branch);
-                unify_function_type(
-                    environment,
-                    &function_type,
-                    &actual_function_type,
-                    Location {
-                        source: environment.source.clone(),
-                        position,
-                    },
-                )?;
+                unify_function_type(environment, &function_type, &actual_function_type, position)?;
             }
 
             let function_type =
@@ -1055,23 +1289,45 @@ pub fn infer_expression_type(
             match infer_expression_type(environment, &function_call.function)? {
                 Type::Function(expected_function_type) => {
                     // Tally arguments length
-                    if function_call.arguments.len() != expected_function_type.arguments_types.len()
                     {
-                        return Err(UnifyError::InvalidFunctionArgumentLength {
-                            location: get_expression_location(
-                                environment,
-                                &Expression::FunctionCall(function_call.clone()),
-                            ),
-                            actual_length: function_call.arguments.len(),
-                            expected_length: expected_function_type.arguments_types.len(),
-                        });
+                        let expected_arguments_length =
+                            expected_function_type.rest_arguments_types.len() + 1;
+                        let actual_arguments_length = match &function_call.rest_arguments {
+                            Some(rest_arguments) => rest_arguments.arguments.len() + 1,
+                            None => 1,
+                        };
+                        if actual_arguments_length != expected_arguments_length {
+                            return Err(UnifyError {
+                                position: get_expression_position(&Expression::FunctionCall(
+                                    function_call.clone(),
+                                )),
+                                kind: UnifyErrorKind::InvalidFunctionArgumentLength {
+                                    actual_length: actual_arguments_length,
+                                    expected_length: expected_arguments_length,
+                                },
+                            });
+                        }
                     }
 
+                    let expected_function_first_argument =
+                        vec![*expected_function_type.first_argument_type];
+                    let expected_function_arguments = expected_function_first_argument
+                        .iter()
+                        .chain(expected_function_type.rest_arguments_types.iter());
+
+                    let actual_function_first_argument =
+                        vec![*function_call.first_argument.clone()];
+                    let actual_function_arguments = match &function_call.rest_arguments {
+                        Some(rest_arguments) => rest_arguments.arguments.clone(),
+                        None => Vec::new(),
+                    };
+                    let actual_function_arguments = actual_function_first_argument
+                        .iter()
+                        .chain(actual_function_arguments.iter());
+
                     // Unify the type of each argument
-                    expected_function_type
-                        .arguments_types
-                        .into_iter()
-                        .zip(function_call.arguments.clone().into_iter())
+                    expected_function_arguments
+                        .zip(actual_function_arguments)
                         .map(|(expected_argument_type, actual_argument)| {
                             let actual_argument_type =
                                 infer_expression_type(environment, &actual_argument)?;
@@ -1079,7 +1335,7 @@ pub fn infer_expression_type(
                                 environment,
                                 &expected_argument_type,
                                 &actual_argument_type,
-                                get_expression_location(environment, &actual_argument),
+                                get_expression_position(&actual_argument),
                             )
                         })
                         .collect::<Result<Vec<Type>, UnifyError>>()?;
@@ -1092,28 +1348,32 @@ pub fn infer_expression_type(
                         name: environment.get_next_type_variable_name(),
                     };
 
-                    let location = get_expression_location(
-                        environment,
-                        &Expression::FunctionCall(function_call.clone()),
-                    );
+                    let position =
+                        get_expression_position(&Expression::FunctionCall(function_call.clone()));
 
                     unify_type(
                         environment,
                         &Type::TypeVariable { name },
                         &expected_function_type,
-                        location.clone(),
+                        position,
                     )?;
 
                     let return_type = Type::TypeVariable {
                         name: environment.get_next_type_variable_name(),
                     };
                     let actual_function_type = Type::Function(FunctionType {
-                        arguments_types: function_call
-                            .arguments
-                            .clone()
-                            .into_iter()
-                            .map(|argument| infer_expression_type(environment, &argument))
-                            .collect::<Result<Vec<Type>, UnifyError>>()?,
+                        first_argument_type: Box::new(infer_expression_type(
+                            environment,
+                            function_call.first_argument.as_ref(),
+                        )?),
+                        rest_arguments_types: match &function_call.rest_arguments {
+                            None => Vec::new(),
+                            Some(FunctionCallRestArguments { arguments, .. }) => arguments
+                                .clone()
+                                .into_iter()
+                                .map(|argument| infer_expression_type(environment, &argument))
+                                .collect::<Result<Vec<Type>, UnifyError>>()?,
+                        },
                         return_type: Box::new(return_type.clone()),
                     });
 
@@ -1121,14 +1381,14 @@ pub fn infer_expression_type(
                         environment,
                         &actual_function_type,
                         &expected_function_type,
-                        location,
+                        position,
                     )?;
 
                     Ok(environment.apply_subtitution_to_type(&return_type))
                 }
-                other => Err(UnifyError::CannotInvokeNonFunction {
-                    location: get_expression_location(environment, &function_call.function),
-                    actual_type: other,
+                other => Err(UnifyError {
+                    position: get_expression_position(&function_call.function),
+                    kind: UnifyErrorKind::CannotInvokeNonFunction { actual_type: other },
                 }),
             }
         }
@@ -1152,7 +1412,7 @@ pub fn infer_expression_type(
                                     environment,
                                     &type_annotation,
                                     &value_type,
-                                    get_expression_location(environment, &value),
+                                    get_expression_position(&value),
                                 )?;
                                 Ok(())
                             }
@@ -1175,7 +1435,7 @@ pub fn infer_expression_type(
                     environment,
                     &element_type,
                     actual_element_type,
-                    get_expression_location(environment, &element),
+                    get_expression_position(&element),
                 )?;
             }
             Ok(array_type(
@@ -1188,13 +1448,15 @@ pub fn infer_expression_type(
 
 pub fn update_union_type_in_function_type(
     FunctionType {
-        arguments_types,
+        first_argument_type,
+        rest_arguments_types,
         return_type,
     }: FunctionType,
     bound: &UnionTypeBound,
 ) -> FunctionType {
     FunctionType {
-        arguments_types: arguments_types
+        first_argument_type: Box::new(update_union_type_in_type(*first_argument_type, bound)),
+        rest_arguments_types: rest_arguments_types
             .into_iter()
             .map(|argument_type| update_union_type_in_type(argument_type, bound))
             .collect(),
@@ -1234,28 +1496,45 @@ pub fn unify_function_type(
     environment: &mut Environment,
     expected_function_type: &FunctionType,
     actual_function_type: &FunctionType,
-    location: Location,
+    position: Position,
 ) -> Result<FunctionType, UnifyError> {
     // compare arguments length
-    if expected_function_type.arguments_types.len() != actual_function_type.arguments_types.len() {
-        return Err(UnifyError::InvalidFunctionArgumentLength {
-            location,
-            expected_length: expected_function_type.arguments_types.len(),
-            actual_length: actual_function_type.arguments_types.len(),
+    if expected_function_type.rest_arguments_types.len()
+        != actual_function_type.rest_arguments_types.len()
+    {
+        return Err(UnifyError {
+            position,
+            kind: UnifyErrorKind::InvalidFunctionArgumentLength {
+                expected_length: expected_function_type.rest_arguments_types.len() + 1,
+                actual_length: actual_function_type.rest_arguments_types.len() + 1,
+            },
         });
     }
 
     // unify every argument type
-    let zipped = expected_function_type
-        .clone()
-        .arguments_types
+    let zipped = vec![*expected_function_type.first_argument_type.clone()]
         .into_iter()
-        .zip(actual_function_type.arguments_types.clone().into_iter());
+        .chain(
+            expected_function_type
+                .clone()
+                .rest_arguments_types
+                .into_iter(),
+        )
+        .zip(
+            vec![*actual_function_type.first_argument_type.clone()]
+                .into_iter()
+                .chain(
+                    actual_function_type
+                        .rest_arguments_types
+                        .clone()
+                        .into_iter(),
+                ),
+        );
 
     let unify_argument_type_result = zipped
         .enumerate()
         .map(|(index, (expected_type, actual_type))| {
-            match unify_type(environment, &expected_type, &actual_type, location.clone()) {
+            match unify_type(environment, &expected_type, &actual_type, position) {
                 Ok(type_value) => Ok(type_value),
                 Err(unify_error) => Err((index, unify_error)),
             }
@@ -1263,36 +1542,40 @@ pub fn unify_function_type(
         .collect::<Result<Vec<Type>, (usize, UnifyError)>>();
 
     match unify_argument_type_result {
-        Ok(arguments_types) => {
+        Ok(rest_arguments_types) => {
             // unify return type
             match unify_type(
                 environment,
                 expected_function_type.return_type.as_ref(),
                 actual_function_type.return_type.as_ref(),
-                location.clone(),
+                position,
             ) {
                 Ok(return_type) => Ok(FunctionType {
-                    arguments_types,
+                    first_argument_type: Box::new(environment.apply_subtitution_to_type(
+                        expected_function_type.first_argument_type.as_ref(),
+                    )),
+                    rest_arguments_types,
                     return_type: Box::new(return_type),
                 }),
-                Err(unify_error) => Err(UnifyError::FunctionReturnTypeMismatch {
-                    unify_error: Box::new(unify_error),
-                    location,
-                    expected_function_type: environment
-                        .apply_subtitution_to_function_type(expected_function_type),
-                    actual_function_type: environment
-                        .apply_subtitution_to_function_type(actual_function_type),
+                Err(_) => Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::TypeMismatch {
+                        expected_type: Type::Function(
+                            environment.apply_subtitution_to_function_type(&expected_function_type),
+                        ),
+                        actual_type: Type::Function(
+                            environment.apply_subtitution_to_function_type(&actual_function_type),
+                        ),
+                    },
                 }),
             }
         }
-        Err((argument_index, unify_error)) => Err(UnifyError::FunctionTypeArgumentMismatch {
-            argument_index,
-            unify_error: Box::new(unify_error),
-            location,
-            expected_function_type: environment
-                .apply_subtitution_to_function_type(expected_function_type),
-            actual_function_type: environment
-                .apply_subtitution_to_function_type(actual_function_type),
+        Err(_) => Err(UnifyError {
+            position,
+            kind: UnifyErrorKind::TypeMismatch {
+                expected_type: Type::Function(expected_function_type.clone()),
+                actual_type: Type::Function(actual_function_type.clone()),
+            },
         }),
     }
 }
@@ -1307,12 +1590,17 @@ pub fn infer_function_branch(
     function_branch: &FunctionBranch,
 ) -> Result<FunctionType, UnifyError> {
     // Initialize new environment for this function branch
-    let mut environment = Environment::new(&parent_environment);
+    let mut environment = Environment::new(parent_environment);
 
-    let arguments_types = function_branch
-        .arguments
+    let first_argument_type = Box::new(infer_function_argument(
+        &mut environment,
+        function_branch.first_argument.as_ref(),
+    )?);
+
+    let rest_arguments_types = function_branch
+        .rest_arguments
         .iter()
-        .map(|argument| Ok(unify_function_argument(&mut environment, &argument)?))
+        .map(|argument| Ok(infer_function_argument(&mut environment, &argument)?))
         .collect::<Result<Vec<Type>, UnifyError>>()?;
 
     let body_type = infer_expression_type(&mut environment, &function_branch.body)?;
@@ -1324,15 +1612,17 @@ pub fn infer_function_branch(
 
     let result = match return_type {
         Some(return_type) => {
-            let location = get_expression_location(&environment, &function_branch.body);
-            unify_type(&mut environment, &return_type, &body_type, location)?;
+            let position = get_expression_position(&function_branch.body);
+            unify_type(&mut environment, &return_type, &body_type, position)?;
             Ok(FunctionType {
-                arguments_types,
+                first_argument_type,
+                rest_arguments_types,
                 return_type: Box::new(environment.apply_subtitution_to_type(&return_type)),
             })
         }
         None => Ok(FunctionType {
-            arguments_types,
+            first_argument_type,
+            rest_arguments_types,
             return_type: Box::new(body_type),
         }),
     }?;
@@ -1341,7 +1631,7 @@ pub fn infer_function_branch(
     Ok(environment.apply_subtitution_to_function_type(&result))
 }
 
-pub fn unify_function_argument(
+pub fn infer_function_argument(
     environment: &mut Environment,
     function_argument: &FunctionArgument,
 ) -> Result<Type, UnifyError> {
@@ -1357,10 +1647,7 @@ pub fn unify_function_argument(
                 environment,
                 &type_annotation_type,
                 &actual_type,
-                get_destructure_pattern_location(
-                    environment,
-                    &function_argument.destructure_pattern,
-                ),
+                get_destructure_pattern_position(&function_argument.destructure_pattern),
             )?)
         }
         None => infer_destructure_pattern(environment, &function_argument.destructure_pattern),
@@ -1394,10 +1681,12 @@ pub fn type_annotation_to_type(
                 };
 
                 if symbol.type_scheme.type_variables.len() != arguments.len() {
-                    Err(UnifyError::TypeArgumentsLengthMismatch {
-                        location: get_type_annotation_location(environment, type_annotation),
-                        expected_length: symbol.type_scheme.type_variables.len(),
-                        actual_length: arguments.len(),
+                    Err(UnifyError {
+                        position: get_type_annotation_position(type_annotation),
+                        kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
+                            expected_length: symbol.type_scheme.type_variables.len(),
+                            actual_length: arguments.len(),
+                        },
                     })
                 } else {
                     let result = symbol
@@ -1414,11 +1703,9 @@ pub fn type_annotation_to_type(
                     Ok(result)
                 }
             } else {
-                Err(UnifyError::UnknownTypeSymbol {
-                    location: Location {
-                        source: environment.source.clone(),
-                        position: name.position,
-                    },
+                Err(UnifyError {
+                    position: name.position,
+                    kind: UnifyErrorKind::UnknownTypeSymbol,
                 })
             }
         }
@@ -1435,23 +1722,6 @@ pub fn type_annotation_to_type(
                 .collect::<Result<Vec<(String, Type)>, UnifyError>>()?;
             Ok(Type::Record { key_type_pairs })
         }
-        TypeAnnotation::Tag { token, payload } => {
-            let payload = match payload {
-                Some(payload) => Some(Box::new(type_annotation_to_type(
-                    environment,
-                    payload.payload.as_ref(),
-                )?)),
-                None => None,
-            };
-            Ok(Type::Union(UnionType {
-                tags: vec![TagType {
-                    tagname: token.representation.clone(),
-                    payload,
-                }],
-                bound: UnionTypeBound::AtMost,
-                catch_all: false,
-            }))
-        }
         TypeAnnotation::Union { type_annotations } => {
             // Make sure that only all the types are either a union or tag
             let tag_types = type_annotations.iter().fold(
@@ -1463,14 +1733,13 @@ pub fn type_annotation_to_type(
                                 environment,
                                 current_tags,
                                 tags,
-                                get_type_annotation_location(environment, type_annotation),
+                                get_type_annotation_position(type_annotation),
                             ),
-                            other => Err(UnifyError::CannotUnionNonTagType {
-                                the_non_union_type: other,
-                                location: get_type_annotation_location(
-                                    environment,
-                                    type_annotation,
-                                ),
+                            other => Err(UnifyError {
+                                position: get_type_annotation_position(type_annotation),
+                                kind: UnifyErrorKind::CannotUnionNonTagType {
+                                    the_non_union_type: other,
+                                },
                             }),
                         }
                     }
@@ -1487,11 +1756,16 @@ pub fn type_annotation_to_type(
             }))
         }
         TypeAnnotation::Function {
-            arguments_types,
+            first_argument_type,
+            rest_arguments_types,
             return_type,
             ..
         } => {
-            let arguments_types = arguments_types
+            let first_argument_type = Box::new(type_annotation_to_type(
+                environment,
+                first_argument_type.as_ref(),
+            )?);
+            let rest_arguments_types = rest_arguments_types
                 .iter()
                 .map(|argument_type| type_annotation_to_type(environment, argument_type))
                 .collect::<Result<Vec<Type>, UnifyError>>()?;
@@ -1499,7 +1773,8 @@ pub fn type_annotation_to_type(
             let return_type = type_annotation_to_type(environment, return_type)?;
 
             Ok(Type::Function(FunctionType {
-                arguments_types,
+                first_argument_type,
+                rest_arguments_types,
                 return_type: Box::new(return_type),
             }))
         }
@@ -1519,21 +1794,37 @@ pub fn infer_destructure_pattern(
             environment.introduce_type_variable(Some(&identifier))
         }
         DestructurePattern::Tag { token, payload } => {
-            let tag_type = TagType {
-                tagname: token.representation.clone(),
-                payload: match payload {
-                    None => None,
-                    Some(payload) => Some(Box::new(infer_destructure_pattern(
-                        environment,
-                        &payload.destructure_pattern,
-                    )?)),
-                },
-            };
-            Ok(Type::Union(UnionType {
-                tags: vec![tag_type],
-                bound: UnionTypeBound::AtLeast,
-                catch_all: false,
-            }))
+            let payload = match payload {
+                None => Ok(None),
+                Some(payload) => {
+                    let payload_type =
+                        infer_destructure_pattern(environment, &payload.destructure_pattern)?;
+
+                    Ok(Some(TagPayloadType {
+                        type_value: payload_type,
+                        left_parenthesis: payload.left_parenthesis.clone(),
+                        right_parenthesis: payload.right_parenthesis.clone(),
+                        position: get_destructure_pattern_position(&payload.destructure_pattern),
+                    }))
+                }
+            }?;
+            infer_tag_type(environment, token, payload)
+
+            // let tag_type = TagType {
+            //     tagname: token.representation.clone(),
+            //     payload: match payload {
+            //         None => None,
+            //         Some(payload) => Some(Box::new(infer_destructure_pattern(
+            //             environment,
+            //             &payload.destructure_pattern,
+            //         )?)),
+            //     },
+            // };
+            // Ok(Type::Union(UnionType {
+            //     tags: vec![tag_type],
+            //     bound: UnionTypeBound::AtLeast,
+            //     catch_all: false,
+            // }))
         }
         DestructurePattern::Array {
             initial_elements,
@@ -1556,7 +1847,7 @@ pub fn infer_destructure_pattern(
                     environment,
                     &element_type,
                     inferred_element_type,
-                    get_destructure_pattern_location(environment, destructure_pattern),
+                    get_destructure_pattern_position(destructure_pattern),
                 )?;
             }
             let result_type = array_type(environment.apply_subtitution_to_type(&element_type));
@@ -1625,10 +1916,16 @@ fn substitute_type_variable_in_type(
             }
         }
         Type::Function(FunctionType {
-            arguments_types,
+            first_argument_type,
+            rest_arguments_types,
             return_type,
         }) => Type::Function(FunctionType {
-            arguments_types: arguments_types
+            first_argument_type: Box::new(substitute_type_variable_in_type(
+                from_type_variable,
+                to_type,
+                first_argument_type.as_ref(),
+            )),
+            rest_arguments_types: rest_arguments_types
                 .iter()
                 .map(|argument_type| {
                     substitute_type_variable_in_type(from_type_variable, to_type, argument_type)
@@ -1708,11 +2005,17 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
             result
         }
         Type::Function(FunctionType {
-            arguments_types,
+            first_argument_type,
+            rest_arguments_types,
             return_type,
         }) => {
             let mut result: HashSet<String> = HashSet::new();
-            let type_variables: Vec<HashSet<String>> = arguments_types
+
+            result.extend(get_free_type_variables_in_type(
+                first_argument_type.as_ref(),
+            ));
+
+            let type_variables: Vec<HashSet<String>> = rest_arguments_types
                 .iter()
                 .map(get_free_type_variables_in_type)
                 .collect();
@@ -1724,17 +2027,12 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
 
             result
         }
-        Type::Record { key_type_pairs } => {
-            let type_variables = key_type_pairs
-                .iter()
-                .map(|(_, type_value)| get_free_type_variables_in_type(&type_value))
-                .collect::<Vec<HashSet<String>>>();
-            type_variables
-                .into_iter()
-                .fold(HashSet::new(), |result, type_variables| {
-                    result.into_iter().chain(type_variables).collect()
-                })
-        }
+        Type::Record { key_type_pairs } => key_type_pairs
+            .iter()
+            .map(|(_, type_value)| get_free_type_variables_in_type(&type_value))
+            .fold(HashSet::new(), |result, type_variables| {
+                result.into_iter().chain(type_variables).collect()
+            }),
         Type::Union(UnionType { tags, .. }) => tags
             .iter()
             .flat_map(|tag_type| match &tag_type.payload {

@@ -15,6 +15,88 @@ use parse::*;
 mod tokenize;
 use tokenize::*;
 
+mod stringify_error;
+use stringify_error::*;
+
+#[test]
+fn run_all_tests() {
+    use difference::Changeset;
+    use std::fs;
+    let test_dir = "tests/compiler/";
+    let dirs = fs::read_dir(test_dir).expect("Failed to read directory");
+    for maybe_entry in dirs {
+        let entry = maybe_entry.expect("Failed to read entry");
+        let filename = entry
+            .path()
+            .to_str()
+            .expect("Failed to convert entry to string")
+            .to_string();
+
+        if filename.ends_with(".kk") {
+            let input_filename = filename;
+            let input = fs::read_to_string(&input_filename).expect("failed to read input file");
+            print!("{}", input_filename);
+            let actual_output = compile(
+                Source::File {
+                    path: input_filename.clone(),
+                },
+                input.clone(),
+            )
+            .trim()
+            .to_string();
+
+            let actual_output = strip_line_trailing_spaces(actual_output);
+
+            let stripped_actual_output = String::from_utf8(
+                strip_ansi_escapes::strip(actual_output.clone()).expect("Failed to strip color"),
+            )
+            .unwrap();
+            let output_filename = input_filename.clone() + ".out";
+            let expected_output = fs::read_to_string(output_filename.as_str())
+                .expect(format!("failed to read output file for {}", output_filename).as_str())
+                .trim()
+                .to_string();
+
+            let expected_output = strip_line_trailing_spaces(expected_output);
+
+            if stripped_actual_output.trim() != expected_output {
+                let changeset = Changeset::new(&expected_output, &actual_output, "");
+                println!("{}", "=".repeat(10));
+                println!(
+                    "ASSERTION FAILED FOR:\n\n{}",
+                    indent_string(input_filename, 4)
+                );
+                println!("\n\nINPUT:\n\n{}", indent_string(input, 4));
+                println!(
+                    "\n\nEXPECTED OUTPUT:\n\n{}",
+                    indent_string(expected_output, 4)
+                );
+                println!(
+                    "\n\nACTUAL OUTPUT({}):\n\n{}",
+                    output_filename,
+                    indent_string(actual_output, 4)
+                );
+                println!(
+                    "\n\nDIFF (EXPECTED OUTPUT / ACTUAL OUTPUT):\n\n{}",
+                    indent_string(changeset.to_string(), 4)
+                );
+                println!("{}", "=".repeat(10));
+                panic!()
+            } else {
+                println!(" PASSED");
+            }
+        }
+    }
+    fn strip_line_trailing_spaces(input: String) -> String {
+        input
+            .split('\n')
+            .into_iter()
+            .map(|line| line.trim_end().to_string())
+            .collect::<Vec<String>>()
+            .join("\n")
+    }
+}
+
 fn main() {
     println!("{}", execute("let x = 2".to_string()));
     println!(
@@ -29,19 +111,24 @@ pub enum CompileError {
     ParseError(ParseError),
 }
 
-pub fn type_check_source(source: String) -> Result<(), CompileError> {
-    match source_to_statements(source) {
-        Err(parse_error) => Err(CompileError::ParseError(parse_error)),
+pub fn compile(source: Source, code: String) -> String {
+    match source_to_statements(code.clone()) {
+        Err(parse_error) => format!("{:#?}", parse_error),
         Ok(statements) => match unify_program(Program {
-            source: Source::NonFile {
-                env_name: "TESTING".to_string(),
-            },
+            source: source.clone(),
             statements,
         }) {
-            Err(unify_error) => Err(CompileError::UnifyError(unify_error)),
-            Ok(_) => Ok(()),
+            Err(unify_error) => stringify_unify_error(source, code, unify_error),
+            Ok(_) => "".to_string(),
         },
     }
+}
+
+pub fn type_check_source(code: String) -> String {
+    let source = Source::NonFile {
+        env_name: "TEST".to_string(),
+    };
+    compile(source, code)
 }
 
 pub fn source_to_statements(source: String) -> Result<Vec<Statement>, ParseError> {
@@ -87,7 +174,9 @@ mod test_tokenize {
                     column_start: 0,
                     column_end: 1,
                     line_start: 0,
-                    line_end: 0
+                    line_end: 0,
+                    character_index_start: 0,
+                    character_index_end: 0
                 }
             }])
         );
@@ -105,7 +194,9 @@ mod test_tokenize {
                         column_start: 0,
                         column_end: 14,
                         line_start: 0,
-                        line_end: 0
+                        line_end: 0,
+                        character_index_start: 0,
+                        character_index_end: 0
                     }
                 },
                 Token {
@@ -116,6 +207,8 @@ mod test_tokenize {
                         line_end: 0,
                         column_start: 15,
                         column_end: 15,
+                        character_index_start: 0,
+                        character_index_end: 0
                     }
                 }
             ])
@@ -134,7 +227,9 @@ mod test_tokenize {
                     column_start: 0,
                     column_end: string.len() - 1,
                     line_start: 0,
-                    line_end: 0
+                    line_end: 0,
+                    character_index_start: 0,
+                    character_index_end: 0
                 }
             }])
         )
@@ -152,7 +247,9 @@ mod test_tokenize {
                     column_start: 0,
                     column_end: string.len() - 1,
                     line_start: 0,
-                    line_end: 0
+                    line_end: 0,
+                    character_index_start: 0,
+                    character_index_end: 0
                 }
             }])
         )
@@ -170,7 +267,9 @@ mod test_tokenize {
                         line_start: 0,
                         line_end: 0,
                         column_start: 0,
-                        column_end: 2
+                        column_end: 2,
+                        character_index_start: 0,
+                        character_index_end: 0
                     }
                 },
                 Token {
@@ -180,7 +279,9 @@ mod test_tokenize {
                         line_start: 0,
                         line_end: 0,
                         column_start: 3,
-                        column_end: 3
+                        column_end: 3,
+                        character_index_start: 0,
+                        character_index_end: 0
                     }
                 },
                 Token {
@@ -190,7 +291,9 @@ mod test_tokenize {
                         line_start: 0,
                         line_end: 0,
                         column_start: 4,
-                        column_end: 7
+                        column_end: 7,
+                        character_index_start: 0,
+                        character_index_end: 0
                     }
                 }
             ])
@@ -638,7 +741,7 @@ let z: string = 'hello'.map(constant)
     }
 
     #[test]
-    fn test_let_monadic_binding_tagged_union() {
+    fn test_let_monadic_binding_tagged_union_1() {
         assert_debug_snapshot!(type_check_source(
             // expected union, got number at 2
             "
@@ -659,6 +762,54 @@ let z: string = 'hello'.map(constant)
             let f = \\x => 
                 let #some(yo) = x else \\'walao' => 10
                 2
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_let_monadic_binding_tagged_union_with_non_exhaustive_else_branch() {
+        assert_debug_snapshot!(type_check_source(
+            // missing case "#blue" case at else branch
+            "
+            type Color = #red | #green | #blue
+            let colorIsRed = \\(color: Color) => 
+                let #red = color 
+                  else 
+                    \\#green => false
+                true
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_let_monadic_binding_variable() {
+        assert_debug_snapshot!(type_check_source(
+            // expect no error
+            "
+            let colorIsRed = \\_ => 
+                let x = 1
+                let y = 'hello'
+                []
+            "
+            .trim()
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn test_let_monadic_binding_variable_2() {
+        assert_debug_snapshot!(type_check_source(
+            // unexpected else branch
+            "
+            let colorIsRed = \\_ => 
+                let x = 1 
+                  else 
+                    \\_ => 'hi'
+                []
             "
             .trim()
             .to_string()
@@ -747,6 +898,17 @@ let z: string = 'hello'.map(constant)
             "
          let x: null = null
          let y: number = null
+         "
+            .to_string()
+        ))
+    }
+
+    #[test]
+    fn type_inference_infinite_type() {
+        // expected error
+        assert_debug_snapshot!(type_check_source(
+            "
+            let f = \\x => x.x
          "
             .to_string()
         ))

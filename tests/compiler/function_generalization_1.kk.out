@@ -1,0 +1,13 @@
+error: Type mismatch
+ --> tests/compiler/function_generalization_1.kk:1:17
+  |
+...
+3 | let y: number = x
+  |                 ^
+  |
+
++---------------+-------------+
+| EXPECTED TYPE | ACTUAL TYPE |
++---------------+-------------+
+| number        | > string    |
++---------------+-------------+

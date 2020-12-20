@@ -1,0 +1,22 @@
+error: Type mismatch
+ --> tests/compiler/record_type_1.kk:1:34
+  |
+1 |   let x : {x: string, y: string} = {
+  |  __________________________________^
+... |
+5 | | }
+  | |__^
+  |
+
++---------------+-----------------+
+| EXPECTED TYPE |   ACTUAL TYPE   |
++---------------+-----------------+
+| {             |   {             |
+|   x: string   | >   x: number   |
+|   y: string   |     y: string   |
+| }             | >   z: {        |
+|               | >     x: number |
+|               | >   }           |
+|               |   }             |
++---------------+-----------------+
+

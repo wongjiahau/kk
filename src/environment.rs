@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::unify::unify_type;
-use crate::unify::UnifyError;
+use crate::unify::{UnifyError, UnifyErrorKind};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
@@ -105,17 +105,15 @@ impl<'a> Environment<'a> {
         &mut self,
         type_variable_name: String,
         type_value: Type,
-        location: Location,
+        position: Position,
     ) -> Result<(), UnifyError> {
-        match self
-            .get_type_variable_terminal_type(type_variable_name.clone(), type_variable_name.clone())
-        {
+        match self.get_type_variable_terminal_type(type_variable_name.clone()) {
             Some(terminal_type) => match type_value {
                 Type::TypeVariable { name } => {
-                    self.update_substitution(name, terminal_type, location)
+                    self.update_substitution(name, terminal_type, position)
                 }
                 _ => {
-                    let unified_type = unify_type(self, &terminal_type, &type_value, location)?;
+                    let unified_type = unify_type(self, &terminal_type, &type_value, position)?;
 
                     let substitution_item = match unified_type {
                         Type::TypeVariable { name } => SubstitutionItem::TypeVariable(name),
@@ -149,7 +147,7 @@ impl<'a> Environment<'a> {
     pub fn apply_subtitution_to_type(&self, type_value: &Type) -> Type {
         match type_value {
             Type::TypeVariable { name } => {
-                match self.get_type_variable_terminal_type(name.clone(), name.clone()) {
+                match self.get_type_variable_terminal_type(name.clone()) {
                     Some(type_value) => self.apply_subtitution_to_type(&type_value),
                     None => Type::TypeVariable { name: name.clone() },
                 }
@@ -201,12 +199,16 @@ impl<'a> Environment<'a> {
     pub fn apply_subtitution_to_function_type(
         &self,
         FunctionType {
-            arguments_types,
+            first_argument_type,
+            rest_arguments_types,
             return_type,
         }: &FunctionType,
     ) -> FunctionType {
         FunctionType {
-            arguments_types: arguments_types
+            first_argument_type: Box::new(
+                self.apply_subtitution_to_type(first_argument_type.as_ref()),
+            ),
+            rest_arguments_types: rest_arguments_types
                 .iter()
                 .map(|argument_type| self.apply_subtitution_to_type(argument_type))
                 .collect(),
@@ -214,13 +216,25 @@ impl<'a> Environment<'a> {
         }
     }
 
+    fn get_type_variable_terminal_type(&self, type_variable_name: String) -> Option<Type> {
+        self.get_type_variable_terminal_type_(
+            type_variable_name.clone(),
+            type_variable_name.clone(),
+            type_variable_name,
+        )
+    }
+
     /// Terminal means non-type variable type
     ///
     /// `initial_type_variable_name`:  
     ///     This variable is needed for breaking infinite recursion (i.e. circular reference)
-    pub fn get_type_variable_terminal_type(
+    ///
+    /// `previous_type_variable_name`:  
+    ///     This variable is needed for breaking infinite recursion (i.e. circular reference)
+    fn get_type_variable_terminal_type_(
         &self,
         initial_type_variable_name: String,
+        previous_type_variable: String,
         type_variable_name: String,
     ) -> Option<Type> {
         match self
@@ -230,11 +244,14 @@ impl<'a> Environment<'a> {
         {
             Some(SubstitutionItem::Type(type_value)) => Some(type_value.clone()),
             Some(SubstitutionItem::TypeVariable(type_variable_name)) => {
-                if *type_variable_name == initial_type_variable_name {
-                    panic!("Circular reference detecte")
+                if *type_variable_name == initial_type_variable_name
+                    || *type_variable_name == previous_type_variable
+                {
+                    None
                 } else {
-                    match self.get_type_variable_terminal_type(
+                    match self.get_type_variable_terminal_type_(
                         initial_type_variable_name,
+                        type_variable_name.clone(),
                         type_variable_name.clone(),
                     ) {
                         Some(type_value) => Some(type_value),
@@ -257,10 +274,13 @@ impl<'a> Environment<'a> {
         let name = token.representation.clone();
         let mut value_symbols = self.value_symbols.borrow_mut();
         match value_symbols.get(&name) {
-            Some(symbol) => Err(UnifyError::DuplicatedIdentifier {
-                first_declared_at: symbol.declaration.clone(),
-                then_declared_at: Declaration::UserDefined(self.source.clone(), token.clone()),
-                name,
+            Some(symbol) => Err(UnifyError {
+                position: token.position,
+                kind: UnifyErrorKind::DuplicatedIdentifier {
+                    first_declared_at: symbol.declaration.clone(),
+                    then_declared_at: Declaration::UserDefined(self.source.clone(), token.clone()),
+                    name,
+                },
             }),
             None => {
                 value_symbols.insert(name, value_symbol);
@@ -277,10 +297,13 @@ impl<'a> Environment<'a> {
         let name = token.representation.clone();
         let mut type_symbols = self.type_symbols.borrow_mut();
         match type_symbols.get(&name) {
-            Some(symbol) => Err(UnifyError::DuplicatedIdentifier {
-                first_declared_at: symbol.declaration.clone(),
-                then_declared_at: Declaration::UserDefined(self.source.clone(), token.clone()),
-                name,
+            Some(symbol) => Err(UnifyError {
+                position: token.position,
+                kind: UnifyErrorKind::DuplicatedIdentifier {
+                    first_declared_at: symbol.declaration.clone(),
+                    then_declared_at: Declaration::UserDefined(self.source.clone(), token.clone()),
+                    name,
+                },
             }),
             None => {
                 type_symbols.insert(name, type_symbol);
@@ -296,11 +319,9 @@ impl<'a> Environment<'a> {
         } else if let Some(parent) = &self.parent {
             parent.get_type_symbol(&token)
         } else {
-            Err(UnifyError::UnknownTypeSymbol {
-                location: Location {
-                    source: self.source.clone(),
-                    position: token.position,
-                },
+            Err(UnifyError {
+                position: token.position,
+                kind: UnifyErrorKind::UnknownTypeSymbol,
             })
         }
     }
@@ -328,6 +349,13 @@ pub enum Declaration {
 pub struct TypeSymbol {
     pub declaration: Declaration,
     pub type_scheme: TypeScheme,
+    pub usage_references: Vec<UsageReference>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TagSymbol {
+    pub declaration: Declaration,
+    pub tag_type: TagType,
     pub usage_references: Vec<UsageReference>,
 }
 

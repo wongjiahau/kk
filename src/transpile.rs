@@ -6,7 +6,7 @@ pub fn transpile_statements(statements: Vec<Statement>) -> String {
 
 pub fn transpile_statement(statement: Statement) -> String {
     match statement {
-        Statement::TypeAlias { .. } => "".to_string(),
+        Statement::Type { .. } | Statement::Enum { .. } => "".to_string(),
         Statement::Let { left, right, .. } => match right {
             Expression::Let { .. } => {
                 return format!(
@@ -74,7 +74,7 @@ pub fn transpile_expression(expression: Expression) -> String {
                 first_branch,
                 branches,
             } = *function;
-            let number_of_args = first_branch.arguments.len();
+            let number_of_args = first_branch.rest_arguments.len() + 1;
             let arguments: Vec<String> = (0..number_of_args).map(|x| format!("_{}", x)).collect();
             let branches = vec![first_branch]
                 .into_iter()
@@ -86,12 +86,18 @@ pub fn transpile_expression(expression: Expression) -> String {
         }
         Expression::FunctionCall(FunctionCall {
             function,
-            arguments,
+            first_argument,
+            rest_arguments,
         }) => format!(
             "({})({})",
             transpile_expression(*function),
-            arguments
+            vec![*first_argument]
                 .into_iter()
+                .chain(match rest_arguments {
+                    None => vec![].into_iter(),
+
+                    Some(FunctionCallRestArguments { arguments, .. }) => arguments.into_iter(),
+                })
                 .map(transpile_expression)
                 .collect::<Vec<String>>()
                 .join(",")
@@ -158,9 +164,9 @@ pub fn transpile_expression(expression: Expression) -> String {
 }
 
 pub fn transpile_function_branch(function_branch: FunctionBranch) -> String {
-    let transpiled_destructure_pattern = function_branch
-        .arguments
+    let transpiled_destructure_pattern = vec![*function_branch.first_argument]
         .into_iter()
+        .chain(function_branch.rest_arguments.into_iter())
         .enumerate()
         .map(|(index, argument)| {
             transpile_function_destructure_pattern(

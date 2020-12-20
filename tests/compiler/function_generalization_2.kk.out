@@ -1,0 +1,17 @@
+error: Type mismatch
+ --> tests/compiler/function_generalization_2.kk:1:33
+  |
+...
+3 | let y: {x: string, z: number} = {x = 2, y = {z = 3}}.f
+  |                                 ^^^^^^^^^^^^^^^^^^^^^^
+  |
+
++---------------+---------------+
+| EXPECTED TYPE |  ACTUAL TYPE  |
++---------------+---------------+
+| {             |   {           |
+|   x: string   | >   x: number |
+|   z: number   |     z: number |
+| }             |   }           |
++---------------+---------------+
+

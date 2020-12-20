@@ -1,0 +1,17 @@
+error: Type mismatch
+ --> tests/compiler/unify_function_branches_2.kk:1:3
+  |
+...
+4 |   \(#bomb, #true) => #true
+  |   ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+
++---------------+-------------+
+| EXPECTED TYPE | ACTUAL TYPE |
++---------------+-------------+
+| \(            |   \(        |
+|   Boolean,    | >   Bomb,   |
+|   Boolean     |     Boolean |
+| ) =>          |   ) =>      |
+|   Boolean     |     Boolean |
++---------------+-------------+

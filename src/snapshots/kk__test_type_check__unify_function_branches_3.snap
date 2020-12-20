@@ -27,44 +27,42 @@ Err(
                 },
             },
             expected_function_type: FunctionType {
-                arguments_types: [
-                    Union(
-                        UnionType {
-                            tags: [
-                                TagType {
-                                    tagname: "#true",
-                                    payload: None,
-                                },
-                                TagType {
-                                    tagname: "#false",
-                                    payload: None,
-                                },
-                            ],
-                            bound: AtMost,
-                            catch_all: false,
-                        },
-                    ),
-                ],
+                first_argument_type: Union(
+                    UnionType {
+                        tags: [
+                            TagType {
+                                tagname: "#true",
+                                payload: None,
+                            },
+                            TagType {
+                                tagname: "#false",
+                                payload: None,
+                            },
+                        ],
+                        bound: AtMost,
+                        catch_all: false,
+                    },
+                ),
+                rest_arguments_types: [],
                 return_type: Named {
                     name: "number",
                     arguments: [],
                 },
             },
             actual_function_type: FunctionType {
-                arguments_types: [
-                    Union(
-                        UnionType {
-                            tags: [
-                                TagType {
-                                    tagname: "#false",
-                                    payload: None,
-                                },
-                            ],
-                            bound: AtLeast,
-                            catch_all: false,
-                        },
-                    ),
-                ],
+                first_argument_type: Union(
+                    UnionType {
+                        tags: [
+                            TagType {
+                                tagname: "#false",
+                                payload: None,
+                            },
+                        ],
+                        bound: AtLeast,
+                        catch_all: false,
+                    },
+                ),
+                rest_arguments_types: [],
                 return_type: Named {
                     name: "string",
                     arguments: [],

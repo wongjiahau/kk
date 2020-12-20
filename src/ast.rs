@@ -5,11 +5,29 @@ pub enum Statement {
         right: Expression,
         type_annotation: Option<TypeAnnotation>,
     },
-    TypeAlias {
+    Type {
         left: Token,
         right: TypeAnnotation,
         type_variables: Vec<Token>,
     },
+    Enum {
+        name: Token,
+        tags: Vec<EnumTag>,
+        type_variables: Vec<Token>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumTag {
+    pub tagname: Token,
+    pub payload: Option<EnumTagPayload>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumTagPayload {
+    pub left_parenthesis: Token,
+    pub type_annotation: Box<TypeAnnotation>,
+    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +73,8 @@ pub struct TypeScheme {
 
 #[derive(Debug, Clone)]
 pub struct FunctionType {
-    pub arguments_types: Vec<Type>,
+    pub first_argument_type: Box<Type>,
+    pub rest_arguments_types: Vec<Type>,
     pub return_type: Box<Type>,
 }
 
@@ -86,26 +105,16 @@ pub enum TypeAnnotation {
         key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
         right_curly_bracket: Token,
     },
-    Tag {
-        token: Token,
-        payload: Option<TagTypeAnnotationPayload>,
-    },
     Underscore(Token),
     Union {
         type_annotations: Vec<TypeAnnotation>,
     },
     Function {
         start_token: Token,
-        arguments_types: Vec<TypeAnnotation>,
+        first_argument_type: Box<TypeAnnotation>,
+        rest_arguments_types: Vec<TypeAnnotation>,
         return_type: Box<TypeAnnotation>,
     },
-}
-
-#[derive(Debug, Clone)]
-pub struct TagTypeAnnotationPayload {
-    pub left_parenthesis: Token,
-    pub payload: Box<TypeAnnotation>,
-    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -209,7 +218,15 @@ pub struct RecordKeyValue {
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
     pub function: Box<Expression>,
+    pub first_argument: Box<Expression>,
+    pub rest_arguments: Option<FunctionCallRestArguments>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionCallRestArguments {
+    pub left_parenthesis: Token,
     pub arguments: Vec<Expression>,
+    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -221,7 +238,8 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub struct FunctionBranch {
     pub start_token: Token,
-    pub arguments: Vec<FunctionArgument>,
+    pub first_argument: Box<FunctionArgument>,
+    pub rest_arguments: Vec<FunctionArgument>,
     pub body: Box<Expression>,
     pub return_type_annotation: Option<TypeAnnotation>,
 }
@@ -234,6 +252,12 @@ pub struct FunctionArgument {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
+    ExpectedTypeAnnotation {
+        actual_token: Token,
+    },
+    UnterminatedString {
+        position: Position,
+    },
     ArrayCannotContainMoreThanOneSpread {
         extraneous_spread: Token,
     },
@@ -270,6 +294,7 @@ pub struct Token {
 pub enum TokenType {
     KeywordLet,
     KeywordType,
+    KeywordEnum,
     KeywordElse,
     KeywordNull,
     KeywordTrue,
@@ -308,16 +333,12 @@ pub enum Source {
     NonFile { env_name: String },
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Location {
-    pub source: Source,
-    pub position: Position,
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Position {
     pub line_start: usize,
     pub line_end: usize,
     pub column_start: usize,
     pub column_end: usize,
+    pub character_index_start: usize,
+    pub character_index_end: usize,
 }

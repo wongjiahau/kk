@@ -24,7 +24,7 @@ Err(
                 name: "Array",
                 arguments: [
                     TypeVariable {
-                        name: "@TVAR2",
+                        name: "@TVAR3",
                     },
                 ],
             },

@@ -1,0 +1,17 @@
+error: Type mismatch
+ --> tests/compiler/unify_function_branches_3.kk:1:3
+  |
+...
+4 |   \#false => 'yo'
+  |   ^^^^^^^^^^^^^^
+  |
+
++---------------+-------------+
+| EXPECTED TYPE | ACTUAL TYPE |
++---------------+-------------+
+| \(            |   \(        |
+|   Boolean     |     Boolean |
+| ) =>          |   ) =>      |
+|   number      | >   string  |
++---------------+-------------+
+
