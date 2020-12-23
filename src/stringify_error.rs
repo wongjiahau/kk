@@ -153,6 +153,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                     .join("\n")
             ),
         },
+        UnifyErrorKind::UnreachableCase => StringifiedError {
+            summary: "Unreachable case".to_string(),
+            body: "This case is already handled by one of the previous branches, please remove this branch.".to_string()
+        },
         other => panic!("{:#?}", other),
     }
 }

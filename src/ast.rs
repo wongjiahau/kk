@@ -146,7 +146,11 @@ pub enum DestructurePattern {
         spread: Option<DestructurePatternArraySpread>,
         tail_elements: Vec<DestructurePattern>,
     },
-    Tuple(Vec<DestructurePattern>),
+    Tuple {
+        left_parenthesis: Token,
+        values: Vec<DestructurePattern>,
+        right_parenthesis: Token,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -245,9 +249,25 @@ pub struct Function {
 pub struct FunctionBranch {
     pub start_token: Token,
     pub first_argument: Box<FunctionArgument>,
-    pub rest_arguments: Vec<FunctionArgument>,
+    pub rest_arguments: Option<FunctionBranchRestArguments>,
     pub body: Box<Expression>,
     pub return_type_annotation: Option<TypeAnnotation>,
+}
+
+impl FunctionBranch {
+    pub fn rest_arguments(&self) -> Vec<FunctionArgument> {
+        match &self.rest_arguments {
+            Some(FunctionBranchRestArguments { rest_arguments, .. }) => rest_arguments.clone(),
+            None => vec![],
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionBranchRestArguments {
+    pub left_parenthesis: Token,
+    pub rest_arguments: Vec<FunctionArgument>,
+    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]

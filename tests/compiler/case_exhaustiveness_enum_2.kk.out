@@ -1,0 +1,9 @@
+error: Unreachable case
+ --> tests/compiler/case_exhaustiveness_enum_2.kk:1:4
+  |
+...
+4 |   \(_, _) => false
+  |    ^^^^^^
+  |
+
+This case is already handled by one of the previous branches, please remove this branch.

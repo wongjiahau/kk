@@ -395,7 +395,11 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
             right_square_bracket,
             ..
         } => join_position(left_square_bracket.position, right_square_bracket.position),
-        DestructurePattern::Tuple(_) => panic!("Compiler error, should not reach this branch"),
+        DestructurePattern::Tuple {
+            left_parenthesis,
+            right_parenthesis,
+            ..
+        } => join_position(left_parenthesis.position, right_parenthesis.position),
     }
 }
 
@@ -1285,21 +1289,34 @@ pub fn infer_expression_type(
             let function_type = environment.apply_subtitution_to_function_type(&function_type);
 
             // Check for case exhasutiveness
-            let expected_type = Type::Tuple(
-                vec![*function_type.clone().first_argument_type]
-                    .into_iter()
-                    .chain(function_type.rest_arguments_types.clone().into_iter())
-                    .collect(),
-            );
-            let actual_patterns = vec![function_branch_arguments_to_tuple(&function.first_branch)]
-                .into_iter()
-                .chain(
-                    function
-                        .branches
-                        .iter()
-                        .map(function_branch_arguments_to_tuple),
-                )
-                .collect();
+            let (expected_type, actual_patterns) = {
+                match function.first_branch.rest_arguments {
+                    None => {
+                        let expected_type = function_type.first_argument_type.clone();
+                        let actual_patterns = vec![function
+                            .first_branch
+                            .first_argument
+                            .destructure_pattern
+                            .clone()];
+                        (*expected_type, actual_patterns)
+                    }
+                    Some(_) => {
+                        let expected_type = Type::Tuple(
+                            vec![*function_type.first_argument_type.clone()]
+                                .into_iter()
+                                .chain(function_type.rest_arguments_types.clone().into_iter())
+                                .collect(),
+                        );
+                        let actual_patterns = vec![function.first_branch.clone()]
+                            .iter()
+                            .chain(function.branches.iter())
+                            .map(function_branch_arguments_to_tuple)
+                            .collect();
+
+                        (expected_type, actual_patterns)
+                    }
+                }
+            };
             check_exhasutiveness(
                 expected_type,
                 actual_patterns,
@@ -1475,18 +1492,26 @@ pub fn infer_expression_type(
 }
 
 pub fn function_branch_arguments_to_tuple(function_branch: &FunctionBranch) -> DestructurePattern {
-    DestructurePattern::Tuple(
-        vec![function_branch.first_argument.destructure_pattern.clone()]
-            .into_iter()
-            .chain(
-                function_branch
-                    .rest_arguments
-                    .clone()
-                    .into_iter()
-                    .map(|argument| argument.destructure_pattern),
-            )
-            .collect(),
-    )
+    match &function_branch.rest_arguments {
+        None => function_branch.first_argument.destructure_pattern.clone(),
+        Some(FunctionBranchRestArguments {
+            left_parenthesis,
+            rest_arguments,
+            right_parenthesis,
+        }) => DestructurePattern::Tuple {
+            left_parenthesis: left_parenthesis.clone(),
+            right_parenthesis: right_parenthesis.clone(),
+            values: vec![function_branch.first_argument.destructure_pattern.clone()]
+                .into_iter()
+                .chain(
+                    rest_arguments
+                        .clone()
+                        .into_iter()
+                        .map(|argument| argument.destructure_pattern),
+                )
+                .collect(),
+        },
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1633,7 +1658,10 @@ pub fn match_pattern(
             }
         }
         (
-            DestructurePattern::Tuple(actual_patterns),
+            DestructurePattern::Tuple {
+                values: actual_patterns,
+                ..
+            },
             TypedDestructurePattern::Tuple(expected_patterns),
         ) => {
             if actual_patterns.len() != expected_patterns.len() {
@@ -1900,7 +1928,7 @@ pub fn infer_function_branch(
     )?);
 
     let rest_arguments_types = function_branch
-        .rest_arguments
+        .rest_arguments()
         .iter()
         .map(|argument| Ok(infer_function_argument(&mut environment, &argument)?))
         .collect::<Result<Vec<Type>, UnifyError>>()?;
@@ -2095,7 +2123,14 @@ pub fn infer_destructure_pattern(
         DestructurePattern::Identifier(identifier) => {
             environment.introduce_type_variable(Some(&identifier))
         }
-        DestructurePattern::Tuple(_) => panic!("Compiler error, should not reach here"),
+        DestructurePattern::Tuple { values, .. } => Ok(Type::Tuple(
+            values
+                .iter()
+                .map(|destructure_pattern| {
+                    infer_destructure_pattern(environment, destructure_pattern)
+                })
+                .collect::<Result<Vec<Type>, UnifyError>>()?,
+        )),
         DestructurePattern::Tag { tagname, payload } => {
             let payload = match payload {
                 None => Ok(None),

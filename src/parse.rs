@@ -196,38 +196,41 @@ pub fn parse_function_branch(it: &mut Peekable<Iter<Token>>) -> Result<FunctionB
 
 pub struct ParseFunctionArgumentResult {
     pub first_argument: Box<FunctionArgument>,
-    pub rest_arguments: Vec<FunctionArgument>,
+    pub rest_arguments: Option<FunctionBranchRestArguments>,
 }
 pub fn parse_function_arguments(
     it: &mut Peekable<Iter<Token>>,
 ) -> Result<ParseFunctionArgumentResult, ParseError> {
-    if try_eat_token(it, TokenType::LeftParenthesis).is_some() {
+    if let Some(left_parenthesis) = try_eat_token(it, TokenType::LeftParenthesis) {
         let first_argument = Box::new(parse_function_argument(it)?);
         let mut rest_arguments = Vec::<FunctionArgument>::new();
-        loop {
+        let right_parenthesis = loop {
             if try_eat_token(it, TokenType::Comma).is_none() {
-                eat_token(it, TokenType::RightParenthesis)?;
-                break;
+                break eat_token(it, TokenType::RightParenthesis)?;
             }
             let argument = parse_function_argument(it)?;
             rest_arguments.push(argument);
-            if try_eat_token(it, TokenType::RightParenthesis).is_some() {
-                break;
+            if let Some(right_parenthesis) = try_eat_token(it, TokenType::RightParenthesis) {
+                break right_parenthesis;
             } else {
                 eat_token(it, TokenType::Comma)?;
-                if try_eat_token(it, TokenType::RightParenthesis).is_some() {
-                    break;
+                if let Some(right_parenthesis) = try_eat_token(it, TokenType::RightParenthesis) {
+                    break right_parenthesis;
                 }
             }
-        }
+        };
         Ok(ParseFunctionArgumentResult {
             first_argument,
-            rest_arguments,
+            rest_arguments: Some(FunctionBranchRestArguments {
+                left_parenthesis,
+                rest_arguments,
+                right_parenthesis,
+            }),
         })
     } else {
         Ok(ParseFunctionArgumentResult {
             first_argument: Box::new(parse_function_argument(it)?),
-            rest_arguments: vec![],
+            rest_arguments: None,
         })
     }
 }

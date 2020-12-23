@@ -1,7 +1,4 @@
-enum List<T> = 
-  #nil
-  #cons({current: T, next: List<T>})
-
-let bomb = 
-  \#nil => true
-  \#cons({current, next: #nil}) => true
+let and = 
+  \(true, true) => true
+  \(_, _) => false
+  \(_, _) => false
