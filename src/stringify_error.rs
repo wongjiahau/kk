@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::unify::{UnifyError, UnifyErrorKind};
+use crate::unify::{TypedDestructurePattern, UnifyError, UnifyErrorKind};
 use annotate_snippets::{
     display_list::{DisplayList, FormatOptions},
     snippet::{Annotation, AnnotationType, Slice, Snippet, SourceAnnotation},
@@ -14,14 +14,14 @@ pub fn stringify_unify_error(source: Source, code: String, unify_error: UnifyErr
     };
     let error = stringify_unify_error_kind(unify_error.kind);
 
-    println!("position = {:#?}", unify_error.position);
-    println!(
-        "{:#?}",
-        code.chars()
-            .into_iter()
-            .collect::<Vec<char>>()
-            .get(unify_error.position.character_index_end)
-    );
+    // println!("position = {:#?}", unify_error.position);
+    // println!(
+    //     "{:#?}",
+    //     code.chars()
+    //         .into_iter()
+    //         .collect::<Vec<char>>()
+    //         .get(unify_error.position.character_index_end)
+    // );
 
     let snippet = Snippet {
         title: Some(Annotation {
@@ -141,7 +141,50 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Unknown type symbol".to_string(),
             body: "Cannot find this type symbol in the current scope".to_string(),
         },
+        UnifyErrorKind::MissingCases(missing_patterns) => StringifiedError {
+            summary: "Non-exhasutive cases".to_string(),
+            body: format!(
+                "Missing case:\n{}",
+                missing_patterns
+                    .into_iter()
+                    .map(stringify_typed_destrucutre_pattern)
+                    .map(|result| format!("* {} => ...", result))
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            ),
+        },
         other => panic!("{:#?}", other),
+    }
+}
+
+pub fn stringify_typed_destrucutre_pattern(
+    typed_destructure_pattern: TypedDestructurePattern,
+) -> String {
+    match typed_destructure_pattern {
+        TypedDestructurePattern::Boolean(value) => {
+            if value {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        TypedDestructurePattern::Tuple(patterns) => format!(
+            "({})",
+            patterns
+                .into_iter()
+                .map(stringify_typed_destrucutre_pattern)
+                .collect::<Vec<String>>()
+                .join(", ")
+        ),
+        TypedDestructurePattern::Any { .. } => "_".to_string(),
+        TypedDestructurePattern::Enum { tagname, payload } => match payload {
+            None => tagname,
+            Some(payload) => format!(
+                "{}({})",
+                tagname,
+                stringify_typed_destrucutre_pattern(*payload)
+            ),
+        },
     }
 }
 
@@ -163,6 +206,7 @@ pub fn indent_string(string: String, number_of_spaces: usize) -> String {
 
 pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
     match type_value {
+        Type::Boolean => "boolean".to_string(),
         Type::Named { name, arguments } => {
             let result = if arguments.is_empty() {
                 name
@@ -179,6 +223,14 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
             };
             indent_string(result, indent_level * 2)
         }
+        Type::Tuple(types) => format!(
+            "(\n{}\n)",
+            types
+                .into_iter()
+                .map(|type_value| stringify_type(type_value, indent_level + 1))
+                .collect::<Vec<String>>()
+                .join(",\n")
+        ),
         Type::TypeVariable { name } => indent_string(name, indent_level * 2),
         Type::Underscore => "_".to_string(),
         Type::Union(UnionType { mut tags, .. }) => format!(

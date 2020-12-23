@@ -219,7 +219,7 @@ pub fn transpile_function_destructure_pattern(
     match destructure_pattern {
         DestructurePattern::Number(token)
         | DestructurePattern::String(token)
-        | DestructurePattern::Boolean(token)
+        | DestructurePattern::Boolean { token, .. }
         | DestructurePattern::Null(token) => TranspiledDestructurePattern {
             conditions: vec![format!("{} === {}", token.representation, from_expression)],
             bindings: vec![],
@@ -328,12 +328,12 @@ pub fn transpile_function_destructure_pattern(
                 identifier.representation, from_expression
             )],
         },
-        DestructurePattern::Tag { token, payload } => {
+        DestructurePattern::Tag { tagname, payload } => {
             let first = TranspiledDestructurePattern {
                 conditions: vec![format!(
                     "{}.$==='{}'",
                     from_expression,
-                    transpile_tag(token.representation)
+                    transpile_tag(tagname.representation)
                 )],
                 bindings: vec![],
             };
@@ -375,6 +375,7 @@ pub fn transpile_function_destructure_pattern(
                 )
             },
         ),
+        DestructurePattern::Tuple(_) => panic!("Compiler error, should not reach here"),
     }
 }
 

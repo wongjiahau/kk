@@ -1,0 +1,13 @@
+error: Non-exhasutive cases
+ --> tests/compiler/case_exhaustiveness_enum_1.kk:2:3
+  |
+1 |   let and =
+2 |     \(true, true) => true
+  |  ___^
+3 | |   \(false, true) => false
+  | |__________________________^
+  |
+
+Missing case:
+* (true, false) => ...
+* (false, false) => ...

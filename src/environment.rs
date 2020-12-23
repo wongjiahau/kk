@@ -146,6 +146,13 @@ impl<'a> Environment<'a> {
      */
     pub fn apply_subtitution_to_type(&self, type_value: &Type) -> Type {
         match type_value {
+            Type::Boolean => Type::Boolean,
+            Type::Tuple(types) => Type::Tuple(
+                types
+                    .iter()
+                    .map(|type_value| self.apply_subtitution_to_type(type_value))
+                    .collect(),
+            ),
             Type::TypeVariable { name } => {
                 match self.get_type_variable_terminal_type(name.clone()) {
                     Some(type_value) => self.apply_subtitution_to_type(&type_value),
@@ -386,13 +393,6 @@ pub fn number_type() -> Type {
     }
 }
 
-pub fn boolean_type() -> Type {
-    Type::Named {
-        name: "boolean".to_string(),
-        arguments: vec![],
-    }
-}
-
 pub fn null_type() -> Type {
     Type::Named {
         name: "null".to_string(),
@@ -450,7 +450,7 @@ fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
             declaration: Declaration::BuiltIn,
             type_scheme: TypeScheme {
                 type_variables: vec![],
-                type_value: boolean_type(),
+                type_value: Type::Boolean,
             },
             usage_references: vec![],
         },

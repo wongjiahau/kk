@@ -20,6 +20,7 @@ use stringify_error::*;
 
 #[test]
 fn run_all_tests() {
+    use colored::*;
     use difference::Changeset;
     use std::fs;
     let test_dir = "tests/compiler/";
@@ -83,7 +84,7 @@ fn run_all_tests() {
                 println!("{}", "=".repeat(10));
                 panic!()
             } else {
-                println!(" PASSED");
+                println!("{}", " PASSED".green());
             }
         }
     }

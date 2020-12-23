@@ -29,6 +29,7 @@ pub struct UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    MissingCases(Vec<TypedDestructurePattern>),
     ThisTagDoesNotRequirePayload,
     ThisTagRequiresPaylod {
         payload_type: Type,
@@ -378,11 +379,11 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
         | DestructurePattern::String(token)
         | DestructurePattern::Identifier(token)
         | DestructurePattern::Underscore(token)
-        | DestructurePattern::Boolean(token)
+        | DestructurePattern::Boolean { token, .. }
         | DestructurePattern::Null(token) => token.position,
-        DestructurePattern::Tag { token, payload } => match payload {
-            Some(payload) => join_position(token.position, payload.right_parenthesis.position),
-            None => token.position,
+        DestructurePattern::Tag { tagname, payload } => match payload {
+            Some(payload) => join_position(tagname.position, payload.right_parenthesis.position),
+            None => tagname.position,
         },
         DestructurePattern::Record {
             left_curly_bracket,
@@ -394,6 +395,7 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
             right_square_bracket,
             ..
         } => join_position(left_square_bracket.position, right_square_bracket.position),
+        DestructurePattern::Tuple(_) => panic!("Compiler error, should not reach this branch"),
     }
 }
 
@@ -480,6 +482,7 @@ pub fn unify_type_(
     position: Position,
 ) -> Result<Type, UnifyError> {
     match (expected.clone(), actual.clone()) {
+        (Type::Boolean, Type::Boolean) => Ok(Type::Boolean),
         (
             Type::Named {
                 name: expected_name,
@@ -769,12 +772,7 @@ pub fn unify_type_(
                                 ..
                             },
                         ) => {
-                            unify_type(
-                                environment,
-                                &expected_payload,
-                                &actual_payload,
-                                position,
-                            )?;
+                            unify_type(environment, &expected_payload, &actual_payload, position)?;
                             Ok(())
                         }
                         (TagType { payload: None, .. }, TagType { payload: None, .. }) => Ok(()),
@@ -811,6 +809,7 @@ pub fn rewrite_type_variable_in_type(
     in_type: Type,
 ) -> Type {
     match in_type {
+        Type::Boolean => Type::Boolean,
         Type::TypeVariable { name } => {
             if name == *from_type_variable {
                 to_type.clone()
@@ -822,6 +821,14 @@ pub fn rewrite_type_variable_in_type(
             name,
             arguments: rewrite_type_variable_in_types(from_type_variable, to_type, arguments),
         },
+        Type::Tuple(types) => Type::Tuple(
+            types
+                .into_iter()
+                .map(|type_value| {
+                    rewrite_type_variable_in_type(from_type_variable, to_type, type_value)
+                })
+                .collect(),
+        ),
         Type::Underscore => Type::Underscore,
         Type::Union(UnionType {
             tags,
@@ -1063,7 +1070,7 @@ pub fn infer_expression_type(
 ) -> Result<Type, UnifyError> {
     let result = match expression {
         Expression::Null(_) => Ok(null_type()),
-        Expression::Boolean { .. } => Ok(boolean_type()),
+        Expression::Boolean { .. } => Ok(Type::Boolean),
         Expression::String(_) => Ok(string_type()),
         Expression::Number(_) => Ok(number_type()),
         Expression::Tag { token, payload } => {
@@ -1275,12 +1282,33 @@ pub fn infer_expression_type(
                 unify_function_type(environment, &function_type, &actual_function_type, position)?;
             }
 
-            let function_type =
-                Type::Function(environment.apply_subtitution_to_function_type(&function_type));
+            let function_type = environment.apply_subtitution_to_function_type(&function_type);
+
+            // Check for case exhasutiveness
+            let expected_type = Type::Tuple(
+                vec![*function_type.clone().first_argument_type]
+                    .into_iter()
+                    .chain(function_type.rest_arguments_types.clone().into_iter())
+                    .collect(),
+            );
+            let actual_patterns = vec![function_branch_arguments_to_tuple(&function.first_branch)]
+                .into_iter()
+                .chain(
+                    function
+                        .branches
+                        .iter()
+                        .map(function_branch_arguments_to_tuple),
+                )
+                .collect();
+            check_exhasutiveness(
+                expected_type,
+                actual_patterns,
+                get_expression_position(&Expression::Function(function.clone())),
+            )?;
 
             // Close all unbounded union types
             Ok(update_union_type_in_type(
-                function_type,
+                Type::Function(function_type),
                 &UnionTypeBound::AtMost,
             ))
         }
@@ -1446,6 +1474,279 @@ pub fn infer_expression_type(
     Ok(environment.apply_subtitution_to_type(&result))
 }
 
+pub fn function_branch_arguments_to_tuple(function_branch: &FunctionBranch) -> DestructurePattern {
+    DestructurePattern::Tuple(
+        vec![function_branch.first_argument.destructure_pattern.clone()]
+            .into_iter()
+            .chain(
+                function_branch
+                    .rest_arguments
+                    .clone()
+                    .into_iter()
+                    .map(|argument| argument.destructure_pattern),
+            )
+            .collect(),
+    )
+}
+
+#[derive(Debug, Clone)]
+pub enum TypedDestructurePattern {
+    Any {
+        type_value: Type,
+    },
+    Enum {
+        tagname: String,
+        payload: Option<Box<TypedDestructurePattern>>,
+    },
+    Tuple(Vec<TypedDestructurePattern>),
+    Boolean(bool), // Number
+}
+
+pub fn check_exhasutiveness(
+    expected_type: Type,
+    actual_patterns: Vec<DestructurePattern>,
+    position: Position,
+) -> Result<(), UnifyError> {
+    check_exhasutiveness_(
+        vec![TypedDestructurePattern::Any {
+            type_value: expected_type,
+        }],
+        actual_patterns,
+        position,
+    )
+}
+
+pub fn check_exhasutiveness_(
+    expected_patterns: Vec<TypedDestructurePattern>,
+    actual_patterns: Vec<DestructurePattern>,
+    position: Position,
+) -> Result<(), UnifyError> {
+    let mut expected_patterns = expected_patterns;
+    for actual_pattern in actual_patterns {
+        if expected_patterns.is_empty() {
+            return Err(UnifyError {
+                position: get_destructure_pattern_position(&actual_pattern),
+                kind: UnifyErrorKind::UnreachableCase,
+            });
+        }
+        expected_patterns = match_patterns(&actual_pattern, expected_patterns)
+    }
+    if expected_patterns.is_empty() {
+        Ok(())
+    } else {
+        Err(UnifyError {
+            position,
+            kind: UnifyErrorKind::MissingCases(expected_patterns),
+        })
+        // Err(UnifyError {
+
+        // })
+    }
+}
+
+pub fn match_patterns(
+    actual_pattern: &DestructurePattern,
+    expected_patterns: Vec<TypedDestructurePattern>,
+) -> Vec<TypedDestructurePattern> {
+    expected_patterns
+        .into_iter()
+        .flat_map(
+            |expected_pattern| match match_pattern(&actual_pattern, &expected_pattern) {
+                MatchPatternResult::Matched => vec![],
+                MatchPatternResult::NotMatched => vec![expected_pattern],
+                MatchPatternResult::PartiallyMatched { expanded_patterns } => {
+                    match_patterns(actual_pattern, expanded_patterns)
+                }
+            },
+        )
+        .collect()
+}
+
+#[derive(Debug)]
+pub enum MatchPatternResult {
+    Matched,
+    NotMatched,
+    PartiallyMatched {
+        expanded_patterns: Vec<TypedDestructurePattern>,
+    },
+}
+
+pub fn match_pattern(
+    actual_pattern: &DestructurePattern,
+    expected_pattern: &TypedDestructurePattern,
+) -> MatchPatternResult {
+    match (actual_pattern, expected_pattern) {
+        (DestructurePattern::Underscore(_), _) => MatchPatternResult::Matched,
+        (DestructurePattern::Identifier(_), _) => MatchPatternResult::Matched,
+        (
+            DestructurePattern::Boolean { value: true, .. },
+            TypedDestructurePattern::Boolean(true),
+        ) => MatchPatternResult::Matched,
+        (
+            DestructurePattern::Boolean { value: false, .. },
+            TypedDestructurePattern::Boolean(false),
+        ) => MatchPatternResult::Matched,
+        (
+            DestructurePattern::Tag {
+                tagname: actual_tagname,
+                payload: None,
+            },
+            TypedDestructurePattern::Enum {
+                tagname: expected_tagname,
+                payload: None,
+            },
+        ) => {
+            if actual_tagname.representation != *expected_tagname {
+                MatchPatternResult::NotMatched
+            } else {
+                MatchPatternResult::Matched
+            }
+        }
+        (
+            DestructurePattern::Tag {
+                tagname: actual_tagname,
+                payload: Some(actual_payload),
+            },
+            TypedDestructurePattern::Enum {
+                tagname: expected_tagname,
+                payload: Some(expected_payload),
+            },
+        ) => {
+            if actual_tagname.representation != *expected_tagname {
+                MatchPatternResult::NotMatched
+            } else {
+                match match_pattern(&actual_payload.destructure_pattern, expected_payload) {
+                    MatchPatternResult::Matched => MatchPatternResult::Matched,
+                    MatchPatternResult::NotMatched => MatchPatternResult::NotMatched,
+                    MatchPatternResult::PartiallyMatched { expanded_patterns } => {
+                        MatchPatternResult::PartiallyMatched {
+                            expanded_patterns: expanded_patterns
+                                .into_iter()
+                                .map(|pattern| TypedDestructurePattern::Enum {
+                                    tagname: expected_tagname.clone(),
+                                    payload: Some(Box::new(pattern)),
+                                })
+                                .collect(),
+                        }
+                    }
+                }
+            }
+        }
+        (
+            DestructurePattern::Tuple(actual_patterns),
+            TypedDestructurePattern::Tuple(expected_patterns),
+        ) => {
+            if actual_patterns.len() != expected_patterns.len() {
+                MatchPatternResult::NotMatched
+            } else {
+                let result = actual_patterns
+                    .iter()
+                    .zip(expected_patterns.iter())
+                    .map(|(actual_pattern, expected_pattern)| {
+                        (
+                            expected_pattern,
+                            match_pattern(actual_pattern, expected_pattern),
+                        )
+                    })
+                    .collect::<Vec<(&TypedDestructurePattern, MatchPatternResult)>>();
+
+                if result.iter().all(|(_, match_pattern_result)| {
+                    matches!(match_pattern_result, MatchPatternResult::Matched)
+                }) {
+                    return MatchPatternResult::Matched;
+                }
+
+                if result.iter().any(|(_, match_pattern_result)| {
+                    matches!(match_pattern_result, MatchPatternResult::NotMatched)
+                }) {
+                    return MatchPatternResult::NotMatched;
+                }
+
+                MatchPatternResult::PartiallyMatched {
+                    expanded_patterns: expand_pattern_tuple(
+                        result
+                            .into_iter()
+                            .map(|(expected_pattern, match_pattern_result)| {
+                                match match_pattern_result {
+                                    MatchPatternResult::Matched => vec![expected_pattern.clone()],
+                                    MatchPatternResult::NotMatched => {
+                                        panic!("Compiler error, should not reach this branch")
+                                    }
+                                    MatchPatternResult::PartiallyMatched { expanded_patterns } => {
+                                        expanded_patterns
+                                    }
+                                }
+                            })
+                            .collect(),
+                    )
+                    .into_iter()
+                    .map(TypedDestructurePattern::Tuple)
+                    .collect(),
+                }
+                // expand_pattern_tuple(result)
+                // println!("result = {:#?}", result);
+                // println!("actual_patterns = {:#?}", actual_patterns);
+                // panic!("expected_patterns = {:#?}", expected_patterns)
+            }
+        }
+        (_, TypedDestructurePattern::Any { type_value }) => MatchPatternResult::PartiallyMatched {
+            expanded_patterns: expand_pattern(type_value),
+        },
+        _ => MatchPatternResult::NotMatched,
+    }
+}
+
+// pub fn match_tuple_pattern(patterns: Vec<(DestructurePattern, TypedDestructurePattern)>) -> Vec<TypedDestructurePattern> {
+//     patterns.into_iter().flat_map()
+// }
+
+pub fn expand_pattern(type_value: &Type) -> Vec<TypedDestructurePattern> {
+    match type_value {
+        Type::Boolean => vec![
+            TypedDestructurePattern::Boolean(true),
+            TypedDestructurePattern::Boolean(false),
+        ],
+        Type::Tuple(types) => vec![TypedDestructurePattern::Tuple(
+            types
+                .iter()
+                .map(|type_value| TypedDestructurePattern::Any {
+                    type_value: type_value.clone(),
+                })
+                .collect(),
+        )],
+        _ => vec![],
+    }
+}
+
+/// Example
+/// Input = [[0, 1], [0, 1]]
+/// Output = [[0, 0], [0, 1], [1, 0], [1, 1]]
+pub fn expand_pattern_tuple(
+    types: Vec<Vec<TypedDestructurePattern>>,
+) -> Vec<Vec<TypedDestructurePattern>> {
+    match types.split_first() {
+        None => vec![],
+        Some((head, tail)) => head
+            .iter()
+            .flat_map(|typed_destructure_pattern| {
+                let tail = expand_pattern_tuple(tail.to_vec());
+                if tail.is_empty() {
+                    vec![vec![typed_destructure_pattern.clone()]]
+                } else {
+                    tail.into_iter()
+                        .map(|patterns| {
+                            vec![typed_destructure_pattern.clone()]
+                                .into_iter()
+                                .chain(patterns.into_iter())
+                                .collect()
+                        })
+                        .collect::<Vec<Vec<TypedDestructurePattern>>>()
+                }
+            })
+            .collect::<Vec<Vec<TypedDestructurePattern>>>(),
+    }
+}
+
 pub fn update_union_type_in_function_type(
     FunctionType {
         first_argument_type,
@@ -1489,6 +1790,7 @@ pub fn update_union_type_in_type(type_value: Type, bound: &UnionTypeBound) -> Ty
                 .map(|argument| update_union_type_in_type(argument, bound))
                 .collect(),
         },
+        _ => panic!(),
     }
 }
 
@@ -1788,12 +2090,13 @@ pub fn infer_destructure_pattern(
     match destructure_pattern {
         DestructurePattern::String(_) => Ok(string_type()),
         DestructurePattern::Number(_) => Ok(number_type()),
-        DestructurePattern::Boolean(_) => Ok(boolean_type()),
+        DestructurePattern::Boolean { .. } => Ok(Type::Boolean),
         DestructurePattern::Null(_) => Ok(null_type()),
         DestructurePattern::Identifier(identifier) => {
             environment.introduce_type_variable(Some(&identifier))
         }
-        DestructurePattern::Tag { token, payload } => {
+        DestructurePattern::Tuple(_) => panic!("Compiler error, should not reach here"),
+        DestructurePattern::Tag { tagname, payload } => {
             let payload = match payload {
                 None => Ok(None),
                 Some(payload) => {
@@ -1808,7 +2111,7 @@ pub fn infer_destructure_pattern(
                     }))
                 }
             }?;
-            infer_tag_type(environment, token, payload)
+            infer_tag_type(environment, tagname, payload)
 
             // let tag_type = TagType {
             //     tagname: token.representation.clone(),
@@ -1908,6 +2211,7 @@ fn substitute_type_variable_in_type(
     in_type: &Type,
 ) -> Type {
     match in_type {
+        Type::Boolean => Type::Boolean,
         Type::TypeVariable { name } => {
             if *name == *from_type_variable {
                 to_type.clone()
@@ -1915,6 +2219,14 @@ fn substitute_type_variable_in_type(
                 in_type.clone()
             }
         }
+        Type::Tuple(types) => Type::Tuple(
+            types
+                .iter()
+                .map(|type_value| {
+                    substitute_type_variable_in_type(from_type_variable, to_type, type_value)
+                })
+                .collect(),
+        ),
         Type::Function(FunctionType {
             first_argument_type,
             rest_arguments_types,
@@ -1998,7 +2310,11 @@ fn substitute_type_variable_in_type(
 
 fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
     match type_value {
-        Type::Underscore => HashSet::new(),
+        Type::Boolean | Type::Underscore => HashSet::new(),
+        Type::Tuple(types) => types
+            .iter()
+            .flat_map(get_free_type_variables_in_type)
+            .collect::<HashSet<String>>(),
         Type::TypeVariable { name } => {
             let mut result: HashSet<String> = HashSet::new();
             result.insert(name.clone());

@@ -43,6 +43,8 @@ pub enum Type {
     Named { name: String, arguments: Vec<Type> },
     Function(FunctionType),
     Union(UnionType),
+    Tuple(Vec<Type>),
+    Boolean,
 }
 
 #[derive(Debug, Clone)]
@@ -121,12 +123,15 @@ pub enum TypeAnnotation {
 pub enum DestructurePattern {
     String(Token),
     Number(Token),
-    Boolean(Token),
+    Boolean {
+        token: Token,
+        value: bool,
+    },
     Null(Token),
     Underscore(Token),
     Identifier(Token),
     Tag {
-        token: Token,
+        tagname: Token,
         payload: Option<Box<DestructurePatternTagPayload>>,
     },
     Record {
@@ -141,6 +146,7 @@ pub enum DestructurePattern {
         spread: Option<DestructurePatternArraySpread>,
         tail_elements: Vec<DestructurePattern>,
     },
+    Tuple(Vec<DestructurePattern>),
 }
 
 #[derive(Debug, Clone)]

@@ -683,7 +683,7 @@ pub fn parse_destructure_pattern(
                     let destructure_pattern = parse_destructure_pattern(it)?;
                     let right_parenthesis = eat_token(it, TokenType::RightParenthesis)?;
                     Ok(DestructurePattern::Tag {
-                        token: token.clone(),
+                        tagname: token.clone(),
                         payload: Some(Box::new(DestructurePatternTagPayload {
                             left_parenthesis,
                             right_parenthesis,
@@ -692,7 +692,7 @@ pub fn parse_destructure_pattern(
                     })
                 }
                 _ => Ok(DestructurePattern::Tag {
-                    token: token.clone(),
+                    tagname: token.clone(),
                     payload: None,
                 }),
             },
@@ -729,9 +729,14 @@ pub fn parse_destructure_pattern(
             }
             TokenType::Number => Ok(DestructurePattern::Number(token.clone())),
             TokenType::String => Ok(DestructurePattern::String(token.clone())),
-            TokenType::KeywordTrue | TokenType::KeywordFalse => {
-                Ok(DestructurePattern::Boolean(token.clone()))
-            }
+            TokenType::KeywordTrue => Ok(DestructurePattern::Boolean {
+                token: token.clone(),
+                value: true,
+            }),
+            TokenType::KeywordFalse => Ok(DestructurePattern::Boolean {
+                token: token.clone(),
+                value: false,
+            }),
             TokenType::KeywordNull => Ok(DestructurePattern::Null(token.clone())),
             TokenType::LeftSquareBracket => {
                 let left_square_bracket = token.clone();
