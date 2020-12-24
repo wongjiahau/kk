@@ -4,4 +4,4 @@ enum List<T> =
 
 let bomb = 
   \#nil => true
-  \#cons({current, next = #nil}) => true
+  \#cons({current = true, next}) => true 

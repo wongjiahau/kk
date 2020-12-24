@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, RefCell, RefMut};
 use std::collections::HashMap;
 
 type Substitution = HashMap<String, SubstitutionItem>;
@@ -11,6 +11,7 @@ pub struct Environment<'a> {
     parent: Option<&'a Environment<'a>>,
     value_symbols: RefCell<HashMap<String, ValueSymbol>>,
     type_symbols: RefCell<HashMap<String, TypeSymbol>>,
+    constructor_symbols: RefCell<HashMap<String, ConstructorSymbol>>,
     type_variable_substitutions: RefCell<Substitution>,
     type_variable_index: Cell<usize>,
     pub source: Source,
@@ -29,6 +30,7 @@ impl<'a> Environment<'a> {
             parent: None,
             value_symbols: RefCell::new(HashMap::new()),
             type_symbols: RefCell::new(built_in_type_symbols()),
+            constructor_symbols: RefCell::new(HashMap::new()),
             type_variable_substitutions: RefCell::new(HashMap::new()),
             type_variable_index: Cell::new(0),
             source,
@@ -41,6 +43,7 @@ impl<'a> Environment<'a> {
             parent: Some(parent),
             value_symbols: RefCell::new(HashMap::new()),
             type_symbols: RefCell::new(HashMap::new()),
+            constructor_symbols: RefCell::new(HashMap::new()),
             type_variable_substitutions: RefCell::new(HashMap::new()),
             type_variable_index: Cell::new(0),
         }
@@ -278,22 +281,8 @@ impl<'a> Environment<'a> {
         token: &Token,
         value_symbol: ValueSymbol,
     ) -> Result<(), UnifyError> {
-        let name = token.representation.clone();
-        let mut value_symbols = self.value_symbols.borrow_mut();
-        match value_symbols.get(&name) {
-            Some(symbol) => Err(UnifyError {
-                position: token.position,
-                kind: UnifyErrorKind::DuplicatedIdentifier {
-                    first_declared_at: symbol.declaration.clone(),
-                    then_declared_at: Declaration::UserDefined(self.source.clone(), token.clone()),
-                    name,
-                },
-            }),
-            None => {
-                value_symbols.insert(name, value_symbol);
-                Ok(())
-            }
-        }
+        let value_symbols = self.value_symbols.borrow_mut();
+        insert_symbol(value_symbols, token, &self.source, value_symbol)
     }
 
     pub fn insert_type_symbol(
@@ -301,35 +290,47 @@ impl<'a> Environment<'a> {
         token: &Token,
         type_symbol: TypeSymbol,
     ) -> Result<(), UnifyError> {
-        let name = token.representation.clone();
-        let mut type_symbols = self.type_symbols.borrow_mut();
-        match type_symbols.get(&name) {
-            Some(symbol) => Err(UnifyError {
-                position: token.position,
-                kind: UnifyErrorKind::DuplicatedIdentifier {
-                    first_declared_at: symbol.declaration.clone(),
-                    then_declared_at: Declaration::UserDefined(self.source.clone(), token.clone()),
-                    name,
-                },
-            }),
-            None => {
-                type_symbols.insert(name, type_symbol);
-                Ok(())
-            }
+        let type_symbols = self.type_symbols.borrow_mut();
+        insert_symbol(type_symbols, token, &self.source, type_symbol)
+    }
+
+    pub fn insert_constructor_symbol(
+        &mut self,
+        token: &Token,
+        constructor_symbol: ConstructorSymbol,
+    ) -> Result<(), UnifyError> {
+        let constructor_symbols = self.constructor_symbols.borrow_mut();
+        insert_symbol(constructor_symbols, token, &self.source, constructor_symbol)
+    }
+
+    pub fn get_enum_constrctors(&self, enum_name: &str) -> Vec<ConstructorSymbol> {
+        let constructor_symbols = self.constructor_symbols.borrow();
+        let result = constructor_symbols
+            .iter()
+            .filter_map(|(_, constructor_symbol)| {
+                if constructor_symbol.enum_name == enum_name {
+                    Some(constructor_symbol.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<ConstructorSymbol>>();
+        if !result.is_empty() {
+            result
+        } else if let Some(parent) = &self.parent {
+            parent.get_enum_constrctors(enum_name)
+        } else {
+            vec![]
         }
     }
 
-    pub fn get_type_symbol(&self, token: &Token) -> Result<TypeSymbol, UnifyError> {
-        let name = token.representation.clone();
-        if let Some(type_symbol) = self.type_symbols.borrow().get(&name) {
-            Ok(type_symbol.clone())
+    pub fn get_type_symbol(&self, name: &str) -> Option<TypeSymbol> {
+        if let Some(type_symbol) = self.type_symbols.borrow().get(name) {
+            Some(type_symbol.clone())
         } else if let Some(parent) = &self.parent {
-            parent.get_type_symbol(&token)
+            parent.get_type_symbol(name)
         } else {
-            Err(UnifyError {
-                position: token.position,
-                kind: UnifyErrorKind::UnknownTypeSymbol,
-            })
+            None
         }
     }
 
@@ -338,6 +339,16 @@ impl<'a> Environment<'a> {
             Some(value_symbol.clone())
         } else if let Some(parent) = &self.parent {
             parent.get_value_symbol(name)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_consructor_symbol(&self, name: &str) -> Option<ConstructorSymbol> {
+        if let Some(constructor_symbol) = self.constructor_symbols.borrow().get(name) {
+            Some(constructor_symbol.clone())
+        } else if let Some(parent) = &self.parent {
+            parent.get_consructor_symbol(name)
         } else {
             None
         }
@@ -360,17 +371,67 @@ pub struct TypeSymbol {
 }
 
 #[derive(Debug, Clone)]
-pub struct TagSymbol {
-    pub declaration: Declaration,
-    pub tag_type: TagType,
-    pub usage_references: Vec<UsageReference>,
-}
-
-#[derive(Debug, Clone)]
 pub struct ValueSymbol {
     pub declaration: Declaration,
     pub actual_type: TypeScheme,
     pub usage_references: Vec<UsageReference>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstructorSymbol {
+    pub declaration: Declaration,
+
+    /// Refers to the name of the enum that contains this constructor
+    pub enum_name: String,
+    pub constructor_name: String,
+    pub type_variables: Vec<String>,
+    pub payload: Option<Type>,
+    pub usage_references: Vec<UsageReference>,
+}
+
+pub trait Symbolizable {
+    fn declaration(&self) -> Declaration;
+}
+
+impl Symbolizable for ConstructorSymbol {
+    fn declaration(&self) -> Declaration {
+        self.declaration.clone()
+    }
+}
+
+impl Symbolizable for ValueSymbol {
+    fn declaration(&self) -> Declaration {
+        self.declaration.clone()
+    }
+}
+
+impl Symbolizable for TypeSymbol {
+    fn declaration(&self) -> Declaration {
+        self.declaration.clone()
+    }
+}
+
+fn insert_symbol<Symbol: Symbolizable>(
+    mut symbols: RefMut<HashMap<String, Symbol>>,
+    token: &Token,
+    source: &Source,
+    new_symbol: Symbol,
+) -> Result<(), UnifyError> {
+    let name = token.representation.clone();
+    match symbols.get(&name) {
+        Some(symbol) => Err(UnifyError {
+            position: token.position,
+            kind: UnifyErrorKind::DuplicatedIdentifier {
+                first_declared_at: symbol.declaration(),
+                then_declared_at: Declaration::UserDefined(source.clone(), token.clone()),
+                name,
+            },
+        }),
+        None => {
+            symbols.insert(name, new_symbol);
+            Ok(())
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -48,6 +48,12 @@ pub enum Type {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypeEnumTag {
+    tagname: String,
+    payload: Option<Type>,
+}
+
+#[derive(Debug, Clone)]
 pub struct UnionType {
     pub tags: Vec<TagType>,
     pub bound: UnionTypeBound,

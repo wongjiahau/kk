@@ -111,7 +111,6 @@ pub fn infer_statement(
     environment: &mut Environment,
     statement: Statement,
 ) -> Result<(), UnifyError> {
-    // println!("{:#?}", environment);
     match statement {
         Statement::Let {
             left,
@@ -121,8 +120,6 @@ pub fn infer_statement(
             let type_annotation_type =
                 optional_type_annotation_to_type(environment, &type_annotation)?;
             let right_type = infer_expression_type(environment, &right)?;
-
-            // println!("right_type {:#?}", right_type);
 
             // 1. Check if right matches type annotation
             let right_type = match type_annotation_type {
@@ -136,8 +133,6 @@ pub fn infer_statement(
 
             // 2. Generalize if possible
             let right_type_scheme = generalize_type(right_type);
-
-            // println!("{} = {:#?}", left.representation, right_type_scheme);
 
             // 3. Unify left with right_type and populate parent environment with bindings found in left
             environment.insert_value_symbol(
@@ -203,8 +198,9 @@ pub fn infer_statement(
             tags,
         } => {
             // 1. Add this enum into environment first, to allow recursive definition
+            let enum_name = name.representation.clone();
             let enum_type = Type::Named {
-                name: name.representation.clone(),
+                name: enum_name.clone(),
                 arguments: type_variables
                     .clone()
                     .into_iter()
@@ -225,7 +221,7 @@ pub fn infer_statement(
                     declaration: Declaration::UserDefined(environment.source.clone(), name.clone()),
                     type_scheme: TypeScheme {
                         type_variables: type_variable_names.clone(),
-                        type_value: enum_type.clone(),
+                        type_value: enum_type,
                     },
                     usage_references: vec![],
                 },
@@ -259,55 +255,40 @@ pub fn infer_statement(
                 .iter()
                 .map(|tag| {
                     let declaration = Declaration::UserDefined(source.clone(), tag.tagname.clone());
-                    match &tag.payload {
-                        Some(payload) => {
-                            // validate type annotation
-                            let paylod_type_value = type_annotation_to_type(
-                                &mut current_environment,
-                                payload.type_annotation.as_ref(),
-                            )?;
-
-                            Ok((
-                                &tag.tagname,
-                                ValueSymbol {
-                                    declaration,
-                                    usage_references: vec![],
-                                    actual_type: TypeScheme {
-                                        type_variables: type_variable_names.clone(),
-                                        type_value: Type::Function(FunctionType {
-                                            first_argument_type: Box::new(paylod_type_value),
-                                            rest_arguments_types: vec![],
-                                            return_type: Box::new(enum_type.clone()),
-                                        }),
-                                    },
-                                },
-                            ))
-                        }
-                        None => Ok((
-                            &tag.tagname,
-                            ValueSymbol {
-                                declaration,
-                                usage_references: vec![],
-                                actual_type: TypeScheme {
-                                    type_variables: type_variable_names.clone(),
-                                    type_value: enum_type.clone(),
-                                },
+                    Ok((
+                        &tag.tagname,
+                        ConstructorSymbol {
+                            declaration,
+                            usage_references: vec![],
+                            enum_name: enum_name.clone(),
+                            constructor_name: tag.tagname.representation.clone(),
+                            type_variables: type_variable_names.clone(),
+                            payload: match &tag.payload {
+                                None => None,
+                                Some(payload) => {
+                                    // validate type annotation
+                                    let payload_type_value = type_annotation_to_type(
+                                        &mut current_environment,
+                                        payload.type_annotation.as_ref(),
+                                    )?;
+                                    Some(payload_type_value)
+                                }
                             },
-                        )),
-                    }
+                        },
+                    ))
+
                 })
-                .collect::<Result<Vec<(&Token, ValueSymbol)>, UnifyError>>()?;
+                .collect::<Result<Vec<(&Token, ConstructorSymbol)>, UnifyError>>()?;
 
             value_symbols
                 .into_iter()
-                .map(|(token, value_symbol)| environment.insert_value_symbol(token, value_symbol))
+                .map(|(token, constructor_symbol)| {
+                    environment.insert_constructor_symbol(token, constructor_symbol)
+                })
                 .collect::<Result<Vec<()>, UnifyError>>()?;
             Ok(())
         }
     }?;
-
-    // reset type variable index
-    // environment.reset_type_variable_index();
 
     Ok(())
 }
@@ -465,16 +446,13 @@ pub fn unify_type(
                     expected_type,
                     actual_type,
                 },
-        }) => {
-            // println!("{:#?}", environment);
-            Err(UnifyError {
-                position,
-                kind: UnifyErrorKind::TypeMismatch {
-                    expected_type: environment.apply_subtitution_to_type(&expected_type),
-                    actual_type: environment.apply_subtitution_to_type(&actual_type),
-                },
-            })
-        }
+        }) => Err(UnifyError {
+            position,
+            kind: UnifyErrorKind::TypeMismatch {
+                expected_type: environment.apply_subtitution_to_type(&expected_type),
+                actual_type: environment.apply_subtitution_to_type(&actual_type),
+            },
+        }),
         other => other,
     }
 }
@@ -614,15 +592,6 @@ pub fn unify_type_(
                         },
                     },
                 });
-                // return Err(UnifyError {
-                //     position,
-                //     kind: UnifyErrorKind::RecordExtraneousKeys {
-                //         extraneous_keys,
-                //         expected_type: Type::Record {
-                //             key_type_pairs: expected_key_type_pairs,
-                //         },
-                //     },
-                // });
             }
 
             // 3. If no missing keys and no extraneous keys, that means all keys are present
@@ -638,7 +607,6 @@ pub fn unify_type_(
 
             let key_type_pairs = zipped
                 .map(|((key, expected_type), (_, actual_type))| {
-                    // TODO: Should pass in more specific location here
                     match unify_type(environment, &expected_type, &actual_type, position) {
                         Ok(_) => Ok((key, expected_type)),
                         Err(UnifyError {
@@ -653,10 +621,6 @@ pub fn unify_type_(
                                 actual_type: Type::Record{
                                     key_type_pairs: actual_key_type_pairs.clone()
                                 }
-                                // expected_key_type: expected_type,
-                                // actual_key_type: actual_type,
-                                // expected_record_type: expected_key_type_pairs.clone(),
-                                // actual_record_type: actual_key_type_pairs.clone(),
                             },
                         }),
                         Err(other) => Err(other),
@@ -807,6 +771,20 @@ pub fn unify_type_(
     }
 }
 
+pub fn rewrite_type_variables_in_type(
+    from_type_variables: Vec<String>,
+    to_types: Vec<Type>,
+    in_type: Type,
+) -> Type {
+    assert!(from_type_variables.len() == to_types.len());
+    from_type_variables.iter().zip(to_types.iter()).fold(
+        in_type,
+        |result_type, (from_type_variable, to_type)| {
+            rewrite_type_variable_in_type(from_type_variable, to_type, result_type)
+        },
+    )
+}
+
 pub fn rewrite_type_variable_in_type(
     from_type_variable: &str,
     to_type: &Type,
@@ -949,16 +927,12 @@ pub fn join_union_tags(
     // check for incompatible tags, i.e. tags with the same name but with non-unifiable payload
 
     let mut right_iter = right.iter();
-    // println!("left = {:#?}", left);
-    // println!("right = {:#?}", right);
     left.clone()
         .into_iter()
         .map(|left_tag_type| {
             let matching_tag =
                 right_iter.find(|right_tag_type| left_tag_type.tagname == right_tag_type.tagname);
 
-            // println!("left_tag_type = {:#?}", left_tag_type);
-            // println!("match_tag = {:#?}", matching_tag);
             match matching_tag {
                 None => Ok(()),
                 Some(matching_tag) => match (&left_tag_type.payload, &matching_tag.payload) {
@@ -1000,7 +974,7 @@ pub fn infer_tag_type(
     payload: Option<TagPayloadType>,
 ) -> Result<Type, UnifyError> {
     // Look up constructor
-    let constructor = match environment.get_value_symbol(&tagname.representation) {
+    let constructor = match environment.get_consructor_symbol(&tagname.representation) {
         Some(value_symbol) => value_symbol,
         None => {
             return Err(UnifyError {
@@ -1010,34 +984,31 @@ pub fn infer_tag_type(
         }
     };
 
+    let enum_type = environment
+        .get_type_symbol(&constructor.enum_name)
+        .unwrap_or_else(|| {
+            panic!(
+                "Compiler error: Cannot find enum '{}' in type_symbols",
+                constructor.enum_name
+            )
+        });
+
     // initiate type variables
-    let type_variables = constructor
-        .actual_type
+    let instantiated_type_variables = enum_type
+        .type_scheme
         .type_variables
         .iter()
-        .map(|_| environment.get_next_type_variable_name())
-        .collect::<Vec<String>>();
+        .map(|_| environment.introduce_type_variable(None))
+        .collect::<Result<Vec<Type>, UnifyError>>()?;
 
-    let constructor_type = constructor
-        .actual_type
-        .type_variables
-        .iter()
-        .zip(type_variables.iter())
-        .fold(
-            constructor.actual_type.type_value.clone(),
-            |result_type, (from_type_variable, to_type_variable)| {
-                rewrite_type_variable_in_type(
-                    from_type_variable,
-                    &Type::TypeVariable {
-                        name: to_type_variable.clone(),
-                    },
-                    result_type,
-                )
-            },
-        );
+    let return_type = rewrite_type_variables_in_type(
+        enum_type.type_scheme.type_variables,
+        instantiated_type_variables.clone(),
+        enum_type.type_scheme.type_value,
+    );
 
-    match constructor_type {
-        Type::Named { .. } => match payload {
+    match constructor.payload {
+        None => match payload {
             Some(payload) => Err(UnifyError {
                 position: join_position(
                     payload.left_parenthesis.position,
@@ -1045,26 +1016,30 @@ pub fn infer_tag_type(
                 ),
                 kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
             }),
-            None => Ok(constructor_type),
+            None => Ok(return_type),
         },
-        Type::Function(function_type) => match payload {
+        Some(expected_payload) => match payload {
             None => Err(UnifyError {
                 position: tagname.position,
                 kind: UnifyErrorKind::ThisTagRequiresPaylod {
-                    payload_type: *function_type.first_argument_type,
+                    payload_type: expected_payload,
                 },
             }),
             Some(payload) => {
+                let expected_payload = rewrite_type_variables_in_type(
+                    constructor.type_variables,
+                    instantiated_type_variables,
+                    expected_payload,
+                );
                 unify_type(
                     environment,
-                    function_type.first_argument_type.as_ref(),
+                    &expected_payload,
                     &payload.type_value,
                     payload.position,
                 )?;
-                Ok(*function_type.return_type)
+                Ok(return_type)
             }
         },
-        other => panic!("Compiler error, did not expect tag type to be {:#?}", other),
     }
 }
 
@@ -1170,7 +1145,7 @@ pub fn infer_expression_type(
                         &right_type,
                         get_expression_position(&right),
                     )?;
-                    right_type.clone()
+                    right_type
                 }
                 Some(false_branch) => match infer_expression_type(environment, &false_branch)? {
                     Type::TypeVariable { name } => Ok(Type::TypeVariable { name }),
@@ -1189,10 +1164,7 @@ pub fn infer_expression_type(
                                     environment.apply_subtitution_to_type(&left_type),
                                     &UnionTypeBound::Exact,
                                 ),
-                                &update_union_type_in_type(
-                                    right_type.clone(),
-                                    &UnionTypeBound::Exact,
-                                ),
+                                &update_union_type_in_type(right_type, &UnionTypeBound::Exact),
                                 get_expression_position(&right),
                             )?;
 
@@ -1213,23 +1185,6 @@ pub fn infer_expression_type(
                 }?,
             };
             let true_branch_type = infer_expression_type(environment, &true_branch)?;
-
-            // println!(
-            //     "left_type = {:#?}",
-            //     environment.apply_subtitution_to_type(&left_type)
-            // );
-            // println!(
-            //     "right_type = {:#?}",
-            //     environment.apply_subtitution_to_type(&right_type.clone())
-            // );
-            // println!(
-            //     "true_branch_type = {:#?}",
-            //     environment.apply_subtitution_to_type(&true_branch_type)
-            // );
-            //
-
-            println!("right_type = {:#?}", right_type);
-            println!("left_type = {:#?}", left_type);
 
             match **left {
                 DestructurePattern::Identifier(_) | DestructurePattern::Underscore(_) => {
@@ -1270,8 +1225,6 @@ pub fn infer_expression_type(
                 }),
             };
 
-            // println!("function_type = {:#?}", function_type);
-
             unify_function_type(
                 environment,
                 &function_type,
@@ -1289,35 +1242,43 @@ pub fn infer_expression_type(
             let function_type = environment.apply_subtitution_to_function_type(&function_type);
 
             // Check for case exhasutiveness
-            let (expected_type, actual_patterns) = {
-                match function.first_branch.rest_arguments {
-                    None => {
-                        let expected_type = function_type.first_argument_type.clone();
-                        let actual_patterns = vec![function
-                            .first_branch
-                            .first_argument
-                            .destructure_pattern
-                            .clone()];
-                        (*expected_type, actual_patterns)
-                    }
-                    Some(_) => {
-                        let expected_type = Type::Tuple(
-                            vec![*function_type.first_argument_type.clone()]
+            let (expected_type, actual_patterns) =
+                {
+                    match function.first_branch.rest_arguments {
+                        None => {
+                            let expected_type = function_type.first_argument_type.clone();
+                            let actual_patterns =
+                                vec![function
+                                    .first_branch
+                                    .first_argument
+                                    .destructure_pattern
+                                    .clone()]
                                 .into_iter()
-                                .chain(function_type.rest_arguments_types.clone().into_iter())
-                                .collect(),
-                        );
-                        let actual_patterns = vec![function.first_branch.clone()]
-                            .iter()
-                            .chain(function.branches.iter())
-                            .map(function_branch_arguments_to_tuple)
-                            .collect();
+                                .chain(function.branches.iter().map(|branch| {
+                                    branch.first_argument.destructure_pattern.clone()
+                                }))
+                                .collect();
+                            (*expected_type, actual_patterns)
+                        }
+                        Some(_) => {
+                            let expected_type = Type::Tuple(
+                                vec![*function_type.first_argument_type.clone()]
+                                    .into_iter()
+                                    .chain(function_type.rest_arguments_types.clone().into_iter())
+                                    .collect(),
+                            );
+                            let actual_patterns = vec![function.first_branch.clone()]
+                                .iter()
+                                .chain(function.branches.iter())
+                                .map(function_branch_arguments_to_tuple)
+                                .collect();
 
-                        (expected_type, actual_patterns)
+                            (expected_type, actual_patterns)
+                        }
                     }
-                }
-            };
+                };
             check_exhasutiveness(
+                environment,
                 expected_type,
                 actual_patterns,
                 get_expression_position(&Expression::Function(function.clone())),
@@ -1524,15 +1485,20 @@ pub enum TypedDestructurePattern {
         payload: Option<Box<TypedDestructurePattern>>,
     },
     Tuple(Vec<TypedDestructurePattern>),
+    Record {
+        key_pattern_pairs: Vec<(String, TypedDestructurePattern)>,
+    },
     Boolean(bool), // Number
 }
 
 pub fn check_exhasutiveness(
+    environment: &Environment,
     expected_type: Type,
     actual_patterns: Vec<DestructurePattern>,
     position: Position,
 ) -> Result<(), UnifyError> {
     check_exhasutiveness_(
+        environment,
         vec![TypedDestructurePattern::Any {
             type_value: expected_type,
         }],
@@ -1542,48 +1508,57 @@ pub fn check_exhasutiveness(
 }
 
 pub fn check_exhasutiveness_(
+    environment: &Environment,
     expected_patterns: Vec<TypedDestructurePattern>,
     actual_patterns: Vec<DestructurePattern>,
     position: Position,
 ) -> Result<(), UnifyError> {
-    let mut expected_patterns = expected_patterns;
-    for actual_pattern in actual_patterns {
-        if expected_patterns.is_empty() {
-            return Err(UnifyError {
-                position: get_destructure_pattern_position(&actual_pattern),
-                kind: UnifyErrorKind::UnreachableCase,
-            });
-        }
-        expected_patterns = match_patterns(&actual_pattern, expected_patterns)
-    }
-    if expected_patterns.is_empty() {
+    let remaining_expected_patterns = actual_patterns.into_iter().fold(
+        Ok(expected_patterns),
+        |expected_patterns, actual_pattern| match expected_patterns {
+            Err(error) => Err(error),
+            Ok(expected_patterns) => {
+                if expected_patterns.is_empty() {
+                    Err(UnifyError {
+                        position: get_destructure_pattern_position(&actual_pattern),
+                        kind: UnifyErrorKind::UnreachableCase,
+                    })
+                } else {
+                    Ok(match_patterns(
+                        environment,
+                        &actual_pattern,
+                        expected_patterns,
+                    ))
+                }
+            }
+        },
+    )?;
+    if remaining_expected_patterns.is_empty() {
         Ok(())
     } else {
         Err(UnifyError {
             position,
-            kind: UnifyErrorKind::MissingCases(expected_patterns),
+            kind: UnifyErrorKind::MissingCases(remaining_expected_patterns),
         })
-        // Err(UnifyError {
-
-        // })
     }
 }
 
 pub fn match_patterns(
+    environment: &Environment,
     actual_pattern: &DestructurePattern,
     expected_patterns: Vec<TypedDestructurePattern>,
 ) -> Vec<TypedDestructurePattern> {
     expected_patterns
         .into_iter()
-        .flat_map(
-            |expected_pattern| match match_pattern(&actual_pattern, &expected_pattern) {
+        .flat_map(|expected_pattern| {
+            match match_pattern(environment, &actual_pattern, &expected_pattern) {
                 MatchPatternResult::Matched => vec![],
                 MatchPatternResult::NotMatched => vec![expected_pattern],
                 MatchPatternResult::PartiallyMatched { expanded_patterns } => {
-                    match_patterns(actual_pattern, expanded_patterns)
+                    match_patterns(environment, actual_pattern, expanded_patterns)
                 }
-            },
-        )
+            }
+        })
         .collect()
 }
 
@@ -1597,6 +1572,7 @@ pub enum MatchPatternResult {
 }
 
 pub fn match_pattern(
+    environment: &Environment,
     actual_pattern: &DestructurePattern,
     expected_pattern: &TypedDestructurePattern,
 ) -> MatchPatternResult {
@@ -1640,7 +1616,11 @@ pub fn match_pattern(
             if actual_tagname.representation != *expected_tagname {
                 MatchPatternResult::NotMatched
             } else {
-                match match_pattern(&actual_payload.destructure_pattern, expected_payload) {
+                match match_pattern(
+                    environment,
+                    &actual_payload.destructure_pattern,
+                    expected_payload,
+                ) {
                     MatchPatternResult::Matched => MatchPatternResult::Matched,
                     MatchPatternResult::NotMatched => MatchPatternResult::NotMatched,
                     MatchPatternResult::PartiallyMatched { expanded_patterns } => {
@@ -1667,68 +1647,177 @@ pub fn match_pattern(
             if actual_patterns.len() != expected_patterns.len() {
                 MatchPatternResult::NotMatched
             } else {
-                let result = actual_patterns
+                let tuple_patterns = actual_patterns
                     .iter()
+                    .enumerate()
                     .zip(expected_patterns.iter())
-                    .map(|(actual_pattern, expected_pattern)| {
+                    .map(|((key, actual_pattern), expected_pattern)| {
                         (
-                            expected_pattern,
-                            match_pattern(actual_pattern, expected_pattern),
+                            (key.to_string(), actual_pattern.clone()),
+                            expected_pattern.clone(),
                         )
                     })
-                    .collect::<Vec<(&TypedDestructurePattern, MatchPatternResult)>>();
+                    .collect::<Vec<((String, DestructurePattern), TypedDestructurePattern)>>();
 
-                if result.iter().all(|(_, match_pattern_result)| {
-                    matches!(match_pattern_result, MatchPatternResult::Matched)
-                }) {
-                    return MatchPatternResult::Matched;
-                }
+                match_tuple_patterns(environment, tuple_patterns, WrapResultAs::Tuple)
 
-                if result.iter().any(|(_, match_pattern_result)| {
-                    matches!(match_pattern_result, MatchPatternResult::NotMatched)
-                }) {
-                    return MatchPatternResult::NotMatched;
-                }
+                // if result.iter().all(|(_, match_pattern_result)| {
+                //     matches!(match_pattern_result, MatchPatternResult::Matched)
+                // }) {
+                //     return MatchPatternResult::Matched;
+                // }
 
-                MatchPatternResult::PartiallyMatched {
-                    expanded_patterns: expand_pattern_tuple(
-                        result
-                            .into_iter()
-                            .map(|(expected_pattern, match_pattern_result)| {
-                                match match_pattern_result {
-                                    MatchPatternResult::Matched => vec![expected_pattern.clone()],
-                                    MatchPatternResult::NotMatched => {
-                                        panic!("Compiler error, should not reach this branch")
-                                    }
-                                    MatchPatternResult::PartiallyMatched { expanded_patterns } => {
-                                        expanded_patterns
-                                    }
-                                }
-                            })
-                            .collect(),
-                    )
-                    .into_iter()
-                    .map(TypedDestructurePattern::Tuple)
-                    .collect(),
-                }
-                // expand_pattern_tuple(result)
-                // println!("result = {:#?}", result);
-                // println!("actual_patterns = {:#?}", actual_patterns);
-                // panic!("expected_patterns = {:#?}", expected_patterns)
+                // if result.iter().any(|(_, match_pattern_result)| {
+                //     matches!(match_pattern_result, MatchPatternResult::NotMatched)
+                // }) {
+                //     return MatchPatternResult::NotMatched;
+                // }
+
+                // MatchPatternResult::PartiallyMatched {
+                //     expanded_patterns: expand_pattern_tuple(
+                //         result
+                //             .into_iter()
+                //             .map(|((_, expected_pattern), match_pattern_result)| {
+                //                 match match_pattern_result {
+                //                     MatchPatternResult::Matched => vec![expected_pattern.clone()],
+                //                     MatchPatternResult::NotMatched => {
+                //                         panic!("Compiler error, should not reach this branch")
+                //                     }
+                //                     MatchPatternResult::PartiallyMatched { expanded_patterns } => {
+                //                         expanded_patterns
+                //                     }
+                //                 }
+                //             })
+                //             .collect(),
+                //     )
+                //     .into_iter()
+                //     .map(TypedDestructurePattern::Tuple)
+                //     .collect(),
+                // }
             }
         }
+        (
+            DestructurePattern::Record {
+                key_value_pairs: actual_key_pattern_pairs,
+                ..
+            },
+            TypedDestructurePattern::Record {
+                key_pattern_pairs: expected_key_pattern_pairs,
+            },
+        ) => {
+            let actual_keys = actual_key_pattern_pairs
+                .iter()
+                .map(|key| key.key.representation.clone())
+                .collect::<HashSet<String>>();
+
+            let expected_keys = expected_key_pattern_pairs
+                .iter()
+                .map(|(key, _)| key.clone())
+                .collect::<HashSet<String>>();
+
+            if !actual_keys.eq(&expected_keys) {
+                return MatchPatternResult::NotMatched;
+            }
+            let mut actual_key_pattern_pairs = actual_key_pattern_pairs.clone();
+            let mut expected_key_pattern_pairs = expected_key_pattern_pairs.clone();
+            actual_key_pattern_pairs
+                .sort_by(|a, b| a.key.representation.cmp(&b.key.representation));
+            expected_key_pattern_pairs.sort_by(|(a, _), (b, _)| a.cmp(&b));
+
+            let tuple_patterns = actual_key_pattern_pairs
+                .into_iter()
+                .zip(expected_key_pattern_pairs.into_iter())
+                .map(
+                    |(DestructuredRecordKeyValue { key, as_value, .. }, (_, expected_pattern))| {
+                        let actual_pattern = match as_value {
+                            None => DestructurePattern::Identifier(key.clone()),
+                            Some(destructure_pattern) => destructure_pattern,
+                        };
+                        ((key.representation, actual_pattern), expected_pattern)
+                    },
+                )
+                .collect();
+
+            match_tuple_patterns(environment, tuple_patterns, WrapResultAs::Record)
+        }
         (_, TypedDestructurePattern::Any { type_value }) => MatchPatternResult::PartiallyMatched {
-            expanded_patterns: expand_pattern(type_value),
+            expanded_patterns: expand_pattern(environment, type_value),
         },
         _ => MatchPatternResult::NotMatched,
     }
 }
 
-// pub fn match_tuple_pattern(patterns: Vec<(DestructurePattern, TypedDestructurePattern)>) -> Vec<TypedDestructurePattern> {
-//     patterns.into_iter().flat_map()
-// }
+pub enum WrapResultAs {
+    Tuple,
+    Record,
+}
 
-pub fn expand_pattern(type_value: &Type) -> Vec<TypedDestructurePattern> {
+pub fn match_tuple_patterns(
+    environment: &Environment,
+    tuple_patterns: Vec<((String, DestructurePattern), TypedDestructurePattern)>,
+    wrap_result_as: WrapResultAs,
+) -> MatchPatternResult {
+    let tuple_patterns = tuple_patterns
+        .iter()
+        .map(|((key, actual_pattern), expected_pattern)| {
+            (
+                (key.clone(), expected_pattern.clone()),
+                match_pattern(environment, actual_pattern, expected_pattern),
+            )
+        })
+        .collect::<Vec<((String, TypedDestructurePattern), MatchPatternResult)>>();
+    if tuple_patterns.iter().all(|(_, match_pattern_result)| {
+        matches!(match_pattern_result, MatchPatternResult::Matched)
+    }) {
+        return MatchPatternResult::Matched;
+    }
+
+    if tuple_patterns.iter().any(|(_, match_pattern_result)| {
+        matches!(match_pattern_result, MatchPatternResult::NotMatched)
+    }) {
+        return MatchPatternResult::NotMatched;
+    }
+
+    MatchPatternResult::PartiallyMatched {
+        expanded_patterns: expand_pattern_tuple(
+            tuple_patterns
+                .into_iter()
+                .map(
+                    |((key, expected_pattern), match_pattern_result)| match match_pattern_result {
+                        MatchPatternResult::Matched => {
+                            vec![(key, expected_pattern)]
+                        }
+                        MatchPatternResult::NotMatched => {
+                            panic!("Compiler error, should not reach this branch")
+                        }
+                        MatchPatternResult::PartiallyMatched { expanded_patterns } => {
+                            expanded_patterns
+                                .into_iter()
+                                .map(|expanded_pattern| (key.clone(), expanded_pattern))
+                                .collect()
+                        }
+                    },
+                )
+                .collect(),
+        )
+        .into_iter()
+        .map(|key_pattern_pairs| match wrap_result_as {
+            WrapResultAs::Record => TypedDestructurePattern::Record { key_pattern_pairs },
+            WrapResultAs::Tuple => TypedDestructurePattern::Tuple(
+                key_pattern_pairs
+                    .into_iter()
+                    .map(|(_, pattern)| pattern)
+                    .collect(),
+            ),
+        })
+        .collect(),
+    }
+}
+
+pub fn expand_pattern(
+    environment: &Environment,
+    type_value: &Type,
+) -> Vec<TypedDestructurePattern> {
     match type_value {
         Type::Boolean => vec![
             TypedDestructurePattern::Boolean(true),
@@ -1742,36 +1831,92 @@ pub fn expand_pattern(type_value: &Type) -> Vec<TypedDestructurePattern> {
                 })
                 .collect(),
         )],
+        Type::Record { key_type_pairs } => vec![TypedDestructurePattern::Record {
+            key_pattern_pairs: key_type_pairs
+                .iter()
+                .map(|(key, type_value)| {
+                    (
+                        key.clone(),
+                        TypedDestructurePattern::Any {
+                            type_value: type_value.clone(),
+                        },
+                    )
+                })
+                .collect(),
+        }],
+        Type::Named { name, arguments } => environment
+            .get_enum_constrctors(name)
+            .into_iter()
+            .map(|constructor_symbol| {
+                let constructor_name = constructor_symbol.constructor_name.clone();
+                match &constructor_symbol.payload {
+                    None => TypedDestructurePattern::Enum {
+                        tagname: constructor_name,
+                        payload: None,
+                    },
+                    Some(payload) => {
+                        let payload = rewrite_type_variables_in_type(
+                            constructor_symbol.type_variables,
+                            arguments.clone(),
+                            payload.clone(),
+                        );
+                        TypedDestructurePattern::Enum {
+                            tagname: constructor_name,
+                            payload: Some(Box::new(TypedDestructurePattern::Any {
+                                type_value: payload,
+                            })),
+                        }
+                    }
+                }
+            })
+            .collect(),
         _ => vec![],
     }
 }
 
+/// Permutate possible patterns.
+///
 /// Example
-/// Input = [[0, 1], [0, 1]]
-/// Output = [[0, 0], [0, 1], [1, 0], [1, 1]]
+/// ```
+/// Input = [[0, 1], [A, B, C]]
+/// Output = [
+///     [0, A], [0, B], [0, C],
+///     [1, A], [1, B], [1, C],
+/// ]
+/// ```
 pub fn expand_pattern_tuple(
-    types: Vec<Vec<TypedDestructurePattern>>,
-) -> Vec<Vec<TypedDestructurePattern>> {
+    types: Vec<
+        Vec<(
+            /*key*/ String,
+            /*pattern*/ TypedDestructurePattern,
+        )>,
+    >,
+) -> Vec<
+    Vec<(
+        /*key*/ String,
+        /*pattern*/ TypedDestructurePattern,
+    )>,
+> {
     match types.split_first() {
         None => vec![],
         Some((head, tail)) => head
             .iter()
-            .flat_map(|typed_destructure_pattern| {
+            .flat_map(|(key, typed_destructure_pattern)| {
                 let tail = expand_pattern_tuple(tail.to_vec());
                 if tail.is_empty() {
-                    vec![vec![typed_destructure_pattern.clone()]]
+                    vec![vec![(key.clone(), typed_destructure_pattern.clone())]]
                 } else {
                     tail.into_iter()
                         .map(|patterns| {
-                            vec![typed_destructure_pattern.clone()]
+                            vec![(key.clone(), typed_destructure_pattern.clone())]
                                 .into_iter()
                                 .chain(patterns.into_iter())
                                 .collect()
                         })
-                        .collect::<Vec<Vec<TypedDestructurePattern>>>()
+                        .collect::<Vec<Vec<(String, TypedDestructurePattern)>>>()
                 }
             })
-            .collect::<Vec<Vec<TypedDestructurePattern>>>(),
+            .collect::<Vec<Vec<(String, TypedDestructurePattern)>>>(),
     }
 }
 
@@ -1818,7 +1963,7 @@ pub fn update_union_type_in_type(type_value: Type, bound: &UnionTypeBound) -> Ty
                 .map(|argument| update_union_type_in_type(argument, bound))
                 .collect(),
         },
-        _ => panic!(),
+        other => other,
     }
 }
 
@@ -2001,7 +2146,7 @@ pub fn type_annotation_to_type(
     match &type_annotation {
         TypeAnnotation::Underscore(_) => Ok(Type::Underscore),
         TypeAnnotation::Named { name, arguments } => {
-            if let Ok(symbol) = environment.get_type_symbol(&name) {
+            if let Some(symbol) = environment.get_type_symbol(&name.representation) {
                 let arguments = match arguments {
                     None => vec![],
                     Some(NamedTypeAnnotationArguments { arguments, .. }) => arguments

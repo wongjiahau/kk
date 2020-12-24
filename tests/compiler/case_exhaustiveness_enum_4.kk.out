@@ -1,0 +1,13 @@
+error: Non-exhaustive cases
+ --> tests/compiler/case_exhaustiveness_enum_4.kk:1:3
+  |
+...
+6 |     \#nil => true
+  |  ___^
+7 | |   \#cons({current = true, next}) => true
+  | |_________________________________________^
+  |
+
+Missing case(s):
+
+  \#cons({ current = false, next = _ }) => ...

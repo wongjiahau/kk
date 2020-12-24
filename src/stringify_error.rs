@@ -142,13 +142,13 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             body: "Cannot find this type symbol in the current scope".to_string(),
         },
         UnifyErrorKind::MissingCases(missing_patterns) => StringifiedError {
-            summary: "Non-exhasutive cases".to_string(),
+            summary: "Non-exhaustive cases".to_string(),
             body: format!(
-                "Missing case:\n{}",
+                "Missing case(s):\n\n{}",
                 missing_patterns
                     .into_iter()
                     .map(stringify_typed_destrucutre_pattern)
-                    .map(|result| format!("* {} => ...", result))
+                    .map(|result| format!("  \\{} => ...", result))
                     .collect::<Vec<String>>()
                     .join("\n")
             ),
@@ -172,6 +172,18 @@ pub fn stringify_typed_destrucutre_pattern(
                 "false".to_string()
             }
         }
+        TypedDestructurePattern::Record { key_pattern_pairs } => format!(
+            "{{ {} }}",
+            key_pattern_pairs
+                .into_iter()
+                .map(|(key, pattern)| format!(
+                    "{} = {}",
+                    key,
+                    stringify_typed_destrucutre_pattern(pattern)
+                ))
+                .collect::<Vec<String>>()
+                .join(", ")
+        ),
         TypedDestructurePattern::Tuple(patterns) => format!(
             "({})",
             patterns

@@ -2,8 +2,10 @@ error: Type mismatch
  --> tests/compiler/unify_function_branches_2.kk:1:3
   |
 ...
-4 |   \(#bomb, #true) => #true
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^
+4 |     \(#bomb, #true) => #true
+  |  ___^
+5 | |   \(#bomb, #false) => #true
+  | |____________________________^
   |
 
 +---------------+-------------+

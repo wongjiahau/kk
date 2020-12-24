@@ -1,4 +1,4 @@
-error: Non-exhasutive cases
+error: Non-exhaustive cases
  --> tests/compiler/case_exhaustiveness_enum_1.kk:2:3
   |
 1 |   let and =
@@ -8,6 +8,7 @@ error: Non-exhasutive cases
   | |__________________________^
   |
 
-Missing case:
-* (true, false) => ...
-* (false, false) => ...
+Missing case(s):
+
+  \(true, false) => ...
+  \(false, false) => ...

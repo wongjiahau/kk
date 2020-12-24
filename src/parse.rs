@@ -309,9 +309,6 @@ pub fn parse_simple_type_annotation(
                     };
                 Ok(TypeAnnotation::Named { name, arguments })
             }
-            TokenType::Tag => {
-                panic!("Can only use tag in enum")
-            }
             TokenType::LeftCurlyBracket => {
                 let left_curly_bracket = token.clone();
                 let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = Vec::new();
