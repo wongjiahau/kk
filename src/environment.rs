@@ -149,7 +149,13 @@ impl<'a> Environment<'a> {
      */
     pub fn apply_subtitution_to_type(&self, type_value: &Type) -> Type {
         match type_value {
+            Type::Number => Type::Number,
             Type::Boolean => Type::Boolean,
+            Type::String => Type::String,
+            Type::Null => Type::Null,
+            Type::Array(type_value) => Type::Array(Box::new(
+                self.apply_subtitution_to_type(type_value.as_ref()),
+            )),
             Type::Tuple(types) => Type::Tuple(
                 types
                     .iter()
@@ -440,34 +446,6 @@ pub struct UsageReference {
     source: Source,
 }
 
-pub fn string_type() -> Type {
-    Type::Named {
-        name: "string".to_string(),
-        arguments: vec![],
-    }
-}
-
-pub fn number_type() -> Type {
-    Type::Named {
-        name: "number".to_string(),
-        arguments: vec![],
-    }
-}
-
-pub fn null_type() -> Type {
-    Type::Named {
-        name: "null".to_string(),
-        arguments: vec![],
-    }
-}
-
-pub fn array_type(element_type: Type) -> Type {
-    Type::Named {
-        name: "Array".to_string(),
-        arguments: vec![element_type],
-    }
-}
-
 fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
     let mut hash_map = HashMap::new();
     hash_map.insert(
@@ -476,7 +454,7 @@ fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
             declaration: Declaration::BuiltIn,
             type_scheme: TypeScheme {
                 type_variables: vec![],
-                type_value: string_type(),
+                type_value: Type::String,
             },
             usage_references: vec![],
         },
@@ -487,7 +465,7 @@ fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
             declaration: Declaration::BuiltIn,
             type_scheme: TypeScheme {
                 type_variables: vec![],
-                type_value: number_type(),
+                type_value: Type::Number,
             },
             usage_references: vec![],
         },
@@ -499,7 +477,7 @@ fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
             declaration: Declaration::BuiltIn,
             type_scheme: TypeScheme {
                 type_variables: vec![],
-                type_value: null_type(),
+                type_value: Type::Null,
             },
             usage_references: vec![],
         },
@@ -524,9 +502,9 @@ fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
             declaration: Declaration::BuiltIn,
             type_scheme: TypeScheme {
                 type_variables: vec![array_type_variable.clone()],
-                type_value: array_type(Type::TypeVariable {
+                type_value: Type::Array(Box::new(Type::TypeVariable {
                     name: array_type_variable,
-                }),
+                })),
             },
             usage_references: vec![],
         },

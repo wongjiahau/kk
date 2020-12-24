@@ -1,0 +1,13 @@
+error: Non-exhaustive cases
+ --> tests/compiler/case_exhaustiveness_enum_6.kk:2:3
+  |
+1 |   let isFriendly =
+2 |     \"cat" => true
+  |  ___^
+3 | |   \"tiger" => false
+  | |____________________^
+  |
+
+Missing case(s):
+
+  \_ => ...

@@ -45,6 +45,10 @@ pub enum Type {
     Union(UnionType),
     Tuple(Vec<Type>),
     Boolean,
+    Number,
+    String,
+    Null,
+    Array(Box<Type>),
 }
 
 #[derive(Debug, Clone)]

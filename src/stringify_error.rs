@@ -222,7 +222,11 @@ pub fn indent_string(string: String, number_of_spaces: usize) -> String {
 
 pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
     match type_value {
-        Type::Boolean => "boolean".to_string(),
+        Type::Boolean => indent_string("boolean".to_string(), indent_level * 2),
+        Type::Number => indent_string("number".to_string(), indent_level * 2),
+        Type::Null => indent_string("null".to_string(), indent_level * 2),
+        Type::String => indent_string("string".to_string(), indent_level * 2),
+        Type::Array(_) => panic!(),
         Type::Named { name, arguments } => {
             let result = if arguments.is_empty() {
                 name
