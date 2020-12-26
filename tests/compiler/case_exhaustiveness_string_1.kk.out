@@ -1,13 +1,15 @@
-error: Non-exhaustive cases
- --> tests/compiler/case_exhaustiveness_string_1.kk:2:3
-  |
-1 |   let isFriendly =
-2 |     \"cat" => true
-  |  ___^
-3 | |   \"tiger" => false
-  | |____________________^
-  |
+1
+========
 
-Missing case(s):
+========
+error:
+  ┌─ tests/compiler/case_exhaustiveness_string_1.kk:2:3
+  │
+2 │ ╭   \"cat" => true
+3 │ │   \"tiger" => false
+  │ ╰───────────────────^ Non-exhaustive cases
+  │
+  = Missing case(s):
 
-  \_ => ...
+      \_ => ...
+

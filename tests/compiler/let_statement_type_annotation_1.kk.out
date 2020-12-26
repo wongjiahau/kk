@@ -1,12 +1,16 @@
-error: Type mismatch
- --> tests/compiler/let_statement_type_annotation_1.kk:1:17
-  |
-1 | let x: string = 2
-  |                 ^
-  |
+1
+========
 
-+---------------+-------------+
-| EXPECTED TYPE | ACTUAL TYPE |
-+---------------+-------------+
-| string        | > number    |
-+---------------+-------------+
+========
+error:
+  ┌─ tests/compiler/let_statement_type_annotation_1.kk:1:17
+  │
+1 │ let x: string = 2
+  │                 ^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - string      | + number    |
+    +---------------+-------------+
+

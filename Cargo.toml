@@ -5,13 +5,14 @@ authors = ["Wong Jia Hau <hou32hou@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+clap = "3.0.0-beta.2"
 prettytable-rs = "^0.8"
 difference = "2.0.0"
 diff = "0.1.12"
-annotate-snippets = "0.9.0"
 peeking_take_while = "0.1.2"
 colored = "2"
 strip-ansi-escapes = "0.1.0"
+codespan-reporting = "0.11.0"
 
 [dev-dependencies]
 insta = "0.16"

@@ -1,13 +1,14 @@
-error: Non-exhaustive cases
- --> tests/compiler/case_exhaustiveness_array_1.kk:2:3
-  |
-1 |   let foo =
-2 |     \[] => true
-  |  ___^
-3 | |   \[x, ...[]] => false
-  | |_______________________^
-  |
+1
+========
 
-Missing case(s):
+========
+error:
+  ┌─ tests/compiler/case_exhaustiveness_array_1.kk:2:3
+  │
+2 │ ╭   \[] => true
+3 │ │   \[x, ...[]] => false
+  │ ╰──────────────────────^ Non-exhaustive cases
+  │
+  = Missing case(s):
 
-  \[_, ...[_, ..._]] => ...
+      \[_, ...[_, ..._]] => ...

@@ -1,19 +1,27 @@
-error: Type mismatch
-  --> tests/compiler/enum_1.kk:1:16
-   |
-...
- 8 |   let xs = #cons({
-   |  ________________^
-...  |
-14 | | })
-   | |__^
-   |
+1
+========
 
-+----------------------+-------------------------+
-|    EXPECTED TYPE     |       ACTUAL TYPE       |
-+----------------------+-------------------------+
-| {                    |   {                     |
-|   current: number    |     current: number     |
-|   next: List<number> | >   next: List<boolean> |
-| }                    |   }                     |
-+----------------------+-------------------------+
+========
+error:
+   ┌─ tests/compiler/enum_1.kk:8:16
+   │
+ 8 │   let xs = #cons({
+   │ ╭────────────────^
+ 9 │ │   current = 1,
+10 │ │   next = #cons({
+11 │ │     current = true,
+12 │ │     next = #nil
+13 │ │   })
+14 │ │ })
+   │ ╰─^ Type mismatch
+   │
+   = +---------------------+---------------------+
+     |    EXPECTED TYPE    |     ACTUAL TYPE     |
+     +---------------------+---------------------+
+     |   {                 |   {                 |
+     |     current: number |     current: number |
+     |     next: List<     |     next: List<     |
+     | -     number        | +     boolean       |
+     |     >               |     >               |
+     |   }                 |   }                 |
+     +---------------------+---------------------+

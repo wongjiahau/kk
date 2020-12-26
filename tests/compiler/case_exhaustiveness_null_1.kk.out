@@ -1,10 +1,12 @@
-error: Unreachable case
- --> tests/compiler/case_exhaustiveness_null_1.kk:1:4
-  |
-...
-3 |   \null => false
-  |    ^^^^
-  |
+1
+========
 
-This case is unreachable because all possible cases are already handled by previous branches, therefore please remove this branch.
+========
+error:
+  ┌─ tests/compiler/case_exhaustiveness_null_1.kk:3:4
+  │
+3 │   \null => false
+  │    ^^^^ Unreachable case
+  │
+  = This case is unreachable because all possible cases are already handled by previous branches.
 

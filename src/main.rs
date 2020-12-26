@@ -10,13 +10,18 @@ mod transpile;
 use transpile::*;
 
 mod parse;
-use parse::*;
 
 mod tokenize;
 use tokenize::*;
 
 mod stringify_error;
 use stringify_error::*;
+
+mod cli;
+use cli::*;
+
+mod compile;
+use compile::*;
 
 mod pattern;
 
@@ -25,8 +30,11 @@ fn run_all_tests() {
     use colored::*;
     use difference::Changeset;
     use std::fs;
+    use std::process::Command;
+
     let test_dir = "tests/compiler/";
     let dirs = fs::read_dir(test_dir).expect("Failed to read directory");
+
     for maybe_entry in dirs {
         let entry = maybe_entry.expect("Failed to read entry");
         let filename = entry
@@ -39,21 +47,49 @@ fn run_all_tests() {
             let input_filename = filename;
             let input = fs::read_to_string(&input_filename).expect("failed to read input file");
             print!("{}", input_filename);
-            let actual_output = compile(
-                Source::File {
-                    path: input_filename.clone(),
-                },
-                input.clone(),
-            )
-            .trim()
-            .to_string();
+            let actual_output = {
+                let output = Command::new("./target/debug/kk")
+                    .arg("run")
+                    .arg(&input_filename)
+                    .output()
+                    .expect("Failed to run KK CLI");
+
+                let exit_code = match output.status.code() {
+                    Some(code) => code.to_string(),
+                    None => "".to_string(),
+                };
+
+                vec![
+                    exit_code,
+                    strip_line_trailing_spaces(
+                        String::from_utf8_lossy(&output.stdout.clone()).to_string(),
+                    ),
+                    strip_line_trailing_spaces(
+                        String::from_utf8_lossy(&output.stderr.clone()).to_string(),
+                    ),
+                ]
+                .join("\n========\n")
+                // Output {
+                //     stdout: strip_line_trailing_spaces(String::from_utf8_lossy(
+                //         &output.stdout.clone(),
+                //     ).to_string()),
+                //     stderr: strip_line_trailing_spaces(String::from_utf8_lossy(
+                //         &output.stderr.clone(),
+                //     ).to_string()),
+                //     status: output.status.code(),
+                // }
+            };
 
             let actual_output = strip_line_trailing_spaces(actual_output);
 
-            let stripped_actual_output = String::from_utf8(
-                strip_ansi_escapes::strip(actual_output.clone()).expect("Failed to strip color"),
-            )
-            .unwrap();
+            let stripped_actual_output = strip_line_trailing_spaces(
+                String::from_utf8(
+                    strip_ansi_escapes::strip(actual_output.clone())
+                        .expect("Failed to strip color"),
+                )
+                .unwrap(),
+            );
+
             let output_filename = input_filename.clone() + ".out";
             let expected_output = fs::read_to_string(output_filename.as_str())
                 .expect(format!("failed to read output file for {}", output_filename).as_str())
@@ -62,8 +98,11 @@ fn run_all_tests() {
 
             let expected_output = strip_line_trailing_spaces(expected_output);
 
+            // println!("\nactual = {:?}", stripped_actual_output.chars());
+            // println!("expect = {:?}", expected_output.chars());
+
             if stripped_actual_output.trim() != expected_output {
-                let changeset = Changeset::new(&expected_output, &actual_output, "");
+                let changeset = Changeset::new(&expected_output, &stripped_actual_output, "");
                 println!("{}", "=".repeat(10));
                 println!(
                     "ASSERTION FAILED FOR:\n\n{}",
@@ -84,7 +123,7 @@ fn run_all_tests() {
                     indent_string(changeset.to_string(), 4)
                 );
                 println!("{}", "=".repeat(10));
-                panic!()
+                panic!("ASSERTION FAILED.")
             } else {
                 println!("{}", " PASSED".green());
             }
@@ -101,11 +140,7 @@ fn run_all_tests() {
 }
 
 fn main() {
-    println!("{}", execute("let x = 2".to_string()));
-    println!(
-        "{:?}",
-        transpile_source("let f = (x: number, y) => 'helo' | x => '2'".to_string())
-    )
+    cli();
 }
 
 #[derive(Debug)]
@@ -114,29 +149,12 @@ pub enum CompileError {
     ParseError(ParseError),
 }
 
-pub fn compile(source: Source, code: String) -> String {
-    match source_to_statements(code.clone()) {
-        Err(parse_error) => format!("{:#?}", parse_error),
-        Ok(statements) => match unify_program(Program {
-            source: source.clone(),
-            statements,
-        }) {
-            Err(unify_error) => stringify_unify_error(source, code, unify_error),
-            Ok(_) => "".to_string(),
-        },
-    }
-}
-
 pub fn type_check_source(code: String) -> String {
     let source = Source::NonFile {
         env_name: "TEST".to_string(),
     };
-    compile(source, code)
-}
-
-pub fn source_to_statements(source: String) -> Result<Vec<Statement>, ParseError> {
-    let tokens = tokenize(source)?;
-    parse_statements(tokens)
+    compile(source, code);
+    panic!()
 }
 
 pub fn transpile_source(source: String) -> Result<String, ParseError> {

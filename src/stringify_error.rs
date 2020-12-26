@@ -1,14 +1,16 @@
 use crate::ast::*;
 use crate::pattern::TypedDestructurePattern;
 use crate::unify::{UnifyError, UnifyErrorKind};
-use annotate_snippets::{
-    display_list::{DisplayList, FormatOptions},
-    snippet::{Annotation, AnnotationType, Slice, Snippet, SourceAnnotation},
-};
 use colored::*;
 use prettytable::{format::Alignment, Cell, Row, Table};
+use std::ops::Range;
 
-pub fn stringify_unify_error(source: Source, code: String, unify_error: UnifyError) -> String {
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::files::SimpleFiles;
+use codespan_reporting::term;
+use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+
+pub fn print_unify_error(source: Source, code: String, unify_error: UnifyError) {
     let origin = match source {
         Source::File { path } => path,
         Source::NonFile { env_name } => env_name,
@@ -24,39 +26,34 @@ pub fn stringify_unify_error(source: Source, code: String, unify_error: UnifyErr
     //         .get(unify_error.position.character_index_end)
     // );
 
-    let snippet = Snippet {
-        title: Some(Annotation {
-            label: Some(&error.summary),
-            id: None,
-            annotation_type: AnnotationType::Error,
-        }),
-        footer: vec![],
-        slices: vec![Slice {
-            source: &code,
-            line_start: 1,
-            origin: Some(&origin),
-            fold: true,
-            annotations: vec![SourceAnnotation {
-                label: "",
-                annotation_type: AnnotationType::Error,
-                range: {
-                    let start = unify_error.position.character_index_start;
-                    let end = unify_error.position.character_index_end;
-                    (start, end + 1)
-                },
-            }],
-        }],
-        opt: FormatOptions {
-            // color: true,
-            // anonymized_line_numbers: false,
-            // margin: None,
-            ..Default::default()
-        },
+    let range = {
+        let start = unify_error.position.character_index_start;
+        let end = unify_error.position.character_index_end;
+        (start, end + 1)
     };
 
-    let code_snippet = DisplayList::from(snippet);
+    let mut files = SimpleFiles::new();
 
-    format!("{}\n\n{}", code_snippet, &error.body)
+    let file_id = files.add(origin, code);
+    let diagnostic = Diagnostic::error()
+        .with_labels(vec![Label::primary(
+            file_id,
+            Range {
+                start: range.0,
+                end: range.1,
+            },
+        )
+        .with_message(error.summary)])
+        .with_notes(vec![error.body]);
+
+    // We now set up the writer and configuration, and then finally render the
+    // diagnostic to standard error.
+
+    let writer = StandardStream::stderr(ColorChoice::AlwaysAnsi);
+    let config = codespan_reporting::term::Config::default();
+
+    term::emit(&mut writer.lock(), &config, &files, &diagnostic).expect("Unable to emit output");
+    std::process::exit(1);
 }
 
 #[derive(Debug)]
@@ -79,8 +76,8 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             let expected_type = diffs
                 .clone()
                 .filter_map(|diff| match diff {
-                    diff::Result::Left(left) => Some(left.green().to_string()),
-                    diff::Result::Both(left, _) => Some(left.to_string()),
+                    diff::Result::Left(left) => Some(format!("- {}", left.green().to_string() )),
+                    diff::Result::Both(left, _) => Some(format!("  {}", left.to_string() )),
                     diff::Result::Right(_) => None,
                 })
                 .collect::<Vec<String>>()
@@ -90,7 +87,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 .filter_map(|diff| match diff {
                     diff::Result::Left(_) => None,
                     diff::Result::Both(_, right) => Some(format!("  {}", right)),
-                    diff::Result::Right(right) => Some(format!("> {}", right).red().to_string()),
+                    diff::Result::Right(right) => Some(format!("+ {}", right).red().to_string()),
                 })
                 .collect::<Vec<String>>()
                 .join("\n");
@@ -156,7 +153,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::UnreachableCase => StringifiedError {
             summary: "Unreachable case".to_string(),
-            body: "This case is unreachable because all possible cases are already handled by previous branches, therefore please remove this branch.".to_string()
+            body: "This case is unreachable because all possible cases are already handled by previous branches.".to_string()
         },
         other => panic!("{:#?}", other),
     }
@@ -235,17 +232,23 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Number => indent_string("number".to_string(), indent_level * 2),
         Type::Null => indent_string("null".to_string(), indent_level * 2),
         Type::String => indent_string("string".to_string(), indent_level * 2),
-        Type::Array(_) => panic!(),
+        Type::Array(element_type) => indent_string(
+            format!(
+                "Array<\n{}\n>",
+                stringify_type(*element_type, indent_level + 1)
+            ),
+            indent_level * 2,
+        ),
         Type::Named { name, arguments } => {
             let result = if arguments.is_empty() {
                 name
             } else {
                 format!(
-                    "{}<{}>",
+                    "{}<\n{}\n>",
                     name,
                     arguments
                         .into_iter()
-                        .map(|type_value| stringify_type(type_value, indent_level))
+                        .map(|type_value| stringify_type(type_value, indent_level + 1))
                         .collect::<Vec<String>>()
                         .join(", ")
                 )

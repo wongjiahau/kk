@@ -1,9 +1,11 @@
-error: Function arguments length mismatch
- --> tests/compiler/function_arguments_mismatch.kk:1:5
-  |
-...
-3 |     \(x, y) => 1
-  |     ^^^^^^^^^^^^
-  |
+1
+========
 
-Expected 1 argument, but this function has 2 arguments
+========
+error:
+  ┌─ tests/compiler/function_arguments_mismatch.kk:3:5
+  │
+3 │     \(x, y) => 1
+  │     ^^^^^^^^^^^^ Function arguments length mismatch
+  │
+  = Expected 1 argument, but this function has 2 arguments
