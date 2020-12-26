@@ -1,5 +1,5 @@
 error: Non-exhaustive cases
- --> tests/compiler/case_exhaustiveness_enum_6.kk:2:3
+ --> tests/compiler/case_exhaustiveness_string_1.kk:2:3
   |
 1 |   let isFriendly =
 2 |     \"cat" => true

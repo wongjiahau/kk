@@ -18,6 +18,8 @@ use tokenize::*;
 mod stringify_error;
 use stringify_error::*;
 
+mod pattern;
+
 #[test]
 fn run_all_tests() {
     use colored::*;

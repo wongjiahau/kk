@@ -1,0 +1,15 @@
+error: Non-exhaustive cases
+ --> tests/compiler/case_exhaustiveness_boolean_2.kk:2:3
+  |
+1 |   let and =
+2 |     \(true, true) => true
+  |  ___^
+3 | |   \(false, true) => false
+  | |__________________________^
+  |
+
+Missing case(s):
+
+  \(true, false) => ...
+  \(false, false) => ...
+

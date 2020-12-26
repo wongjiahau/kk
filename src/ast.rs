@@ -152,9 +152,7 @@ pub enum DestructurePattern {
     Array {
         left_square_bracket: Token,
         right_square_bracket: Token,
-        initial_elements: Vec<DestructurePattern>,
         spread: Option<DestructurePatternArraySpread>,
-        tail_elements: Vec<DestructurePattern>,
     },
     Tuple {
         left_parenthesis: Token,
@@ -165,8 +163,9 @@ pub enum DestructurePattern {
 
 #[derive(Debug, Clone)]
 pub struct DestructurePatternArraySpread {
-    pub spread_symbol: Token,
-    pub binding: Option<Token>,
+    pub left: Box<DestructurePattern>,
+    pub spread_token: Token,
+    pub right: Box<DestructurePattern>,
 }
 
 #[derive(Debug, Clone)]

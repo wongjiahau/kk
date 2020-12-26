@@ -1,0 +1,9 @@
+error: Unreachable case
+ --> tests/compiler/case_exhaustiveness_boolean_1.kk:1:4
+  |
+...
+4 |   \(_, _) => false
+  |    ^^^^^^
+  |
+
+This case is unreachable because all possible cases are already handled by previous branches, therefore please remove this branch.

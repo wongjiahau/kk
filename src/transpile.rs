@@ -228,98 +228,84 @@ pub fn transpile_function_destructure_pattern(
             conditions: vec![],
             bindings: vec![],
         },
-        DestructurePattern::Array {
-            initial_elements,
-            spread,
-            tail_elements,
-            ..
-        } => {
-            let transpiled_destructure_pattern = match spread {
-                Some(spread) => match spread.binding {
-                    Some(token) => TranspiledDestructurePattern {
-                        conditions: vec![],
-                        bindings: vec![format!(
-                            "var {} = {}.slice({}, {}.length - {})",
-                            token.representation,
-                            from_expression,
-                            initial_elements.len(),
-                            from_expression,
-                            tail_elements.len()
-                        )],
-                    },
-                    None => TranspiledDestructurePattern {
-                        conditions: vec![],
-                        bindings: vec![],
-                    },
+        DestructurePattern::Array { spread, .. } => {
+            match spread {
+                None => TranspiledDestructurePattern {
+                    conditions: vec![format!("{}.length === 0", from_expression)],
+                    bindings: vec![],
                 },
-                None => {
-                    let expected_array_length = initial_elements.len() + tail_elements.len();
+                Some(spread) => join_transpiled_destructure_patterns(vec![
                     TranspiledDestructurePattern {
-                        conditions: vec![format!(
-                            "{}.length === {}",
-                            from_expression, expected_array_length
-                        )],
+                        conditions: vec![format!("{}.length > 0", from_expression)],
                         bindings: vec![],
-                    }
-                }
-            };
-            let initial_elements_bindings = initial_elements.into_iter().enumerate().fold(
-                TranspiledDestructurePattern {
-                    conditions: vec![],
-                    bindings: vec![],
-                },
-                |result, (index, element)| {
-                    let element_check = TranspiledDestructurePattern {
-                        conditions: vec![format!("{}[{}] !== undefined", from_expression, index)],
-                        bindings: vec![],
-                    };
-                    let transpiled_destructure_pattern = transpile_function_destructure_pattern(
-                        element,
-                        format!("{}[{}]", from_expression, index),
-                    );
-                    join_transpiled_destructure_patterns(vec![
-                        result,
-                        element_check,
-                        transpiled_destructure_pattern,
-                    ])
-                },
-            );
-            let tail_elements_bindings = tail_elements.into_iter().enumerate().fold(
-                TranspiledDestructurePattern {
-                    conditions: vec![],
-                    bindings: vec![],
-                },
-                |result, (index, element)| {
-                    let element_check = TranspiledDestructurePattern {
-                        conditions: vec![format!(
-                            "{}[{}.length - {}] !== undefined",
-                            from_expression,
-                            from_expression,
-                            index + 1,
-                        )],
-                        bindings: vec![],
-                    };
-                    let transpiled_destructure_pattern = transpile_function_destructure_pattern(
-                        element,
-                        format!(
-                            "{}[{}.length - {}]",
-                            from_expression,
-                            from_expression,
-                            index + 1
-                        ),
-                    );
-                    join_transpiled_destructure_patterns(vec![
-                        result,
-                        element_check,
-                        transpiled_destructure_pattern,
-                    ])
-                },
-            );
-            join_transpiled_destructure_patterns(vec![
-                transpiled_destructure_pattern,
-                initial_elements_bindings,
-                tail_elements_bindings,
-            ])
+                    },
+                    transpile_function_destructure_pattern(
+                        *spread.left,
+                        format!("{}[0]", from_expression),
+                    ),
+                    transpile_function_destructure_pattern(
+                        *spread.right,
+                        format!("{}.slice(1)", from_expression),
+                    ),
+                ]),
+            }
+            // let initial_elements_bindings = initial_elements.into_iter().enumerate().fold(
+            //     TranspiledDestructurePattern {
+            //         conditions: vec![],
+            //         bindings: vec![],
+            //     },
+            //     |result, (index, element)| {
+            //         let element_check = TranspiledDestructurePattern {
+            //             conditions: vec![format!("{}[{}] !== undefined", from_expression, index)],
+            //             bindings: vec![],
+            //         };
+            //         let transpiled_destructure_pattern = transpile_function_destructure_pattern(
+            //             element,
+            //             format!("{}[{}]", from_expression, index),
+            //         );
+            //         join_transpiled_destructure_patterns(vec![
+            //             result,
+            //             element_check,
+            //             transpiled_destructure_pattern,
+            //         ])
+            //     },
+            // );
+            // let tail_elements_bindings = tail_elements.into_iter().enumerate().fold(
+            //     TranspiledDestructurePattern {
+            //         conditions: vec![],
+            //         bindings: vec![],
+            //     },
+            //     |result, (index, element)| {
+            //         let element_check = TranspiledDestructurePattern {
+            //             conditions: vec![format!(
+            //                 "{}[{}.length - {}] !== undefined",
+            //                 from_expression,
+            //                 from_expression,
+            //                 index + 1,
+            //             )],
+            //             bindings: vec![],
+            //         };
+            //         let transpiled_destructure_pattern = transpile_function_destructure_pattern(
+            //             element,
+            //             format!(
+            //                 "{}[{}.length - {}]",
+            //                 from_expression,
+            //                 from_expression,
+            //                 index + 1
+            //             ),
+            //         );
+            //         join_transpiled_destructure_patterns(vec![
+            //             result,
+            //             element_check,
+            //             transpiled_destructure_pattern,
+            //         ])
+            //     },
+            // );
+            // join_transpiled_destructure_patterns(vec![
+            //     transpiled_destructure_pattern,
+            //     initial_elements_bindings,
+            //     tail_elements_bindings,
+            // ])
         }
         DestructurePattern::Identifier(identifier) => TranspiledDestructurePattern {
             conditions: vec![],

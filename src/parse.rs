@@ -740,50 +740,74 @@ pub fn parse_destructure_pattern(
             TokenType::KeywordNull => Ok(DestructurePattern::Null(token.clone())),
             TokenType::LeftSquareBracket => {
                 let left_square_bracket = token.clone();
-                let mut initial_elements: Vec<DestructurePattern> = Vec::new();
-                let mut tail_elements: Vec<DestructurePattern> = Vec::new();
-                let mut spread: Option<DestructurePatternArraySpread> = None;
-                loop {
-                    match it.peek() {
-                        Some(Token {
-                            token_type: TokenType::RightSquareBracket,
-                            ..
-                        }) => break,
-                        Some(Token {
-                            token_type: TokenType::Spread,
-                            ..
-                        }) => {
-                            if spread.is_some() {
-                                return Err(ParseError::ArrayCannotContainMoreThanOneSpread {
-                                    extraneous_spread: it.next().unwrap().clone(),
-                                });
-                            } else {
-                                spread = Some(DestructurePatternArraySpread {
-                                    spread_symbol: eat_token(it, TokenType::Spread)?,
-                                    binding: try_eat_token(it, TokenType::Identifier),
-                                })
-                            }
-                        }
-                        _ => {
-                            let destructure_pattern = parse_destructure_pattern(it)?;
-                            match spread {
-                                Some(_) => tail_elements.push(destructure_pattern),
-                                None => initial_elements.push(destructure_pattern),
-                            }
-                        }
-                    }
-                    if try_eat_token(it, TokenType::Comma).is_none() {
-                        break;
-                    }
+                if let Some(right_square_bracket) = try_eat_token(it, TokenType::RightSquareBracket)
+                {
+                    Ok(DestructurePattern::Array {
+                        left_square_bracket,
+                        right_square_bracket,
+                        spread: None,
+                    })
+                } else {
+                    let left = Box::new(parse_destructure_pattern(it)?);
+                    eat_token(it, TokenType::Comma)?;
+                    let spread_token = eat_token(it, TokenType::Spread)?;
+                    let right = Box::new(parse_destructure_pattern(it)?);
+                    let right_square_bracket = eat_token(it, TokenType::RightSquareBracket)?;
+                    Ok(DestructurePattern::Array {
+                        left_square_bracket,
+                        right_square_bracket,
+                        spread: Some(DestructurePatternArraySpread {
+                            left,
+                            spread_token,
+                            right,
+                        }),
+                    })
                 }
-                let right_square_bracket = eat_token(it, TokenType::RightSquareBracket)?;
-                Ok(DestructurePattern::Array {
-                    left_square_bracket,
-                    right_square_bracket,
-                    initial_elements,
-                    spread,
-                    tail_elements,
-                })
+                // let mut initial_elements: Vec<DestructurePattern> = Vec::new();
+                // let mut tail_elements: Vec<DestructurePattern> = Vec::new();
+                // let mut spread: Option<DestructurePatternArraySpread> = None;
+                // loop {
+                //     match it.peek() {
+                //         Some(Token {
+                //             token_type: TokenType::RightSquareBracket,
+                //             ..
+                //         }) => break,
+                // Some(Token {
+                //     token_type: TokenType::Spread,
+                //     ..
+                // }) => {
+                //     if spread.is_some() {
+                //         return Err(ParseError::ArrayCannotContainMoreThanOneSpread {
+                //             extraneous_spread: it.next().unwrap().clone(),
+                //         });
+                //     } else {
+                //         spread = Some(DestructurePatternArraySpread {
+                //             spread_symbol: eat_token(it, TokenType::Spread)?,
+                //             binding: try_eat_token(it, TokenType::Identifier),
+                //         })
+                //     }
+                // }
+                // _ => {
+
+                //     let destructure_pattern = parse_destructure_pattern(it)?;
+                //     match spread {
+                //         Some(_) => tail_elements.push(destructure_pattern),
+                //         None => initial_elements.push(destructure_pattern),
+                //     }
+                // }
+                // }
+                // if try_eat_token(it, TokenType::Comma).is_none() {
+                // break;
+                // }
+                // }
+                // let right_square_bracket = eat_token(it, TokenType::RightSquareBracket)?;
+                // Ok(DestructurePattern::Array {
+                //     left_square_bracket,
+                //     right_square_bracket,
+                //     initial_elements,
+                //     spread,
+                //     tail_elements,
+                // })
             }
             _ => Err(ParseError::ExpectedDestructurePattern {
                 token: token.clone(),
