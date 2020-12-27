@@ -1,19 +1,113 @@
 use crate::ast::*;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
-use std::cell::{Cell, RefCell, RefMut};
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 type Substitution = HashMap<String, SubstitutionItem>;
 
 #[derive(Debug, Clone)]
-pub struct Environment<'a> {
-    parent: Option<&'a Environment<'a>>,
-    value_symbols: RefCell<HashMap<String, ValueSymbol>>,
-    type_symbols: RefCell<HashMap<String, TypeSymbol>>,
-    constructor_symbols: RefCell<HashMap<String, ConstructorSymbol>>,
-    type_variable_substitutions: RefCell<Substitution>,
+pub struct Scope {
+    /// Used for generating the next scope name
+    next_scope_name: usize,
+
+    /// Refer to the name of the current scope.
+    /// This will be mutated when stepping in or out of a scope.
+    /// This is used for querying and inserting new symbols.
+    current_scope_name: usize,
+
+    /// This graph store the relationship of each scopes.
+    /// Used for querying the parent scope of a given scope.
+    scope_graph: Vec<ScopePair>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopePair {
+    child: usize,
+    parent: usize,
+}
+
+impl Scope {
+    pub fn new() -> Scope {
+        Scope {
+            next_scope_name: 0,
+            current_scope_name: 0,
+            scope_graph: Vec::new(),
+        }
+    }
+
+    pub fn step_into_new_child_scope(&mut self) {
+        self.next_scope_name += 1;
+        let scope_name = self.next_scope_name;
+
+        // let parent = self.scope_graph.add_node(self.current_scope_name.to_string());
+        // let child = self.scope_graph.add_node(scope_name.to_string());
+
+        self.scope_graph.push(ScopePair {
+            child: scope_name,
+            parent: self.current_scope_name,
+        });
+
+        self.current_scope_name = scope_name;
+
+        // self.scope_graph.add_edge(parent, child, 99);
+
+        // self.scope_graph.extend_with_edges(&[(child, parent)]);
+    }
+
+    pub fn step_out_to_parent_scope(&mut self) {
+        match self.get_parent_scope_name(self.current_scope_name) {
+            Some(scope_name) => self.current_scope_name = scope_name,
+            None => (),
+        }
+    }
+
+    pub fn get_current_scope_name(&self) -> usize {
+        self.current_scope_name
+    }
+
+    pub fn get_children_scope_names(&self, parent_scope_name: usize) -> Vec<usize> {
+        self.scope_graph
+            .iter()
+            .filter_map(|ScopePair { child, parent }| {
+                if *parent == parent_scope_name {
+                    Some(*child)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<usize>>()
+    }
+
+    pub fn get_parent_scope_name(&self, child_scope_name: usize) -> Option<usize> {
+        match self
+            .scope_graph
+            .iter()
+            .filter_map(|ScopePair { child, parent }| {
+                if *child == child_scope_name {
+                    Some(*parent)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<usize>>()
+            .first()
+        {
+            Some(parent_scope_name) => Some(*parent_scope_name),
+            None => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Environment {
+    // parent: Option<&'a Environment<'a>>,
+    value_symbols: HashMap<String, ValueSymbol>,
+    type_symbols: HashMap<String, TypeSymbol>,
+    constructor_symbols: HashMap<String, ConstructorSymbol>,
+    type_variable_substitutions: Substitution,
     type_variable_index: Cell<usize>,
+    scope: Scope,
     pub source: Source,
 }
 
@@ -24,51 +118,64 @@ enum SubstitutionItem {
     NotSubstituted,
 }
 
-impl<'a> Environment<'a> {
-    pub fn new_root(source: Source) -> Environment<'a> {
-        Environment {
-            parent: None,
-            value_symbols: RefCell::new(HashMap::new()),
-            type_symbols: RefCell::new(built_in_type_symbols()),
-            constructor_symbols: RefCell::new(HashMap::new()),
-            type_variable_substitutions: RefCell::new(HashMap::new()),
+impl Environment {
+    // pub fn new_root(source: Source) -> Environment<'a> {
+    //     Environment {
+    //         parent: None,
+    //         value_symbols: RefCell::new(HashMap::new()),
+    //         type_symbols: RefCell::new(built_in_type_symbols()),
+    //         constructor_symbols: RefCell::new(HashMap::new()),
+    //         type_variable_substitutions: RefCell::new(HashMap::new()),
+    //         type_variable_index: Cell::new(0),
+    //         source,
+    //         scope: Scope::new(),
+    //     }
+    // }
+
+    pub fn new(
+        // parent: &'a Environment
+        source: &Source,
+    ) -> Environment {
+        let mut result = Environment {
+            source: source.clone(),
+            // parent: Some(parent),
+            value_symbols: (HashMap::new()),
+            type_symbols: (HashMap::new()),
+            constructor_symbols: (HashMap::new()),
+            type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
-            source,
-        }
+            scope: Scope::new(),
+        };
+
+        built_in_type_symbols()
+            .into_iter()
+            .for_each(|(name, type_symbol)| result.insert_built_in_type_symbol(name, type_symbol));
+
+        result
     }
 
-    pub fn new(parent: &'a Environment) -> Environment<'a> {
-        Environment {
-            source: parent.source.clone(),
-            parent: Some(parent),
-            value_symbols: RefCell::new(HashMap::new()),
-            type_symbols: RefCell::new(HashMap::new()),
-            constructor_symbols: RefCell::new(HashMap::new()),
-            type_variable_substitutions: RefCell::new(HashMap::new()),
-            type_variable_index: Cell::new(0),
-        }
+    pub fn current_scope_name(&self) -> usize {
+        self.scope.get_current_scope_name()
     }
 
-    pub fn get_next_type_variable_name(&self) -> String {
-        let root = self.get_root_environment();
-        let type_variable_index = root.type_variable_index.get();
+    pub fn get_next_type_variable_name(&mut self) -> String {
+        let type_variable_index = self.type_variable_index.get();
         let name = format!("@TVAR{}", type_variable_index);
-        root.type_variable_index.set(type_variable_index + 1);
+        self.type_variable_index.set(type_variable_index + 1);
         // self.type_variable_index += 1;
 
-        let mut type_variable_substitutions = self.type_variable_substitutions.borrow_mut();
-
-        type_variable_substitutions.insert(name.clone(), SubstitutionItem::NotSubstituted);
+        self.type_variable_substitutions
+            .insert(name.clone(), SubstitutionItem::NotSubstituted);
 
         name
     }
 
-    fn get_root_environment(&self) -> &Environment {
-        match self.parent {
-            Some(parent) => parent.get_root_environment(),
-            None => self,
-        }
-    }
+    // fn get_root_environment(&self) -> &Environment {
+    //     match self.parent {
+    //         Some(parent) => parent.get_root_environment(),
+    //         None => self,
+    //     }
+    // }
 
     pub fn introduce_type_variable(
         &mut self,
@@ -83,22 +190,21 @@ impl<'a> Environment<'a> {
             self.insert_value_symbol(
                 &variable_name,
                 ValueSymbol {
-                    declaration: Declaration::UserDefined(
-                        self.source.clone(),
-                        variable_name.clone(),
-                    ),
+                    declaration: Declaration::UserDefined {
+                        source: self.source.clone(),
+                        token: variable_name.clone(),
+                        scope_name: self.scope.get_current_scope_name(),
+                    },
                     actual_type: TypeScheme {
                         type_variables: vec![],
                         type_value: type_value.clone(),
                     },
-                    usage_references: vec![],
+                    usage_references: Default::default(),
                 },
             )?;
         }
 
-        let mut type_variable_substitutions = self.type_variable_substitutions.borrow_mut();
-
-        type_variable_substitutions
+        self.type_variable_substitutions
             .insert(new_type_variable_name, SubstitutionItem::NotSubstituted);
 
         Ok(type_value)
@@ -124,7 +230,6 @@ impl<'a> Environment<'a> {
                     };
 
                     self.type_variable_substitutions
-                        .borrow_mut()
                         .insert(type_variable_name, substitution_item);
                     Ok(())
                 }
@@ -135,7 +240,6 @@ impl<'a> Environment<'a> {
                     other => SubstitutionItem::Type(other),
                 };
                 self.type_variable_substitutions
-                    .borrow_mut()
                     .insert(type_variable_name, substitution_item);
                 Ok(())
             }
@@ -253,11 +357,7 @@ impl<'a> Environment<'a> {
         previous_type_variable: String,
         type_variable_name: String,
     ) -> Option<Type> {
-        match self
-            .type_variable_substitutions
-            .borrow()
-            .get(&type_variable_name)
-        {
+        match self.type_variable_substitutions.get(&type_variable_name) {
             Some(SubstitutionItem::Type(type_value)) => Some(type_value.clone()),
             Some(SubstitutionItem::TypeVariable(type_variable_name)) => {
                 if *type_variable_name == initial_type_variable_name
@@ -282,13 +382,82 @@ impl<'a> Environment<'a> {
         }
     }
 
+    pub fn step_into_new_child_scope(&mut self) {
+        self.scope.step_into_new_child_scope()
+    }
+
+    pub fn step_out_to_parent_scope(&mut self) {
+        self.scope.step_out_to_parent_scope()
+    }
+
     pub fn insert_value_symbol(
         &mut self,
         token: &Token,
         value_symbol: ValueSymbol,
     ) -> Result<(), UnifyError> {
-        let value_symbols = self.value_symbols.borrow_mut();
-        insert_symbol(value_symbols, token, &self.source, value_symbol)
+        Environment::insert_symbol(
+            self.current_scope_name(),
+            &mut self.value_symbols,
+            SymbolName::Token(token.clone()),
+            &self.source,
+            value_symbol,
+        )
+    }
+
+    pub fn check_for_unused_value_symbols(
+        &self,
+        current_scope_name: usize,
+    ) -> Result<(), UnifyError> {
+        match self
+            .value_symbols
+            .iter()
+            .filter_map(|(_, symbol)| {
+                if symbol.usage_references.borrow().is_empty() {
+                    match &symbol.declaration {
+                        Declaration::UserDefined {
+                            token, scope_name, ..
+                        } => {
+                            if *scope_name == current_scope_name {
+                                Some(token.clone())
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<Token>>()
+            .first()
+        {
+            None => {
+                // Check for unused variables in children scopes
+                let children_scope_names = self.scope.get_children_scope_names(current_scope_name);
+                for child_scope_name in &children_scope_names {
+                    self.check_for_unused_value_symbols(*child_scope_name)?;
+                }
+                // children_scope_names.into_iter().map(|child_scope_name| {
+                //     self.check_for_unused_value_symbols(child_scope_name)
+                // }).collect::<Result<Vec<()>, UnifyError>>()?;
+                Ok(())
+            }
+            Some(token) => Err(UnifyError {
+                position: token.position,
+                kind: UnifyErrorKind::UnusedVariale,
+            }),
+        }
+    }
+
+    fn insert_built_in_type_symbol(&mut self, name: String, type_symbol: TypeSymbol) {
+        Environment::insert_symbol(
+            self.current_scope_name(),
+            &mut self.type_symbols,
+            SymbolName::String(name),
+            &self.source,
+            type_symbol,
+        );
     }
 
     pub fn insert_type_symbol(
@@ -296,8 +465,13 @@ impl<'a> Environment<'a> {
         token: &Token,
         type_symbol: TypeSymbol,
     ) -> Result<(), UnifyError> {
-        let type_symbols = self.type_symbols.borrow_mut();
-        insert_symbol(type_symbols, token, &self.source, type_symbol)
+        Environment::insert_symbol(
+            self.current_scope_name(),
+            &mut self.type_symbols,
+            SymbolName::Token(token.clone()),
+            &self.source,
+            type_symbol,
+        )
     }
 
     pub fn insert_constructor_symbol(
@@ -305,13 +479,96 @@ impl<'a> Environment<'a> {
         token: &Token,
         constructor_symbol: ConstructorSymbol,
     ) -> Result<(), UnifyError> {
-        let constructor_symbols = self.constructor_symbols.borrow_mut();
-        insert_symbol(constructor_symbols, token, &self.source, constructor_symbol)
+        Environment::insert_symbol(
+            self.current_scope_name(),
+            &mut self.constructor_symbols,
+            SymbolName::Token(token.clone()),
+            &self.source,
+            constructor_symbol,
+        )
+    }
+
+    fn insert_symbol<Symbol: Symbolizable>(
+        current_scope_name: usize,
+        symbols: &mut HashMap<String, Symbol>,
+        symbol_name: SymbolName,
+        source: &Source,
+        new_symbol: Symbol,
+    ) -> Result<(), UnifyError> {
+        match symbol_name {
+            SymbolName::String(name) => match symbols.get(&name) {
+                Some(_) => panic!("Compiler error, duplicated built in symbol name {}", name),
+                None => {
+                    let name = Environment::get_symbol_name(name, current_scope_name);
+                    symbols.insert(name, new_symbol);
+                    Ok(())
+                }
+            },
+            SymbolName::Token(token) => {
+                let name = token.representation.clone();
+                match symbols.get(&name) {
+                    Some(symbol) => Err(UnifyError {
+                        position: token.position,
+                        kind: UnifyErrorKind::DuplicatedIdentifier {
+                            first_declared_at: symbol.declaration(),
+                            then_declared_at: Declaration::UserDefined {
+                                source: source.clone(),
+                                token,
+                                scope_name: current_scope_name,
+                            },
+                            name,
+                        },
+                    }),
+                    None => {
+                        let name = Environment::get_symbol_name(name, current_scope_name);
+                        symbols.insert(name, new_symbol);
+                        Ok(())
+                    }
+                }
+            }
+        }
+    }
+
+    /// Get the symbol name that is stored in the symbols table
+    /// The name contains:
+    /// - scope name
+    /// - symbol name
+    fn get_symbol_name(symbol_name: String, scope_name: usize) -> String {
+        format!("{}-{}", scope_name, symbol_name)
+    }
+
+    fn get_symbol<Symbol: Symbolizable>(
+        &self,
+        symbols: &HashMap<String, Symbol>,
+        symbol_name: SymbolName,
+        scope_name: usize,
+    ) -> Option<Symbol> {
+        let name = Environment::get_symbol_name(
+            match &symbol_name {
+                SymbolName::String(name) => name.clone(),
+                SymbolName::Token(token) => token.representation.clone(),
+            },
+            scope_name,
+        );
+        match symbols.get(&name) {
+            Some(symbol) => match symbol_name {
+                SymbolName::Token(token) => {
+                    symbol.add_usage_reference(token.position, self.source.clone());
+                    // symbols.insert(name, symbol.clone());
+
+                    Some(symbol.clone())
+                }
+                SymbolName::String(_) => Some(symbol.clone()),
+            },
+            None => match self.scope.get_parent_scope_name(scope_name) {
+                None => None,
+                Some(parent_scope_name) => self.get_symbol(symbols, symbol_name, parent_scope_name),
+            },
+        }
     }
 
     pub fn get_enum_constrctors(&self, enum_name: &str) -> Vec<ConstructorSymbol> {
-        let constructor_symbols = self.constructor_symbols.borrow();
-        let result = constructor_symbols
+        self.constructor_symbols
             .iter()
             .filter_map(|(_, constructor_symbol)| {
                 if constructor_symbol.enum_name == enum_name {
@@ -320,45 +577,41 @@ impl<'a> Environment<'a> {
                     None
                 }
             })
-            .collect::<Vec<ConstructorSymbol>>();
-        if !result.is_empty() {
-            result
-        } else if let Some(parent) = &self.parent {
-            parent.get_enum_constrctors(enum_name)
-        } else {
-            vec![]
-        }
+            .collect::<Vec<ConstructorSymbol>>()
     }
 
-    pub fn get_type_symbol(&self, name: &str) -> Option<TypeSymbol> {
-        if let Some(type_symbol) = self.type_symbols.borrow().get(name) {
-            Some(type_symbol.clone())
-        } else if let Some(parent) = &self.parent {
-            parent.get_type_symbol(name)
-        } else {
-            None
-        }
+    pub fn get_type_symbol(&self, name: SymbolName) -> Option<TypeSymbol> {
+        self.get_symbol(
+            &self.type_symbols,
+            name,
+            self.scope.get_current_scope_name(),
+        )
     }
 
-    pub fn get_value_symbol(&self, name: &str) -> Option<ValueSymbol> {
-        if let Some(value_symbol) = self.value_symbols.borrow().get(name) {
-            Some(value_symbol.clone())
-        } else if let Some(parent) = &self.parent {
-            parent.get_value_symbol(name)
-        } else {
-            None
-        }
+    pub fn get_value_symbol(&mut self, name: SymbolName) -> Option<ValueSymbol> {
+        self.get_symbol(
+            &self.value_symbols,
+            name,
+            self.scope.get_current_scope_name(),
+        )
     }
 
-    pub fn get_consructor_symbol(&self, name: &str) -> Option<ConstructorSymbol> {
-        if let Some(constructor_symbol) = self.constructor_symbols.borrow().get(name) {
-            Some(constructor_symbol.clone())
-        } else if let Some(parent) = &self.parent {
-            parent.get_consructor_symbol(name)
-        } else {
-            None
-        }
+    pub fn get_consructor_symbol(&mut self, name: SymbolName) -> Option<ConstructorSymbol> {
+        self.get_symbol(
+            &self.constructor_symbols,
+            name,
+            self.scope.get_current_scope_name(),
+        )
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum SymbolName {
+    /// This is for compiler internal usage only
+    String(String),
+
+    /// Use this when working with user-defined symbols
+    Token(Token),
 }
 
 #[derive(Debug, Clone)]
@@ -366,21 +619,25 @@ pub enum Declaration {
     Unknown,
     BuiltIn,
     AutoGeneratedTypeVariable,
-    UserDefined(Source, Token),
+    UserDefined {
+        source: Source,
+        token: Token,
+        scope_name: usize,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub struct TypeSymbol {
     pub declaration: Declaration,
     pub type_scheme: TypeScheme,
-    pub usage_references: Vec<UsageReference>,
+    pub usage_references: RefCell<Vec<UsageReference>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ValueSymbol {
     pub declaration: Declaration,
     pub actual_type: TypeScheme,
-    pub usage_references: Vec<UsageReference>,
+    pub usage_references: RefCell<Vec<UsageReference>>,
 }
 
 #[derive(Debug, Clone)]
@@ -392,16 +649,22 @@ pub struct ConstructorSymbol {
     pub constructor_name: String,
     pub type_variables: Vec<String>,
     pub payload: Option<Type>,
-    pub usage_references: Vec<UsageReference>,
+    pub usage_references: RefCell<Vec<UsageReference>>,
 }
 
-pub trait Symbolizable {
+pub trait Symbolizable: Clone {
     fn declaration(&self) -> Declaration;
+    fn add_usage_reference(&self, position: Position, source: Source);
 }
 
 impl Symbolizable for ConstructorSymbol {
     fn declaration(&self) -> Declaration {
         self.declaration.clone()
+    }
+    fn add_usage_reference(&self, position: Position, source: Source) {
+        self.usage_references
+            .borrow_mut()
+            .push(UsageReference { position, source });
     }
 }
 
@@ -409,34 +672,21 @@ impl Symbolizable for ValueSymbol {
     fn declaration(&self) -> Declaration {
         self.declaration.clone()
     }
+    fn add_usage_reference(&self, position: Position, source: Source) {
+        self.usage_references
+            .borrow_mut()
+            .push(UsageReference { position, source });
+    }
 }
 
 impl Symbolizable for TypeSymbol {
     fn declaration(&self) -> Declaration {
         self.declaration.clone()
     }
-}
-
-fn insert_symbol<Symbol: Symbolizable>(
-    mut symbols: RefMut<HashMap<String, Symbol>>,
-    token: &Token,
-    source: &Source,
-    new_symbol: Symbol,
-) -> Result<(), UnifyError> {
-    let name = token.representation.clone();
-    match symbols.get(&name) {
-        Some(symbol) => Err(UnifyError {
-            position: token.position,
-            kind: UnifyErrorKind::DuplicatedIdentifier {
-                first_declared_at: symbol.declaration(),
-                then_declared_at: Declaration::UserDefined(source.clone(), token.clone()),
-                name,
-            },
-        }),
-        None => {
-            symbols.insert(name, new_symbol);
-            Ok(())
-        }
+    fn add_usage_reference(&self, position: Position, source: Source) {
+        self.usage_references
+            .borrow_mut()
+            .push(UsageReference { position, source });
     }
 }
 
@@ -446,68 +696,65 @@ pub struct UsageReference {
     source: Source,
 }
 
-fn built_in_type_symbols() -> HashMap<String, TypeSymbol> {
-    let mut hash_map = HashMap::new();
-    hash_map.insert(
-        "string".to_string(),
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            type_scheme: TypeScheme {
-                type_variables: vec![],
-                type_value: Type::String,
-            },
-            usage_references: vec![],
-        },
-    );
-    hash_map.insert(
-        "number".to_string(),
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            type_scheme: TypeScheme {
-                type_variables: vec![],
-                type_value: Type::Number,
-            },
-            usage_references: vec![],
-        },
-    );
-
-    hash_map.insert(
-        "null".to_string(),
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            type_scheme: TypeScheme {
-                type_variables: vec![],
-                type_value: Type::Null,
-            },
-            usage_references: vec![],
-        },
-    );
-
-    hash_map.insert(
-        "boolean".to_string(),
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            type_scheme: TypeScheme {
-                type_variables: vec![],
-                type_value: Type::Boolean,
-            },
-            usage_references: vec![],
-        },
-    );
-
+fn built_in_type_symbols() -> Vec<(String, TypeSymbol)> {
     let array_type_variable = "T".to_string();
-    hash_map.insert(
-        "Array".to_string(),
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            type_scheme: TypeScheme {
-                type_variables: vec![array_type_variable.clone()],
-                type_value: Type::Array(Box::new(Type::TypeVariable {
-                    name: array_type_variable,
-                })),
+    vec![
+        (
+            "Array".to_string(),
+            TypeSymbol {
+                declaration: Declaration::BuiltIn,
+                type_scheme: TypeScheme {
+                    type_variables: vec![array_type_variable.clone()],
+                    type_value: Type::Array(Box::new(Type::TypeVariable {
+                        name: array_type_variable,
+                    })),
+                },
+                usage_references: RefCell::new(Vec::new()),
             },
-            usage_references: vec![],
-        },
-    );
-    hash_map
+        ),
+        (
+            "string".to_string(),
+            TypeSymbol {
+                declaration: Declaration::BuiltIn,
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::String,
+                },
+                usage_references: RefCell::new(Vec::new()),
+            },
+        ),
+        (
+            "number".to_string(),
+            TypeSymbol {
+                declaration: Declaration::BuiltIn,
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::Number,
+                },
+                usage_references: RefCell::new(Vec::new()),
+            },
+        ),
+        (
+            "null".to_string(),
+            TypeSymbol {
+                declaration: Declaration::BuiltIn,
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::Null,
+                },
+                usage_references: RefCell::new(Vec::new()),
+            },
+        ),
+        (
+            "boolean".to_string(),
+            TypeSymbol {
+                declaration: Declaration::BuiltIn,
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::Boolean,
+                },
+                usage_references: RefCell::new(Vec::new()),
+            },
+        ),
+    ]
 }

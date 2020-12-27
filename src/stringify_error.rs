@@ -139,6 +139,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Unknown type symbol".to_string(),
             body: "Cannot find this type symbol in the current scope".to_string(),
         },
+        UnifyErrorKind::UnknownConstructorSymbol => StringifiedError {
+            summary: "Unknown constructor symbol".to_string(),
+            body: "Cannot find this constructor symbol in the current scope".to_string(),
+        },
         UnifyErrorKind::MissingCases(missing_patterns) => StringifiedError {
             summary: "Non-exhaustive cases".to_string(),
             body: format!(
@@ -154,6 +158,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::UnreachableCase => StringifiedError {
             summary: "Unreachable case".to_string(),
             body: "This case is unreachable because all possible cases are already handled by previous branches.".to_string()
+        },
+        UnifyErrorKind::UnusedVariale => StringifiedError {
+            summary: "Unused variable".to_string(),
+            body: "This variable created but not used anywhere, consider removing it.".to_string()
         },
         other => panic!("{:#?}", other),
     }

@@ -11,7 +11,7 @@ pub struct Program {
 
 pub fn unify_program(program: Program) -> Result<(), UnifyError> {
     // 1. TODO: Populate environment with imported symbols
-    let mut environment: Environment = Environment::new_root(program.source);
+    let mut environment: Environment = Environment::new(&program.source);
 
     // 2. Type check this program
     let _ = program
@@ -30,6 +30,7 @@ pub struct UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    UnusedVariale,
     MissingCases(Vec<TypedDestructurePattern>),
     ThisTagDoesNotRequirePayload,
     ThisTagRequiresPaylod {
@@ -94,6 +95,7 @@ pub enum UnifyErrorKind {
     },
     UnknownTypeSymbol,
     UnknownValueSymbol,
+    UnknownConstructorSymbol,
     TypeMismatch {
         expected_type: Type,
         actual_type: Type,
@@ -120,6 +122,7 @@ pub fn infer_statement(
         } => {
             let type_annotation_type =
                 optional_type_annotation_to_type(environment, &type_annotation)?;
+
             let right_type = infer_expression_type(environment, &right)?;
 
             // 1. Check if right matches type annotation
@@ -139,9 +142,13 @@ pub fn infer_statement(
             environment.insert_value_symbol(
                 &left,
                 ValueSymbol {
-                    declaration: Declaration::UserDefined(environment.source.clone(), left.clone()),
+                    declaration: Declaration::UserDefined {
+                        source: environment.source.clone(),
+                        token: left.clone(),
+                        scope_name: environment.current_scope_name(),
+                    },
                     actual_type: right_type_scheme,
-                    usage_references: vec![],
+                    usage_references: Default::default(),
                 },
             )?;
 
@@ -152,11 +159,12 @@ pub fn infer_statement(
             right,
             type_variables,
         } => {
-            let mut current_environment = Environment::new(environment);
+            environment.step_into_new_child_scope();
+            // let mut current_environment = Environment::new(environment);
 
             // 1. Populate type variables into current environment
             for type_variable in type_variables.clone() {
-                current_environment.insert_type_symbol(
+                environment.insert_type_symbol(
                     &type_variable,
                     TypeSymbol {
                         type_scheme: TypeScheme {
@@ -165,23 +173,28 @@ pub fn infer_statement(
                             },
                             type_variables: vec![],
                         },
-                        declaration: Declaration::UserDefined(
-                            current_environment.source.clone(),
-                            type_variable.clone(),
-                        ),
-                        usage_references: vec![],
+                        declaration: Declaration::UserDefined {
+                            source: environment.source.clone(),
+                            token: type_variable.clone(),
+                            scope_name: environment.current_scope_name(),
+                        },
+                        usage_references: Default::default(),
                     },
                 )?;
             }
 
             // 2. verify type declaration
-            let type_value = type_annotation_to_type(&mut current_environment, &right)?;
+            let type_value = type_annotation_to_type(environment, &right)?;
 
             // 3. Add this symbol into environment
             environment.insert_type_symbol(
                 &left,
                 TypeSymbol {
-                    declaration: Declaration::UserDefined(environment.source.clone(), left.clone()),
+                    declaration: Declaration::UserDefined {
+                        source: environment.source.clone(),
+                        token: left.clone(),
+                        scope_name: environment.current_scope_name(),
+                    },
                     type_scheme: TypeScheme {
                         type_variables: type_variables
                             .into_iter()
@@ -189,9 +202,13 @@ pub fn infer_statement(
                             .collect(),
                         type_value,
                     },
-                    usage_references: vec![],
+                    usage_references: Default::default(),
                 },
-            )
+            )?;
+
+            environment.step_out_to_parent_scope();
+
+            Ok(())
         }
         Statement::Enum {
             name,
@@ -219,21 +236,25 @@ pub fn infer_statement(
             environment.insert_type_symbol(
                 &name,
                 TypeSymbol {
-                    declaration: Declaration::UserDefined(environment.source.clone(), name.clone()),
+                    declaration: Declaration::UserDefined {
+                        source: environment.source.clone(),
+                        token: name.clone(),
+                        scope_name: environment.current_scope_name(),
+                    },
                     type_scheme: TypeScheme {
                         type_variables: type_variable_names.clone(),
                         type_value: enum_type,
                     },
-                    usage_references: vec![],
+                    usage_references: Default::default(),
                 },
             )?;
 
             let source = environment.source.clone();
 
             // 2. Populate type variables into current environment
-            let mut current_environment = Environment::new(environment);
+            environment.step_into_new_child_scope();
             for type_variable in type_variables.clone() {
-                current_environment.insert_type_symbol(
+                environment.insert_type_symbol(
                     &type_variable,
                     TypeSymbol {
                         type_scheme: TypeScheme {
@@ -242,25 +263,30 @@ pub fn infer_statement(
                             },
                             type_variables: vec![],
                         },
-                        declaration: Declaration::UserDefined(
-                            source.clone(),
-                            type_variable.clone(),
-                        ),
-                        usage_references: vec![],
+                        declaration: Declaration::UserDefined {
+                            source: source.clone(),
+                            token: type_variable.clone(),
+                            scope_name: environment.current_scope_name(),
+                        },
+                        usage_references: Default::default(),
                     },
                 )?;
             }
 
             // 3. Add each tags into the value environment
-            let value_symbols = tags
+            let constructor_symbols = tags
                 .iter()
                 .map(|tag| {
-                    let declaration = Declaration::UserDefined(source.clone(), tag.tagname.clone());
+                    let declaration = Declaration::UserDefined {
+                        source: source.clone(),
+                        token: tag.tagname.clone(),
+                        scope_name: environment.current_scope_name(),
+                    };
                     Ok((
                         &tag.tagname,
                         ConstructorSymbol {
                             declaration,
-                            usage_references: vec![],
+                            usage_references: Default::default(),
                             enum_name: enum_name.clone(),
                             constructor_name: tag.tagname.representation.clone(),
                             type_variables: type_variable_names.clone(),
@@ -269,7 +295,7 @@ pub fn infer_statement(
                                 Some(payload) => {
                                     // validate type annotation
                                     let payload_type_value = type_annotation_to_type(
-                                        &mut current_environment,
+                                        environment,
                                         payload.type_annotation.as_ref(),
                                     )?;
                                     Some(payload_type_value)
@@ -280,12 +306,15 @@ pub fn infer_statement(
                 })
                 .collect::<Result<Vec<(&Token, ConstructorSymbol)>, UnifyError>>()?;
 
-            value_symbols
+            environment.step_out_to_parent_scope();
+
+            constructor_symbols
                 .into_iter()
                 .map(|(token, constructor_symbol)| {
                     environment.insert_constructor_symbol(token, constructor_symbol)
                 })
                 .collect::<Result<Vec<()>, UnifyError>>()?;
+
             Ok(())
         }
     }?;
@@ -1006,18 +1035,18 @@ pub fn infer_tag_type(
     payload: Option<TagPayloadType>,
 ) -> Result<Type, UnifyError> {
     // Look up constructor
-    let constructor = match environment.get_consructor_symbol(&tagname.representation) {
-        Some(value_symbol) => value_symbol,
+    let constructor = match environment.get_consructor_symbol(SymbolName::Token(tagname.clone())) {
+        Some(constructor_symbol) => constructor_symbol,
         None => {
             return Err(UnifyError {
                 position: tagname.position,
-                kind: UnifyErrorKind::UnknownValueSymbol,
+                kind: UnifyErrorKind::UnknownConstructorSymbol,
             })
         }
     };
 
     let enum_type = environment
-        .get_type_symbol(&constructor.enum_name)
+        .get_type_symbol(SymbolName::String(constructor.enum_name.clone()))
         .unwrap_or_else(|| {
             panic!(
                 "Compiler error: Cannot find enum '{}' in type_symbols",
@@ -1101,7 +1130,8 @@ pub fn infer_expression_type(
             infer_tag_type(environment, token, payload)
         }
         Expression::Variable(variable) => {
-            if let Some(symbol) = environment.get_value_symbol(&variable.representation) {
+            if let Some(symbol) = environment.get_value_symbol(SymbolName::Token(variable.clone()))
+            {
                 struct TypeVariableSubstitution {
                     from_type_variable: String,
                     to_type_variable: String,
@@ -1150,8 +1180,9 @@ pub fn infer_expression_type(
             let_keyword,
             ..
         } => {
+            environment.step_into_new_child_scope();
             let right_type = infer_expression_type(environment, right)?;
-            match false_branch {
+            let expression_type = match false_branch {
                 None => {
                     let left_type = infer_destructure_pattern(environment, left)?;
                     let left_type = match type_annotation {
@@ -1203,7 +1234,9 @@ pub fn infer_expression_type(
                     )?;
                     Ok(*function_type.return_type)
                 }
-            }
+            }?;
+            environment.step_out_to_parent_scope();
+            Ok(expression_type)
         }
         Expression::Function(function) => {
             Ok(Type::Function(infer_function_type(environment, function)?))
@@ -1669,34 +1702,31 @@ pub fn get_function_branch_position(function_branch: &FunctionBranch) -> Positio
 }
 
 pub fn infer_function_branch(
-    parent_environment: &mut Environment,
+    environment: &mut Environment,
     function_branch: &FunctionBranch,
 ) -> Result<FunctionType, UnifyError> {
-    // Initialize new environment for this function branch
-    let mut environment = Environment::new(parent_environment);
+    environment.step_into_new_child_scope();
 
     let first_argument_type = Box::new(infer_function_argument(
-        &mut environment,
+        environment,
         function_branch.first_argument.as_ref(),
     )?);
 
     let rest_arguments_types = function_branch
         .rest_arguments()
         .iter()
-        .map(|argument| Ok(infer_function_argument(&mut environment, &argument)?))
+        .map(|argument| Ok(infer_function_argument(environment, &argument)?))
         .collect::<Result<Vec<Type>, UnifyError>>()?;
 
-    let body_type = infer_expression_type(&mut environment, &function_branch.body)?;
+    let body_type = infer_expression_type(environment, &function_branch.body)?;
 
-    let return_type = optional_type_annotation_to_type(
-        &mut environment,
-        &function_branch.return_type_annotation,
-    )?;
+    let return_type =
+        optional_type_annotation_to_type(environment, &function_branch.return_type_annotation)?;
 
     let result = match return_type {
         Some(return_type) => {
             let position = get_expression_position(&function_branch.body);
-            unify_type(&mut environment, &return_type, &body_type, position)?;
+            unify_type(environment, &return_type, &body_type, position)?;
             Ok(FunctionType {
                 first_argument_type,
                 rest_arguments_types,
@@ -1709,6 +1739,11 @@ pub fn infer_function_branch(
             return_type: Box::new(body_type),
         }),
     }?;
+
+    // Check for unused variables
+    environment.check_for_unused_value_symbols(environment.current_scope_name())?;
+
+    environment.step_out_to_parent_scope();
 
     // pass back the substitution to parent environment
     Ok(environment.apply_subtitution_to_function_type(&result))
@@ -1754,7 +1789,7 @@ pub fn type_annotation_to_type(
     match &type_annotation {
         TypeAnnotation::Underscore(_) => Ok(Type::Underscore),
         TypeAnnotation::Named { name, arguments } => {
-            if let Some(symbol) = environment.get_type_symbol(&name.representation) {
+            if let Some(symbol) = environment.get_type_symbol(SymbolName::Token(name.clone())) {
                 let arguments = match arguments {
                     None => vec![],
                     Some(NamedTypeAnnotationArguments { arguments, .. }) => arguments

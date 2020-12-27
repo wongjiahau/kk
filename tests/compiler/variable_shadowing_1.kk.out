@@ -1,0 +1,11 @@
+1
+========
+
+========
+error:
+  ┌─ tests/compiler/variable_shadowing_1.kk:3:7
+  │
+3 │   let x = x
+  │       ^ Unused variable
+  │
+  = This variable created but not used anywhere, consider removing it.

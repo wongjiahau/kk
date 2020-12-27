@@ -1,4 +1,3 @@
 let foo = 
   \[] => true
-  \[x, ...[]] => false
-
+  \[_, ...[]] => false

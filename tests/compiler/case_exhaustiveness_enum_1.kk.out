@@ -6,8 +6,8 @@ error:
   ┌─ tests/compiler/case_exhaustiveness_enum_1.kk:6:3
   │
 6 │ ╭   \#nil => true
-7 │ │   \#cons({current, next = #nil}) => true
-  │ ╰────────────────────────────────────────^ Non-exhaustive cases
+7 │ │   \#cons({current = _, next = #nil}) => true
+  │ ╰────────────────────────────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

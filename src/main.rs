@@ -43,6 +43,8 @@ fn run_all_tests() {
             .expect("Failed to convert entry to string")
             .to_string();
 
+        // let file_extension = "function_arguments_mismatch.kk";
+        // if filename.ends_with(file_extension) {
         if filename.ends_with(".kk") {
             let input_filename = filename;
             let input = fs::read_to_string(&input_filename).expect("failed to read input file");
@@ -106,7 +108,7 @@ fn run_all_tests() {
                 println!("{}", "=".repeat(10));
                 println!(
                     "ASSERTION FAILED FOR:\n\n{}",
-                    indent_string(input_filename, 4)
+                    indent_string(input_filename.to_string(), 4)
                 );
                 println!("\n\nINPUT:\n\n{}", indent_string(input, 4));
                 println!(
