@@ -5,14 +5,11 @@
 error:
   ┌─ tests/compiler/monadic_let_1.kk:5:3
   │
-5 │ ╭   let true = x
-6 │ │   true
-  │ ╰──────^ Type mismatch
+5 │   #true
+  │   ^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Array<      | + boolean   |
-    | -   boolean   |             |
-    | - >           |             |
+    | - Color       | + Boolean   |
     +---------------+-------------+

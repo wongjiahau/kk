@@ -653,7 +653,7 @@ pub fn parse_let_expression(it: &mut Peekable<Iter<Token>>) -> Result<Expression
     eat_token(it, TokenType::Equals)?;
     let right = parse_expression(it)?;
     let else_return = if try_eat_token(it, TokenType::KeywordElse).is_some() {
-        Some(Box::new(parse_expression(it)?))
+        Some(Box::new(parse_function(it)?))
     } else {
         None
     };

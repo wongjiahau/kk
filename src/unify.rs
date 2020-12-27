@@ -1147,180 +1147,66 @@ pub fn infer_expression_type(
             false_branch,
             true_branch,
             type_annotation,
+            let_keyword,
             ..
         } => {
-            let left_type = environment.introduce_type_variable(None)?;
-            let inferred_left_type = infer_destructure_pattern(environment, left)?;
-            let left_location = get_destructure_pattern_position(&left);
-            unify_type(environment, &left_type, &inferred_left_type, left_location)?;
-            let right_type = infer_expression_type(environment, &right)?;
-
-            match type_annotation {
-                None => Ok(()),
-                Some(type_annotation) => {
-                    let type_annotation = type_annotation_to_type(environment, type_annotation)?;
-                    unify_type(
-                        environment,
-                        &type_annotation,
-                        &left_type,
-                        get_destructure_pattern_position(&left),
-                    )?;
-                    Ok(())
-                }
-            }?;
-
-            let false_branch_type = match false_branch {
+            let right_type = infer_expression_type(environment, right)?;
+            match false_branch {
                 None => {
+                    let left_type = infer_destructure_pattern(environment, left)?;
+                    let left_type = match type_annotation {
+                        None => Ok(left_type),
+                        Some(type_annotation) => {
+                            let expected_type =
+                                type_annotation_to_type(environment, type_annotation)?;
+                            unify_type(
+                                environment,
+                                &expected_type,
+                                &left_type,
+                                get_destructure_pattern_position(left),
+                            )
+                        }
+                    }?;
+                    let true_branch_type = infer_expression_type(environment, true_branch)?;
                     unify_type(
                         environment,
                         &left_type,
-                        &right_type,
-                        get_expression_position(&right),
+                        &true_branch_type,
+                        get_expression_position(true_branch),
                     )?;
-                    right_type
+                    Ok(left_type)
                 }
-                Some(false_branch) => match infer_expression_type(environment, &false_branch)? {
-                    Type::TypeVariable { name } => Ok(Type::TypeVariable { name }),
-                    Type::Function(function_type) => {
-                        if function_type.rest_arguments_types.is_empty() {
-                            unify_type(
-                                environment,
-                                &left_type,
-                                function_type.first_argument_type.as_ref(),
-                                get_destructure_pattern_position(&left),
-                            )?;
+                Some(false_branch) => {
+                    let function = Function {
+                        first_branch: FunctionBranch {
+                            start_token: let_keyword.clone(),
+                            first_argument: Box::new(FunctionArgument {
+                                destructure_pattern: *left.clone(),
+                                type_annotation: type_annotation.clone(),
+                            }),
+                            body: true_branch.clone(),
+                            rest_arguments: None,
+                            return_type_annotation: None,
+                        },
+                        branches: vec![false_branch.first_branch.clone()]
+                            .into_iter()
+                            .chain(false_branch.branches.clone().into_iter())
+                            .collect(),
+                    };
+                    let function_type = infer_function_type(environment, &Box::new(function))?;
 
-                            unify_type(
-                                environment,
-                                &update_union_type_in_type(
-                                    environment.apply_subtitution_to_type(&left_type),
-                                    &UnionTypeBound::Exact,
-                                ),
-                                &update_union_type_in_type(right_type, &UnionTypeBound::Exact),
-                                get_expression_position(&right),
-                            )?;
-
-                            Ok(*function_type.return_type)
-                        } else {
-                            return Err(UnifyError {
-                                position: get_expression_position(&false_branch),
-                                kind: UnifyErrorKind::LetElseMustBeSingleArgumentFunction {
-                                    actual_type: Type::Function(function_type),
-                                },
-                            });
-                        }
-                    }
-                    other => Err(UnifyError {
-                        position: get_expression_position(&false_branch),
-                        kind: UnifyErrorKind::LetElseMustBeFunction { actual_type: other },
-                    }),
-                }?,
-            };
-            let true_branch_type = infer_expression_type(environment, &true_branch)?;
-
-            match **left {
-                DestructurePattern::Identifier(_) | DestructurePattern::Underscore(_) => {
-                    if let Some(false_branch) = false_branch {
-                        return Err(UnifyError {
-                            position: get_expression_position(false_branch.as_ref()),
-                            kind: UnifyErrorKind::UnreachableCase,
-                        });
-                    }
-                }
-                _ => {
                     unify_type(
                         environment,
-                        &false_branch_type,
-                        &true_branch_type,
-                        get_expression_position(&true_branch),
+                        &right_type,
+                        function_type.first_argument_type.as_ref(),
+                        get_destructure_pattern_position(left),
                     )?;
+                    Ok(*function_type.return_type)
                 }
-            };
-
-            Ok(environment.apply_subtitution_to_type(&false_branch_type))
+            }
         }
         Expression::Function(function) => {
-            let first_function_branch_type =
-                infer_function_branch(environment, &function.first_branch)?;
-
-            let function_type = FunctionType {
-                first_argument_type: Box::new(environment.introduce_type_variable(None)?),
-                rest_arguments_types: first_function_branch_type
-                    .rest_arguments_types
-                    .iter()
-                    .map(|_| Type::TypeVariable {
-                        name: environment.get_next_type_variable_name(),
-                    })
-                    .collect(),
-                return_type: Box::new(Type::TypeVariable {
-                    name: environment.get_next_type_variable_name(),
-                }),
-            };
-
-            unify_function_type(
-                environment,
-                &function_type,
-                &first_function_branch_type,
-                get_function_branch_position(&function.first_branch),
-            )?;
-
-            // Unify function branches
-            for function_branch in &function.branches {
-                let actual_function_type = infer_function_branch(environment, function_branch)?;
-                let position = get_function_branch_position(function_branch);
-                unify_function_type(environment, &function_type, &actual_function_type, position)?;
-            }
-
-            let function_type = environment.apply_subtitution_to_function_type(&function_type);
-
-            // Check for case exhasutiveness
-            let (expected_type, actual_patterns) =
-                {
-                    match function.first_branch.rest_arguments {
-                        None => {
-                            let expected_type = function_type.first_argument_type.clone();
-                            let actual_patterns =
-                                vec![function
-                                    .first_branch
-                                    .first_argument
-                                    .destructure_pattern
-                                    .clone()]
-                                .into_iter()
-                                .chain(function.branches.iter().map(|branch| {
-                                    branch.first_argument.destructure_pattern.clone()
-                                }))
-                                .collect();
-                            (*expected_type, actual_patterns)
-                        }
-                        Some(_) => {
-                            let expected_type = Type::Tuple(
-                                vec![*function_type.first_argument_type.clone()]
-                                    .into_iter()
-                                    .chain(function_type.rest_arguments_types.clone().into_iter())
-                                    .collect(),
-                            );
-                            let actual_patterns = vec![function.first_branch.clone()]
-                                .iter()
-                                .chain(function.branches.iter())
-                                .map(function_branch_arguments_to_tuple)
-                                .collect();
-
-                            (expected_type, actual_patterns)
-                        }
-                    }
-                };
-            check_exhasutiveness(
-                environment,
-                expected_type,
-                actual_patterns,
-                get_expression_position(&Expression::Function(function.clone())),
-            )?;
-
-            // Close all unbounded union types
-            Ok(update_union_type_in_type(
-                Type::Function(function_type),
-                &UnionTypeBound::AtMost,
-            ))
+            Ok(Type::Function(infer_function_type(environment, function)?))
         }
         Expression::FunctionCall(function_call) => {
             // Check if expression being invoked is a function
@@ -1482,6 +1368,89 @@ pub fn infer_expression_type(
         }
     }?;
     Ok(environment.apply_subtitution_to_type(&result))
+}
+
+pub fn infer_function_type(
+    environment: &mut Environment,
+    function: &Function,
+) -> Result<FunctionType, UnifyError> {
+    let first_function_branch_type = infer_function_branch(environment, &function.first_branch)?;
+
+    let function_type = FunctionType {
+        first_argument_type: Box::new(environment.introduce_type_variable(None)?),
+        rest_arguments_types: first_function_branch_type
+            .rest_arguments_types
+            .iter()
+            .map(|_| Type::TypeVariable {
+                name: environment.get_next_type_variable_name(),
+            })
+            .collect(),
+        return_type: Box::new(Type::TypeVariable {
+            name: environment.get_next_type_variable_name(),
+        }),
+    };
+
+    unify_function_type(
+        environment,
+        &function_type,
+        &first_function_branch_type,
+        get_function_branch_position(&function.first_branch),
+    )?;
+
+    // Unify function branches
+    for function_branch in &function.branches {
+        let actual_function_type = infer_function_branch(environment, function_branch)?;
+        let position = get_function_branch_position(function_branch);
+        unify_function_type(environment, &function_type, &actual_function_type, position)?;
+    }
+
+    let function_type = environment.apply_subtitution_to_function_type(&function_type);
+
+    // Check for case exhasutiveness
+    let (expected_type, actual_patterns) = {
+        match function.first_branch.rest_arguments {
+            None => {
+                let expected_type = function_type.first_argument_type.clone();
+                let actual_patterns = vec![function
+                    .first_branch
+                    .first_argument
+                    .destructure_pattern
+                    .clone()]
+                .into_iter()
+                .chain(
+                    function
+                        .branches
+                        .iter()
+                        .map(|branch| branch.first_argument.destructure_pattern.clone()),
+                )
+                .collect();
+                (*expected_type, actual_patterns)
+            }
+            Some(_) => {
+                let expected_type = Type::Tuple(
+                    vec![*function_type.first_argument_type.clone()]
+                        .into_iter()
+                        .chain(function_type.rest_arguments_types.clone().into_iter())
+                        .collect(),
+                );
+                let actual_patterns = vec![function.first_branch.clone()]
+                    .iter()
+                    .chain(function.branches.iter())
+                    .map(function_branch_arguments_to_tuple)
+                    .collect();
+
+                (expected_type, actual_patterns)
+            }
+        }
+    };
+    check_exhasutiveness(
+        environment,
+        expected_type,
+        actual_patterns,
+        get_expression_position(&Expression::Function(Box::new(function.clone()))),
+    )?;
+
+    Ok(function_type)
 }
 
 pub fn function_branch_arguments_to_tuple(function_branch: &FunctionBranch) -> DestructurePattern {
@@ -1931,22 +1900,6 @@ pub fn infer_destructure_pattern(
                 }
             }?;
             infer_tag_type(environment, tagname, payload)
-
-            // let tag_type = TagType {
-            //     tagname: token.representation.clone(),
-            //     payload: match payload {
-            //         None => None,
-            //         Some(payload) => Some(Box::new(infer_destructure_pattern(
-            //             environment,
-            //             &payload.destructure_pattern,
-            //         )?)),
-            //     },
-            // };
-            // Ok(Type::Union(UnionType {
-            //     tags: vec![tag_type],
-            //     bound: UnionTypeBound::AtLeast,
-            //     catch_all: false,
-            // }))
         }
         DestructurePattern::Array { spread: None, .. } => {
             Ok(Type::Array(Box::new(Type::TypeVariable {
@@ -1979,45 +1932,6 @@ pub fn infer_destructure_pattern(
             )?;
 
             Ok(environment.apply_subtitution_to_type(&expected_array_type))
-            // let all_elements = initial_elements
-            //     .iter()
-            //     .chain(tail_elements.iter())
-            //     .collect::<Vec<&DestructurePattern>>();
-
-            // for destructure_pattern in all_elements {
-            //     let inferred_element_type =
-            //         &infer_destructure_pattern(environment, &destructure_pattern)?;
-            //     unify_type(
-            //         environment,
-            //         &element_type,
-            //         inferred_element_type,
-            //         get_destructure_pattern_position(destructure_pattern),
-            //     )?;
-            // }
-            // let result_type = Type::Array(Box::new(
-            //     environment.apply_subtitution_to_type(&element_type),
-            // ));
-            // match spread {
-            //     Some(DestructurePatternArraySpread {
-            //         binding: Some(binding),
-            //         ..
-            //     }) => environment.insert_value_symbol(
-            //         binding,
-            //         ValueSymbol {
-            //             declaration: Declaration::UserDefined(
-            //                 environment.source.clone(),
-            //                 binding.clone(),
-            //             ),
-            //             actual_type: TypeScheme {
-            //                 type_value: result_type.clone(),
-            //                 type_variables: vec![],
-            //             },
-            //             usage_references: vec![],
-            //         },
-            //     ),
-            //     _ => Ok(()),
-            // }?;
-            // Ok(result_type)
         }
         DestructurePattern::Record {
             key_value_pairs, ..

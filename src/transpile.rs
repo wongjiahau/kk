@@ -142,9 +142,9 @@ pub fn transpile_expression(expression: Expression) -> String {
                 )
             } else {
                 let else_return = match else_return {
-                    Some(expression) => format!(
+                    Some(function) => format!(
                         "({})({})",
-                        transpile_expression(*expression),
+                        transpile_expression(Expression::Function(function)),
                         temp_placeholder
                     ),
                     None => temp_placeholder,

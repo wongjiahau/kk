@@ -216,7 +216,7 @@ pub enum Expression {
         type_annotation: Option<TypeAnnotation>,
         right: Box<Expression>,
         true_branch: Box<Expression>,
-        false_branch: Option<Box<Expression>>,
+        false_branch: Option<Box<Function>>,
     },
 }
 

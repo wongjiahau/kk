@@ -1,3 +1,3 @@
 #!/bin/sh
-cargo run
+cargo build
 cargo test run_all_tests -- --nocapture
