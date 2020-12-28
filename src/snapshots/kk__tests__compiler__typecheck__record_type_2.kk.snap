@@ -1,0 +1,38 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let x = {
+  x = 2,
+  y = "hello",
+}
+
+let z: string = x.x
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/record_type_2.kk:6:17
+  │
+6 │ let z: string = x.x
+  │                 ^^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - string      | + number    |
+    +---------------+-------------+

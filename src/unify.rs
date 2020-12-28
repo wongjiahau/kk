@@ -30,6 +30,8 @@ pub struct UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    InfiniteTypeDetected,
+    DoBodyMustHaveNullType,
     NoSuchPropertyOnThisRecord {
         expected_keys: Vec<String>,
     },
@@ -119,6 +121,13 @@ pub fn infer_statement(
     statement: Statement,
 ) -> Result<(), UnifyError> {
     match statement {
+        Statement::Do { expression } => match infer_expression_type(environment, &expression)? {
+            Type::Null => Ok(()),
+            _ => Err(UnifyError {
+                position: get_expression_position(&expression),
+                kind: UnifyErrorKind::DoBodyMustHaveNullType,
+            }),
+        },
         Statement::Let {
             left,
             right,
@@ -580,8 +589,12 @@ pub fn unify_type_(
         }
         (Type::TypeVariable { name }, other_type) | (other_type, Type::TypeVariable { name }) => {
             if type_variable_occurs_in_type(&name, &other_type) {
-                panic!("circular type substitution found, left={:#?}, actual_type={:#?}, expected_type={:#?} location={:#?}", 
-                       name, other_type, expected, position)
+                Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::InfiniteTypeDetected,
+                })
+            // panic!("circular type substitution found, left={:#?}, actual_type={:#?}, expected_type={:#?} location={:#?}",
+            //        name, other_type, expected, position)
             } else {
                 environment.update_substitution(name, other_type.clone(), position)?;
                 Ok(other_type)
@@ -1236,13 +1249,18 @@ pub fn infer_expression_type(
                         }
                     }?;
                     let true_branch_type = infer_expression_type(environment, true_branch)?;
-                    unify_type(
-                        environment,
-                        &left_type,
-                        &true_branch_type,
-                        get_expression_position(true_branch),
-                    )?;
-                    Ok(left_type)
+                    match left_type {
+                        Type::Null => Ok(true_branch_type),
+                        _ => {
+                            unify_type(
+                                environment,
+                                &left_type,
+                                &true_branch_type,
+                                get_expression_position(true_branch),
+                            )?;
+                            Ok(left_type)
+                        }
+                    }
                 }
                 Some(false_branch) => {
                     let function = Function {

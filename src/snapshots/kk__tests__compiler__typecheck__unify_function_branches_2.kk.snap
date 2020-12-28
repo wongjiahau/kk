@@ -1,0 +1,42 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Boolean = #true #false
+enum Bomb = #bomb
+let and: \(Boolean, Boolean) => Boolean =
+  \(#bomb, #true) => #true
+  \(#bomb, #false) => #true
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/unify_function_branches_2.kk:4:3
+  │
+4 │ ╭   \(#bomb, #true) => #true
+5 │ │   \(#bomb, #false) => #true
+  │ ╰───────────────────────────^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    |   \(          |   \(        |
+    | -   Boolean,  | +   Bomb,   |
+    |     Boolean   |     Boolean |
+    |   ) =>        |   ) =>      |
+    |     Boolean   |     Boolean |
+    +---------------+-------------+

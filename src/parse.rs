@@ -61,6 +61,11 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
                         tags,
                     })
                 }
+                TokenType::KeywordDo => {
+                    eat_token(it, TokenType::KeywordDo)?;
+                    let expression = parse_expression(it)?;
+                    statements.push(Statement::Do { expression })
+                }
                 _ => {
                     if !statements.is_empty() {
                         break;

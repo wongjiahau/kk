@@ -1,0 +1,24 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let guess = \x =>
+  let null = x
+  2
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============

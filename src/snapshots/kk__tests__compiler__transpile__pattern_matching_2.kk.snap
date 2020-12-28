@@ -1,0 +1,34 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Boolean = #true #false
+let and = \(x, y) =>
+  let #true = x
+  let #true = y
+  #true
+
+do #true.and(#true).print()
+do #true.and(#false).print()
+do #false.and(#true).print()
+do #false.and(#false).print()
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+{ '$': 'true' }
+{ '$': 'false' }
+{ '$': 'false' }
+{ '$': 'false' }
+
+============
+STDERR
+============

@@ -1,0 +1,41 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Color = #red #green #blue #yellow
+
+let colorToNumber = \xs =>
+  let #red = xs
+    else
+      \#green => 0
+      \#blue => 0
+  1
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/monadic_let_enum_2.kk:4:3
+  │
+4 │ ╭   let #red = xs
+5 │ │     else
+6 │ │       \#green => 0
+7 │ │       \#blue => 0
+  │ ╰─────────────────^ Non-exhaustive cases
+  │
+  = Missing case(s):
+
+      \#yellow => ...

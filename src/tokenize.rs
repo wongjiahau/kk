@@ -232,6 +232,8 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordType
     } else if s.eq("enum") {
         TokenType::KeywordEnum
+    } else if s.eq("do") {
+        TokenType::KeywordDo
     } else if s.eq("else") {
         TokenType::KeywordElse
     } else if s.eq("true") {

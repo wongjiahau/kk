@@ -1,0 +1,58 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum List<T> =
+  #nil
+  #cons({
+    current: T,
+    next: List<T>
+  })
+
+let xs = #cons({
+  current = 1,
+  next = #cons({
+    current = true,
+    next = #nil
+  })
+})
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+   ┌─ tests/compiler/typecheck/enum_1.kk:8:16
+   │
+ 8 │   let xs = #cons({
+   │ ╭────────────────^
+ 9 │ │   current = 1,
+10 │ │   next = #cons({
+11 │ │     current = true,
+12 │ │     next = #nil
+13 │ │   })
+14 │ │ })
+   │ ╰─^ Type mismatch
+   │
+   = +---------------------+---------------------+
+     |    EXPECTED TYPE    |     ACTUAL TYPE     |
+     +---------------------+---------------------+
+     |   {                 |   {                 |
+     |     current: number |     current: number |
+     |     next: List<     |     next: List<     |
+     | -     number        | +     boolean       |
+     |     >               |     >               |
+     |   }                 |   }                 |
+     +---------------------+---------------------+

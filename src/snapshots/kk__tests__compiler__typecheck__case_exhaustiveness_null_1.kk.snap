@@ -1,0 +1,31 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let bomb =
+  \null => true
+  \null => false
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_null_1.kk:3:4
+  │
+3 │   \null => false
+  │    ^^^^ Unreachable case
+  │
+  = This case is unreachable because all possible cases are already handled by previous branches.

@@ -1,6 +1,4 @@
-enum Color = #red #green
-enum Boolean = #true #false
-let firstIsTrue = \x =>
-  let #red = x
-  #true
-
+let colorIsRed = \_ => 
+  let x = 1 
+    else \_ => 'hi'
+  x

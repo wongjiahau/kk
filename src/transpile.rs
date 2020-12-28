@@ -1,22 +1,33 @@
 use crate::ast::*;
 
 pub fn transpile_statements(statements: Vec<Statement>) -> String {
-    statements.into_iter().map(transpile_statement).collect()
+    let built_in_library = "
+        const print = (x) => console.log(x)
+        "
+    .to_string();
+    let user_defined = statements
+        .into_iter()
+        .map(transpile_statement)
+        .collect::<Vec<String>>();
+    format!("{};{}", built_in_library, user_defined.join(";"))
 }
 
 pub fn transpile_statement(statement: Statement) -> String {
     match statement {
         Statement::Type { .. } | Statement::Enum { .. } => "".to_string(),
+        Statement::Do { expression } => {
+            format!("({});", transpile_expression(expression))
+        }
         Statement::Let { left, right, .. } => match right {
             Expression::Let { .. } => {
-                return format!(
+                format!(
                     "const {} = (()=>{{{}}})()",
                     left.representation,
                     transpile_expression(right)
                 )
             }
             _ => {
-                return format!(
+                format!(
                     "const {} = {}",
                     left.representation,
                     transpile_expression(right)

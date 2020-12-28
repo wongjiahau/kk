@@ -175,6 +175,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Cannot access property on a non-record type".to_string(),
             body: "If you intended to call this function, add () after this.".to_string()
         },
+        UnifyErrorKind::InfiniteTypeDetected => StringifiedError {
+            summary: "Infinite type".to_string(),
+            body: "This will result in infinite type expansion.".to_string()
+        },
         other => panic!("{:#?}", other),
     }
 }

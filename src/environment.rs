@@ -40,19 +40,12 @@ impl Scope {
         self.next_scope_name += 1;
         let scope_name = self.next_scope_name;
 
-        // let parent = self.scope_graph.add_node(self.current_scope_name.to_string());
-        // let child = self.scope_graph.add_node(scope_name.to_string());
-
         self.scope_graph.push(ScopePair {
             child: scope_name,
             parent: self.current_scope_name,
         });
 
         self.current_scope_name = scope_name;
-
-        // self.scope_graph.add_edge(parent, child, 99);
-
-        // self.scope_graph.extend_with_edges(&[(child, parent)]);
     }
 
     pub fn step_out_to_parent_scope(&mut self) {
@@ -118,26 +111,9 @@ enum SubstitutionItem {
 }
 
 impl Environment {
-    // pub fn new_root(source: Source) -> Environment<'a> {
-    //     Environment {
-    //         parent: None,
-    //         value_symbols: RefCell::new(HashMap::new()),
-    //         type_symbols: RefCell::new(built_in_type_symbols()),
-    //         constructor_symbols: RefCell::new(HashMap::new()),
-    //         type_variable_substitutions: RefCell::new(HashMap::new()),
-    //         type_variable_index: Cell::new(0),
-    //         source,
-    //         scope: Scope::new(),
-    //     }
-    // }
-
-    pub fn new(
-        // parent: &'a Environment
-        source: &Source,
-    ) -> Environment {
+    pub fn new(source: &Source) -> Environment {
         let mut result = Environment {
             source: source.clone(),
-            // parent: Some(parent),
             value_symbols: (HashMap::new()),
             type_symbols: (HashMap::new()),
             constructor_symbols: (HashMap::new()),
@@ -149,6 +125,28 @@ impl Environment {
         built_in_type_symbols()
             .into_iter()
             .for_each(|(name, type_symbol)| result.insert_built_in_type_symbol(name, type_symbol));
+
+        built_in_value_symbols()
+            .into_iter()
+            .map(|(name, value_symbol)| {
+                result.insert_value_symbol(
+                    &Token {
+                        token_type: TokenType::Identifier,
+                        position: Position {
+                            column_end: 0,
+                            column_start: 0,
+                            line_end: 0,
+                            line_start: 0,
+                            character_index_end: 0,
+                            character_index_start: 0,
+                        },
+                        representation: name,
+                    },
+                    value_symbol,
+                )
+            })
+            .collect::<Result<Vec<()>, UnifyError>>()
+            .expect("Compiler error");
 
         result
     }
@@ -168,13 +166,6 @@ impl Environment {
 
         name
     }
-
-    // fn get_root_environment(&self) -> &Environment {
-    //     match self.parent {
-    //         Some(parent) => parent.get_root_environment(),
-    //         None => self,
-    //     }
-    // }
 
     pub fn introduce_type_variable(
         &mut self,
@@ -437,9 +428,6 @@ impl Environment {
                 for child_scope_name in &children_scope_names {
                     self.check_for_unused_value_symbols(*child_scope_name)?;
                 }
-                // children_scope_names.into_iter().map(|child_scope_name| {
-                //     self.check_for_unused_value_symbols(child_scope_name)
-                // }).collect::<Result<Vec<()>, UnifyError>>()?;
                 Ok(())
             }
             Some(token) => Err(UnifyError {
@@ -696,6 +684,27 @@ impl Symbolizable for TypeSymbol {
 pub struct UsageReference {
     position: Position,
     source: Source,
+}
+
+fn built_in_value_symbols() -> Vec<(String, ValueSymbol)> {
+    let type_variable_name = "T".to_string();
+    vec![(
+        "print".to_string(),
+        ValueSymbol {
+            declaration: Declaration::BuiltIn,
+            usage_references: Default::default(),
+            actual_type: TypeScheme {
+                type_variables: vec![type_variable_name.clone()],
+                type_value: Type::Function(FunctionType {
+                    first_argument_type: Box::new(Type::TypeVariable {
+                        name: type_variable_name,
+                    }),
+                    rest_arguments_types: vec![],
+                    return_type: Box::new(Type::Null),
+                }),
+            },
+        },
+    )]
 }
 
 fn built_in_type_symbols() -> Vec<(String, TypeSymbol)> {

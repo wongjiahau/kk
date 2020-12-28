@@ -15,6 +15,9 @@ pub enum Statement {
         tags: Vec<EnumTag>,
         type_variables: Vec<Token>,
     },
+    Do {
+        expression: Expression,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -334,6 +337,7 @@ pub enum TokenType {
     KeywordLet,
     KeywordType,
     KeywordEnum,
+    KeywordDo,
     KeywordElse,
     KeywordNull,
     KeywordTrue,

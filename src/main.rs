@@ -28,15 +28,15 @@ mod pattern;
 #[test]
 fn run_all_tests() {
     use colored::*;
-    use difference::Changeset;
+    use insta::assert_snapshot;
     use std::fs;
     use std::process::Command;
 
     let test_dir = "tests/compiler/";
     let folders = fs::read_dir(test_dir).expect("Failed to read directory");
     for folder in folders {
-        println!("folder = {:#?}", folder);
-        let files = fs::read_dir(folder.unwrap().path().to_str().unwrap()).expect("Failed to read directory");
+        let files = fs::read_dir(folder.unwrap().path().to_str().unwrap())
+            .expect("Failed to read directory");
         for file in files {
             let file = file.expect("Failed to read entry");
             let filename = file
@@ -45,8 +45,6 @@ fn run_all_tests() {
                 .expect("Failed to convert entry to string")
                 .to_string();
 
-            // let file_extension = "function_arguments_mismatch.kk";
-            // if filename.ends_with(file_extension) {
             if filename.ends_with(".kk") {
                 let input_filename = filename;
                 let input = fs::read_to_string(&input_filename).expect("failed to read input file");
@@ -64,24 +62,35 @@ fn run_all_tests() {
                     };
 
                     vec![
+                        "============".to_string(),
+                        "INPUT".to_string(),
+                        "============".to_string(),
+                        input.trim().to_string(),
+                        "".to_string(),
+                        "============".to_string(),
+                        "EXIT CODE".to_string(),
+                        "============".to_string(),
                         exit_code,
+                        "".to_string(),
+                        "============".to_string(),
+                        "STDOUT".to_string(),
+                        "============".to_string(),
                         strip_line_trailing_spaces(
                             String::from_utf8_lossy(&output.stdout.clone()).to_string(),
-                        ),
+                        )
+                        .trim()
+                        .to_string(),
+                        "".to_string(),
+                        "============".to_string(),
+                        "STDERR".to_string(),
+                        "============".to_string(),
                         strip_line_trailing_spaces(
                             String::from_utf8_lossy(&output.stderr.clone()).to_string(),
-                        ),
+                        )
+                        .trim()
+                        .to_string(),
                     ]
-                    .join("\n========\n")
-                    // Output {
-                    //     stdout: strip_line_trailing_spaces(String::from_utf8_lossy(
-                    //         &output.stdout.clone(),
-                    //     ).to_string()),
-                    //     stderr: strip_line_trailing_spaces(String::from_utf8_lossy(
-                    //         &output.stderr.clone(),
-                    //     ).to_string()),
-                    //     status: output.status.code(),
-                    // }
+                    .join("\n")
                 };
 
                 let actual_output = strip_line_trailing_spaces(actual_output);
@@ -94,43 +103,35 @@ fn run_all_tests() {
                     .unwrap(),
                 );
 
-                let output_filename = input_filename.clone() + ".out";
-                let expected_output = fs::read_to_string(output_filename.as_str())
-                    .expect(format!("failed to read output file for {}", output_filename).as_str())
-                    .trim()
-                    .to_string();
+                assert_snapshot!(input_filename.clone(), stripped_actual_output.trim());
+                println!("{}", " PASSED".green());
 
-                let expected_output = strip_line_trailing_spaces(expected_output);
-
-                // println!("\nactual = {:?}", stripped_actual_output.chars());
-                // println!("expect = {:?}", expected_output.chars());
-
-                if stripped_actual_output.trim() != expected_output {
-                    let changeset = Changeset::new(&expected_output, &stripped_actual_output, "");
-                    println!("{}", "=".repeat(10));
-                    println!(
-                        "ASSERTION FAILED FOR:\n\n{}",
-                        indent_string(input_filename.to_string(), 4)
-                    );
-                    println!("\n\nINPUT:\n\n{}", indent_string(input, 4));
-                    println!(
-                        "\n\nEXPECTED OUTPUT:\n\n{}",
-                        indent_string(expected_output, 4)
-                    );
-                    println!(
-                        "\n\nACTUAL OUTPUT({}):\n\n{}",
-                        output_filename,
-                        indent_string(actual_output, 4)
-                    );
-                    println!(
-                        "\n\nDIFF (EXPECTED OUTPUT / ACTUAL OUTPUT):\n\n{}",
-                        indent_string(changeset.to_string(), 4)
-                    );
-                    println!("{}", "=".repeat(10));
-                    panic!("ASSERTION FAILED.")
-                } else {
-                    println!("{}", " PASSED".green());
-                }
+                // if stripped_actual_output.trim() != expected_output {
+                //     let changeset = Changeset::new(&expected_output, &stripped_actual_output, "");
+                //     println!("{}", "=".repeat(10));
+                //     println!(
+                //         "ASSERTION FAILED FOR:\n\n{}",
+                //         indent_string(input_filename.to_string(), 4)
+                //     );
+                //     println!("\n\nINPUT:\n\n{}", indent_string(input, 4));
+                //     println!(
+                //         "\n\nEXPECTED OUTPUT:\n\n{}",
+                //         indent_string(expected_output, 4)
+                //     );
+                //     println!(
+                //         "\n\nACTUAL OUTPUT({}):\n\n{}",
+                //         output_filename,
+                //         indent_string(actual_output, 4)
+                //     );
+                //     println!(
+                //         "\n\nDIFF (EXPECTED OUTPUT / ACTUAL OUTPUT):\n\n{}",
+                //         indent_string(changeset.to_string(), 4)
+                //     );
+                //     println!("{}", "=".repeat(10));
+                //     panic!("ASSERTION FAILED.")
+                // } else {
+                //     println!("{}", " PASSED".green());
+                // }
             }
         }
     }
@@ -493,72 +494,6 @@ mod test_transpile {
     }
 
     #[test]
-    fn transpiled_destructured_array_1() {
-        assert_debug_snapshot!(transpile_source(
-            "let head = \\xs => 
-                let [head, ...] = xs else \\_ => #none
-                #some(head)
-            "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn transpiled_destructured_array_2() {
-        assert_debug_snapshot!(transpile_source(
-            "let tail = \\xs => 
-                let [_, ...tail] = xs
-                tail
-            "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn transpiled_destructured_array_3() {
-        assert_debug_snapshot!(transpile_source(
-            "let init = \\xs => 
-                let [...init, _] = xs
-                init
-            "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn transpiled_destructured_array_4() {
-        assert_debug_snapshot!(transpile_source(
-            "let last = \\xs => 
-                let [..., last] = xs else \\_ => #none
-                #some(last)
-            "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn transpiled_destructured_array_5() {
-        assert_debug_snapshot!(transpile_source(
-            "let arrayEmpty = 
-                \\[] => true
-                \\_ => false
-            "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn transpiled_destructured_array_6() {
-        assert_debug_snapshot!(transpile_source(
-            "let arrayOnlyOneElement = 
-                \\[_] => true
-                \\_ => false
-            "
-            .to_string()
-        ))
-    }
-
-    #[test]
     fn transpiled_destructured_array_7() {
         // expected error, cannot have more than one spread
         assert_debug_snapshot!(transpile_source(
@@ -573,302 +508,6 @@ mod test_transpile {
 
 #[cfg(test)]
 mod test_type_check {
-    use super::*;
-    use insta::assert_debug_snapshot;
-    #[test]
-    fn test_type_check_simple_1() {
-        assert_debug_snapshot!(type_check_source("let x: string = 123".to_string()))
-    }
-
-    #[test]
-    fn test_type_check_simple_2() {
-        assert_debug_snapshot!(type_check_source("let x: number = 123".to_string()))
-    }
-
-    #[test]
-    fn test_type_check_function_1() {
-        assert_debug_snapshot!(type_check_source(
-            "
-            let f = 
-                \\(x: number) => 1
-                \\(x, y) => 1
-            "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_type_check_function_2() {
-        assert_debug_snapshot!(type_check_source(
-            "
-            let x = 2
-            let f = 'hi'.x
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_type_check_function_3() {
-        assert_debug_snapshot!(type_check_source(
-            "
-            let identity = \\x => x
-            let x = 'hello'.identity
-            let y: number = x
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_type_check_destructure_record() {
-        assert_debug_snapshot!(type_check_source(
-            "
-            let f = \\{x, y = {z}} => {x, z}
-            let x: {x: string, z: number} = {x = 'hi', y = {z = 3}}.f
-            let y: {x: string, z: number} = {x = 2, y = {z = 3}}.f
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_infer_generic_function_1() {
-        assert_debug_snapshot!(type_check_source(
-            "
-let identity = \\x => x
-let constant = \\x => 2
-let map = \\(x, f) => x.f
-let x: string = 'hello'.map(identity)
-let y: string = 'hello'.map(\\a => 'yo')
-let z: string = 'hello'.map(constant)
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_unify_function_branches_1() {
-        assert_debug_snapshot!(type_check_source(
-            "
-            let and = 
-              \\(#a, #x) => #true
-              \\(#b, #y) => #false
-            let a = #a.and(#x)
-            let b = #a.and(#y)
-            let c = #b.and(#x)
-            let d = #b.and(#y)
-            let e = #bomb.and(#y)
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_unify_function_branches_2() {
-        assert_debug_snapshot!(type_check_source(
-            "
-            type Boolean = #true | #false
-            let and: \\(Boolean, Boolean) => Boolean = 
-              \\(#bomb, #true) => #true
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_unify_function_branches_3() {
-        // missing case
-        assert_debug_snapshot!(type_check_source(
-            "
-            type Boolean = #true | #false
-            let result = \\(x: Boolean) => x.(
-                \\#true => 1
-                \\#false => 'yo'
-            )
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_number() {
-        assert_debug_snapshot!(type_check_source(
-            // expected number, got string at 'bomb'
-            "
-            let guess = \\x => 
-                let 0 = x
-                'bomb'
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_string() {
-        assert_debug_snapshot!(type_check_source(
-            // expected string, got number at 2
-            "
-            let guess = \\x => 
-                let 'yo' = x
-                2
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_null() {
-        assert_debug_snapshot!(type_check_source(
-            // expected string, got number at 2
-            "
-            let f = \\x => 
-                let null = x
-                2
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_boolean() {
-        assert_debug_snapshot!(type_check_source(
-            // expected string, got number at 2
-            "
-            let guess = \\x => 
-                let true = x
-                2
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_array() {
-        assert_debug_snapshot!(type_check_source(
-            "
-            let f = \\x =>
-              let [a, ...b, c] = x
-              let y: string = b
-              1
-        "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_tagged_union_1() {
-        assert_debug_snapshot!(type_check_source(
-            // expected union, got number at 2
-            "
-            let f = \\x => 
-                let #some(yo) = x
-                2
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_tagged_union_with_else_branch() {
-        assert_debug_snapshot!(type_check_source(
-            // expected union, got string at 'walao'
-            "
-            let f = \\x => 
-                let #some(yo) = x else \\'walao' => 10
-                2
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_tagged_union_with_non_exhaustive_else_branch() {
-        assert_debug_snapshot!(type_check_source(
-            // missing case "#blue" case at else branch
-            "
-            type Color = #red | #green | #blue
-            let colorIsRed = \\(color: Color) => 
-                let #red = color 
-                  else 
-                    \\#green => false
-                true
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_variable() {
-        assert_debug_snapshot!(type_check_source(
-            // expect no error
-            "
-            let colorIsRed = \\_ => 
-                let x = 1
-                let y = 'hello'
-                []
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_variable_2() {
-        assert_debug_snapshot!(type_check_source(
-            // unexpected else branch
-            "
-            let colorIsRed = \\_ => 
-                let x = 1 
-                  else 
-                    \\_ => 'hi'
-                []
-            "
-            .trim()
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_let_monadic_binding_generic_tagged_union_1() {
-        assert_debug_snapshot!(type_check_source(
-            " 
-            type Option<T> = #some(T) | #none
-            let add = \\(x: Option<number>) =>             
-                let #some(y) = x
-                y
-            "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn test_pattern_match_generic_tagged_union() {
-        assert_debug_snapshot!(type_check_source(
-            " 
-            type Option<T> = #some(T) | #none
-            let add = \\(x: Option<number>) => x.(
-                \\#some(x) => x
-                \\#false => 2
-            )
-            "
-            .to_string()
-        ))
-    }
 
     // #[test]
     // fn test_generic_function_with_specified_type_variable() {
@@ -882,62 +521,4 @@ let z: string = 'hello'.map(constant)
     //     ))
     // }
     //
-
-    #[test]
-    fn array_homogeneous_element_1() {
-        assert_debug_snapshot!(type_check_source("let x = [1, #hey]".trim().to_string()))
-    }
-
-    #[test]
-    fn type_annotation_function_return_type() {
-        assert_debug_snapshot!(type_check_source(
-            "
-         let f = \\(x): number => 'hi'
-         "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn type_annotation_record_property_type() {
-        assert_debug_snapshot!(type_check_source(
-            "
-         let x = {a: string = 2}
-         "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn boolean_literal() {
-        assert_debug_snapshot!(type_check_source(
-            "
-         let x: boolean = true
-         let y: number = false
-         "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn null_literal() {
-        assert_debug_snapshot!(type_check_source(
-            "
-         let x: null = null
-         let y: number = null
-         "
-            .to_string()
-        ))
-    }
-
-    #[test]
-    fn type_inference_infinite_type() {
-        // expected error
-        assert_debug_snapshot!(type_check_source(
-            "
-            let f = \\x => x.x
-         "
-            .to_string()
-        ))
-    }
 }

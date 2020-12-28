@@ -1,0 +1,29 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let f = \x => x.x()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/type_inference_infinite_type_1.kk:1:15
+  │
+1 │ let f = \x => x.x()
+  │               ^^^^^ Infinite type
+  │
+  = This will result in infinite type expansion.
