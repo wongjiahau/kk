@@ -56,9 +56,8 @@ impl Scope {
     }
 
     pub fn step_out_to_parent_scope(&mut self) {
-        match self.get_parent_scope_name(self.current_scope_name) {
-            Some(scope_name) => self.current_scope_name = scope_name,
-            None => (),
+        if let Some(scope_name) = self.get_parent_scope_name(self.current_scope_name) {
+            self.current_scope_name = scope_name
         }
     }
 
@@ -451,13 +450,16 @@ impl Environment {
     }
 
     fn insert_built_in_type_symbol(&mut self, name: String, type_symbol: TypeSymbol) {
-        Environment::insert_symbol(
+        match Environment::insert_symbol(
             self.current_scope_name(),
             &mut self.type_symbols,
             SymbolName::String(name),
             &self.source,
             type_symbol,
-        );
+        ) {
+            Ok(_) => (),
+            Err(error) => panic!("Compiler error: {:#?}", error),
+        }
     }
 
     pub fn insert_type_symbol(

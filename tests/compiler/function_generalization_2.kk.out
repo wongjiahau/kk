@@ -5,8 +5,8 @@
 error:
   ┌─ tests/compiler/function_generalization_2.kk:3:33
   │
-3 │ let y: {x: string, z: number} = {x = 2, y = {z = 3}}.f
-  │                                 ^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
+3 │ let y: {x: string, z: number} = {x = 2, y = {z = 3}}.f()
+  │                                 ^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
   │
   = +---------------+---------------+
     | EXPECTED TYPE |  ACTUAL TYPE  |
@@ -16,3 +16,4 @@ error:
     |     z: number |     z: number |
     |   }           |   }           |
     +---------------+---------------+
+

@@ -51,6 +51,14 @@ pub fn transpile_expression(expression: Expression) -> String {
             ),
             None => format!("{{$:'{}'}}", transpile_tag(token.representation)),
         },
+        Expression::RecordAccess {
+            expression,
+            property_name,
+        } => format!(
+            "({}).{}",
+            transpile_expression(*expression),
+            property_name.representation
+        ),
         Expression::Record {
             spread,
             key_value_pairs,

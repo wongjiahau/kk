@@ -30,6 +30,10 @@ pub struct UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    NoSuchPropertyOnThisRecord {
+        expected_keys: Vec<String>,
+    },
+    CannotAccessPropertyOfNonRecord,
     UnusedVariale,
     MissingCases(Vec<TypedDestructurePattern>),
     ThisTagDoesNotRequirePayload,
@@ -429,6 +433,10 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             Some(payload) => join_position(token.position, payload.right_parenthesis.position),
             None => token.position,
         },
+        Expression::RecordAccess {
+            expression,
+            property_name,
+        } => join_position(get_expression_position(&expression), property_name.position),
         Expression::Record {
             left_curly_bracket,
             right_curly_bracket,
@@ -1169,6 +1177,35 @@ pub fn infer_expression_type(
                     position: variable.position,
                     kind: UnifyErrorKind::UnknownValueSymbol,
                 })
+            }
+        }
+        Expression::RecordAccess {
+            expression,
+            property_name,
+        } => {
+            let expression_type = infer_expression_type(environment, expression)?;
+            match expression_type {
+                Type::Record { key_type_pairs } => {
+                    match key_type_pairs
+                        .iter()
+                        .find(|(key, _)| *key == property_name.representation)
+                    {
+                        None => Err(UnifyError {
+                            position: property_name.position,
+                            kind: UnifyErrorKind::NoSuchPropertyOnThisRecord {
+                                expected_keys: key_type_pairs
+                                    .iter()
+                                    .map(|(key, _)| key.clone())
+                                    .collect(),
+                            },
+                        }),
+                        Some((_, type_value)) => Ok(type_value.clone()),
+                    }
+                }
+                _ => Err(UnifyError {
+                    position: property_name.position,
+                    kind: UnifyErrorKind::CannotAccessPropertyOfNonRecord,
+                }),
             }
         }
         Expression::Let {

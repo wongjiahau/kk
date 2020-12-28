@@ -364,7 +364,7 @@ pub fn parse_simple_type_annotation(
     }
 }
 
-pub fn parse_function_call(
+pub fn parse_function_call_or_property_access(
     it: &mut Peekable<Iter<Token>>,
     first_argument: Expression,
 ) -> Result<Expression, ParseError> {
@@ -376,14 +376,29 @@ pub fn parse_function_call(
             token_type: TokenType::Identifier,
             ..
         }) => {
-            let token = it.next().unwrap();
-            let function_name = Box::new(Expression::Variable(token.clone()));
-            let function_call_arguments = parse_function_call_rest_arguments(it)?;
-            Ok(Expression::FunctionCall(FunctionCall {
-                first_argument: Box::new(first_argument),
-                rest_arguments: function_call_arguments,
-                function: function_name,
-            }))
+            let name = eat_token(it, TokenType::Identifier)?;
+            match it.peek() {
+                Some(Token {
+                    token_type: TokenType::LeftParenthesis,
+                    ..
+                }) => {
+                    // Then this is a function call
+                    let function_name = Box::new(Expression::Variable(name));
+                    let function_call_arguments = parse_function_call_rest_arguments(it)?;
+                    Ok(Expression::FunctionCall(FunctionCall {
+                        first_argument: Box::new(first_argument),
+                        rest_arguments: function_call_arguments,
+                        function: function_name,
+                    }))
+                }
+                _ => {
+                    // Then this is a property access
+                    Ok(Expression::RecordAccess {
+                        expression: Box::new(first_argument),
+                        property_name: name,
+                    })
+                }
+            }
         }
         Some(Token {
             token_type: TokenType::LeftParenthesis,
@@ -403,43 +418,43 @@ pub fn parse_function_call(
             let invalid_token = it.next().unwrap();
             Err(ParseError::InvalidToken {
                 invalid_token: invalid_token.clone(),
-                error: "Expected variable or left parenthesis".to_string(),
+                error: "Expected identifier or left parenthesis".to_string(),
                 suggestion: None,
             })
         }
         None => Err(ParseError::UnexpectedEOF {
-            error: "Expected variable or left parenthesis".to_string(),
+            error: "Expected identifier or left parenthesis".to_string(),
             suggestion: None,
         }),
     }?;
-    parse_function_call(it, first_argument)
+    parse_function_call_or_property_access(it, first_argument)
 }
 
 pub fn parse_function_call_rest_arguments(
     it: &mut Peekable<Iter<Token>>,
 ) -> Result<Option<FunctionCallRestArguments>, ParseError> {
-    match it.peek() {
-        Some(Token {
-            token_type: TokenType::LeftParenthesis,
-            ..
-        }) => {
-            let left_parenthesis = eat_token(it, TokenType::LeftParenthesis)?;
-            let mut arguments: Vec<Expression> = vec![];
-            loop {
+    let left_parenthesis = eat_token(it, TokenType::LeftParenthesis)?;
+    let arguments = {
+        let mut arguments: Vec<Expression> = vec![];
+        match it.peek() {
+            Some(Token {
+                token_type: TokenType::RightParenthesis,
+                ..
+            }) => arguments,
+            _ => loop {
                 arguments.push(parse_expression(it)?);
                 if try_eat_token(it, TokenType::Comma).is_none() {
-                    break;
+                    break arguments;
                 }
-            }
-            let right_parenthesis = eat_token(it, TokenType::RightParenthesis)?;
-            Ok(Some(FunctionCallRestArguments {
-                left_parenthesis,
-                arguments,
-                right_parenthesis,
-            }))
+            },
         }
-        _ => Ok(None),
-    }
+    };
+    let right_parenthesis = eat_token(it, TokenType::RightParenthesis)?;
+    Ok(Some(FunctionCallRestArguments {
+        left_parenthesis,
+        arguments,
+        right_parenthesis,
+    }))
 }
 
 pub fn parse_identifier(it: &mut Peekable<Iter<Token>>) -> Result<Token, ParseError> {
@@ -469,7 +484,7 @@ pub fn try_parse_function_call(
             token_type: TokenType::Period,
             ..
         }) => {
-            let function_call = parse_function_call(it, first_arg)?;
+            let function_call = parse_function_call_or_property_access(it, first_arg)?;
             Ok(function_call)
         }
         _ => Ok(first_arg),
@@ -597,6 +612,10 @@ pub fn parse_record(it: &mut Peekable<Iter<Token>>) -> Result<Expression, ParseE
     let mut key_value_pairs: Vec<RecordKeyValue> = Vec::new();
     loop {
         match it.peek() {
+            Some(Token {
+                token_type: TokenType::RightCurlyBracket,
+                ..
+            }) => break,
             Some(Token {
                 token_type: TokenType::Identifier,
                 ..

@@ -205,6 +205,10 @@ pub enum Expression {
         key_value_pairs: Vec<RecordKeyValue>,
         right_curly_bracket: Token,
     },
+    RecordAccess {
+        expression: Box<Expression>,
+        property_name: Token,
+    },
     Array {
         left_square_bracket: Token,
         elements: Vec<Expression>,

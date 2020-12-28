@@ -163,6 +163,18 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Unused variable".to_string(),
             body: "This variable created but not used anywhere, consider removing it.".to_string()
         },
+        UnifyErrorKind::NoSuchPropertyOnThisRecord {
+            mut expected_keys
+        } => {
+            expected_keys.sort();
+            StringifiedError{
+            summary: "No such property".to_string(),
+            body: format!("Available properties:\n{}", indent_string(expected_keys.join("\n"), 2))
+        } },
+        UnifyErrorKind::CannotAccessPropertyOfNonRecord => StringifiedError {
+            summary: "Cannot access property on a non-record type".to_string(),
+            body: "If you intended to call this function, add () after this.".to_string()
+        },
         other => panic!("{:#?}", other),
     }
 }
