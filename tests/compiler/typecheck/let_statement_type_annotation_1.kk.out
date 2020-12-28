@@ -3,13 +3,14 @@
 
 ========
 error:
-  ┌─ tests/compiler/monadic_let_1.kk:5:3
+  ┌─ tests/compiler/typecheck/let_statement_type_annotation_1.kk:1:17
   │
-5 │   #true
-  │   ^^^^^ Type mismatch
+1 │ let x: string = 2
+  │                 ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Color       | + Boolean   |
+    | - string      | + number    |
     +---------------+-------------+
+

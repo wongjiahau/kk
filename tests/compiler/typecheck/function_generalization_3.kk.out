@@ -3,7 +3,7 @@
 
 ========
 error:
-  ┌─ tests/compiler/function_generalization_3.kk:6:17
+  ┌─ tests/compiler/typecheck/function_generalization_3.kk:6:17
   │
 6 │ let z: string = 'hello'.map(constant)
   │                 ^^^^^^^^^^^^^^^^^^^^^ Type mismatch

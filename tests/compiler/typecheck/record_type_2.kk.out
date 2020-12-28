@@ -3,14 +3,13 @@
 
 ========
 error:
-  ┌─ tests/compiler/let_statement_type_annotation_1.kk:1:17
+  ┌─ tests/compiler/typecheck/record_type_2.kk:6:17
   │
-1 │ let x: string = 2
-  │                 ^ Type mismatch
+6 │ let z: string = x.x
+  │                 ^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
     | - string      | + number    |
     +---------------+-------------+
-

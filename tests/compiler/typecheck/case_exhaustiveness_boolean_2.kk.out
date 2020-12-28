@@ -3,7 +3,7 @@
 
 ========
 error:
-  ┌─ tests/compiler/case_exhaustiveness_boolean_2.kk:2:3
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_2.kk:2:3
   │
 2 │ ╭   \(true, true) => true
 3 │ │   \(false, true) => false

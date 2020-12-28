@@ -3,7 +3,7 @@
 
 ========
 error:
-  ┌─ tests/compiler/record_type_1.kk:1:34
+  ┌─ tests/compiler/typecheck/record_type_1.kk:1:34
   │
 1 │   let x : {x: string, y: string} = {
   │ ╭──────────────────────────────────^

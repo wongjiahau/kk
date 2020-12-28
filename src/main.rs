@@ -33,104 +33,108 @@ fn run_all_tests() {
     use std::process::Command;
 
     let test_dir = "tests/compiler/";
-    let dirs = fs::read_dir(test_dir).expect("Failed to read directory");
-
-    for maybe_entry in dirs {
-        let entry = maybe_entry.expect("Failed to read entry");
-        let filename = entry
-            .path()
-            .to_str()
-            .expect("Failed to convert entry to string")
-            .to_string();
-
-        // let file_extension = "function_arguments_mismatch.kk";
-        // if filename.ends_with(file_extension) {
-        if filename.ends_with(".kk") {
-            let input_filename = filename;
-            let input = fs::read_to_string(&input_filename).expect("failed to read input file");
-            print!("{}", input_filename);
-            let actual_output = {
-                let output = Command::new("./target/debug/kk")
-                    .arg("run")
-                    .arg(&input_filename)
-                    .output()
-                    .expect("Failed to run KK CLI");
-
-                let exit_code = match output.status.code() {
-                    Some(code) => code.to_string(),
-                    None => "".to_string(),
-                };
-
-                vec![
-                    exit_code,
-                    strip_line_trailing_spaces(
-                        String::from_utf8_lossy(&output.stdout.clone()).to_string(),
-                    ),
-                    strip_line_trailing_spaces(
-                        String::from_utf8_lossy(&output.stderr.clone()).to_string(),
-                    ),
-                ]
-                .join("\n========\n")
-                // Output {
-                //     stdout: strip_line_trailing_spaces(String::from_utf8_lossy(
-                //         &output.stdout.clone(),
-                //     ).to_string()),
-                //     stderr: strip_line_trailing_spaces(String::from_utf8_lossy(
-                //         &output.stderr.clone(),
-                //     ).to_string()),
-                //     status: output.status.code(),
-                // }
-            };
-
-            let actual_output = strip_line_trailing_spaces(actual_output);
-
-            let stripped_actual_output = strip_line_trailing_spaces(
-                String::from_utf8(
-                    strip_ansi_escapes::strip(actual_output.clone())
-                        .expect("Failed to strip color"),
-                )
-                .unwrap(),
-            );
-
-            let output_filename = input_filename.clone() + ".out";
-            let expected_output = fs::read_to_string(output_filename.as_str())
-                .expect(format!("failed to read output file for {}", output_filename).as_str())
-                .trim()
+    let folders = fs::read_dir(test_dir).expect("Failed to read directory");
+    for folder in folders {
+        println!("folder = {:#?}", folder);
+        let files = fs::read_dir(folder.unwrap().path().to_str().unwrap()).expect("Failed to read directory");
+        for file in files {
+            let file = file.expect("Failed to read entry");
+            let filename = file
+                .path()
+                .to_str()
+                .expect("Failed to convert entry to string")
                 .to_string();
 
-            let expected_output = strip_line_trailing_spaces(expected_output);
+            // let file_extension = "function_arguments_mismatch.kk";
+            // if filename.ends_with(file_extension) {
+            if filename.ends_with(".kk") {
+                let input_filename = filename;
+                let input = fs::read_to_string(&input_filename).expect("failed to read input file");
+                print!("{}", input_filename);
+                let actual_output = {
+                    let output = Command::new("./target/debug/kk")
+                        .arg("run")
+                        .arg(&input_filename)
+                        .output()
+                        .expect("Failed to run KK CLI");
 
-            // println!("\nactual = {:?}", stripped_actual_output.chars());
-            // println!("expect = {:?}", expected_output.chars());
+                    let exit_code = match output.status.code() {
+                        Some(code) => code.to_string(),
+                        None => "".to_string(),
+                    };
 
-            if stripped_actual_output.trim() != expected_output {
-                let changeset = Changeset::new(&expected_output, &stripped_actual_output, "");
-                println!("{}", "=".repeat(10));
-                println!(
-                    "ASSERTION FAILED FOR:\n\n{}",
-                    indent_string(input_filename.to_string(), 4)
+                    vec![
+                        exit_code,
+                        strip_line_trailing_spaces(
+                            String::from_utf8_lossy(&output.stdout.clone()).to_string(),
+                        ),
+                        strip_line_trailing_spaces(
+                            String::from_utf8_lossy(&output.stderr.clone()).to_string(),
+                        ),
+                    ]
+                    .join("\n========\n")
+                    // Output {
+                    //     stdout: strip_line_trailing_spaces(String::from_utf8_lossy(
+                    //         &output.stdout.clone(),
+                    //     ).to_string()),
+                    //     stderr: strip_line_trailing_spaces(String::from_utf8_lossy(
+                    //         &output.stderr.clone(),
+                    //     ).to_string()),
+                    //     status: output.status.code(),
+                    // }
+                };
+
+                let actual_output = strip_line_trailing_spaces(actual_output);
+
+                let stripped_actual_output = strip_line_trailing_spaces(
+                    String::from_utf8(
+                        strip_ansi_escapes::strip(actual_output.clone())
+                            .expect("Failed to strip color"),
+                    )
+                    .unwrap(),
                 );
-                println!("\n\nINPUT:\n\n{}", indent_string(input, 4));
-                println!(
-                    "\n\nEXPECTED OUTPUT:\n\n{}",
-                    indent_string(expected_output, 4)
-                );
-                println!(
-                    "\n\nACTUAL OUTPUT({}):\n\n{}",
-                    output_filename,
-                    indent_string(actual_output, 4)
-                );
-                println!(
-                    "\n\nDIFF (EXPECTED OUTPUT / ACTUAL OUTPUT):\n\n{}",
-                    indent_string(changeset.to_string(), 4)
-                );
-                println!("{}", "=".repeat(10));
-                panic!("ASSERTION FAILED.")
-            } else {
-                println!("{}", " PASSED".green());
+
+                let output_filename = input_filename.clone() + ".out";
+                let expected_output = fs::read_to_string(output_filename.as_str())
+                    .expect(format!("failed to read output file for {}", output_filename).as_str())
+                    .trim()
+                    .to_string();
+
+                let expected_output = strip_line_trailing_spaces(expected_output);
+
+                // println!("\nactual = {:?}", stripped_actual_output.chars());
+                // println!("expect = {:?}", expected_output.chars());
+
+                if stripped_actual_output.trim() != expected_output {
+                    let changeset = Changeset::new(&expected_output, &stripped_actual_output, "");
+                    println!("{}", "=".repeat(10));
+                    println!(
+                        "ASSERTION FAILED FOR:\n\n{}",
+                        indent_string(input_filename.to_string(), 4)
+                    );
+                    println!("\n\nINPUT:\n\n{}", indent_string(input, 4));
+                    println!(
+                        "\n\nEXPECTED OUTPUT:\n\n{}",
+                        indent_string(expected_output, 4)
+                    );
+                    println!(
+                        "\n\nACTUAL OUTPUT({}):\n\n{}",
+                        output_filename,
+                        indent_string(actual_output, 4)
+                    );
+                    println!(
+                        "\n\nDIFF (EXPECTED OUTPUT / ACTUAL OUTPUT):\n\n{}",
+                        indent_string(changeset.to_string(), 4)
+                    );
+                    println!("{}", "=".repeat(10));
+                    panic!("ASSERTION FAILED.")
+                } else {
+                    println!("{}", " PASSED".green());
+                }
             }
         }
     }
+
     fn strip_line_trailing_spaces(input: String) -> String {
         input
             .split('\n')

@@ -3,7 +3,7 @@
 
 ========
 error:
-  ┌─ tests/compiler/monadic_let_2.kk:4:3
+  ┌─ tests/compiler/typecheck/monadic_let_2.kk:4:3
   │
 4 │ ╭   let #red = xs
 5 │ │     else

@@ -3,9 +3,9 @@
 
 ========
 error:
-  ┌─ tests/compiler/unused_variables_1.kk:2:7
+  ┌─ tests/compiler/typecheck/variable_shadowing_1.kk:3:7
   │
-2 │   let y = x
+3 │   let x = x
   │       ^ Unused variable
   │
   = This variable created but not used anywhere, consider removing it.

@@ -3,7 +3,7 @@
 
 ========
 error:
-  ┌─ tests/compiler/function_arguments_mismatch.kk:3:5
+  ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:3:5
   │
 3 │     \(_, _) => 1
   │     ^^^^^^^^^^^^ Function arguments length mismatch

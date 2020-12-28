@@ -3,7 +3,7 @@
 
 ========
 error:
-  ┌─ tests/compiler/unify_function_branches_2.kk:4:3
+  ┌─ tests/compiler/typecheck/unify_function_branches_2.kk:4:3
   │
 4 │ ╭   \(#bomb, #true) => #true
 5 │ │   \(#bomb, #false) => #true

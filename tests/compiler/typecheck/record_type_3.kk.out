@@ -3,7 +3,7 @@
 
 ========
 error:
-  ┌─ tests/compiler/record_type_3.kk:6:11
+  ┌─ tests/compiler/typecheck/record_type_3.kk:6:11
   │
 6 │ let z = x.a
   │           ^ No such property

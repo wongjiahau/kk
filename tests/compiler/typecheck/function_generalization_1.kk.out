@@ -3,7 +3,7 @@
 
 ========
 error:
-  ┌─ tests/compiler/function_generalization_1.kk:3:17
+  ┌─ tests/compiler/typecheck/function_generalization_1.kk:3:17
   │
 3 │ let y: number = x
   │                 ^ Type mismatch

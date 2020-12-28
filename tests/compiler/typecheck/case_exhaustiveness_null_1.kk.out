@@ -3,10 +3,10 @@
 
 ========
 error:
-  ┌─ tests/compiler/case_exhaustiveness_array_2.kk:5:4
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_null_1.kk:3:4
   │
-5 │   \_ => false
-  │    ^ Unreachable case
+3 │   \null => false
+  │    ^^^^ Unreachable case
   │
   = This case is unreachable because all possible cases are already handled by previous branches.
 

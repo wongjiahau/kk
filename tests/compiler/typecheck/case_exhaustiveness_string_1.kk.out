@@ -3,7 +3,7 @@
 
 ========
 error:
-  ┌─ tests/compiler/case_exhaustiveness_string_1.kk:2:3
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_string_1.kk:2:3
   │
 2 │ ╭   \"cat" => true
 3 │ │   \"tiger" => false
