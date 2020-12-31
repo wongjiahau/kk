@@ -1,0 +1,31 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+type Tuple<Left> = {left: Left}
+
+type Foo = Tuple<Foo= number>
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/explicit_type_variable_7.kk:3:18
+  │
+3 │ type Foo = Tuple<Foo= number>
+  │                  ^^^ Type argument name mismatch
+  │
+  = The expected name here is `Left`.

@@ -19,12 +19,27 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
                 TokenType::KeywordLet => {
                     eat_token(it, TokenType::KeywordLet)?;
                     let left = eat_token(it, TokenType::Identifier)?;
+                    let type_variables = if try_eat_token(it, TokenType::LessThan).is_some() {
+                        let mut type_variables = Vec::new();
+                        let type_variables = loop {
+                            type_variables.push(parse_identifier(it)?);
+                            if try_eat_token(it, TokenType::Comma).is_none() {
+                                break type_variables;
+                            }
+                        };
+                        eat_token(it, TokenType::MoreThan)?;
+                        type_variables
+                    } else {
+                        vec![]
+                    };
+
                     let type_annotation = try_parse_colon_type_annotation(it)?;
                     eat_token(it, TokenType::Equals)?;
                     let right = parse_expression(it)?;
                     statements.push(Statement::Let {
                         left,
                         right,
+                        type_variables,
                         type_annotation,
                     })
                 }
@@ -94,6 +109,30 @@ pub fn parse_statements_(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Statement
     Ok(statements)
 }
 
+pub fn try_parse_type_arguments(
+    it: &mut Peekable<Iter<Token>>,
+) -> Result<Option<TypeArguments>, ParseError> {
+    if let Some(left_angular_bracket) = try_eat_token(it, TokenType::LessThan) {
+        let mut substitutions = Vec::new();
+        loop {
+            let parameter_name = parse_identifier(it)?;
+            eat_token(it, TokenType::Equals)?;
+            let type_annotation = parse_type_annotation(it)?;
+            substitutions.push((parameter_name, type_annotation));
+            if try_eat_token(it, TokenType::Comma).is_none() {
+                let right_angular_bracket = eat_token(it, TokenType::MoreThan)?;
+                return Ok(Some(TypeArguments {
+                    left_angular_bracket,
+                    substitutions,
+                    right_angular_bracket,
+                }));
+            }
+        }
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn parse_enum_tag(it: &mut Peekable<Iter<Token>>) -> Result<EnumTag, ParseError> {
     let tagname = eat_token(it, TokenType::Tag)?;
     let payload = if let Some(left_parenthesis) = try_eat_token(it, TokenType::LeftParenthesis) {
@@ -114,12 +153,12 @@ pub fn parse_enum_tag(it: &mut Peekable<Iter<Token>>) -> Result<EnumTag, ParseEr
 pub fn try_parse_type_variables(it: &mut Peekable<Iter<Token>>) -> Result<Vec<Token>, ParseError> {
     if try_eat_token(it, TokenType::LessThan).is_some() {
         let mut type_variables = vec![];
-        loop {
+        let type_variables = loop {
             type_variables.push(parse_identifier(it)?);
-            if try_eat_token(it, TokenType::LessThan).is_none() {
-                break;
+            if try_eat_token(it, TokenType::Comma).is_none() {
+                break type_variables;
             }
-        }
+        };
         eat_token(it, TokenType::MoreThan)?;
         Ok(type_variables)
     } else {
@@ -272,47 +311,14 @@ pub fn try_parse_colon_type_annotation(
 }
 
 pub fn parse_type_annotation(it: &mut Peekable<Iter<Token>>) -> Result<TypeAnnotation, ParseError> {
-    let mut type_annotations = Vec::new();
-    let first_type_annotation = parse_simple_type_annotation(it)?;
-    while try_eat_token(it, TokenType::Pipe).is_some() {
-        type_annotations.push(parse_simple_type_annotation(it)?)
-    }
-    if type_annotations.is_empty() {
-        Ok(first_type_annotation)
-    } else {
-        type_annotations.reverse();
-        type_annotations.push(first_type_annotation);
-        type_annotations.reverse();
-        Ok(TypeAnnotation::Union { type_annotations })
-    }
-}
-
-pub fn parse_simple_type_annotation(
-    it: &mut Peekable<Iter<Token>>,
-) -> Result<TypeAnnotation, ParseError> {
     if let Some(token) = it.next() {
         match token.token_type.clone() {
             TokenType::Identifier | TokenType::KeywordNull => {
                 let name = token.clone();
-                let arguments =
-                    if let Some(left_angular_bracket) = try_eat_token(it, TokenType::LessThan) {
-                        let mut arguments = vec![];
-                        loop {
-                            arguments.push(parse_type_annotation(it)?);
-                            if try_eat_token(it, TokenType::Comma).is_none() {
-                                break;
-                            }
-                        }
-                        let right_angular_bracket = eat_token(it, TokenType::MoreThan)?;
-                        Some(NamedTypeAnnotationArguments {
-                            left_angular_bracket,
-                            arguments,
-                            right_angular_bracket,
-                        })
-                    } else {
-                        None
-                    };
-                Ok(TypeAnnotation::Named { name, arguments })
+                Ok(TypeAnnotation::Named {
+                    name,
+                    type_arguments: try_parse_type_arguments(it)?,
+                })
             }
             TokenType::LeftCurlyBracket => {
                 let left_curly_bracket = token.clone();
@@ -386,15 +392,20 @@ pub fn parse_function_call_or_property_access(
                 Some(Token {
                     token_type: TokenType::LeftParenthesis,
                     ..
+                })
+                | Some(Token {
+                    token_type: TokenType::LessThan,
+                    ..
                 }) => {
                     // Then this is a function call
-                    let function_name = Box::new(Expression::Variable(name));
+                    let type_arguments = try_parse_type_arguments(it)?;
                     let function_call_arguments = parse_function_call_rest_arguments(it)?;
-                    Ok(Expression::FunctionCall(FunctionCall {
+                    Ok(Expression::FunctionCall(Box::new(FunctionCall {
                         first_argument: Box::new(first_argument),
                         rest_arguments: function_call_arguments,
-                        function: function_name,
-                    }))
+                        type_arguments,
+                        function_name: name,
+                    })))
                 }
                 _ => {
                     // Then this is a property access
@@ -404,20 +415,6 @@ pub fn parse_function_call_or_property_access(
                     })
                 }
             }
-        }
-        Some(Token {
-            token_type: TokenType::LeftParenthesis,
-            ..
-        }) => {
-            eat_token(it, TokenType::LeftParenthesis)?;
-            let function = Box::new(parse_expression(it)?);
-            eat_token(it, TokenType::RightParenthesis)?;
-            let function_call_arguments = parse_function_call_rest_arguments(it)?;
-            Ok(Expression::FunctionCall(FunctionCall {
-                first_argument: Box::new(first_argument),
-                rest_arguments: function_call_arguments,
-                function,
-            }))
         }
         Some(_) => {
             let invalid_token = it.next().unwrap();

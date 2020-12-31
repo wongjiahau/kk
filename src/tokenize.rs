@@ -65,10 +65,10 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     .collect();
 
                 match it.by_ref().next() {
-                    Some(_ending_quote) => tokens.push(Token {
+                    Some(ending_quote) => tokens.push(Token {
                         token_type: TokenType::String,
                         representation: format!("\"{}\"", stringify(content.clone())),
-                        position: make_position(character, content.last()),
+                        position: make_position(character, Some(&ending_quote)),
                     }),
                     None => {
                         return Err(ParseError::UnterminatedString {

@@ -179,6 +179,33 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Infinite type".to_string(),
             body: "This will result in infinite type expansion.".to_string()
         },
+        UnifyErrorKind::DuplicatedRecordKey => StringifiedError {
+            summary: "Duplicated record key".to_string(),
+            body: "This key is already declared before in this record. Consider removing or renaming it.".to_string()
+        },
+        UnifyErrorKind::UnknownTypeParameterName {
+            expected_names
+        } => StringifiedError {
+            summary: "Unknown type parameter name".to_string(),
+            body: format!("The expected names are:\n{}", indent_string(expected_names.join("\n"), 2))
+        },
+        UnifyErrorKind::TypeArgumentsLengthMismatch {
+            expected_type_parameter_names,
+            actual_length
+        } => StringifiedError {
+            summary: "Type arguments length mismatch".to_string(),
+            body:
+                format!(
+                "{} type arguments are given, but expected {}:\n{}",
+                actual_length,
+                expected_type_parameter_names.len(),
+                indent_string(expected_type_parameter_names.join("\n"), 2 )
+            )
+        },
+        UnifyErrorKind::TypeArgumentNameMismatch {expected_name} => StringifiedError {
+            summary: "Type argument name mismatch".to_string(),
+            body: format!("The expected name here is `{}`.", expected_name)
+        },
         other => panic!("{:#?}", other),
     }
 }
@@ -263,21 +290,28 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
             ),
             indent_level * 2,
         ),
-        Type::Named { name, arguments } => {
-            let result = if arguments.is_empty() {
+        Type::Named {
+            name,
+            type_arguments: arguments,
+        } => {
+            if arguments.is_empty() {
                 name
             } else {
-                format!(
+                let result = format!(
                     "{}<\n{}\n>",
                     name,
                     arguments
                         .into_iter()
-                        .map(|type_value| stringify_type(type_value, indent_level + 1))
+                        .map(|(key, type_value)| format!(
+                            "{}=\n{},",
+                            indent_string(key, 2),
+                            indent_string(stringify_type(type_value, 0), 4)
+                        ),)
                         .collect::<Vec<String>>()
-                        .join(", ")
-                )
-            };
-            indent_string(result, indent_level * 2)
+                        .join("\n")
+                );
+                indent_string(result, indent_level * 2)
+            }
         }
         Type::Tuple(types) => format!(
             "(\n{}\n)",
@@ -287,52 +321,40 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                 .collect::<Vec<String>>()
                 .join(",\n")
         ),
-        Type::TypeVariable { name } => indent_string(name, indent_level * 2),
+        Type::ImplicitTypeVariable { name } | Type::ExplicitTypeVariable { name } => {
+            indent_string(name, indent_level * 2)
+        }
         Type::Underscore => "_".to_string(),
-        Type::Union(UnionType { mut tags, .. }) => format!(
-            "\n{}",
-            {
-                tags.sort_by(|a, b| a.tagname.cmp(&b.tagname));
-                tags
-            }
-            .into_iter()
-            .map(|tag| {
-                let result = match tag.payload {
-                    None => format!("| {}", tag.tagname),
-                    Some(payload) => format!(
-                        "| {}({})",
-                        tag.tagname,
-                        stringify_type(*payload, indent_level + 1)
-                    ),
-                };
-                indent_string(result, indent_level * 2)
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-        ),
-        Type::Record { mut key_type_pairs } => format!(
-            "{{\n{}\n}}",
-            {
-                key_type_pairs.sort_by(|(a, _), (b, _)| a.cmp(&b));
+        Type::Record { mut key_type_pairs } => {
+            key_type_pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+            let result = format!(
+                "{{\n{}\n}}",
                 key_type_pairs
-            }
-            .into_iter()
-            .map(|(key, type_value)| {
-                let result = format!("{}: {}", key, stringify_type(type_value, indent_level * 2));
-                indent_string(result, (indent_level + 1) * 2)
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-        ),
-        Type::Function(function_type) => format!(
-            "\\(\n{}\n) =>\n{}",
-            vec![*function_type.first_argument_type]
-                .into_iter()
-                .chain(function_type.rest_arguments_types.into_iter())
-                .map(|argument_type| { stringify_type(argument_type, indent_level + 1) })
-                .collect::<Vec<String>>()
-                .join(",\n"),
-            stringify_type(*function_type.return_type, indent_level + 1)
-        ),
+                    .into_iter()
+                    .map(|(key, type_value)| {
+                        format!(
+                            "{}:\n{},",
+                            indent_string(key, 2),
+                            indent_string(stringify_type(type_value, 0), 4)
+                        )
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            );
+            indent_string(result, indent_level * 2)
+        }
+        Type::Function(function_type) => {
+            let result = format!(
+                "\\(\n{}\n) =>\n{}",
+                vec![*function_type.first_argument_type]
+                    .into_iter()
+                    .chain(function_type.rest_arguments_types.into_iter())
+                    .map(|argument_type| { indent_string(stringify_type(argument_type, 0), 2) })
+                    .collect::<Vec<String>>()
+                    .join(",\n"),
+                indent_string(stringify_type(*function_type.return_type, 0), 2)
+            );
+            indent_string(result, indent_level * 2)
+        }
     }
 }

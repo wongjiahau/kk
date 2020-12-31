@@ -32,7 +32,9 @@ error:
     | EXPECTED TYPE |  ACTUAL TYPE  |
     +---------------+---------------+
     |   {           |   {           |
-    | -   x: string | +   x: number |
-    |     z: number |     z: number |
+    |     x:        |     x:        |
+    | -     string, | +     number, |
+    |     z:        |     z:        |
+    |       number, |       number, |
     |   }           |   }           |
     +---------------+---------------+

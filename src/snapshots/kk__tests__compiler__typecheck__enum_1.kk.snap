@@ -5,11 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum List<T> =
+enum List<Element> =
   #nil
   #cons({
-    current: T,
-    next: List<T>
+    current: Element,
+    next: List<Element= Element>
   })
 
 let xs = #cons({
@@ -46,13 +46,16 @@ error:
 14 │ │ })
    │ ╰─^ Type mismatch
    │
-   = +---------------------+---------------------+
-     |    EXPECTED TYPE    |     ACTUAL TYPE     |
-     +---------------------+---------------------+
-     |   {                 |   {                 |
-     |     current: number |     current: number |
-     |     next: List<     |     next: List<     |
-     | -     number        | +     boolean       |
-     |     >               |     >               |
-     |   }                 |   }                 |
-     +---------------------+---------------------+
+   = +-------------------+--------------------+
+     |   EXPECTED TYPE   |    ACTUAL TYPE     |
+     +-------------------+--------------------+
+     |   {               |   {                |
+     |     current:      |     current:       |
+     |       number,     |       number,      |
+     |     next:         |     next:          |
+     |       List<       |       List<        |
+     |         Element=  |         Element=   |
+     | -         number, | +         boolean, |
+     |       >,          |       >,           |
+     |   }               |   }                |
+     +-------------------+--------------------+

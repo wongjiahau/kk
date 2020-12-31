@@ -105,7 +105,7 @@ pub struct Environment {
 
 #[derive(Debug, Clone)]
 enum SubstitutionItem {
-    TypeVariable(String),
+    ImplicitTypeVariable(String),
     Type(Type),
     NotSubstituted,
 }
@@ -159,7 +159,6 @@ impl Environment {
         let type_variable_index = self.type_variable_index.get();
         let name = format!("@TVAR{}", type_variable_index);
         self.type_variable_index.set(type_variable_index + 1);
-        // self.type_variable_index += 1;
 
         self.type_variable_substitutions
             .insert(name.clone(), SubstitutionItem::NotSubstituted);
@@ -167,12 +166,35 @@ impl Environment {
         name
     }
 
-    pub fn introduce_type_variable(
+    pub fn insert_explicit_type_variable(
+        &mut self,
+        type_variable: &Token,
+    ) -> Result<(), UnifyError> {
+        self.insert_type_symbol(
+            type_variable,
+            TypeSymbol {
+                usage_references: Default::default(),
+                declaration: Declaration::UserDefined {
+                    source: self.source.clone(),
+                    token: type_variable.clone(),
+                    scope_name: self.current_scope_name(),
+                },
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::ExplicitTypeVariable {
+                        name: type_variable.representation.clone(),
+                    },
+                },
+            },
+        )
+    }
+
+    pub fn introduce_implicit_type_variable(
         &mut self,
         variable_name: Option<&Token>,
     ) -> Result<Type, UnifyError> {
         let new_type_variable_name = self.get_next_type_variable_name();
-        let type_value = Type::TypeVariable {
+        let type_value = Type::ImplicitTypeVariable {
             name: new_type_variable_name.clone(),
         };
 
@@ -185,7 +207,7 @@ impl Environment {
                         token: variable_name.clone(),
                         scope_name: self.scope.get_current_scope_name(),
                     },
-                    actual_type: TypeScheme {
+                    type_scheme: TypeScheme {
                         type_variables: vec![],
                         type_value: type_value.clone(),
                     },
@@ -208,14 +230,16 @@ impl Environment {
     ) -> Result<(), UnifyError> {
         match self.get_type_variable_terminal_type(type_variable_name.clone()) {
             Some(terminal_type) => match type_value {
-                Type::TypeVariable { name } => {
+                Type::ImplicitTypeVariable { name } => {
                     self.update_substitution(name, terminal_type, position)
                 }
                 _ => {
                     let unified_type = unify_type(self, &terminal_type, &type_value, position)?;
 
                     let substitution_item = match unified_type {
-                        Type::TypeVariable { name } => SubstitutionItem::TypeVariable(name),
+                        Type::ImplicitTypeVariable { name } => {
+                            SubstitutionItem::ImplicitTypeVariable(name)
+                        }
                         other => SubstitutionItem::Type(other),
                     };
 
@@ -226,7 +250,9 @@ impl Environment {
             },
             None => {
                 let substitution_item = match type_value {
-                    Type::TypeVariable { name } => SubstitutionItem::TypeVariable(name),
+                    Type::ImplicitTypeVariable { name } => {
+                        SubstitutionItem::ImplicitTypeVariable(name)
+                    }
                     other => SubstitutionItem::Type(other),
                 };
                 self.type_variable_substitutions
@@ -238,8 +264,8 @@ impl Environment {
 
     /**
      * Apply subtitution to a type.  
-     * For example, if we apply the subtitution {A = String, B = Int}
-     * to type Function<A, B>, we get Function<String, Int>
+     * For example, if we apply the subtitution <A= String, B= Int>
+     * to type Foo<A, B>, we get Foo<A= String, B= Int>
      */
     pub fn apply_subtitution_to_type(&self, type_value: &Type) -> Type {
         match type_value {
@@ -247,6 +273,9 @@ impl Environment {
             Type::Boolean => Type::Boolean,
             Type::String => Type::String,
             Type::Null => Type::Null,
+            Type::ExplicitTypeVariable { name } => {
+                Type::ExplicitTypeVariable { name: name.clone() }
+            }
             Type::Array(type_value) => Type::Array(Box::new(
                 self.apply_subtitution_to_type(type_value.as_ref()),
             )),
@@ -256,10 +285,10 @@ impl Environment {
                     .map(|type_value| self.apply_subtitution_to_type(type_value))
                     .collect(),
             ),
-            Type::TypeVariable { name } => {
+            Type::ImplicitTypeVariable { name } => {
                 match self.get_type_variable_terminal_type(name.clone()) {
                     Some(type_value) => self.apply_subtitution_to_type(&type_value),
-                    None => Type::TypeVariable { name: name.clone() },
+                    None => Type::ImplicitTypeVariable { name: name.clone() },
                 }
             }
             Type::Function(function_type) => {
@@ -274,34 +303,17 @@ impl Environment {
                     .collect(),
             },
             Type::Underscore => Type::Underscore,
-            Type::Union(UnionType {
-                tags,
-                bound,
-                catch_all,
-            }) => Type::Union(UnionType {
-                bound: bound.clone(),
-                catch_all: *catch_all,
-                tags: tags
-                    .iter()
-                    .map(|tag_type| self.apply_subtitution_to_tag_type(&tag_type))
-                    .collect(),
-            }),
-            Type::Named { name, arguments } => Type::Named {
+            Type::Named {
+                name,
+                type_arguments,
+            } => Type::Named {
                 name: name.clone(),
-                arguments: arguments
+                type_arguments: type_arguments
                     .iter()
-                    .map(|argument| self.apply_subtitution_to_type(&argument))
+                    .map(|(key, type_parameter)| {
+                        (key.clone(), self.apply_subtitution_to_type(&type_parameter))
+                    })
                     .collect(),
-            },
-        }
-    }
-
-    pub fn apply_subtitution_to_tag_type(&self, TagType { tagname, payload }: &TagType) -> TagType {
-        TagType {
-            tagname: tagname.clone(),
-            payload: match payload {
-                Some(payload) => Some(Box::new(self.apply_subtitution_to_type(payload.as_ref()))),
-                None => None,
             },
         }
     }
@@ -349,7 +361,7 @@ impl Environment {
     ) -> Option<Type> {
         match self.type_variable_substitutions.get(&type_variable_name) {
             Some(SubstitutionItem::Type(type_value)) => Some(type_value.clone()),
-            Some(SubstitutionItem::TypeVariable(type_variable_name)) => {
+            Some(SubstitutionItem::ImplicitTypeVariable(type_variable_name)) => {
                 if *type_variable_name == initial_type_variable_name
                     || *type_variable_name == previous_type_variable
                 {
@@ -361,7 +373,7 @@ impl Environment {
                         type_variable_name.clone(),
                     ) {
                         Some(type_value) => Some(type_value),
-                        None => Some(Type::TypeVariable {
+                        None => Some(Type::ImplicitTypeVariable {
                             name: type_variable_name.clone(),
                         }),
                     }
@@ -626,7 +638,7 @@ pub struct TypeSymbol {
 #[derive(Debug, Clone)]
 pub struct ValueSymbol {
     pub declaration: Declaration,
-    pub actual_type: TypeScheme,
+    pub type_scheme: TypeScheme,
     pub usage_references: RefCell<Vec<UsageReference>>,
 }
 
@@ -693,10 +705,10 @@ fn built_in_value_symbols() -> Vec<(String, ValueSymbol)> {
         ValueSymbol {
             declaration: Declaration::BuiltIn,
             usage_references: Default::default(),
-            actual_type: TypeScheme {
+            type_scheme: TypeScheme {
                 type_variables: vec![type_variable_name.clone()],
                 type_value: Type::Function(FunctionType {
-                    first_argument_type: Box::new(Type::TypeVariable {
+                    first_argument_type: Box::new(Type::ImplicitTypeVariable {
                         name: type_variable_name,
                     }),
                     rest_arguments_types: vec![],
@@ -708,16 +720,15 @@ fn built_in_value_symbols() -> Vec<(String, ValueSymbol)> {
 }
 
 fn built_in_type_symbols() -> Vec<(String, TypeSymbol)> {
-    let array_type_variable = "T".to_string();
     vec![
         (
             "Array".to_string(),
             TypeSymbol {
                 declaration: Declaration::BuiltIn,
                 type_scheme: TypeScheme {
-                    type_variables: vec![array_type_variable.clone()],
-                    type_value: Type::Array(Box::new(Type::TypeVariable {
-                        name: array_type_variable,
+                    type_variables: vec!["Element".to_string()],
+                    type_value: Type::Array(Box::new(Type::ImplicitTypeVariable {
+                        name: "Element".to_string(),
                     })),
                 },
                 usage_references: RefCell::new(Vec::new()),

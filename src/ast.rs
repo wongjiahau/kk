@@ -2,6 +2,7 @@
 pub enum Statement {
     Let {
         left: Token,
+        type_variables: Vec<Token>,
         right: Expression,
         type_annotation: Option<TypeAnnotation>,
     },
@@ -41,37 +42,31 @@ pub struct TypeVariable {
 #[derive(Debug, Clone)]
 pub enum Type {
     Underscore,
-    TypeVariable { name: String },
-    Record { key_type_pairs: Vec<(String, Type)> },
-    Named { name: String, arguments: Vec<Type> },
+
+    /// Type variable that is declared. Cannot be substituted before instantiation.
+    /// Note that a type variable is only explicit within its own scope
+    ExplicitTypeVariable {
+        name: String,
+    },
+
+    /// Type variable that is implicitly created  for unification.
+    ImplicitTypeVariable {
+        name: String,
+    },
+    Record {
+        key_type_pairs: Vec<(String, Type)>,
+    },
+    Named {
+        name: String,
+        type_arguments: Vec<(String, Type)>,
+    },
     Function(FunctionType),
-    Union(UnionType),
     Tuple(Vec<Type>),
     Boolean,
     Number,
     String,
     Null,
     Array(Box<Type>),
-}
-
-#[derive(Debug, Clone)]
-pub struct TypeEnumTag {
-    tagname: String,
-    payload: Option<Type>,
-}
-
-#[derive(Debug, Clone)]
-pub struct UnionType {
-    pub tags: Vec<TagType>,
-    pub bound: UnionTypeBound,
-    pub catch_all: bool,
-}
-
-#[derive(Debug, Clone)]
-pub enum UnionTypeBound {
-    Exact,
-    AtLeast,
-    AtMost,
 }
 
 #[derive(Debug, Clone)]
@@ -113,7 +108,7 @@ pub struct NamedTypeAnnotationArguments {
 pub enum TypeAnnotation {
     Named {
         name: Token,
-        arguments: Option<NamedTypeAnnotationArguments>,
+        type_arguments: Option<TypeArguments>,
     },
     Record {
         left_curly_bracket: Token,
@@ -121,9 +116,6 @@ pub enum TypeAnnotation {
         right_curly_bracket: Token,
     },
     Underscore(Token),
-    Union {
-        type_annotations: Vec<TypeAnnotation>,
-    },
     Function {
         start_token: Token,
         first_argument_type: Box<TypeAnnotation>,
@@ -201,7 +193,7 @@ pub enum Expression {
         payload: Option<Box<TagPayload>>,
     },
     Function(Box<Function>),
-    FunctionCall(FunctionCall),
+    FunctionCall(Box<FunctionCall>),
     Record {
         left_curly_bracket: Token,
         spread: Option<Box<Expression>>,
@@ -243,9 +235,17 @@ pub struct RecordKeyValue {
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
-    pub function: Box<Expression>,
+    pub function_name: Token,
     pub first_argument: Box<Expression>,
     pub rest_arguments: Option<FunctionCallRestArguments>,
+    pub type_arguments: Option<TypeArguments>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeArguments {
+    pub left_angular_bracket: Token,
+    pub substitutions: Vec<(/*type_variable_name*/ Token, TypeAnnotation)>,
+    pub right_angular_bracket: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -314,15 +314,24 @@ pub enum ParseError {
         invalid_token: Token,
         error: String,
         suggestion: Option<String>,
+        // parse_context: ParseContext
     },
     UnexpectedEOF {
         error: String,
         suggestion: Option<String>,
+        // parse_context: ParseContext
     },
-    FunctionMissingFirstBranch {
-        token: Token,
-        error: String,
-    },
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ParseContext {
+    Function,
+    Record,
+    Statement,
+    LetStatement,
+    TypeStatement,
+    EnumStatement,
+    DoStatement,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

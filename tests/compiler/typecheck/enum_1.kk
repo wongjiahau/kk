@@ -1,8 +1,8 @@
-enum List<T> =
+enum List<Element> =
   #nil
   #cons({
-    current: T,
-    next: List<T>
+    current: Element,
+    next: List<Element= Element>
   })
 
 let xs = #cons({

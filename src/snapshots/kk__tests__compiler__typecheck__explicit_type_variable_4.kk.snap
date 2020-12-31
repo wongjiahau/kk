@@ -5,9 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let guess = \x =>
-  let 0 = x
-  'bomb'
+let foo<A, B> = \(x: A): B => x
 
 ============
 EXIT CODE
@@ -23,13 +21,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_number_1.kk:3:3
+  ┌─ tests/compiler/typecheck/explicit_type_variable_4.kk:1:31
   │
-3 │   'bomb'
-  │   ^^^^^^ Type mismatch
+1 │ let foo<A, B> = \(x: A): B => x
+  │                               ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - number      | + string    |
+    | - B           | + A         |
     +---------------+-------------+

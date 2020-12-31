@@ -206,7 +206,10 @@ pub fn expand_pattern(
                 })
                 .collect(),
         }],
-        Type::Named { name, arguments } => environment
+        Type::Named {
+            name,
+            type_arguments,
+        } => environment
             .get_enum_constrctors(name)
             .into_iter()
             .map(|constructor_symbol| {
@@ -219,7 +222,10 @@ pub fn expand_pattern(
                     Some(payload) => {
                         let payload = rewrite_type_variables_in_type(
                             constructor_symbol.type_variables,
-                            arguments.clone(),
+                            type_arguments
+                                .iter()
+                                .map(|(_, type_value)| type_value.clone())
+                                .collect(),
                             payload.clone(),
                         );
                         TypedDestructurePattern::Enum {
