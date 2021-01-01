@@ -1,0 +1,33 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let o: Array<Element= {x: number}> = [{x= null}]
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/progressive_unification_4.kk:1:43
+  │
+1 │ let o: Array<Element= {x: number}> = [{x= null}]
+  │                                           ^^^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - number      | + null      |
+    +---------------+-------------+

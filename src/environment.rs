@@ -338,7 +338,7 @@ impl Environment {
         }
     }
 
-    fn get_type_variable_terminal_type(&self, type_variable_name: String) -> Option<Type> {
+    pub fn get_type_variable_terminal_type(&self, type_variable_name: String) -> Option<Type> {
         self.get_type_variable_terminal_type_(
             type_variable_name.clone(),
             type_variable_name.clone(),

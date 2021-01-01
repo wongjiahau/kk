@@ -1,0 +1,36 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let f = \({ y }: {x: number}) => 2
+
+============
+EXIT CODE
+============
+101
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+thread 'main' panicked at 'RecordMissingKeys {
+    missing_keys: [
+        "x",
+    ],
+    expected_type: Record {
+        key_type_pairs: [
+            (
+                "x",
+                Number,
+            ),
+        ],
+    },
+}', src/stringify_error.rs:209:18
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
