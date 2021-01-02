@@ -175,9 +175,13 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Cannot access property on a non-record type".to_string(),
             body: format!("The type of this expression is:\n{}", stringify_type(actual_type, 1))
         },
-        UnifyErrorKind::InfiniteTypeDetected => StringifiedError {
+        UnifyErrorKind::InfiniteTypeDetected {type_variable_name, in_type} => StringifiedError {
             summary: "Infinite type".to_string(),
-            body: "This will result in infinite type expansion.".to_string()
+            body: format!(
+                "Infinite type expansion will happen when substituting `{}` into:\n\n{}",
+                type_variable_name,
+                stringify_type(in_type, 1)
+            )
         },
         UnifyErrorKind::DuplicatedRecordKey => StringifiedError {
             summary: "Duplicated record key".to_string(),
@@ -209,6 +213,24 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::WrongTypeAnnotation {expected_type} => StringifiedError {
             summary: "Wrong type annotation".to_string(),
             body: format!("The expected type annotation is:\n\n{}", stringify_type(expected_type, 1))
+        },
+        UnifyErrorKind::RecordExtraneousKey {
+            mut expected_keys
+        } => StringifiedError {
+            summary: "No such property".to_string(),
+            body: {
+                expected_keys.sort();
+                format!("The expected properties are:\n{}", indent_string(expected_keys.join("\n"), 2))
+            }
+        },
+        UnifyErrorKind::RecordMissingKeys {
+            mut missing_keys
+        } => StringifiedError {
+            summary: "Missing properties".to_string(),
+            body: {
+                missing_keys.sort();
+                format!("The missing properties are:\n{}", indent_string(missing_keys.join("\n"), 2))
+            }
         },
         other => panic!("{:#?}", other),
     }

@@ -175,7 +175,6 @@ pub struct DestructuredRecordKeyValue {
     pub key: Token,
     pub type_annotation: Option<TypeAnnotation>,
     pub as_value: Option<DestructurePattern>,
-    pub spread: Option<Token>,
 }
 
 #[derive(Debug, Clone)]

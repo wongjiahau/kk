@@ -25,28 +25,11 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_type_1.kk:1:34
+  ┌─ tests/compiler/typecheck/record_type_1.kk:4:3
   │
-1 │   let x : {x: string, y: string} = {
-  │ ╭──────────────────────────────────^
-2 │ │   x = 2,
-3 │ │   y = "hello",
-4 │ │   z = { x = 2 }
-5 │ │ }
-  │ ╰─^ Type mismatch
+4 │   z = { x = 2 }
+  │   ^ No such property
   │
-  = +---------------+-------------------+
-    | EXPECTED TYPE |    ACTUAL TYPE    |
-    +---------------+-------------------+
-    |   {           |   {               |
-    |     x:        |     x:            |
-    | -     string, | +     number,     |
-    |     y:        |     y:            |
-    |       string, |       string,     |
-    |   }           | +   z:            |
-    |               | +     {           |
-    |               | +       x:        |
-    |               | +         number, |
-    |               | +     },          |
-    |               |   }               |
-    +---------------+-------------------+
+  = The expected properties are:
+      x
+      y

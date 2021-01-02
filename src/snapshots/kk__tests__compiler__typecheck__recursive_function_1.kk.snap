@@ -1,0 +1,44 @@
+---
+source: src/main.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum List<Of> =
+    #nil
+    #cons({current: Of, next: List<Of= Of>})
+
+let listMap<From, To>
+ : \(List<Of= From>, \From => To) => List<Of= To>
+ =
+  \(#nil, _) => #nil
+  \(#cons({current, next}), f) => #cons({
+    current = current.f(),
+    next = #cons({current= 0, next= #nil}).listMap(f)
+  })
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+   ┌─ tests/compiler/typecheck/recursive_function_1.kk:11:28
+   │
+11 │     next = #cons({current= 0, next= #nil}).listMap(f)
+   │                            ^ Type mismatch
+   │
+   = +---------------+-------------+
+     | EXPECTED TYPE | ACTUAL TYPE |
+     +---------------+-------------+
+     | - From        | + number    |
+     +---------------+-------------+

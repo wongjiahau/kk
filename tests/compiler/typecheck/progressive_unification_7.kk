@@ -9,4 +9,4 @@ let arrayMap<From, To> = \(
     \[head, ..._] => [head.f()]
   )
 
-let result: Array<Element= string> = [{x = 2}].arrayMap(\o => o.y)
+let result: Array<Element= string> = [{x = 2}].arrayMap(\o => o.x)

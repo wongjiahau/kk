@@ -1,1 +1,1 @@
-let f = \({ y }: {x: number}) => 2,
+let f = \({ x = { z } }: { x: { y: number } }) => 2

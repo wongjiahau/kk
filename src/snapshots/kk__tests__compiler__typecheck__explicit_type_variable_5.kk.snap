@@ -5,11 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let arrayMap<From, To> = \(xs: Array<Element= From>, f: \From => To): Array<Element= To> =>
+let arrayMapFirst<From, To> = \(
+  xs: Array<Element= From>,
+  f: \From => To
+): Array<Element= To> =>
   let [head, ..._] = xs else \_ => []
   [head.f()]
 
-let result = [{x= 3}].arrayMap<To= string>(\_ => 2)
+let result = [{x= 3}].arrayMapFirst<To= string>(\_ => 2)
 
 ============
 EXIT CODE
@@ -25,19 +28,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/explicit_type_variable_5.kk:5:44
+  ┌─ tests/compiler/typecheck/explicit_type_variable_5.kk:8:55
   │
-5 │ let result = [{x= 3}].arrayMap<To= string>(\_ => 2)
-  │                                            ^^^^^^^ Type mismatch
+8 │ let result = [{x= 3}].arrayMapFirst<To= string>(\_ => 2)
+  │                                                       ^ Type mismatch
   │
-  = +-----------------+-----------------+
-    |  EXPECTED TYPE  |   ACTUAL TYPE   |
-    +-----------------+-----------------+
-    |   \(            |   \(            |
-    |     {           |     {           |
-    |       x:        |       x:        |
-    |         number, |         number, |
-    |     }           |     }           |
-    |   ) =>          |   ) =>          |
-    | -   string      | +   number      |
-    +-----------------+-----------------+
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - string      | + number    |
+    +---------------+-------------+

@@ -83,14 +83,33 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     .peeking_take_while(|character| character.value.is_digit(10))
                     .collect::<Vec<Character>>();
 
-                let fractional = match it.by_ref().peek() {
+                let fractional = match it.peek() {
                     Some(Character { value: '.', .. }) => {
-                        let _ = it.next();
+                        let period = it.next().unwrap();
                         let characters = it
-                            .by_ref()
+                            // .by_ref()
                             .peeking_take_while(|character| character.value.is_digit(10))
                             .collect::<Vec<Character>>();
-                        Some(characters)
+
+                        if characters.is_empty() {
+                            // means there's no fractional part
+                            // also, we need to push a period token
+                            tokens.push(Token {
+                                token_type: TokenType::Period,
+                                representation: period.value.to_string(),
+                                position: Position {
+                                    line_start: period.line_number,
+                                    line_end: period.line_number,
+                                    column_start: period.column_number,
+                                    column_end: period.column_number,
+                                    character_index_start: period.index,
+                                    character_index_end: period.index,
+                                },
+                            });
+                            None
+                        } else {
+                            Some(characters)
+                        }
                     }
                     _ => None,
                 };

@@ -5,10 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Boolean = #true #false
-enum Bomb = #bomb
-let and: \(Boolean, Boolean) => Boolean =
-  \(#true, #bomb) => #true
+let bar = \(null): number =>
+  let x = "hello"
+  x
 
 ============
 EXIT CODE
@@ -24,13 +23,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unify_function_branches_2.kk:4:12
+  ┌─ tests/compiler/typecheck/progressive_unification_10.kk:3:3
   │
-4 │   \(#true, #bomb) => #true
-  │            ^^^^^ Type mismatch
+3 │   x
+  │   ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Boolean     | + Bomb      |
+    | - number      | + string    |
     +---------------+-------------+

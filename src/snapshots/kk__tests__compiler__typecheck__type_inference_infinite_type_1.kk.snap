@@ -26,4 +26,9 @@ error:
 1 │ let f = \x => x.x()
   │               ^^^^^ Infinite type
   │
-  = This will result in infinite type expansion.
+  = Infinite type expansion will happen when substituting `@TVAR1` into:
+
+      \(
+        @TVAR1
+      ) =>
+        @TVAR2

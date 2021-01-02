@@ -5,10 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Boolean = #true #false
-enum Bomb = #bomb
-let and: \(Boolean, Boolean) => Boolean =
-  \(#true, #bomb) => #true
+let f = \x =>
+  let {a} = x
+  a
+
+let result: string = {a = 2}.f()
 
 ============
 EXIT CODE
@@ -24,13 +25,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unify_function_branches_2.kk:4:12
+  ┌─ tests/compiler/typecheck/monadic_let_record_1.kk:5:22
   │
-4 │   \(#true, #bomb) => #true
-  │            ^^^^^ Type mismatch
+5 │ let result: string = {a = 2}.f()
+  │                      ^^^^^^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Boolean     | + Bomb      |
+    | - string      | + number    |
     +---------------+-------------+

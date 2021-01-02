@@ -210,7 +210,7 @@ pub fn expand_pattern(
             name,
             type_arguments,
         } => environment
-            .get_enum_constrctors(name)
+            .get_enum_constructors(name)
             .into_iter()
             .map(|constructor_symbol| {
                 let constructor_name = constructor_symbol.constructor_name.clone();

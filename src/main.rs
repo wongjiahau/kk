@@ -34,6 +34,8 @@ fn run_all_tests() {
 
     let test_dir = "tests/compiler/";
     let folders = fs::read_dir(test_dir).expect("Failed to read directory");
+
+    let mut successful_test_count = 0;
     for folder in folders {
         let files = fs::read_dir(folder.unwrap().path().to_str().unwrap())
             .expect("Failed to read directory");
@@ -105,6 +107,7 @@ fn run_all_tests() {
 
                 assert_snapshot!(input_filename.clone(), stripped_actual_output.trim());
                 println!("{}", " PASSED".green());
+                successful_test_count += 1;
 
                 // if stripped_actual_output.trim() != expected_output {
                 //     let changeset = Changeset::new(&expected_output, &stripped_actual_output, "");
@@ -135,6 +138,7 @@ fn run_all_tests() {
             }
         }
     }
+    println!(" {} passed.", successful_test_count);
 
     fn strip_line_trailing_spaces(input: String) -> String {
         input

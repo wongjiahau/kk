@@ -5,12 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f = \({ y }: {x: number}) => 2
+let f = \({ x = { z } }: { x: { y: number } }) => 2
 
 ============
 EXIT CODE
 ============
-101
+1
 
 ============
 STDOUT
@@ -20,17 +20,11 @@ STDOUT
 ============
 STDERR
 ============
-thread 'main' panicked at 'RecordMissingKeys {
-    missing_keys: [
-        "x",
-    ],
-    expected_type: Record {
-        key_type_pairs: [
-            (
-                "x",
-                Number,
-            ),
-        ],
-    },
-}', src/stringify_error.rs:209:18
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error:
+  ┌─ tests/compiler/typecheck/progressive_unification_5.kk:1:19
+  │
+1 │ let f = \({ x = { z } }: { x: { y: number } }) => 2
+  │                   ^ No such property
+  │
+  = Available properties:
+      y

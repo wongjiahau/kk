@@ -735,7 +735,6 @@ pub fn parse_destructure_pattern(
                         key,
                         type_annotation,
                         as_value,
-                        spread: None, // TODO: parse spread
                     });
                     if try_eat_token(it, TokenType::Comma).is_none() {
                         break;

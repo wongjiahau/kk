@@ -406,6 +406,37 @@ impl Environment {
         )
     }
 
+    /// Insert a value symbol with a specific type
+    /// If the type is None, then this variable will be
+    /// instantiated to have a type of a new type variable
+    pub fn insert_value_symbol_with_type(
+        &mut self,
+        variable_name: &Token,
+        type_value: Option<Type>,
+    ) -> Result<Type, UnifyError> {
+        match type_value {
+            None => self.introduce_implicit_type_variable(Some(variable_name)),
+            Some(type_value) => {
+                self.insert_value_symbol(
+                    variable_name,
+                    ValueSymbol {
+                        declaration: Declaration::UserDefined {
+                            source: self.source.clone(),
+                            scope_name: self.current_scope_name(),
+                            token: variable_name.clone(),
+                        },
+                        type_scheme: TypeScheme {
+                            type_variables: vec![],
+                            type_value: type_value.clone(),
+                        },
+                        usage_references: Default::default(),
+                    },
+                )?;
+                Ok(type_value)
+            }
+        }
+    }
+
     pub fn check_for_unused_value_symbols(
         &self,
         current_scope_name: usize,
@@ -569,7 +600,7 @@ impl Environment {
         }
     }
 
-    pub fn get_enum_constrctors(&self, enum_name: &str) -> Vec<ConstructorSymbol> {
+    pub fn get_enum_constructors(&self, enum_name: &str) -> Vec<ConstructorSymbol> {
         self.constructor_symbols
             .iter()
             .filter_map(|(_, constructor_symbol)| {
