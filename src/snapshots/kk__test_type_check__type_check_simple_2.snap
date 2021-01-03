@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "type_check_source(\"let x: number = 123\".to_string())"
----
-Ok(
-    (),
-)

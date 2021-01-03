@@ -15,7 +15,7 @@ pub fn transpile_statements(statements: Vec<Statement>) -> String {
 pub fn transpile_statement(statement: Statement) -> String {
     match statement {
         Statement::Type { .. } | Statement::Enum { .. } => "".to_string(),
-        Statement::Do { expression } => {
+        Statement::Do { expression, .. } => {
             format!("({});", transpile_expression(expression))
         }
         Statement::Let { left, right, .. } => match right {
@@ -54,7 +54,7 @@ pub fn transpile_expression(expression: Expression) -> String {
         Expression::String(s) => s.representation,
         Expression::Number(n) => n.representation,
         Expression::Variable(v) => v.representation,
-        Expression::Tag { token, payload } => match payload {
+        Expression::Enum { token, payload } => match payload {
             Some(payload) => format!(
                 "{{$:'{}',_:{}}}",
                 transpile_tag(token.representation),
@@ -278,7 +278,7 @@ pub fn transpile_function_destructure_pattern(
                 identifier.representation, from_expression
             )],
         },
-        DestructurePattern::Tag { tagname, payload } => {
+        DestructurePattern::Enum { tagname, payload } => {
             let first = TranspiledDestructurePattern {
                 conditions: vec![format!(
                     "{}.$==='{}'",

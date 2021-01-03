@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "transpile_source(\"\n            let f = \\\\{a, b= #ok(#some(c))} => a.plus(c)\n            \".to_string())"
----
-Ok(
-    "const f = (_0)=>{if(_0.b.$===\'ok\' && _0.b._.$===\'some\'){var a = _0.a;var c = _0.b._._;return (plus)(a,c)}}",
-)

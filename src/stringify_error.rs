@@ -139,9 +139,9 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Unknown type symbol".to_string(),
             body: "Cannot find this type symbol in the current scope".to_string(),
         },
-        UnifyErrorKind::UnknownConstructorSymbol => StringifiedError {
-            summary: "Unknown constructor symbol".to_string(),
-            body: "Cannot find this constructor symbol in the current scope".to_string(),
+        UnifyErrorKind::UnknownEnumConstructor => StringifiedError {
+            summary: "Unknown enum constructor".to_string(),
+            body: "Cannot find this enum constructor in the current scope".to_string(),
         },
         UnifyErrorKind::MissingCases(missing_patterns) => StringifiedError {
             summary: "Non-exhaustive cases".to_string(),

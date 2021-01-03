@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "transpile_source(\"let square = \\\\(x: number): number => x\".to_string())"
----
-Ok(
-    "const square = (_0)=>{{var x = _0;return x}}",
-)

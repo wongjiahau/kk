@@ -1,0 +1,33 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo<A, B> = \(x: A): B => x
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/explicit_type_variable_4.kk:1:31
+  │
+1 │ let foo<A, B> = \(x: A): B => x
+  │                               ^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - B           | + A         |
+    +---------------+-------------+

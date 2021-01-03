@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "transpile_source(\"let x = y.square.bomb\".to_string())"
----
-Ok(
-    "const x = (bomb)((square)(y))",
-)

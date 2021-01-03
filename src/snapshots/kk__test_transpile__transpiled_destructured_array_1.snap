@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "transpile_source(\"let head = \\\\xs => \n                let [head, ...] = xs else \\\\_ => #none\n                #some(head)\n            \".to_string())"
----
-Ok(
-    "const head = (_0)=>{{var xs = _0;var $TEMP = xs;if($TEMP[0] !== undefined){var head = $TEMP[0];return {$:\'some\',_:head}}else{return ((_0)=>{{;return {$:\'none\'}}})($TEMP)}}}",
-)

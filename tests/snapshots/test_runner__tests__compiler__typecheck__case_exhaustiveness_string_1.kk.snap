@@ -1,0 +1,34 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let isFriendly =
+  \"cat" => true
+  \"tiger" => false
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_string_1.kk:2:3
+  │
+2 │ ╭   \"cat" => true
+3 │ │   \"tiger" => false
+  │ ╰───────────────────^ Non-exhaustive cases
+  │
+  = Missing case(s):
+
+      \_ => ...

@@ -1,22 +1,26 @@
 #[derive(Debug, Clone)]
 pub enum Statement {
     Let {
+        keyword_let: Token,
         left: Token,
         type_variables: Vec<Token>,
         right: Expression,
         type_annotation: Option<TypeAnnotation>,
     },
     Type {
+        keyword_type: Token,
         left: Token,
         right: TypeAnnotation,
         type_variables: Vec<Token>,
     },
     Enum {
+        keyword_enum: Token,
         name: Token,
         tags: Vec<EnumTag>,
         type_variables: Vec<Token>,
     },
     Do {
+        keyword_do: Token,
         expression: Expression,
     },
 }
@@ -135,7 +139,7 @@ pub enum DestructurePattern {
     Null(Token),
     Underscore(Token),
     Identifier(Token),
-    Tag {
+    Enum {
         tagname: Token,
         payload: Option<Box<DestructurePatternTagPayload>>,
     },
@@ -187,9 +191,9 @@ pub enum Expression {
     Number(Token),
     String(Token),
     Variable(Token),
-    Tag {
+    Enum {
         token: Token,
-        payload: Option<Box<TagPayload>>,
+        payload: Option<Box<EnumPayload>>,
     },
     Function(Box<Function>),
     FunctionCall(Box<FunctionCall>),
@@ -209,7 +213,7 @@ pub enum Expression {
         right_square_bracket: Token,
     },
     Let {
-        let_keyword: Token,
+        keyword_let: Token,
         left: Box<DestructurePattern>,
         type_annotation: Option<TypeAnnotation>,
         right: Box<Expression>,
@@ -219,7 +223,7 @@ pub enum Expression {
 }
 
 #[derive(Debug, Clone)]
-pub struct TagPayload {
+pub struct EnumPayload {
     pub left_parenthesis: Token,
     pub value: Expression,
     pub right_parenthesis: Token,
@@ -291,48 +295,6 @@ pub struct FunctionArgument {
     pub type_annotation: Option<TypeAnnotation>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum ParseError {
-    ExpectedTypeAnnotation {
-        actual_token: Token,
-    },
-    UnterminatedString {
-        position: Position,
-    },
-    ArrayCannotContainMoreThanOneSpread {
-        extraneous_spread: Token,
-    },
-    ExpectedDestructurePattern {
-        token: Token,
-    },
-    InvalidChar {
-        position: Position,
-        error: String,
-    },
-    InvalidToken {
-        invalid_token: Token,
-        error: String,
-        suggestion: Option<String>,
-        // parse_context: ParseContext
-    },
-    UnexpectedEOF {
-        error: String,
-        suggestion: Option<String>,
-        // parse_context: ParseContext
-    },
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ParseContext {
-    Function,
-    Record,
-    Statement,
-    LetStatement,
-    TypeStatement,
-    EnumStatement,
-    DoStatement,
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token {
     pub token_type: TokenType,
@@ -372,7 +334,7 @@ pub enum TokenType {
     ArrowRight,
     Backslash,
     Underscore,
-    Tag,
+    EnumConstructor,
     Identifier,
     String,
     Number,

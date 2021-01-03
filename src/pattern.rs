@@ -220,14 +220,8 @@ pub fn expand_pattern(
                         payload: None,
                     },
                     Some(payload) => {
-                        let payload = rewrite_type_variables_in_type(
-                            constructor_symbol.type_variables,
-                            type_arguments
-                                .iter()
-                                .map(|(_, type_value)| type_value.clone())
-                                .collect(),
-                            payload.clone(),
-                        );
+                        let payload =
+                            rewrite_type_variables_in_type(type_arguments.clone(), payload.clone());
                         TypedDestructurePattern::Enum {
                             tagname: constructor_name,
                             payload: Some(Box::new(TypedDestructurePattern::Any {
@@ -345,7 +339,7 @@ pub fn match_pattern(
             TypedDestructurePattern::Boolean(false),
         ) => MatchPatternResult::Matched,
         (
-            DestructurePattern::Tag {
+            DestructurePattern::Enum {
                 tagname: actual_tagname,
                 payload: None,
             },
@@ -361,7 +355,7 @@ pub fn match_pattern(
             }
         }
         (
-            DestructurePattern::Tag {
+            DestructurePattern::Enum {
                 tagname: actual_tagname,
                 payload: Some(actual_payload),
             },

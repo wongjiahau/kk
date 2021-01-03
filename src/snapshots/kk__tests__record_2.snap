@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "transpile_source(\"let x = {...{x = 2, y = 3}, y = 4, z = 5}\".to_string())"
----
-Ok(
-    "const x = {...({x: 2,y: 3}),y: 4,z: 5}",
-)

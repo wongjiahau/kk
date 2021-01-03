@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "transpile_source(\"let x = \\\\#red => 'red' \\\\ #blue => 'blue'\".to_string())"
----
-Ok(
-    "const x = (_0)=>{if(_0.$===\'red\'){;return \'red\'}\nif(_0.$===\'blue\'){;return \'blue\'}}",
-)

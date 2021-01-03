@@ -1,0 +1,32 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let f
+  : \{foo: number} => number
+  = \o => o.bar
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/progressive_unification_1.kk:3:13
+  │
+3 │   = \o => o.bar
+  │             ^^^ No such property
+  │
+  = Available properties:
+      foo

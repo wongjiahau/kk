@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "transpile_source(\"let x = \\\\#ok(#some(r)) => r \\\\ _ => 'yo'\".to_string())"
----
-Ok(
-    "const x = (_0)=>{if(_0.$===\'ok\' && _0._.$===\'some\'){var r = _0._._;return r}\n{;return \'yo\'}}",
-)

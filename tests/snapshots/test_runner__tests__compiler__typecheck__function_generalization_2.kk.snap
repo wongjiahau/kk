@@ -1,0 +1,40 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let f = \{x, y = {z}} => {x, z}
+let x: {x: string, z: number} = {x = 'hi', y = {z = 3}}.f()
+let y: {x: string, z: number} = {x = 2, y = {z = 3}}.f()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/function_generalization_2.kk:3:33
+  │
+3 │ let y: {x: string, z: number} = {x = 2, y = {z = 3}}.f()
+  │                                 ^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
+  │
+  = +---------------+---------------+
+    | EXPECTED TYPE |  ACTUAL TYPE  |
+    +---------------+---------------+
+    |   {           |   {           |
+    |     x:        |     x:        |
+    | -     string, | +     number, |
+    |     z:        |     z:        |
+    |       number, |       number, |
+    |   }           |   }           |
+    +---------------+---------------+

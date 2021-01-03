@@ -1,0 +1,46 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum List<Element> =
+  #nil
+  #cons({
+    current: Element,
+    next: List<Element= Element>
+  })
+
+let foo = \#cons({
+  current = 1,
+  next = #cons({
+    current = true,
+    next = #nil
+  })
+}) => 0
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+   ┌─ tests/compiler/typecheck/enum_2.kk:11:15
+   │
+11 │     current = true,
+   │               ^^^^ Type mismatch
+   │
+   = +---------------+-------------+
+     | EXPECTED TYPE | ACTUAL TYPE |
+     +---------------+-------------+
+     | - number      | + boolean   |
+     +---------------+-------------+

@@ -65,33 +65,6 @@ pub enum UnifyErrorKind {
         actual_length: usize,
         expected_type_parameter_names: Vec<String>,
     },
-    LetElseMustBeSingleArgumentFunction {
-        actual_type: Type,
-    },
-    LetElseMustBeFunction {
-        actual_type: Type,
-    },
-    FunctionTypeArgumentMismatch {
-        argument_index: usize,
-        unify_error: Box<UnifyError>,
-        expected_function_type: FunctionType,
-        actual_function_type: FunctionType,
-    },
-    FunctionReturnTypeMismatch {
-        unify_error: Box<UnifyError>,
-        expected_function_type: FunctionType,
-        actual_function_type: FunctionType,
-    },
-    CannotUnionNonTagType {
-        the_non_union_type: Type,
-    },
-    RecordKeyTypeMismatch {
-        key: String,
-        expected_key_type: Type,
-        actual_key_type: Type,
-        expected_record_type: Vec<(String, Type)>,
-        actual_record_type: Vec<(String, Type)>,
-    },
     RecordExtraneousKey {
         expected_keys: Vec<String>,
     },
@@ -112,18 +85,10 @@ pub enum UnifyErrorKind {
     },
     UnknownTypeSymbol,
     UnknownValueSymbol,
-    UnknownConstructorSymbol,
+    UnknownEnumConstructor,
     TypeMismatch {
         expected_type: Type,
         actual_type: Type,
-    },
-    TagTypeMismatch {
-        expected_tag_type: TagType,
-        actual_tag_type: TagType,
-    },
-    CannotDestructure {
-        destructure_pattern: DestructurePattern,
-        expression_type: Type,
     },
 }
 
@@ -132,7 +97,7 @@ pub fn infer_statement(
     statement: Statement,
 ) -> Result<(), UnifyError> {
     match statement {
-        Statement::Do { expression } => {
+        Statement::Do { expression, .. } => {
             match infer_expression_type(
                 environment,
                 // NOTE: we could have pass in Some(Type::Null) instead of None here.
@@ -154,6 +119,7 @@ pub fn infer_statement(
             right,
             type_annotation,
             type_variables,
+            ..
         } => {
             // 0. Populate type variables
             environment.step_into_new_child_scope();
@@ -216,6 +182,7 @@ pub fn infer_statement(
             left,
             right,
             type_variables,
+            ..
         } => {
             environment.step_into_new_child_scope();
             // 1. Populate type variables into current environment
@@ -224,6 +191,7 @@ pub fn infer_statement(
                 environment.insert_type_symbol(
                     &type_variable,
                     TypeSymbol {
+                        name: type_variable.representation.clone(),
                         type_scheme: TypeScheme {
                             type_value: Type::ImplicitTypeVariable {
                                 name: type_variable.clone().representation,
@@ -253,6 +221,7 @@ pub fn infer_statement(
                         token: left.clone(),
                         scope_name: environment.current_scope_name(),
                     },
+                    name: left.representation.clone(),
                     type_scheme: TypeScheme {
                         type_variables: type_variables
                             .into_iter()
@@ -270,6 +239,7 @@ pub fn infer_statement(
             name,
             type_variables,
             tags,
+            ..
         } => {
             // 1. Add this enum into environment first, to allow recursive definition
             let enum_name = name.representation.clone();
@@ -297,6 +267,7 @@ pub fn infer_statement(
             environment.insert_type_symbol(
                 &name,
                 TypeSymbol {
+                    name: name.representation.clone(),
                     declaration: Declaration::UserDefined {
                         source: environment.source.clone(),
                         token: name.clone(),
@@ -318,6 +289,7 @@ pub fn infer_statement(
                 environment.insert_type_symbol(
                     &type_variable,
                     TypeSymbol {
+                        name: type_variable.representation.clone(),
                         type_scheme: TypeScheme {
                             type_value: Type::ImplicitTypeVariable {
                                 name: type_variable.clone().representation,
@@ -532,7 +504,7 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
         | DestructurePattern::Underscore(token)
         | DestructurePattern::Boolean { token, .. }
         | DestructurePattern::Null(token) => token.position,
-        DestructurePattern::Tag { tagname, payload } => match payload {
+        DestructurePattern::Enum { tagname, payload } => match payload {
             Some(payload) => join_position(tagname.position, payload.right_parenthesis.position),
             None => tagname.position,
         },
@@ -566,7 +538,7 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         | Expression::Variable(token)
         | Expression::Null(token)
         | Expression::Boolean { token, .. } => token.position,
-        Expression::Tag { token, payload } => match payload {
+        Expression::Enum { token, payload } => match payload {
             Some(payload) => join_position(token.position, payload.right_parenthesis.position),
             None => token.position,
         },
@@ -599,10 +571,10 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             join_position(start_position, end_position)
         }
         Expression::Let {
-            let_keyword,
+            keyword_let,
             true_branch,
             ..
-        } => join_position(let_keyword.position, get_expression_position(&true_branch)),
+        } => join_position(keyword_let.position, get_expression_position(&true_branch)),
     }
 }
 
@@ -922,17 +894,14 @@ pub fn unify_type_(
 }
 
 pub fn rewrite_type_variables_in_type(
-    from_type_variables: Vec<String>,
-    to_types: Vec<Type>,
+    from_to_mappings: Vec<(String, Type)>,
     in_type: Type,
 ) -> Type {
-    assert!(from_type_variables.len() == to_types.len());
-    from_type_variables.iter().zip(to_types.iter()).fold(
-        in_type,
-        |result_type, (from_type_variable, to_type)| {
+    from_to_mappings
+        .iter()
+        .fold(in_type, |result_type, (from_type_variable, to_type)| {
             rewrite_type_variable_in_type(from_type_variable, to_type, result_type)
-        },
-    )
+        })
 }
 
 pub fn rewrite_type_variable_in_type(
@@ -1028,85 +997,99 @@ pub fn rewrite_type_variable_in_types(
         .collect()
 }
 
-pub struct TagPayloadType {
-    left_parenthesis: Token,
-    type_value: Type,
-    position: Position,
-    right_parenthesis: Token,
+pub struct GetEnumTypeResult {
+    expected_enum_type: Type,
+    expected_payload_type: Option<Type>,
 }
 
-pub fn infer_tag_type(
+pub fn get_enum_type(
     environment: &mut Environment,
+    expected_type: Option<Type>,
     tagname: &Token,
-    payload: Option<TagPayloadType>,
-) -> Result<Type, UnifyError> {
+) -> Result<GetEnumTypeResult, UnifyError> {
     // Look up constructor
     let constructor = match environment.get_consructor_symbol(SymbolName::Token(tagname.clone())) {
         Some(constructor_symbol) => constructor_symbol,
         None => {
             return Err(UnifyError {
                 position: tagname.position,
-                kind: UnifyErrorKind::UnknownConstructorSymbol,
+                kind: UnifyErrorKind::UnknownEnumConstructor,
             })
         }
     };
 
     let enum_type = environment
         .get_type_symbol(SymbolName::String(constructor.enum_name.clone()))
-        .unwrap_or_else(|| {
-            panic!(
-                "Compiler error: Cannot find enum '{}' in type_symbols",
-                constructor.enum_name
-            )
-        });
+        .unwrap_or_else(|| panic!("Compiler error, cannot find enum type of a constructor"));
 
     // initiate type variables
-    let instantiated_type_variables = enum_type
-        .type_scheme
-        .type_variables
-        .iter()
-        .map(|_| environment.introduce_implicit_type_variable(None))
-        .collect::<Result<Vec<Type>, UnifyError>>()?;
+    let instantiated_type_variables = {
+        match expected_type {
+            Some(Type::Named {
+                name,
+                type_arguments,
+            }) if name == enum_type.name => type_arguments,
+            _ => enum_type
+                .type_scheme
+                .type_variables
+                .iter()
+                .map(|type_variable_name| {
+                    (
+                        type_variable_name.clone(),
+                        Type::ImplicitTypeVariable {
+                            name: environment.get_next_type_variable_name(),
+                        },
+                    )
+                })
+                .collect::<Vec<(String, Type)>>(),
+        }
+    };
 
-    let return_type = rewrite_type_variables_in_type(
-        enum_type.type_scheme.type_variables,
+    let expected_enum_type = rewrite_type_variables_in_type(
         instantiated_type_variables.clone(),
         enum_type.type_scheme.type_value,
     );
 
-    match constructor.payload {
-        None => match payload {
-            Some(payload) => Err(UnifyError {
-                position: join_position(
-                    payload.left_parenthesis.position,
-                    payload.right_parenthesis.position,
-                ),
-                kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
-            }),
-            None => Ok(return_type),
-        },
-        Some(expected_payload) => match payload {
-            None => Err(UnifyError {
-                position: tagname.position,
-                kind: UnifyErrorKind::ThisTagRequiresPaylod {
-                    payload_type: expected_payload,
-                },
-            }),
-            Some(payload) => {
-                let expected_payload = rewrite_type_variables_in_type(
-                    constructor.type_variables,
-                    instantiated_type_variables,
-                    expected_payload,
-                );
-                unify_type(
-                    environment,
-                    &expected_payload,
-                    &payload.type_value,
-                    payload.position,
-                )?;
-                Ok(return_type)
-            }
-        },
+    let expected_payload_type = match constructor.payload {
+        None => None,
+        Some(expected_payload) => Some(rewrite_type_variables_in_type(
+            instantiated_type_variables,
+            expected_payload,
+        )),
+    };
+
+    Ok(GetEnumTypeResult {
+        expected_enum_type,
+        expected_payload_type,
+    })
+}
+
+pub fn infer_enum_type(
+    environment: &mut Environment,
+    expected_type: Option<Type>,
+    tagname: &Token,
+    payload: Option<Box<EnumPayload>>,
+) -> Result<Type, UnifyError> {
+    let result = get_enum_type(environment, expected_type, tagname)?;
+    match (result.expected_payload_type, payload) {
+        (None, None) => Ok(result.expected_enum_type),
+        (None, Some(payload)) => Err(UnifyError {
+            position: join_position(
+                payload.left_parenthesis.position,
+                payload.right_parenthesis.position,
+            ),
+            kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
+        }),
+        (Some(expected_payload_type), None) => Err(UnifyError {
+            position: tagname.position,
+            kind: UnifyErrorKind::ThisTagRequiresPaylod {
+                payload_type: expected_payload_type,
+            },
+        }),
+        (Some(expected_payload_type), Some(payload)) => {
+            infer_expression_type(environment, Some(expected_payload_type), &payload.value)?;
+            Ok(result.expected_enum_type)
+        }
     }
 }
 pub struct TypeVariableSubstitution {
@@ -1143,57 +1126,8 @@ pub fn infer_expression_type_(
         Expression::String(_) => Ok(Type::String),
         Expression::Number(_) => Ok(Type::Number),
         Expression::Boolean { .. } => Ok(Type::Boolean),
-        Expression::Tag { token, payload } => {
-            let payload = match payload {
-                None => Ok(None),
-                Some(payload) => {
-                    let type_value = {
-                        let expected_payload_type = match expected_type {
-                            None => None,
-                            Some(type_value) => match type_value {
-                                Type::Named {
-                                    name,
-                                    type_arguments,
-                                } => {
-                                    let constructors = environment.get_enum_constructors(&name);
-                                    let matching_constructor =
-                                        constructors.into_iter().find(|constructor| {
-                                            constructor.constructor_name == token.representation
-                                        });
-                                    match matching_constructor {
-                                        Some(ConstructorSymbol {
-                                            payload: Some(payload_type),
-                                            ..
-                                        }) => {
-                                            let payload_type = type_arguments
-                                                 .into_iter().fold(payload_type,
-                                                     |payload, (type_argument_name, substituted_type)| {
-                                                        rewrite_type_variable_in_type(
-                                                            &type_argument_name,
-                                                            &substituted_type,
-                                                            payload
-                                                        )
-                                                });
-                                            Some(payload_type)
-                                        }
-                                        _ => None,
-                                    }
-                                }
-                                _ => None,
-                            },
-                        };
-                        infer_expression_type(environment, expected_payload_type, &payload.value)?
-                    };
-                    Ok(Some(TagPayloadType {
-                        left_parenthesis: payload.left_parenthesis.clone(),
-                        type_value,
-                        position: get_expression_position(&payload.value),
-                        right_parenthesis: payload.right_parenthesis.clone(),
-                    }))
-                }
-            }?;
-
-            infer_tag_type(environment, token, payload)
+        Expression::Enum { token, payload } => {
+            infer_enum_type(environment, expected_type, token, payload.clone())
         }
         Expression::Variable(variable) => {
             if let Some(symbol) = environment.get_value_symbol(SymbolName::Token(variable.clone()))
@@ -1241,7 +1175,7 @@ pub fn infer_expression_type_(
             false_branch,
             true_branch,
             type_annotation,
-            let_keyword,
+            keyword_let,
             ..
         } => {
             environment.step_into_new_child_scope();
@@ -1287,7 +1221,7 @@ pub fn infer_expression_type_(
                 Some(false_branch) => {
                     let function = Function {
                         first_branch: FunctionBranch {
-                            start_token: let_keyword.clone(),
+                            start_token: keyword_let.clone(),
                             first_argument: Box::new(FunctionArgument {
                                 destructure_pattern: *left.clone(),
                                 type_annotation: type_annotation.clone(),
@@ -2226,22 +2160,29 @@ pub fn infer_destructure_pattern_(
                 })
                 .collect::<Result<Vec<Type>, UnifyError>>()?,
         )),
-        DestructurePattern::Tag { tagname, payload } => {
-            let payload = match payload {
-                None => Ok(None),
-                Some(payload) => {
-                    let payload_type =
-                        infer_destructure_pattern(environment, None, &payload.destructure_pattern)?;
-
-                    Ok(Some(TagPayloadType {
-                        type_value: payload_type,
-                        left_parenthesis: payload.left_parenthesis.clone(),
-                        right_parenthesis: payload.right_parenthesis.clone(),
-                        position: get_destructure_pattern_position(&payload.destructure_pattern),
-                    }))
+        DestructurePattern::Enum { tagname, payload } => {
+            let result = get_enum_type(environment, expected_type, tagname)?;
+            match (result.expected_payload_type, payload.clone()) {
+                (None, None) => Ok(result.expected_enum_type),
+                (None, Some(payload)) => Err(UnifyError {
+                    position: get_destructure_pattern_position(&payload.destructure_pattern),
+                    kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
+                }),
+                (Some(expected_payload_type), None) => Err(UnifyError {
+                    position: tagname.position,
+                    kind: UnifyErrorKind::ThisTagRequiresPaylod {
+                        payload_type: expected_payload_type,
+                    },
+                }),
+                (Some(expected_payload_type), Some(payload)) => {
+                    infer_destructure_pattern(
+                        environment,
+                        Some(expected_payload_type),
+                        &payload.destructure_pattern,
+                    )?;
+                    Ok(result.expected_enum_type)
                 }
-            }?;
-            infer_tag_type(environment, tagname, payload)
+            }
         }
         DestructurePattern::Array { spread: None, .. } => {
             Ok(Type::Array(Box::new(Type::ImplicitTypeVariable {

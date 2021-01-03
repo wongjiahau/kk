@@ -1,0 +1,33 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let f
+  : \number => null
+  = \(x: string) => null
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/progressive_unification_2.kk:3:10
+  │
+3 │   = \(x: string) => null
+  │          ^^^^^^ Wrong type annotation
+  │
+  = The expected type annotation is:
+
+      number

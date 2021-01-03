@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "transpile_source(\"let x = #ok(#some(2))\".to_string())"
----
-Ok(
-    "const x = {$:\'ok\',_:{$:\'some\',_:2}}",
-)

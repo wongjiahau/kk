@@ -9,7 +9,12 @@ pub struct Character {
     value: char,
 }
 
-pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
+pub enum TokenizeError {
+    UnterminatedString { position: Position },
+    InvalidToken { error: String, position: Position },
+}
+
+pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
     let characters: Vec<Character> = input
         .split('\n')
         .enumerate()
@@ -52,7 +57,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                     .collect();
 
                 tokens.push(Token {
-                    token_type: TokenType::Tag,
+                    token_type: TokenType::EnumConstructor,
                     representation: "#".to_string() + &stringify(tagname.clone()),
                     position: make_position(character, tagname.last()),
                 })
@@ -71,7 +76,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                         position: make_position(character, Some(&ending_quote)),
                     }),
                     None => {
-                        return Err(ParseError::UnterminatedString {
+                        return Err(TokenizeError::UnterminatedString {
                             position: make_position(character, content.last()),
                         })
                     }
@@ -167,7 +172,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, ParseError> {
                         position: make_position(character, dots.last()),
                     }),
                     _ => {
-                        return Err(ParseError::InvalidChar {
+                        return Err(TokenizeError::InvalidToken {
                             error: "Only one dot (.) or three dots (...) is acceptable".to_string(),
                             position: make_position(character, dots.last()),
                         })

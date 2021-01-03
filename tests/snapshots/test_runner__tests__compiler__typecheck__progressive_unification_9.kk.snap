@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let bar = \(props: {
+  f: \{ x: number } => number
+}) =>
+  let { f } = props
+  {x = 'hi'}.f()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/progressive_unification_9.kk:5:8
+  │
+5 │   {x = 'hi'}.f()
+  │        ^^^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - number      | + string    |
+    +---------------+-------------+

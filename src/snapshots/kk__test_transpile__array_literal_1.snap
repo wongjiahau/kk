@@ -1,7 +1,0 @@
----
-source: src/main.rs
-expression: "transpile_source(\"let x = [[],[2],[3,4,],]\".to_string())"
----
-Ok(
-    "const x = [[],[2],[3,4]]",
-)
