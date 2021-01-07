@@ -1,0 +1,29 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let x = @
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/tokenize/invalid_characater_1.kk:1:9
+  │
+1 │ let x = @
+  │         ^ Syntax error: Unknown character
+  │
+  = This character is not used anywhere in the syntax of KK.

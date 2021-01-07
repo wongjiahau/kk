@@ -1,0 +1,52 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let f = \x =>
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/parse/unexpected_eof_1.kk:1:14
+  │
+1 │   let f = \x =>
+  │ ╭─────────────^
+2 │ │
+  │ ╰^ Syntax error: unexpected EOF (end of file)
+  │
+  = We found this error when we are trying to parse a Expression.
+    Examples of Expression are:
+
+    Example #1:
+
+      123
+
+    Example #2:
+
+      'hello world'
+
+    Example #3:
+
+      { x = 3 }
+
+    Example #4:
+
+      [ 2 ]
+
+    Example #5:
+
+      #some(true)

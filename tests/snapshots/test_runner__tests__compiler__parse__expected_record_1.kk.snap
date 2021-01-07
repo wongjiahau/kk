@@ -1,0 +1,44 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let x = {x: 2
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/parse/expected_record_1.kk:1:13
+  │
+1 │ let x = {x: 2
+  │             ^ Syntax error: not expecting `2` here
+  │
+  = Note that `2` is only used to represent number values.
+
+    We found this error when we are trying to parse a Record.
+    Examples of Record are:
+
+    Example #1:
+
+      { x = 2, y = 3 }
+
+    Example #2:
+
+      { x: number = 2 }
+
+    Example #3:
+
+      { x, y }

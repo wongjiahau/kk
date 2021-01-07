@@ -4,8 +4,8 @@ use std::iter::Peekable;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParseError {
-    context: ParseContext,
-    kind: ParseErrorKind,
+    pub context: ParseContext,
+    pub kind: ParseErrorKind,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -25,6 +25,7 @@ pub enum ParseContext {
     Expression,
     ExpressionLet,
     ExpressionFunction,
+    ExpressionFunctionCallOrPropertyAccess,
     ExpressionFunctionCall,
     ExpressionRecord,
     ExpressionArray,
@@ -37,7 +38,6 @@ pub enum ParseContext {
     StatementEnum,
 
     // Type annotation
-    TypeAnnotation,
     TypeAnnotationRecord,
     TypeAnnotationFunction,
 
@@ -120,7 +120,7 @@ impl<'a> Parser<'a> {
         let context = ParseContext::StatementLet;
         let left = self.eat_token(TokenType::Identifier, context)?;
         let type_variables = self.try_parse_type_variables_declaration()?;
-        let type_annotation = self.try_parse_colon_type_annotation()?;
+        let type_annotation = self.try_parse_colon_type_annotation(context)?;
         self.eat_token(TokenType::Equals, context)?;
         let right = self.parse_expression()?;
         Ok(Statement::Let {
@@ -137,7 +137,7 @@ impl<'a> Parser<'a> {
         let left = self.eat_token(TokenType::Identifier, context)?;
         let type_variables = self.try_parse_type_variables_declaration()?;
         self.eat_token(TokenType::Equals, context)?;
-        let right = self.parse_type_annotation()?;
+        let right = self.parse_type_annotation(context)?;
         Ok(Statement::Type {
             keyword_type,
             left,
@@ -226,7 +226,7 @@ impl<'a> Parser<'a> {
             loop {
                 let parameter_name = self.eat_token(TokenType::Identifier, context)?;
                 self.eat_token(TokenType::Equals, context)?;
-                let type_annotation = self.parse_type_annotation()?;
+                let type_annotation = self.parse_type_annotation(context)?;
                 substitutions.push((parameter_name, type_annotation));
                 if self.try_eat_token(TokenType::Comma).is_none() {
                     let right_angular_bracket = self.eat_token(TokenType::MoreThan, context)?;
@@ -247,7 +247,7 @@ impl<'a> Parser<'a> {
         let tagname = self.eat_token(TokenType::EnumConstructor, context)?;
         let payload = if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)
         {
-            let type_annotation = self.parse_type_annotation()?;
+            let type_annotation = self.parse_type_annotation(context)?;
             let right_parenthesis = self.eat_token(TokenType::RightParenthesis, context)?;
             Some(EnumTagPayload {
                 left_parenthesis,
@@ -305,7 +305,7 @@ impl<'a> Parser<'a> {
             first_argument,
             rest_arguments,
         } = self.parse_function_arguments()?;
-        let return_type_annotation = self.try_parse_colon_type_annotation()?;
+        let return_type_annotation = self.try_parse_colon_type_annotation(context)?;
         self.eat_token(TokenType::ArrowRight, context)?;
         let body = self.parse_expression()?;
         Ok(FunctionBranch {
@@ -319,13 +319,13 @@ impl<'a> Parser<'a> {
     fn parse_function_arguments(&mut self) -> Result<ParseFunctionArgumentResult, ParseError> {
         let context = ParseContext::FunctionArguments;
         if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis) {
-            let first_argument = Box::new(self.parse_function_argument()?);
+            let first_argument = Box::new(self.parse_function_argument(context)?);
             let mut rest_arguments = Vec::<FunctionArgument>::new();
             let right_parenthesis = loop {
                 if self.try_eat_token(TokenType::Comma).is_none() {
                     break self.eat_token(TokenType::RightParenthesis, context)?;
                 }
-                let argument = self.parse_function_argument()?;
+                let argument = self.parse_function_argument(context)?;
                 rest_arguments.push(argument);
                 if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis) {
                     break right_parenthesis;
@@ -347,23 +347,29 @@ impl<'a> Parser<'a> {
             })
         } else {
             Ok(ParseFunctionArgumentResult {
-                first_argument: Box::new(self.parse_function_argument()?),
+                first_argument: Box::new(self.parse_function_argument(context)?),
                 rest_arguments: None,
             })
         }
     }
-    fn parse_function_argument(&mut self) -> Result<FunctionArgument, ParseError> {
+    fn parse_function_argument(
+        &mut self,
+        context: ParseContext,
+    ) -> Result<FunctionArgument, ParseError> {
         let destructure_pattern = self.parse_destructure_pattern()?;
-        let type_annotation = self.try_parse_colon_type_annotation()?;
+        let type_annotation = self.try_parse_colon_type_annotation(context)?;
         Ok(FunctionArgument {
             destructure_pattern,
             type_annotation,
         })
     }
 
-    fn try_parse_colon_type_annotation(&mut self) -> Result<Option<TypeAnnotation>, ParseError> {
+    fn try_parse_colon_type_annotation(
+        &mut self,
+        context: ParseContext,
+    ) -> Result<Option<TypeAnnotation>, ParseError> {
         if self.try_eat_token(TokenType::Colon).is_some() {
-            match self.parse_type_annotation() {
+            match self.parse_type_annotation(context) {
                 Ok(type_annotation) => Ok(Some(type_annotation)),
                 Err(error) => Err(error),
             }
@@ -372,7 +378,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_type_annotation(&mut self) -> Result<TypeAnnotation, ParseError> {
+    fn parse_type_annotation(
+        &mut self,
+        context: ParseContext,
+    ) -> Result<TypeAnnotation, ParseError> {
         if let Some(token) = self.tokens.next() {
             match token.token_type.clone() {
                 TokenType::Identifier | TokenType::KeywordNull => {
@@ -389,7 +398,7 @@ impl<'a> Parser<'a> {
                     loop {
                         let key = self.eat_token(TokenType::Identifier, context)?;
                         self.eat_token(TokenType::Colon, context)?;
-                        let type_annotation = self.parse_type_annotation()?;
+                        let type_annotation = self.parse_type_annotation(context)?;
                         key_type_annotation_pairs.push((key, type_annotation));
                         if self.try_eat_token(TokenType::Comma).is_none() {
                             break;
@@ -408,19 +417,19 @@ impl<'a> Parser<'a> {
                     let context = ParseContext::TypeAnnotationFunction;
                     let (first_argument_type, rest_arguments_types) =
                         if self.try_eat_token(TokenType::LeftParenthesis).is_some() {
-                            let first_argument = self.parse_type_annotation()?;
+                            let first_argument = self.parse_type_annotation(context)?;
                             let mut arguments_types = vec![];
                             if self.try_eat_token(TokenType::Comma).is_some() {
-                                arguments_types.push(self.parse_type_annotation()?)
+                                arguments_types.push(self.parse_type_annotation(context)?)
                             }
                             self.eat_token(TokenType::RightParenthesis, context)?;
                             (first_argument, arguments_types)
                         } else {
-                            (self.parse_type_annotation()?, vec![])
+                            (self.parse_type_annotation(context)?, vec![])
                         };
 
                     self.eat_token(TokenType::ArrowRight, context)?;
-                    let return_type = self.parse_type_annotation()?;
+                    let return_type = self.parse_type_annotation(context)?;
                     Ok(TypeAnnotation::Function {
                         start_token,
                         first_argument_type: Box::new(first_argument_type),
@@ -428,13 +437,10 @@ impl<'a> Parser<'a> {
                         return_type: Box::new(return_type),
                     })
                 }
-                _ => Err(Parser::invalid_token(
-                    token.clone(),
-                    ParseContext::TypeAnnotation,
-                )),
+                _ => Err(Parser::invalid_token(token.clone(), context)),
             }
         } else {
-            Err(Parser::unexpected_eof(ParseContext::TypeAnnotation))
+            Err(Parser::unexpected_eof(context))
         }
     }
 
@@ -445,7 +451,7 @@ impl<'a> Parser<'a> {
         if self.try_eat_token(TokenType::Period).is_none() {
             return Ok(first_argument);
         }
-        let context = ParseContext::ExpressionFunctionCall;
+        let context = ParseContext::ExpressionFunctionCallOrPropertyAccess;
         let first_argument = {
             let name = self.eat_token(TokenType::Identifier, context)?;
             match self.tokens.peek() {
@@ -645,7 +651,7 @@ impl<'a> Parser<'a> {
                 }) => break,
                 _ => {
                     let key = self.eat_token(TokenType::Identifier, context)?;
-                    let type_annotation = self.try_parse_colon_type_annotation()?;
+                    let type_annotation = self.try_parse_colon_type_annotation(context)?;
                     let value = if self.try_eat_token(TokenType::Equals).is_some() {
                         self.parse_expression()?
                     } else {
@@ -676,7 +682,7 @@ impl<'a> Parser<'a> {
         let context = ParseContext::ExpressionLet;
         let left = self.parse_destructure_pattern()?;
         let type_annotation = if self.try_eat_token(TokenType::Colon).is_some() {
-            Some(self.parse_type_annotation()?)
+            Some(self.parse_type_annotation(context)?)
         } else {
             None
         };
@@ -737,7 +743,7 @@ impl<'a> Parser<'a> {
                             break;
                         }
                         let key = self.eat_token(TokenType::Identifier, context)?;
-                        let type_annotation = self.try_parse_colon_type_annotation()?;
+                        let type_annotation = self.try_parse_colon_type_annotation(context)?;
                         let as_value = if self.try_eat_token(TokenType::Equals).is_some() {
                             Some(self.parse_destructure_pattern()?)
                         } else {

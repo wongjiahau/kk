@@ -3,15 +3,24 @@ use peeking_take_while::PeekableExt;
 
 #[derive(Debug, Clone)]
 pub struct Character {
-    index: usize,
-    line_number: usize,
-    column_number: usize,
-    value: char,
+    pub index: usize,
+    pub line_number: usize,
+    pub column_number: usize,
+    pub value: char,
 }
 
 pub enum TokenizeError {
-    UnterminatedString { position: Position },
-    InvalidToken { error: String, position: Position },
+    UnterminatedString {
+        position: Position,
+        quote_char: char,
+    },
+    InvalidToken {
+        error: String,
+        position: Position,
+    },
+    UnknownCharacter {
+        character: Character,
+    },
 }
 
 pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
@@ -77,6 +86,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                     }),
                     None => {
                         return Err(TokenizeError::UnterminatedString {
+                            quote_char: quote,
                             position: make_position(character, content.last()),
                         })
                     }
@@ -87,6 +97,22 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                     .by_ref()
                     .peeking_take_while(|character| character.value.is_digit(10))
                     .collect::<Vec<Character>>();
+
+                if character.value == '-' && intergral.is_empty() {
+                    tokens.push(Token {
+                        token_type: TokenType::Minus,
+                        representation: character.value.to_string(),
+                        position: Position {
+                            line_start: character.line_number,
+                            line_end: character.line_number,
+                            column_start: character.column_number,
+                            column_end: character.column_number,
+                            character_index_start: character.index,
+                            character_index_end: character.index,
+                        },
+                    });
+                    continue;
+                };
 
                 let fractional = match it.peek() {
                     Some(Character { value: '.', .. }) => {
@@ -196,7 +222,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
             },
             other => {
                 tokens.push(Token {
-                    position: make_position(character, None),
+                    position: make_position(character.clone(), None),
                     representation: other.to_string(),
                     token_type: match other {
                         '{' => TokenType::LeftCurlyBracket,
@@ -207,17 +233,14 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                         ']' => TokenType::RightSquareBracket,
                         ' ' => TokenType::Whitespace,
                         ':' => TokenType::Colon,
-                        ';' => TokenType::Semicolon,
-                        '+' => TokenType::Plus,
                         '-' => TokenType::Minus,
                         ',' => TokenType::Comma,
                         '<' => TokenType::LessThan,
                         '>' => TokenType::MoreThan,
-                        '|' => TokenType::Pipe,
                         '\\' => TokenType::Backslash,
                         '_' => TokenType::Underscore,
                         '\n' => TokenType::Newline,
-                        _ => panic!(),
+                        _ => return Err(TokenizeError::UnknownCharacter { character }),
                     },
                 });
             }

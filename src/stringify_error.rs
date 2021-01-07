@@ -1,5 +1,7 @@
 use crate::ast::*;
+use crate::parse::{ParseContext, ParseError, ParseErrorKind};
 use crate::pattern::TypedDestructurePattern;
+use crate::tokenize::TokenizeError;
 use crate::unify::{UnifyError, UnifyErrorKind};
 use colored::*;
 use prettytable::{format::Alignment, Cell, Row, Table};
@@ -10,25 +12,351 @@ use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
+pub fn print_tokenize_error(source: Source, code: String, tokenize_error: TokenizeError) {
+    match tokenize_error {
+        TokenizeError::InvalidToken { error, position } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            print_error(
+                source,
+                code,
+                range,
+                StringifiedError {
+                    summary: "Syntax error: Invalid token".to_string(),
+                    body: error,
+                },
+            )
+        }
+        TokenizeError::UnknownCharacter { character } => {
+            let range = ErrorRange {
+                character_index_start: character.index,
+                character_index_end: character.index,
+            };
+            print_error(
+                source,
+                code,
+                range,
+                StringifiedError {
+                    summary: "Syntax error: Unknown character".to_string(),
+                    body: "This character is not used anywhere in the syntax of KK.".to_string(),
+                },
+            )
+        }
+        TokenizeError::UnterminatedString {
+            quote_char,
+            position,
+        } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            print_error(
+                source,
+                code,
+                range,
+                StringifiedError {
+                    summary: "Syntax error: unterminated string".to_string(),
+                    body: format!(
+                        "This string is not terminated, try adding `{}` after here.",
+                        quote_char
+                    ),
+                },
+            )
+        }
+    }
+}
+
+pub fn print_parse_error(source: Source, code: String, parse_error: ParseError) {
+    let parse_context_description = get_parse_context_description(parse_error.context);
+    let parse_context_description = format!(
+        "We found this error when we are trying to parse a {}.\nExamples of {} are:\n\n{}",
+        parse_context_description.name,
+        parse_context_description.name,
+        parse_context_description
+            .examples
+            .into_iter()
+            .enumerate()
+            .map(|(index, example)| format!(
+                "Example #{}:\n\n{}",
+                index + 1,
+                indent_string(example.to_string(), 2)
+            ))
+            .collect::<Vec<String>>()
+            .join("\n\n")
+    );
+    match parse_error.kind {
+        ParseErrorKind::InvalidToken {
+            actual_token,
+            expected_token_type,
+        } => {
+            let range = ErrorRange {
+                character_index_start: actual_token.position.character_index_start,
+                character_index_end: actual_token.position.character_index_end,
+            };
+            let expected_token_message = match expected_token_type {
+                None => "".to_string(),
+                Some(expected_token_type) => {
+                    format!(
+                        "The expected token here is `{}`.\n\n",
+                        stringify_token_type(expected_token_type)
+                    )
+                }
+            };
+            let actual_token_explanation = format!(
+                "Note that `{}` is {}.\n\n",
+                actual_token.representation,
+                explain_token_type_usage(actual_token.token_type)
+            );
+            let error = StringifiedError {
+                summary: format!(
+                    "Syntax error: not expecting `{}` here",
+                    actual_token.representation
+                ),
+                body: format!(
+                    "{}{}{}",
+                    expected_token_message, actual_token_explanation, parse_context_description
+                ),
+            };
+            print_error(source, code, range, error)
+        }
+        ParseErrorKind::UnexpectedEOF {
+            expected_token_type,
+        } => {
+            let range = ErrorRange {
+                character_index_start: code.len() - 1,
+                character_index_end: code.len() - 1,
+            };
+            let expected_token_message = match expected_token_type {
+                None => "".to_string(),
+                Some(expected_token_type) => {
+                    format!(
+                        "The expected token here is `{}`.\n\n",
+                        stringify_token_type(expected_token_type)
+                    )
+                }
+            };
+            let error = StringifiedError {
+                summary: "Syntax error: unexpected EOF (end of file)".to_string(),
+                body: format!("{}{}", expected_token_message, parse_context_description),
+            };
+            print_error(source, code, range, error)
+        }
+    }
+}
+
+struct ParseContextDescription {
+    name: &'static str,
+    examples: Vec<&'static str>,
+}
+
+fn explain_token_type_usage(token_type: TokenType) -> &'static str {
+    match token_type {
+        TokenType::KeywordLet => "used for defining variables, for example `let x = 1`.",
+        TokenType::KeywordType => "used for defining type alias, for example `type People = { name: String }`",
+        TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example `enum Color = #red #blue`",
+        TokenType::KeywordDo => "used for defining expression with side effects, such as `do 'Hello world'.print()`",
+        TokenType::KeywordElse => "only used in monadic let bindings, for example: `let #some(x) = y else \\_ => 'Nope'`",
+        TokenType::KeywordNull => "only used to create a value with the null type (i.e. unit type)",
+        TokenType::KeywordTrue | TokenType::KeywordFalse
+            => "only used to create a boolean value",
+        TokenType::Whitespace |TokenType::Newline => "meaningless in KK.",
+        TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example `{ x: string }`, and constructing record value, for example `{ x = 'hello' }`",
+
+        TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions, function arguments and enum constructor arguments.",
+        TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example `[1,2,3]`",
+        TokenType::Colon => "only used for annotating types, for example `{ x: string }`",
+        TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example: `type Box<T> = { value: T }`",
+        TokenType::Equals => "used for declaring variables, for example `let x = 1`, and also used in constructing record, for example `{ x = 1 }`",
+        TokenType::Period => "used for calling a function, for example `1.add(2)`",
+        TokenType::Spread => panic!("Subject to change"),
+        TokenType::Comma => "used for separating arguments in function, key-value pairs in record, elements in array etc.",
+        TokenType::Minus => "only used to represent negative numbers, for example `-123.4`",
+        TokenType::ArrowRight | TokenType::Backslash => "only used for creating function, for example `\\x => x.add(1)`",
+        TokenType::Underscore => "used in pattern matching to match values that are not used afterwards",
+        TokenType::EnumConstructor => "used for constructing enum values and also used in pattern matching",
+        TokenType::Identifier => "used to represent the name of a variable",
+        TokenType::String => "only used to represent string values",
+        TokenType::Number => "only used to represent number values",
+    }
+}
+
+fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDescription {
+    match parse_context {
+        ParseContext::Expression => ParseContextDescription {
+            name: "Expression",
+            examples: vec!["123", "'hello world'", "{ x = 3 }", "[ 2 ]", "#some(true)"],
+        },
+        ParseContext::ExpressionLet => ParseContextDescription {
+            name: "Let Expression",
+            examples: vec![
+                "let x = 1\nlet y = 2\nx.add(y)",
+                "let #some(x) = a \\else => #error('oops')\n#ok(x)",
+            ],
+        },
+        ParseContext::ExpressionFunction => ParseContextDescription {
+            name: "Function",
+            examples: vec![
+                "\\x => x.add(1)",
+                "\\(x: number, y: number): number => x.add(y)",
+                "\\(true, true) => true\n\\(_, _) => false",
+            ],
+        },
+        ParseContext::ExpressionFunctionCallOrPropertyAccess => ParseContextDescription {
+            name: "Function Call or Property Access",
+            examples: vec!["x.add(1)", "people.name"],
+        },
+        ParseContext::ExpressionFunctionCall => ParseContextDescription {
+            name: "Function call",
+            examples: vec![
+                "'hello world'.print()",
+                "x.add(y)",
+                "value.as<Type= number>()",
+            ],
+        },
+        ParseContext::ExpressionRecord => ParseContextDescription {
+            name: "Record",
+            examples: vec!["{ x = 2, y = 3 }", "{ x: number = 2 }", "{ x, y }"],
+        },
+        ParseContext::ExpressionArray => ParseContextDescription {
+            name: "Array",
+            examples: vec!["[]", "[1, 2, 3]"],
+        },
+        ParseContext::ExpressionEnumConstructor => ParseContextDescription {
+            name: "Enum Constructor",
+            examples: vec!["#none", "#some(0)"],
+        },
+        ParseContext::Statement => ParseContextDescription {
+            name: "Statement",
+            examples: vec![
+                "let x = 1",
+                "type People = { name: string }",
+                "do 'hello world'.print()",
+                "enum Color = #red #green",
+            ],
+        },
+        ParseContext::StatementLet => ParseContextDescription {
+            name: "Let Statement",
+            examples: vec!["let x = 1", "let identity<T> = \\(x: T): T => x"],
+        },
+        ParseContext::StatementType => ParseContextDescription {
+            name: "Type Statement",
+            examples: vec!["type ID = string", "type Box<T> = { value: T }"],
+        },
+        ParseContext::StatementEnum => ParseContextDescription {
+            name: "Enum Statement",
+            examples: vec![
+                "enum Color = #red #green", 
+                "enum List<Element> = #nil #cons({current: Element, next: List<Element = Element>})"
+            ],
+        },
+        ParseContext::TypeAnnotationRecord => ParseContextDescription {
+            name: "Record Type Annotation",
+            examples: vec!["{ x: string, y: { z: number } }"],
+        },
+        ParseContext::TypeAnnotationFunction => ParseContextDescription {
+            name: "Function Type Annotation",
+            examples: vec![
+                "\\boolean => boolean",
+                "\\(left: number, right: number) => number",
+            ],
+        },
+        ParseContext::Pattern => ParseContextDescription {
+            name: "Pattern",
+            examples: vec!["1", "'hello world'", "true", "#some(x)", "[]", "{ x, y }"],
+        },
+        ParseContext::PatternArray => ParseContextDescription {
+            name: "Array Pattern",
+            examples: vec!["[]", "[head, ...tail]"],
+        },
+        ParseContext::PatternEnum => ParseContextDescription {
+            name: "Enum Pattern",
+            examples: vec!["#none", "#some(x)"],
+        },
+        ParseContext::PatternRecord => ParseContextDescription {
+            name: "Record Pattern",
+            examples: vec!["{ x, y }", "{ x = true, y = #nil }"],
+        },
+        ParseContext::TypeArguments => ParseContextDescription {
+            name: "Type Arguments",
+            examples: vec!["<Element = number>"],
+        },
+        ParseContext::EnumConstructorDefinition => ParseContextDescription {
+            name: "Enum Constructor Definition",
+            examples: vec!["#hello(number)", "#apple({ name: string })", "#bomb"],
+        },
+        ParseContext::TypeVariablesDeclaration => ParseContextDescription {
+            name: "Type Variables Declaration",
+            examples: vec!["<T>", "<T, U>"],
+        },
+        ParseContext::FunctionArguments => ParseContextDescription {
+            name: "Function Arguments",
+            examples: vec!["x", "x: number"],
+        },
+    }
+}
+
+fn stringify_token_type(token_type: TokenType) -> &'static str {
+    match token_type {
+        TokenType::KeywordLet => "let",
+        TokenType::KeywordType => "type",
+        TokenType::KeywordEnum => "enum",
+        TokenType::KeywordDo => "do",
+        TokenType::KeywordElse => "else",
+        TokenType::KeywordNull => "null",
+        TokenType::KeywordTrue => "true",
+        TokenType::KeywordFalse => "false",
+        TokenType::Whitespace => " ",
+        TokenType::LeftCurlyBracket => "{",
+        TokenType::RightCurlyBracket => "}",
+        TokenType::LeftParenthesis => "(",
+        TokenType::RightParenthesis => ")",
+        TokenType::LeftSquareBracket => "[",
+        TokenType::RightSquareBracket => "]",
+        TokenType::Newline => "\n",
+        TokenType::Colon => ":",
+        TokenType::LessThan => "<",
+        TokenType::MoreThan => ">",
+        TokenType::Equals => "=",
+        TokenType::Period => ".",
+        TokenType::Spread => "...",
+        TokenType::Comma => ",",
+        TokenType::Minus => "-",
+        TokenType::ArrowRight => "=>",
+        TokenType::Backslash => "\\",
+        TokenType::Underscore => "_",
+        TokenType::EnumConstructor => "#abc",
+        TokenType::Identifier => "abc",
+        TokenType::String => "'abc'",
+        TokenType::Number => "123",
+    }
+}
+
 pub fn print_unify_error(source: Source, code: String, unify_error: UnifyError) {
+    let error = stringify_unify_error_kind(unify_error.kind);
+    let range = ErrorRange {
+        character_index_start: unify_error.position.character_index_start,
+        character_index_end: unify_error.position.character_index_end,
+    };
+
+    print_error(source, code, range, error)
+}
+
+struct ErrorRange {
+    character_index_start: usize,
+    character_index_end: usize,
+}
+
+fn print_error(source: Source, code: String, range: ErrorRange, error: StringifiedError) {
     let origin = match source {
         Source::File { path } => path,
         Source::NonFile { env_name } => env_name,
     };
-    let error = stringify_unify_error_kind(unify_error.kind);
-
-    // println!("position = {:#?}", unify_error.position);
-    // println!(
-    //     "{:#?}",
-    //     code.chars()
-    //         .into_iter()
-    //         .collect::<Vec<char>>()
-    //         .get(unify_error.position.character_index_end)
-    // );
 
     let range = {
-        let start = unify_error.position.character_index_start;
-        let end = unify_error.position.character_index_end;
+        let start = range.character_index_start;
+        let end = range.character_index_end;
         (start, end + 1)
     };
 

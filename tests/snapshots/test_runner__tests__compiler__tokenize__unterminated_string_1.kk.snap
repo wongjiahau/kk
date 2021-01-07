@@ -1,0 +1,31 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let x = "hello world
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/tokenize/unterminated_string_1.kk:1:9
+  │
+1 │   let x = "hello world
+  │ ╭─────────^
+2 │ │
+  │ ╰^ Syntax error: unterminated string
+  │
+  = This string is not terminated, try adding `"` after here.
