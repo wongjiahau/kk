@@ -1,10 +1,10 @@
-enum Boolean = #true #false
+enum Boolean = True() False()
 let and = \(x, y) => 
-  let #true = x
-  let #true = y
-  #true
+  let True() = x
+  let True() = y
+  True()
 
-do #true.and(#true).print()
-do #true.and(#false).print()
-do #false.and(#true).print()
-do #false.and(#false).print()
+do True().and(True()).print()
+do True().and(False()).print()
+do False().and(True()).print()
+do False().and(False()).print()

@@ -153,29 +153,28 @@ struct ParseContextDescription {
 
 fn explain_token_type_usage(token_type: TokenType) -> &'static str {
     match token_type {
-        TokenType::KeywordLet => "used for defining variables, for example `let x = 1`.",
+        TokenType::KeywordLet => "used for defining variables, for example `let x = 1`",
         TokenType::KeywordType => "used for defining type alias, for example `type People = { name: String }`",
-        TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example `enum Color = #red #blue`",
+        TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example `enum Color = Red() Blue()`",
         TokenType::KeywordDo => "used for defining expression with side effects, such as `do 'Hello world'.print()`",
-        TokenType::KeywordElse => "only used in monadic let bindings, for example: `let #some(x) = y else \\_ => 'Nope'`",
+        TokenType::KeywordElse => "only used in monadic let bindings, for example: `let Some(x) = y else \\_ => 'Nope'`",
         TokenType::KeywordNull => "only used to create a value with the null type (i.e. unit type)",
         TokenType::KeywordTrue | TokenType::KeywordFalse
             => "only used to create a boolean value",
-        TokenType::Whitespace |TokenType::Newline => "meaningless in KK.",
+        TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
         TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example `{ x: string }`, and constructing record value, for example `{ x = 'hello' }`",
 
-        TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions, function arguments and enum constructor arguments.",
+        TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions, function arguments and enum constructor",
         TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example `[1,2,3]`",
         TokenType::Colon => "only used for annotating types, for example `{ x: string }`",
         TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example: `type Box<T> = { value: T }`",
         TokenType::Equals => "used for declaring variables, for example `let x = 1`, and also used in constructing record, for example `{ x = 1 }`",
         TokenType::Period => "used for calling a function, for example `1.add(2)`",
         TokenType::Spread => panic!("Subject to change"),
-        TokenType::Comma => "used for separating arguments in function, key-value pairs in record, elements in array etc.",
+        TokenType::Comma => "used for separating arguments in function, key-value pairs in record, elements in array etc",
         TokenType::Minus => "only used to represent negative numbers, for example `-123.4`",
         TokenType::ArrowRight | TokenType::Backslash => "only used for creating function, for example `\\x => x.add(1)`",
         TokenType::Underscore => "used in pattern matching to match values that are not used afterwards",
-        TokenType::EnumConstructor => "used for constructing enum values and also used in pattern matching",
         TokenType::Identifier => "used to represent the name of a variable",
         TokenType::String => "only used to represent string values",
         TokenType::Number => "only used to represent number values",
@@ -186,13 +185,13 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
     match parse_context {
         ParseContext::Expression => ParseContextDescription {
             name: "Expression",
-            examples: vec!["123", "'hello world'", "{ x = 3 }", "[ 2 ]", "#some(true)"],
+            examples: vec!["123", "'hello world'", "{ x = 3 }", "[ 2 ]", "Some(true)"],
         },
         ParseContext::ExpressionLet => ParseContextDescription {
             name: "Let Expression",
             examples: vec![
                 "let x = 1\nlet y = 2\nx.add(y)",
-                "let #some(x) = a \\else => #error('oops')\n#ok(x)",
+                "let Some(x) = a \\else => Error('oops')\nOk(x)",
             ],
         },
         ParseContext::ExpressionFunction => ParseContextDescription {
@@ -225,7 +224,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::ExpressionEnumConstructor => ParseContextDescription {
             name: "Enum Constructor",
-            examples: vec!["#none", "#some(0)"],
+            examples: vec!["None()", "Some(0)"],
         },
         ParseContext::Statement => ParseContextDescription {
             name: "Statement",
@@ -233,7 +232,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
                 "let x = 1",
                 "type People = { name: string }",
                 "do 'hello world'.print()",
-                "enum Color = #red #green",
+                "enum Color = Red() Green()",
             ],
         },
         ParseContext::StatementLet => ParseContextDescription {
@@ -247,8 +246,8 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::StatementEnum => ParseContextDescription {
             name: "Enum Statement",
             examples: vec![
-                "enum Color = #red #green", 
-                "enum List<Element> = #nil #cons({current: Element, next: List<Element = Element>})"
+                "enum Color = Red() Green()", 
+                "enum List<Element> = Nil() Cons({current: Element, next: List<Element = Element>})"
             ],
         },
         ParseContext::TypeAnnotationRecord => ParseContextDescription {
@@ -264,7 +263,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::Pattern => ParseContextDescription {
             name: "Pattern",
-            examples: vec!["1", "'hello world'", "true", "#some(x)", "[]", "{ x, y }"],
+            examples: vec!["1", "'hello world'", "true", "Some(x)", "[]", "{ x, y }"],
         },
         ParseContext::PatternArray => ParseContextDescription {
             name: "Array Pattern",
@@ -272,11 +271,11 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::PatternEnum => ParseContextDescription {
             name: "Enum Pattern",
-            examples: vec!["#none", "#some(x)"],
+            examples: vec!["None()", "Some(x)"],
         },
         ParseContext::PatternRecord => ParseContextDescription {
             name: "Record Pattern",
-            examples: vec!["{ x, y }", "{ x = true, y = #nil }"],
+            examples: vec!["{ x, y }", "{ x = true, y = Nil() }"],
         },
         ParseContext::TypeArguments => ParseContextDescription {
             name: "Type Arguments",
@@ -284,7 +283,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::EnumConstructorDefinition => ParseContextDescription {
             name: "Enum Constructor Definition",
-            examples: vec!["#hello(number)", "#apple({ name: string })", "#bomb"],
+            examples: vec!["Hello(number)", "Apple({ name: string })", "Bomb()"],
         },
         ParseContext::TypeVariablesDeclaration => ParseContextDescription {
             name: "Type Variables Declaration",
@@ -326,7 +325,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::ArrowRight => "=>",
         TokenType::Backslash => "\\",
         TokenType::Underscore => "_",
-        TokenType::EnumConstructor => "#abc",
         TokenType::Identifier => "abc",
         TokenType::String => "'abc'",
         TokenType::Number => "123",
@@ -604,14 +602,14 @@ pub fn stringify_typed_destrucutre_pattern(
                 .join(", ")
         ),
         TypedDestructurePattern::Any { .. } => "_".to_string(),
-        TypedDestructurePattern::Enum { tagname, payload } => match payload {
-            None => tagname,
-            Some(payload) => format!(
-                "{}({})",
-                tagname,
-                stringify_typed_destrucutre_pattern(*payload)
-            ),
-        },
+        TypedDestructurePattern::EnumConstructor { name, payload } => format!(
+            "{}({})",
+            name,
+            match payload {
+                Some(payload) => stringify_typed_destrucutre_pattern(*payload),
+                None => "".to_string(),
+            }
+        ),
     }
 }
 

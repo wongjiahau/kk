@@ -16,7 +16,7 @@ pub enum Statement {
     Enum {
         keyword_enum: Token,
         name: Token,
-        tags: Vec<EnumTag>,
+        constructors: Vec<EnumConstructor>,
         type_variables: Vec<Token>,
     },
     Do {
@@ -26,15 +26,10 @@ pub enum Statement {
 }
 
 #[derive(Debug, Clone)]
-pub struct EnumTag {
-    pub tagname: Token,
-    pub payload: Option<EnumTagPayload>,
-}
-
-#[derive(Debug, Clone)]
-pub struct EnumTagPayload {
+pub struct EnumConstructor {
+    pub name: Token,
     pub left_parenthesis: Token,
-    pub type_annotation: Box<TypeAnnotation>,
+    pub payload: Option<Box<TypeAnnotation>>,
     pub right_parenthesis: Token,
 }
 
@@ -139,9 +134,11 @@ pub enum DestructurePattern {
     Null(Token),
     Underscore(Token),
     Identifier(Token),
-    Enum {
-        tagname: Token,
-        payload: Option<Box<DestructurePatternTagPayload>>,
+    EnumConstructor {
+        name: Token,
+        left_parenthesis: Token,
+        payload: Option<Box<DestructurePattern>>,
+        right_parenthesis: Token,
     },
     Record {
         left_curly_bracket: Token,
@@ -168,13 +165,6 @@ pub struct DestructurePatternArraySpread {
 }
 
 #[derive(Debug, Clone)]
-pub struct DestructurePatternTagPayload {
-    pub left_parenthesis: Token,
-    pub destructure_pattern: DestructurePattern,
-    pub right_parenthesis: Token,
-}
-
-#[derive(Debug, Clone)]
 pub struct DestructuredRecordKeyValue {
     pub key: Token,
     pub type_annotation: Option<TypeAnnotation>,
@@ -191,9 +181,11 @@ pub enum Expression {
     Number(Token),
     String(Token),
     Variable(Token),
-    Enum {
-        token: Token,
-        payload: Option<Box<EnumPayload>>,
+    EnumConstructor {
+        name: Token,
+        left_parenthesis: Token,
+        payload: Option<Box<Expression>>,
+        right_parenthesis: Token,
     },
     Function(Box<Function>),
     FunctionCall(Box<FunctionCall>),
@@ -220,13 +212,6 @@ pub enum Expression {
         true_branch: Box<Expression>,
         false_branch: Option<Box<Function>>,
     },
-}
-
-#[derive(Debug, Clone)]
-pub struct EnumPayload {
-    pub left_parenthesis: Token,
-    pub value: Expression,
-    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -331,7 +316,6 @@ pub enum TokenType {
     ArrowRight,
     Backslash,
     Underscore,
-    EnumConstructor,
     Identifier,
     String,
     Number,

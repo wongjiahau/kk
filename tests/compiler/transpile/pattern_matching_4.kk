@@ -1,5 +1,3 @@
-enum Option<T> = #some(T) #none
-
 let tail2 = \xs =>
   let [_, ...[_, ...tail2]] = xs 
   tail2

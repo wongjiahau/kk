@@ -6,12 +6,12 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 enum List<T> =
-  #nil
-  #cons({current: T, next: List<T = T>})
+  Nil()
+  Cons({current: T, next: List<T = T>})
 
 let bomb =
-  \#nil => true
-  \#cons({current = _, next = #nil}) => true
+  \Nil() => true
+  \Cons({current = _, next = Nil()}) => true
 
 ============
 EXIT CODE
@@ -29,10 +29,10 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_1.kk:6:3
   │
-6 │ ╭   \#nil => true
-7 │ │   \#cons({current = _, next = #nil}) => true
+6 │ ╭   \Nil() => true
+7 │ │   \Cons({current = _, next = Nil()}) => true
   │ ╰────────────────────────────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      \#cons({ current = _, next = #cons(_) }) => ...
+      \Cons({ current = _, next = Cons(_) }) => ...

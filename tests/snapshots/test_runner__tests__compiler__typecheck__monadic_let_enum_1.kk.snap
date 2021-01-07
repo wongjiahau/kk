@@ -5,11 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Color = #red #green
-enum Boolean = #true #false
+enum Color = Red() Green()
+enum Boolean = True() False()
 let firstIsTrue = \x =>
-  let #red = x
-  #true
+  let Red() = x
+  True()
 
 ============
 EXIT CODE
@@ -27,8 +27,8 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/monadic_let_enum_1.kk:5:3
   │
-5 │   #true
-  │   ^^^^^ Type mismatch
+5 │   True()
+  │   ^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

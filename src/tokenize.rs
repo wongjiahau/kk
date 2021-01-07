@@ -57,20 +57,6 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 representation: "_".to_string(),
                 position: make_position(character, None),
             }),
-            '#' => {
-                let tagname: Vec<Character> = it
-                    .by_ref()
-                    .peeking_take_while(|charcater| {
-                        charcater.value.is_alphanumeric() || charcater.value == '_'
-                    })
-                    .collect();
-
-                tokens.push(Token {
-                    token_type: TokenType::EnumConstructor,
-                    representation: "#".to_string() + &stringify(tagname.clone()),
-                    position: make_position(character, tagname.last()),
-                })
-            }
             '\'' | '"' => {
                 let quote = character.value;
                 let content: Vec<Character> = it

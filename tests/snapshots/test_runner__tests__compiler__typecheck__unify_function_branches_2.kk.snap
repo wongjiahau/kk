@@ -5,10 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Boolean = #true #false
-enum Bomb = #bomb
+enum Boolean = True() False()
+enum Bomb = Bomb()
 let and: \(Boolean, Boolean) => Boolean =
-  \(#true, #bomb) => #true
+  \(True(), Bomb()) => True
 
 ============
 EXIT CODE
@@ -24,10 +24,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unify_function_branches_2.kk:4:12
+  ┌─ tests/compiler/typecheck/unify_function_branches_2.kk:4:13
   │
-4 │   \(#true, #bomb) => #true
-  │            ^^^^^ Type mismatch
+4 │   \(True(), Bomb()) => True
+  │             ^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

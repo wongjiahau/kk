@@ -152,20 +152,20 @@ impl<'a> Parser<'a> {
         let type_variables = self.try_parse_type_variables_declaration()?;
         self.eat_token(TokenType::Equals, context)?;
 
-        let mut tags = vec![self.parse_enum_constructor_definition()?];
+        let mut constructors = vec![self.parse_enum_constructor_definition()?];
 
         while let Some(Token {
-            token_type: TokenType::EnumConstructor,
+            token_type: TokenType::Identifier,
             ..
         }) = self.tokens.peek()
         {
-            tags.push(self.parse_enum_constructor_definition()?)
+            constructors.push(self.parse_enum_constructor_definition()?)
         }
         Ok(Statement::Enum {
             keyword_enum,
             name,
             type_variables,
-            tags,
+            constructors,
         })
     }
 
@@ -242,23 +242,27 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_enum_constructor_definition(&mut self) -> Result<EnumTag, ParseError> {
+    fn parse_enum_constructor_definition(&mut self) -> Result<EnumConstructor, ParseError> {
         let context = ParseContext::EnumConstructorDefinition;
-        let tagname = self.eat_token(TokenType::EnumConstructor, context)?;
-        let payload = if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)
-        {
-            let type_annotation = self.parse_type_annotation(context)?;
-            let right_parenthesis = self.eat_token(TokenType::RightParenthesis, context)?;
-            Some(EnumTagPayload {
+        let name = self.eat_token(TokenType::Identifier, context)?;
+        let left_parenthesis = self.eat_token(TokenType::LeftParenthesis, context)?;
+        if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis) {
+            Ok(EnumConstructor {
+                name,
                 left_parenthesis,
+                payload: None,
                 right_parenthesis,
-                type_annotation: Box::new(type_annotation),
             })
         } else {
-            None
-        };
-
-        Ok(EnumTag { tagname, payload })
+            let type_annotation = self.parse_type_annotation(context)?;
+            let right_parenthesis = self.eat_token(TokenType::RightParenthesis, context)?;
+            Ok(EnumConstructor {
+                name,
+                left_parenthesis,
+                right_parenthesis,
+                payload: Some(Box::new(type_annotation)),
+            })
+        }
     }
 
     fn try_parse_type_variables_declaration(&mut self) -> Result<Vec<Token>, ParseError> {
@@ -556,28 +560,38 @@ impl<'a> Parser<'a> {
         if let Some(token) = self.tokens.next() {
             match &token.token_type {
                 TokenType::String => Ok(Expression::String(token.clone())),
-                TokenType::Identifier => Ok(Expression::Variable(token.clone())),
-                TokenType::EnumConstructor => {
-                    let context = ParseContext::ExpressionEnumConstructor;
-                    let payload = if let Some(left_parenthesis) =
-                        self.try_eat_token(TokenType::LeftParenthesis)
-                    {
-                        let value = self.parse_expression()?;
-                        let right_parenthesis =
-                            self.eat_token(TokenType::RightParenthesis, context)?;
-                        Some(Box::new(EnumPayload {
-                            left_parenthesis,
-                            right_parenthesis,
-                            value,
-                        }))
-                    } else {
-                        None
-                    };
-                    Ok(Expression::Enum {
-                        token: token.clone(),
-                        payload,
-                    })
-                }
+                TokenType::Identifier => match self.tokens.peek() {
+                    Some(Token {
+                        token_type: TokenType::LeftParenthesis,
+                        ..
+                    }) => {
+                        let context = ParseContext::ExpressionEnumConstructor;
+                        let left_parenthesis =
+                            self.eat_token(TokenType::LeftParenthesis, context)?;
+                        if let Some(right_parenthesis) =
+                            self.try_eat_token(TokenType::RightParenthesis)
+                        {
+                            Ok(Expression::EnumConstructor {
+                                name: token.clone(),
+                                left_parenthesis,
+                                payload: None,
+                                right_parenthesis,
+                            })
+                        } else {
+                            let payload = self.parse_expression()?;
+                            let right_parenthesis =
+                                self.eat_token(TokenType::RightParenthesis, context)?;
+
+                            Ok(Expression::EnumConstructor {
+                                name: token.clone(),
+                                left_parenthesis,
+                                payload: Some(Box::new(payload)),
+                                right_parenthesis,
+                            })
+                        }
+                    }
+                    _ => Ok(Expression::Variable(token.clone())),
+                },
                 TokenType::LeftCurlyBracket => self.parse_record(token.clone()),
                 TokenType::LeftSquareBracket => self.parse_array(token.clone()),
                 TokenType::Number => Ok(Expression::Number(token.clone())),
@@ -708,8 +722,7 @@ impl<'a> Parser<'a> {
     fn parse_destructure_pattern(&mut self) -> Result<DestructurePattern, ParseError> {
         if let Some(token) = self.tokens.next() {
             match &token.token_type {
-                TokenType::Identifier => Ok(DestructurePattern::Identifier(token.clone())),
-                TokenType::EnumConstructor => match self.tokens.peek() {
+                TokenType::Identifier => match self.tokens.peek() {
                     Some(Token {
                         token_type: TokenType::LeftParenthesis,
                         ..
@@ -717,22 +730,28 @@ impl<'a> Parser<'a> {
                         let context = ParseContext::PatternEnum;
                         let left_parenthesis =
                             self.eat_token(TokenType::LeftParenthesis, context)?;
-                        let destructure_pattern = self.parse_destructure_pattern()?;
-                        let right_parenthesis =
-                            self.eat_token(TokenType::RightParenthesis, context)?;
-                        Ok(DestructurePattern::Enum {
-                            tagname: token.clone(),
-                            payload: Some(Box::new(DestructurePatternTagPayload {
+                        if let Some(right_parenthesis) =
+                            self.try_eat_token(TokenType::RightParenthesis)
+                        {
+                            Ok(DestructurePattern::EnumConstructor {
+                                name: token.clone(),
                                 left_parenthesis,
+                                payload: None,
                                 right_parenthesis,
-                                destructure_pattern,
-                            })),
-                        })
+                            })
+                        } else {
+                            let destructure_pattern = self.parse_destructure_pattern()?;
+                            let right_parenthesis =
+                                self.eat_token(TokenType::RightParenthesis, context)?;
+                            Ok(DestructurePattern::EnumConstructor {
+                                name: token.clone(),
+                                left_parenthesis,
+                                payload: Some(Box::new(destructure_pattern)),
+                                right_parenthesis,
+                            })
+                        }
                     }
-                    _ => Ok(DestructurePattern::Enum {
-                        tagname: token.clone(),
-                        payload: None,
-                    }),
+                    _ => Ok(DestructurePattern::Identifier(token.clone())),
                 },
                 TokenType::Underscore => Ok(DestructurePattern::Underscore(token.clone())),
                 TokenType::LeftCurlyBracket => {

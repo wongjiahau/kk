@@ -37,10 +37,6 @@ pub fn transpile_statement(statement: Statement) -> String {
     }
 }
 
-fn transpile_tag(tag: String) -> String {
-    tag.as_str()[1..].to_string()
-}
-
 pub fn transpile_expression(expression: Expression) -> String {
     match expression {
         Expression::Null(_) => "null".to_string(),
@@ -54,14 +50,14 @@ pub fn transpile_expression(expression: Expression) -> String {
         Expression::String(s) => s.representation,
         Expression::Number(n) => n.representation,
         Expression::Variable(v) => v.representation,
-        Expression::Enum { token, payload } => match payload {
-            Some(payload) => format!(
-                "{{$:'{}',_:{}}}",
-                transpile_tag(token.representation),
-                transpile_expression(payload.value)
-            ),
-            None => format!("{{$:'{}'}}", transpile_tag(token.representation)),
-        },
+        Expression::EnumConstructor { name, payload, .. } => format!(
+            "{{$:'{}',_:{}}}",
+            name.representation,
+            match payload {
+                Some(payload) => transpile_expression(*payload),
+                None => "null".to_string(),
+            }
+        ),
         Expression::RecordAccess {
             expression,
             property_name,
@@ -278,19 +274,15 @@ pub fn transpile_function_destructure_pattern(
                 identifier.representation, from_expression
             )],
         },
-        DestructurePattern::Enum { tagname, payload } => {
+        DestructurePattern::EnumConstructor { name, payload, .. } => {
             let first = TranspiledDestructurePattern {
-                conditions: vec![format!(
-                    "{}.$==='{}'",
-                    from_expression,
-                    transpile_tag(tagname.representation)
-                )],
+                conditions: vec![format!("{}.$==='{}'", from_expression, name.representation)],
                 bindings: vec![],
             };
             let rest = match payload {
                 None => None,
                 Some(payload) => Some(transpile_function_destructure_pattern(
-                    payload.destructure_pattern,
+                    *payload,
                     format!("{}._", from_expression),
                 )),
             };

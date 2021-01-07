@@ -5,8 +5,6 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Option<T> = #some(T) #none
-
 let tail2 = \xs =>
   let [_, ...[_, ...tail2]] = xs
   tail2

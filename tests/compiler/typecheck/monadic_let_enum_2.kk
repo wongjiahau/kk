@@ -1,9 +1,9 @@
-enum Color = #red #green #blue #yellow
+enum Color = Red() Green() Blue() Yellow()
 
 let colorToNumber = \xs =>
-  let #red = xs 
+  let Red() = xs 
     else 
-      \#green => 0
-      \#blue => 0
+      \Green() => 0
+      \Blue() => 0
   1
 

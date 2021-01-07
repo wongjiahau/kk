@@ -215,15 +215,15 @@ pub fn expand_pattern(
             .map(|constructor_symbol| {
                 let constructor_name = constructor_symbol.constructor_name.clone();
                 match &constructor_symbol.payload {
-                    None => TypedDestructurePattern::Enum {
-                        tagname: constructor_name,
+                    None => TypedDestructurePattern::EnumConstructor {
+                        name: constructor_name,
                         payload: None,
                     },
                     Some(payload) => {
                         let payload =
                             rewrite_type_variables_in_type(type_arguments.clone(), payload.clone());
-                        TypedDestructurePattern::Enum {
-                            tagname: constructor_name,
+                        TypedDestructurePattern::EnumConstructor {
+                            name: constructor_name,
                             payload: Some(Box::new(TypedDestructurePattern::Any {
                                 type_value: payload,
                             })),
@@ -287,8 +287,8 @@ pub enum TypedDestructurePattern {
     Any {
         type_value: Type,
     },
-    Enum {
-        tagname: String,
+    EnumConstructor {
+        name: String,
         payload: Option<Box<TypedDestructurePattern>>,
     },
     Tuple(Vec<TypedDestructurePattern>),
@@ -339,47 +339,45 @@ pub fn match_pattern(
             TypedDestructurePattern::Boolean(false),
         ) => MatchPatternResult::Matched,
         (
-            DestructurePattern::Enum {
-                tagname: actual_tagname,
+            DestructurePattern::EnumConstructor {
+                name: actual_name,
                 payload: None,
+                ..
             },
-            TypedDestructurePattern::Enum {
-                tagname: expected_tagname,
+            TypedDestructurePattern::EnumConstructor {
+                name: expected_name,
                 payload: None,
             },
         ) => {
-            if actual_tagname.representation != *expected_tagname {
+            if actual_name.representation != *expected_name {
                 MatchPatternResult::NotMatched
             } else {
                 MatchPatternResult::Matched
             }
         }
         (
-            DestructurePattern::Enum {
-                tagname: actual_tagname,
+            DestructurePattern::EnumConstructor {
+                name: actual_name,
                 payload: Some(actual_payload),
+                ..
             },
-            TypedDestructurePattern::Enum {
-                tagname: expected_tagname,
+            TypedDestructurePattern::EnumConstructor {
+                name: expected_name,
                 payload: Some(expected_payload),
             },
         ) => {
-            if actual_tagname.representation != *expected_tagname {
+            if actual_name.representation != *expected_name {
                 MatchPatternResult::NotMatched
             } else {
-                match match_pattern(
-                    environment,
-                    &actual_payload.destructure_pattern,
-                    expected_payload,
-                ) {
+                match match_pattern(environment, &actual_payload, expected_payload) {
                     MatchPatternResult::Matched => MatchPatternResult::Matched,
                     MatchPatternResult::NotMatched => MatchPatternResult::NotMatched,
                     MatchPatternResult::PartiallyMatched { expanded_patterns } => {
                         MatchPatternResult::PartiallyMatched {
                             expanded_patterns: expanded_patterns
                                 .into_iter()
-                                .map(|pattern| TypedDestructurePattern::Enum {
-                                    tagname: expected_tagname.clone(),
+                                .map(|pattern| TypedDestructurePattern::EnumConstructor {
+                                    name: expected_name.clone(),
                                     payload: Some(Box::new(pattern)),
                                 })
                                 .collect(),

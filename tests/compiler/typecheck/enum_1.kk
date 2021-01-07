@@ -1,14 +1,14 @@
 enum List<Element> =
-  #nil
-  #cons({
+  Nil()
+  Cons({
     current: Element,
     next: List<Element= Element>
   })
 
-let xs = #cons({
+let xs = Cons({
   current = 1,
-  next = #cons({
+  next = Cons({
     current = true,
-    next = #nil
+    next = Nil()
   })
 })

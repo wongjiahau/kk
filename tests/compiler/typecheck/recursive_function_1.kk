@@ -1,12 +1,12 @@
 enum List<Of> = 
-    #nil
-    #cons({current: Of, next: List<Of= Of>})
+    Nil()
+    Cons({current: Of, next: List<Of= Of>})
 
 let listMap<From, To>
  : \(List<Of= From>, \From => To) => List<Of= To>
  = 
-  \(#nil, _) => #nil
-  \(#cons({current, next}), f) => #cons({
+  \(Nil(), _) => Nil()
+  \(Cons({current, next}), f) => Cons({
     current = current.f(), 
-    next = #cons({current= 0, next= #nil}).listMap(f)
+    next = Cons({current= 0, next= Nil()}).listMap(f)
   })

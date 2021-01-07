@@ -238,7 +238,7 @@ pub fn infer_statement(
         Statement::Enum {
             name,
             type_variables,
-            tags,
+            constructors,
             ..
         } => {
             // 1. Add this enum into environment first, to allow recursive definition
@@ -307,30 +307,28 @@ pub fn infer_statement(
             }
 
             // 3. Add each tags into the value environment
-            let constructor_symbols = tags
+            let constructor_symbols = constructors
                 .iter()
-                .map(|tag| {
+                .map(|constructor| {
                     let declaration = Declaration::UserDefined {
                         source: source.clone(),
-                        token: tag.tagname.clone(),
+                        token: constructor.name.clone(),
                         scope_name: environment.current_scope_name(),
                     };
                     Ok((
-                        &tag.tagname,
+                        &constructor.name,
                         ConstructorSymbol {
                             declaration,
                             usage_references: Default::default(),
                             enum_name: enum_name.clone(),
-                            constructor_name: tag.tagname.representation.clone(),
+                            constructor_name: constructor.name.representation.clone(),
                             type_variables: type_variable_names.clone(),
-                            payload: match &tag.payload {
+                            payload: match &constructor.payload {
                                 None => None,
                                 Some(payload) => {
                                     // validate type annotation
-                                    let payload_type_value = type_annotation_to_type(
-                                        environment,
-                                        payload.type_annotation.as_ref(),
-                                    )?;
+                                    let payload_type_value =
+                                        type_annotation_to_type(environment, payload.as_ref())?;
                                     Some(payload_type_value)
                                 }
                             },
@@ -504,10 +502,11 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
         | DestructurePattern::Underscore(token)
         | DestructurePattern::Boolean { token, .. }
         | DestructurePattern::Null(token) => token.position,
-        DestructurePattern::Enum { tagname, payload } => match payload {
-            Some(payload) => join_position(tagname.position, payload.right_parenthesis.position),
-            None => tagname.position,
-        },
+        DestructurePattern::EnumConstructor {
+            name,
+            right_parenthesis,
+            ..
+        } => join_position(name.position, right_parenthesis.position),
         DestructurePattern::Record {
             left_curly_bracket,
             right_curly_bracket,
@@ -538,10 +537,11 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         | Expression::Variable(token)
         | Expression::Null(token)
         | Expression::Boolean { token, .. } => token.position,
-        Expression::Enum { token, payload } => match payload {
-            Some(payload) => join_position(token.position, payload.right_parenthesis.position),
-            None => token.position,
-        },
+        Expression::EnumConstructor {
+            name,
+            right_parenthesis,
+            ..
+        } => join_position(name.position, right_parenthesis.position),
         Expression::RecordAccess {
             expression,
             property_name,
@@ -1005,14 +1005,14 @@ pub struct GetEnumTypeResult {
 pub fn get_enum_type(
     environment: &mut Environment,
     expected_type: Option<Type>,
-    tagname: &Token,
+    name: &Token,
 ) -> Result<GetEnumTypeResult, UnifyError> {
     // Look up constructor
-    let constructor = match environment.get_consructor_symbol(SymbolName::Token(tagname.clone())) {
+    let constructor = match environment.get_consructor_symbol(SymbolName::Token(name.clone())) {
         Some(constructor_symbol) => constructor_symbol,
         None => {
             return Err(UnifyError {
-                position: tagname.position,
+                position: name.position,
                 kind: UnifyErrorKind::UnknownEnumConstructor,
             })
         }
@@ -1064,34 +1064,6 @@ pub fn get_enum_type(
     })
 }
 
-pub fn infer_enum_type(
-    environment: &mut Environment,
-    expected_type: Option<Type>,
-    tagname: &Token,
-    payload: Option<Box<EnumPayload>>,
-) -> Result<Type, UnifyError> {
-    let result = get_enum_type(environment, expected_type, tagname)?;
-    match (result.expected_payload_type, payload) {
-        (None, None) => Ok(result.expected_enum_type),
-        (None, Some(payload)) => Err(UnifyError {
-            position: join_position(
-                payload.left_parenthesis.position,
-                payload.right_parenthesis.position,
-            ),
-            kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
-        }),
-        (Some(expected_payload_type), None) => Err(UnifyError {
-            position: tagname.position,
-            kind: UnifyErrorKind::ThisTagRequiresPaylod {
-                payload_type: expected_payload_type,
-            },
-        }),
-        (Some(expected_payload_type), Some(payload)) => {
-            infer_expression_type(environment, Some(expected_payload_type), &payload.value)?;
-            Ok(result.expected_enum_type)
-        }
-    }
-}
 pub struct TypeVariableSubstitution {
     pub from_type_variable: String,
     pub to_type: Type,
@@ -1126,8 +1098,30 @@ pub fn infer_expression_type_(
         Expression::String(_) => Ok(Type::String),
         Expression::Number(_) => Ok(Type::Number),
         Expression::Boolean { .. } => Ok(Type::Boolean),
-        Expression::Enum { token, payload } => {
-            infer_enum_type(environment, expected_type, token, payload.clone())
+        Expression::EnumConstructor {
+            name,
+            payload,
+            left_parenthesis,
+            right_parenthesis,
+        } => {
+            let result = get_enum_type(environment, expected_type, name)?;
+            match (result.expected_payload_type, payload.clone()) {
+                (None, None) => Ok(result.expected_enum_type),
+                (None, Some(_)) => Err(UnifyError {
+                    position: join_position(left_parenthesis.position, right_parenthesis.position),
+                    kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
+                }),
+                (Some(expected_payload_type), None) => Err(UnifyError {
+                    position: name.position,
+                    kind: UnifyErrorKind::ThisTagRequiresPaylod {
+                        payload_type: expected_payload_type,
+                    },
+                }),
+                (Some(expected_payload_type), Some(payload)) => {
+                    infer_expression_type(environment, Some(expected_payload_type), &payload)?;
+                    Ok(result.expected_enum_type)
+                }
+            }
         }
         Expression::Variable(variable) => {
             if let Some(symbol) = environment.get_value_symbol(SymbolName::Token(variable.clone()))
@@ -2160,26 +2154,22 @@ pub fn infer_destructure_pattern_(
                 })
                 .collect::<Result<Vec<Type>, UnifyError>>()?,
         )),
-        DestructurePattern::Enum { tagname, payload } => {
-            let result = get_enum_type(environment, expected_type, tagname)?;
+        DestructurePattern::EnumConstructor { name, payload, .. } => {
+            let result = get_enum_type(environment, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(result.expected_enum_type),
                 (None, Some(payload)) => Err(UnifyError {
-                    position: get_destructure_pattern_position(&payload.destructure_pattern),
+                    position: get_destructure_pattern_position(&payload),
                     kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
-                    position: tagname.position,
+                    position: name.position,
                     kind: UnifyErrorKind::ThisTagRequiresPaylod {
                         payload_type: expected_payload_type,
                     },
                 }),
                 (Some(expected_payload_type), Some(payload)) => {
-                    infer_destructure_pattern(
-                        environment,
-                        Some(expected_payload_type),
-                        &payload.destructure_pattern,
-                    )?;
+                    infer_destructure_pattern(environment, Some(expected_payload_type), &payload)?;
                     Ok(result.expected_enum_type)
                 }
             }

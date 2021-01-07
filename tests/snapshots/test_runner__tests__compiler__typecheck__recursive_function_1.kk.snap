@@ -6,16 +6,16 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 enum List<Of> =
-    #nil
-    #cons({current: Of, next: List<Of= Of>})
+    Nil()
+    Cons({current: Of, next: List<Of= Of>})
 
 let listMap<From, To>
  : \(List<Of= From>, \From => To) => List<Of= To>
  =
-  \(#nil, _) => #nil
-  \(#cons({current, next}), f) => #cons({
+  \(Nil(), _) => Nil()
+  \(Cons({current, next}), f) => Cons({
     current = current.f(),
-    next = #cons({current= 0, next= #nil}).listMap(f)
+    next = Cons({current= 0, next= Nil()}).listMap(f)
   })
 
 ============
@@ -32,10 +32,10 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/recursive_function_1.kk:11:28
+   ┌─ tests/compiler/typecheck/recursive_function_1.kk:11:27
    │
-11 │     next = #cons({current= 0, next= #nil}).listMap(f)
-   │                            ^ Type mismatch
+11 │     next = Cons({current= 0, next= Nil()}).listMap(f)
+   │                           ^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |

@@ -5,13 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Color = #red #green #blue #yellow
+enum Color = Red() Green() Blue() Yellow()
 
 let colorToNumber = \xs =>
-  let #red = xs
+  let Red() = xs
     else
-      \#green => 0
-      \#blue => 0
+      \Green() => 0
+      \Blue() => 0
   1
 
 ============
@@ -30,12 +30,12 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/monadic_let_enum_2.kk:4:3
   │
-4 │ ╭   let #red = xs
+4 │ ╭   let Red() = xs
 5 │ │     else
-6 │ │       \#green => 0
-7 │ │       \#blue => 0
-  │ ╰─────────────────^ Non-exhaustive cases
+6 │ │       \Green() => 0
+7 │ │       \Blue() => 0
+  │ ╰──────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      \#yellow => ...
+      \Yellow() => ...

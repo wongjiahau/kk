@@ -49,4 +49,4 @@ error:
 
     Example #5:
 
-      #some(true)
+      Some(true)
