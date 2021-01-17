@@ -206,6 +206,21 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                     position: make_position(character, None),
                 }),
             },
+            ':' => match it.peek() {
+                Some(Character { value: ':', .. }) => {
+                    let colon = it.by_ref().next();
+                    tokens.push(Token {
+                        token_type: TokenType::ScopeResolution,
+                        representation: "::".to_string(),
+                        position: make_position(character, colon.as_ref()),
+                    })
+                }
+                _ => tokens.push(Token {
+                    token_type: TokenType::Colon,
+                    representation: ":".to_string(),
+                    position: make_position(character, None),
+                }),
+            },
             other => {
                 tokens.push(Token {
                     position: make_position(character.clone(), None),
@@ -218,7 +233,6 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                         '[' => TokenType::LeftSquareBracket,
                         ']' => TokenType::RightSquareBracket,
                         ' ' => TokenType::Whitespace,
-                        ':' => TokenType::Colon,
                         '-' => TokenType::Minus,
                         ',' => TokenType::Comma,
                         '<' => TokenType::LessThan,

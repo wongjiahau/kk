@@ -50,9 +50,13 @@ pub fn transpile_expression(expression: Expression) -> String {
         Expression::String(s) => s.representation,
         Expression::Number(n) => n.representation,
         Expression::Variable(v) => v.representation,
-        Expression::EnumConstructor { name, payload, .. } => format!(
+        Expression::EnumConstructor {
+            scoped_name,
+            payload,
+            ..
+        } => format!(
             "{{$:'{}',_:{}}}",
-            name.representation,
+            scoped_name.name.representation,
             match payload {
                 Some(payload) => transpile_expression(*payload),
                 None => "null".to_string(),
@@ -274,9 +278,16 @@ pub fn transpile_function_destructure_pattern(
                 identifier.representation, from_expression
             )],
         },
-        DestructurePattern::EnumConstructor { name, payload, .. } => {
+        DestructurePattern::EnumConstructor {
+            scoped_name,
+            payload,
+            ..
+        } => {
             let first = TranspiledDestructurePattern {
-                conditions: vec![format!("{}.$==='{}'", from_expression, name.representation)],
+                conditions: vec![format!(
+                    "{}.$==='{}'",
+                    from_expression, scoped_name.name.representation
+                )],
                 bindings: vec![],
             };
             let rest = match payload {

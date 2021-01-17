@@ -1,10 +1,10 @@
 use crate::ast::*;
 use std::collections::HashSet;
 use std::iter;
+use std::path::Path;
 
 use crate::environment::*;
 use crate::pattern::*;
-use crate::stringify_error::stringify_type;
 
 #[derive(Debug)]
 pub struct Program {
@@ -14,10 +14,28 @@ pub struct Program {
 
 pub fn unify_program(program: Program) -> Result<(), UnifyError> {
     // 1. TODO: Populate environment with imported symbols
-    let mut environment: Environment = Environment::new(&program.source);
+    let source = program.source.clone();
+    let mut environment: Environment = Environment::new(
+        &source,
+        match program.source {
+            Source::File { path } => match Path::new(&path).file_stem() {
+                Some(name) => match name.to_str() {
+                    Some(namespace_name) => {
+                        // TODO: validate that namespace_name is a vaid namespace_name
+                        // a valid namespace_name should be PascalCase and contains only
+                        // alphanumeric characters
+                        namespace_name.to_string()
+                    }
+                    None => panic!("Not handled yet"),
+                },
+                None => panic!("Not handled yet"),
+            },
+            Source::NonFile { env_name } => env_name,
+        },
+    );
 
     // 2. Type check this program
-    let _ = program
+    program
         .statements
         .into_iter()
         .map(|statement| infer_statement(&mut environment, statement))
@@ -33,6 +51,15 @@ pub struct UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    UnknownNamespace,
+    AmbiguousNamespace {
+        namespace_name: String,
+        possible_scopings: Vec<Scoping>,
+    },
+    AmbiguousSymbolUsage {
+        symbol_name: String,
+        possible_scopings: Vec<Scoping>,
+    },
     WrongTypeAnnotation {
         expected_type: Type,
     },
@@ -166,13 +193,7 @@ pub fn infer_statement(
             environment.insert_value_symbol(
                 &left,
                 ValueSymbol {
-                    declaration: Declaration::UserDefined {
-                        source: environment.source.clone(),
-                        token: left.clone(),
-                        scope_name: environment.current_scope_name(),
-                    },
                     type_scheme: right_type_scheme,
-                    usage_references: Default::default(),
                 },
             )?;
 
@@ -191,19 +212,12 @@ pub fn infer_statement(
                 environment.insert_type_symbol(
                     &type_variable,
                     TypeSymbol {
-                        name: type_variable.representation.clone(),
                         type_scheme: TypeScheme {
                             type_value: Type::ImplicitTypeVariable {
                                 name: type_variable.clone().representation,
                             },
                             type_variables: vec![],
                         },
-                        declaration: Declaration::UserDefined {
-                            source: environment.source.clone(),
-                            token: type_variable.clone(),
-                            scope_name: environment.current_scope_name(),
-                        },
-                        usage_references: Default::default(),
                     },
                 )?;
             }
@@ -216,12 +230,6 @@ pub fn infer_statement(
             environment.insert_type_symbol(
                 &left,
                 TypeSymbol {
-                    declaration: Declaration::UserDefined {
-                        source: environment.source.clone(),
-                        token: left.clone(),
-                        scope_name: environment.current_scope_name(),
-                    },
-                    name: left.representation.clone(),
                     type_scheme: TypeScheme {
                         type_variables: type_variables
                             .into_iter()
@@ -229,7 +237,6 @@ pub fn infer_statement(
                             .collect(),
                         type_value,
                     },
-                    usage_references: Default::default(),
                 },
             )?;
 
@@ -267,21 +274,12 @@ pub fn infer_statement(
             environment.insert_type_symbol(
                 &name,
                 TypeSymbol {
-                    name: name.representation.clone(),
-                    declaration: Declaration::UserDefined {
-                        source: environment.source.clone(),
-                        token: name.clone(),
-                        scope_name: environment.current_scope_name(),
-                    },
                     type_scheme: TypeScheme {
                         type_variables: type_variable_names.clone(),
                         type_value: enum_type,
                     },
-                    usage_references: Default::default(),
                 },
             )?;
-
-            let source = environment.source.clone();
 
             // 2. Populate type variables into current environment
             environment.step_into_new_child_scope();
@@ -289,37 +287,23 @@ pub fn infer_statement(
                 environment.insert_type_symbol(
                     &type_variable,
                     TypeSymbol {
-                        name: type_variable.representation.clone(),
                         type_scheme: TypeScheme {
                             type_value: Type::ImplicitTypeVariable {
                                 name: type_variable.clone().representation,
                             },
                             type_variables: vec![],
                         },
-                        declaration: Declaration::UserDefined {
-                            source: source.clone(),
-                            token: type_variable.clone(),
-                            scope_name: environment.current_scope_name(),
-                        },
-                        usage_references: Default::default(),
                     },
                 )?;
             }
 
-            // 3. Add each tags into the value environment
+            // 3. Add each tags into the enum namespace
             let constructor_symbols = constructors
                 .iter()
                 .map(|constructor| {
-                    let declaration = Declaration::UserDefined {
-                        source: source.clone(),
-                        token: constructor.name.clone(),
-                        scope_name: environment.current_scope_name(),
-                    };
                     Ok((
                         &constructor.name,
                         ConstructorSymbol {
-                            declaration,
-                            usage_references: Default::default(),
                             enum_name: enum_name.clone(),
                             constructor_name: constructor.name.representation.clone(),
                             type_variables: type_variable_names.clone(),
@@ -339,12 +323,15 @@ pub fn infer_statement(
 
             environment.step_out_to_parent_scope();
 
+            let mut enum_namespace = Environment::new(&environment.source, enum_name);
             constructor_symbols
                 .into_iter()
                 .map(|(token, constructor_symbol)| {
-                    environment.insert_constructor_symbol(token, constructor_symbol)
+                    enum_namespace.insert_constructor_symbol(token, constructor_symbol)
                 })
                 .collect::<Result<Vec<()>, UnifyError>>()?;
+
+            environment.insert_namespace(enum_namespace)?;
 
             Ok(())
         }
@@ -503,10 +490,10 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
         | DestructurePattern::Boolean { token, .. }
         | DestructurePattern::Null(token) => token.position,
         DestructurePattern::EnumConstructor {
-            name,
+            scoped_name: name,
             right_parenthesis,
             ..
-        } => join_position(name.position, right_parenthesis.position),
+        } => join_position(name.name.position, right_parenthesis.position),
         DestructurePattern::Record {
             left_curly_bracket,
             right_curly_bracket,
@@ -525,6 +512,13 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
     }
 }
 
+pub fn get_scoped_name_position(scoped_name: &ScopedName) -> Position {
+    match scoped_name.namespaces.last() {
+        None => scoped_name.name.position,
+        Some(namespace) => join_position(namespace.position, scoped_name.name.position),
+    }
+}
+
 pub fn get_expression_position(expression_value: &Expression) -> Position {
     match expression_value {
         Expression::Array {
@@ -538,10 +532,13 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         | Expression::Null(token)
         | Expression::Boolean { token, .. } => token.position,
         Expression::EnumConstructor {
-            name,
+            scoped_name,
             right_parenthesis,
             ..
-        } => join_position(name.position, right_parenthesis.position),
+        } => join_position(
+            get_scoped_name_position(scoped_name),
+            right_parenthesis.position,
+        ),
         Expression::RecordAccess {
             expression,
             property_name,
@@ -621,18 +618,6 @@ pub fn unify_type_(
     actual: &Type,
     position: Position,
 ) -> Result<Type, UnifyError> {
-    // { expected, actual }.match(
-    //     \{ expected = Number, actual = Number } => Number.Ok
-    //     \{ expected = expected.Array, actual = actual.Array} =>
-    //        environment.unifyType({expected, actual, position}).match(
-    //          \elementType.Ok =>
-    //              elementType.Array.Ok
-    //          \{ kind = _.TypeMismatch, position = _ }.Error =>
-    //              { expected = expected.Array, actual = actual.Array }.TypeMismatch.Error
-    //          \error.Error =>
-    //              error.Error
-    //        )
-    // )
     match (expected.clone(), actual.clone()) {
         (Type::Number, Type::Number) => Ok(Type::Number),
         (Type::Boolean, Type::Boolean) => Ok(Type::Boolean),
@@ -1005,21 +990,21 @@ pub struct GetEnumTypeResult {
 pub fn get_enum_type(
     environment: &mut Environment,
     expected_type: Option<Type>,
-    name: &Token,
+    scoped_name: &ScopedName,
 ) -> Result<GetEnumTypeResult, UnifyError> {
     // Look up constructor
-    let constructor = match environment.get_consructor_symbol(SymbolName::Token(name.clone())) {
+    let constructor = match environment.get_constructor_symbol(&scoped_name)? {
         Some(constructor_symbol) => constructor_symbol,
         None => {
             return Err(UnifyError {
-                position: name.position,
+                position: scoped_name.name.position,
                 kind: UnifyErrorKind::UnknownEnumConstructor,
             })
         }
     };
 
     let enum_type = environment
-        .get_type_symbol(SymbolName::String(constructor.enum_name.clone()))
+        .get_type_symbol(&Token::dummy_identifier(constructor.enum_name.clone()))
         .unwrap_or_else(|| panic!("Compiler error, cannot find enum type of a constructor"));
 
     // initiate type variables
@@ -1028,8 +1013,9 @@ pub fn get_enum_type(
             Some(Type::Named {
                 name,
                 type_arguments,
-            }) if name == enum_type.name => type_arguments,
+            }) if name == enum_type.meta.name => type_arguments,
             _ => enum_type
+                .value
                 .type_scheme
                 .type_variables
                 .iter()
@@ -1047,7 +1033,7 @@ pub fn get_enum_type(
 
     let expected_enum_type = rewrite_type_variables_in_type(
         instantiated_type_variables.clone(),
-        enum_type.type_scheme.type_value,
+        enum_type.value.type_scheme.type_value,
     );
 
     let expected_payload_type = match constructor.payload {
@@ -1099,12 +1085,12 @@ pub fn infer_expression_type_(
         Expression::Number(_) => Ok(Type::Number),
         Expression::Boolean { .. } => Ok(Type::Boolean),
         Expression::EnumConstructor {
-            name,
+            scoped_name,
             payload,
             left_parenthesis,
             right_parenthesis,
         } => {
-            let result = get_enum_type(environment, expected_type, name)?;
+            let result = get_enum_type(environment, expected_type, scoped_name)?;
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(result.expected_enum_type),
                 (None, Some(_)) => Err(UnifyError {
@@ -1112,7 +1098,7 @@ pub fn infer_expression_type_(
                     kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
-                    position: name.position,
+                    position: scoped_name.name.position,
                     kind: UnifyErrorKind::ThisTagRequiresPaylod {
                         payload_type: expected_payload_type,
                     },
@@ -1124,9 +1110,11 @@ pub fn infer_expression_type_(
             }
         }
         Expression::Variable(variable) => {
-            if let Some(symbol) = environment.get_value_symbol(SymbolName::Token(variable.clone()))
-            {
-                Ok(instantiate_type_scheme(environment, symbol.type_scheme))
+            if let Some(symbol) = environment.get_value_symbol(&variable) {
+                Ok(instantiate_type_scheme(
+                    environment,
+                    symbol.value.type_scheme,
+                ))
             } else {
                 Err(UnifyError {
                     position: variable.position,
@@ -1258,9 +1246,7 @@ pub fn infer_expression_type_(
         },
         Expression::FunctionCall(function_call) => {
             // Check if expression being invoked is a function
-            match environment
-                .get_value_symbol(SymbolName::Token(function_call.function_name.clone()))
-            {
+            match environment.get_value_symbol(&function_call.function_name) {
                 None => Err(UnifyError {
                     position: function_call.function_name.position,
                     kind: UnifyErrorKind::UnknownValueSymbol,
@@ -1268,16 +1254,18 @@ pub fn infer_expression_type_(
                 Some(value_symbol) => {
                     // Substitute explicit type variables
                     let expected_type = match &function_call.type_arguments {
-                        None => instantiate_type_scheme(environment, value_symbol.type_scheme),
+                        None => {
+                            instantiate_type_scheme(environment, value_symbol.value.type_scheme)
+                        }
                         Some(TypeArguments { substitutions, .. }) => {
                             let remaining_type_variable_names =
-                                value_symbol.type_scheme.type_variables;
+                                value_symbol.value.type_scheme.type_variables;
 
                             // Substitute all the explicitly declared type variables
                             let (expected_type, remaining_type_variable_names) =
                                 substitutions.iter().fold(
                                     Ok((
-                                        value_symbol.type_scheme.type_value,
+                                        value_symbol.value.type_scheme.type_value,
                                         remaining_type_variable_names,
                                     )),
                                     |result, (key, type_annotation)| match result {
@@ -1996,7 +1984,7 @@ pub fn type_annotation_to_type(
             name,
             type_arguments,
         } => {
-            if let Some(symbol) = environment.get_type_symbol(SymbolName::Token(name.clone())) {
+            if let Some(symbol) = environment.get_type_symbol(&name) {
                 let type_arguments = match type_arguments {
                     None => Ok(vec![]),
                     Some(TypeArguments {
@@ -2004,7 +1992,7 @@ pub fn type_annotation_to_type(
                         left_angular_bracket,
                         right_angular_bracket,
                     }) => {
-                        if symbol.type_scheme.type_variables.len() != substitutions.len() {
+                        if symbol.value.type_scheme.type_variables.len() != substitutions.len() {
                             Err(UnifyError {
                                 position: join_position(
                                     left_angular_bracket.position,
@@ -2013,6 +2001,7 @@ pub fn type_annotation_to_type(
                                 kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
                                     actual_length: substitutions.len(),
                                     expected_type_parameter_names: symbol
+                                        .value
                                         .type_scheme
                                         .type_variables
                                         .clone(),
@@ -2033,12 +2022,13 @@ pub fn type_annotation_to_type(
                 }?;
 
                 symbol
+                    .value
                         .type_scheme
                         .type_variables
                         .iter()
                         .zip(type_arguments.into_iter())
                         .fold(
-                            Ok(symbol.type_scheme.type_value),
+                            Ok(symbol.value.type_scheme.type_value),
                             |result,
                              (
                                 expected_type_variable_name,
@@ -2154,8 +2144,12 @@ pub fn infer_destructure_pattern_(
                 })
                 .collect::<Result<Vec<Type>, UnifyError>>()?,
         )),
-        DestructurePattern::EnumConstructor { name, payload, .. } => {
-            let result = get_enum_type(environment, expected_type, name)?;
+        DestructurePattern::EnumConstructor {
+            scoped_name,
+            payload,
+            ..
+        } => {
+            let result = get_enum_type(environment, expected_type, scoped_name)?;
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(result.expected_enum_type),
                 (None, Some(payload)) => Err(UnifyError {
@@ -2163,7 +2157,7 @@ pub fn infer_destructure_pattern_(
                     kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
-                    position: name.position,
+                    position: scoped_name.name.position,
                     kind: UnifyErrorKind::ThisTagRequiresPaylod {
                         payload_type: expected_payload_type,
                     },

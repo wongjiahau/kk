@@ -340,7 +340,7 @@ pub fn match_pattern(
         ) => MatchPatternResult::Matched,
         (
             DestructurePattern::EnumConstructor {
-                name: actual_name,
+                scoped_name: actual_name,
                 payload: None,
                 ..
             },
@@ -349,7 +349,7 @@ pub fn match_pattern(
                 payload: None,
             },
         ) => {
-            if actual_name.representation != *expected_name {
+            if actual_name.name.representation != *expected_name {
                 MatchPatternResult::NotMatched
             } else {
                 MatchPatternResult::Matched
@@ -357,7 +357,7 @@ pub fn match_pattern(
         }
         (
             DestructurePattern::EnumConstructor {
-                name: actual_name,
+                scoped_name: actual_name,
                 payload: Some(actual_payload),
                 ..
             },
@@ -366,7 +366,7 @@ pub fn match_pattern(
                 payload: Some(expected_payload),
             },
         ) => {
-            if actual_name.representation != *expected_name {
+            if actual_name.name.representation != *expected_name {
                 MatchPatternResult::NotMatched
             } else {
                 match match_pattern(environment, &actual_payload, expected_payload) {

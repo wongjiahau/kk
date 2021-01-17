@@ -1,0 +1,42 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Food = Nut()
+enum Tool = Nut()
+
+let f = \x =>
+  let Food::Nut() = x
+  2
+
+let x = Tool::Nut()
+
+do x.f().print()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+   ┌─ tests/compiler/typecheck/enum_qualified_3.kk:10:4
+   │
+10 │ do x.f().print()
+   │    ^ Type mismatch
+   │
+   = +---------------+-------------+
+     | EXPECTED TYPE | ACTUAL TYPE |
+     +---------------+-------------+
+     | - Food        | + Tool      |
+     +---------------+-------------+

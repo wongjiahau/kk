@@ -91,16 +91,171 @@ impl Scope {
     }
 }
 
+/// This representation the identity of each symbol.
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct SymbolId {
+    scope_name: usize,
+    name: String,
+}
+
+/// This represents the meta data of a symbol
+#[derive(Debug, Clone)]
+pub struct SymbolMeta {
+    pub name: String,
+    pub exported: bool,
+    pub declaration: Declaration,
+    pub usage_references: RefCell<Vec<UsageReference>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SymbolEntry<Symbol: Clone> {
+    pub meta: SymbolMeta,
+    pub value: Symbol,
+}
+
+#[derive(Debug, Clone)]
+pub struct SymbolTable<Symbol: Clone> {
+    symbols: HashMap<SymbolId, SymbolEntry<Symbol>>,
+}
+
+impl<Symbol: Clone> SymbolTable<Symbol> {
+    pub fn new() -> SymbolTable<Symbol> {
+        SymbolTable {
+            symbols: Default::default(),
+        }
+    }
+
+    pub fn symbols(&self) -> &HashMap<SymbolId, SymbolEntry<Symbol>> {
+        &self.symbols
+    }
+
+    pub fn insert_symbol(
+        &mut self,
+        current_scope_name: usize,
+        token: Token,
+        source: &Source,
+        new_symbol: SymbolEntry<Symbol>,
+    ) -> Result<(), UnifyError> {
+        let name = token.representation.clone();
+        match self.symbols.get(&SymbolId {
+            name: name.clone(),
+            scope_name: current_scope_name,
+        }) {
+            Some(symbol) => Err(UnifyError {
+                position: token.position,
+                kind: UnifyErrorKind::DuplicatedIdentifier {
+                    name,
+                    first_declared_at: symbol.meta.declaration.clone(),
+                    then_declared_at: Declaration::UserDefined {
+                        source: source.clone(),
+                        token,
+                        scope_name: current_scope_name,
+                    },
+                },
+            }),
+            None => {
+                self.symbols.insert(
+                    SymbolId {
+                        name,
+                        scope_name: current_scope_name,
+                    },
+                    new_symbol,
+                );
+                Ok(())
+            }
+        }
+    }
+
+    /// NOTE: This method is not pure.
+    /// When using this method to lookup say variable A,
+    /// then the usage references of A will be updated.
+    pub fn get_symbol(
+        &self,
+        scope: &Scope,
+        source: &Source,
+        symbol_name: &Token,
+        scope_name: usize,
+    ) -> Option<SymbolEntry<Symbol>> {
+        let name = symbol_name.representation.clone();
+        match self.symbols.get(&SymbolId { name, scope_name }) {
+            Some(symbol) => {
+                symbol
+                    .meta
+                    .usage_references
+                    .borrow_mut()
+                    .push(UsageReference {
+                        position: symbol_name.position,
+                        source: source.clone(),
+                    });
+                Some(symbol.clone())
+            }
+            None => match scope.get_parent_scope_name(scope_name) {
+                None => None,
+                Some(parent_scope_name) => {
+                    self.get_symbol(scope, source, symbol_name, parent_scope_name)
+                }
+            },
+        }
+    }
+
+    pub fn check_for_unused_value_symbols(
+        &self,
+        scope: &Scope,
+        current_scope_name: usize,
+    ) -> Result<(), UnifyError> {
+        match self
+            .symbols
+            .iter()
+            .filter_map(|(_, symbol)| {
+                if symbol.meta.usage_references.borrow().is_empty() {
+                    match &symbol.meta.declaration {
+                        Declaration::UserDefined {
+                            token, scope_name, ..
+                        } => {
+                            if *scope_name == current_scope_name {
+                                Some(token.clone())
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<Token>>()
+            .first()
+        {
+            None => {
+                // Check for unused variables in children scopes
+                let children_scope_names = scope.get_children_scope_names(current_scope_name);
+                for child_scope_name in &children_scope_names {
+                    self.check_for_unused_value_symbols(scope, *child_scope_name)?;
+                }
+                Ok(())
+            }
+            Some(token) => Err(UnifyError {
+                position: token.position,
+                kind: UnifyErrorKind::UnusedVariale,
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Environment {
-    // parent: Option<&'a Environment<'a>>,
-    value_symbols: HashMap<String, ValueSymbol>,
-    type_symbols: HashMap<String, TypeSymbol>,
-    constructor_symbols: HashMap<String, ConstructorSymbol>,
+    value_symbols: SymbolTable<ValueSymbol>,
+    type_symbols: SymbolTable<TypeSymbol>,
+    constructor_symbols: SymbolTable<ConstructorSymbol>,
     type_variable_substitutions: Substitution,
     type_variable_index: Cell<usize>,
     scope: Scope,
     pub source: Source,
+
+    exported: bool,
+    namespace_name: String,
+    namespaces: Vec<Environment>,
 }
 
 #[derive(Debug, Clone)]
@@ -110,40 +265,49 @@ enum SubstitutionItem {
     NotSubstituted,
 }
 
+/// NOTE: this list is reversed,
+/// for example: `vec!['A', 'B', 'C']` means `C:B:A`
+pub type Scoping = Vec<String>;
+pub struct ScopedSymbol<Symbol> {
+    scoping: Scoping,
+    symbol: Symbol,
+}
 impl Environment {
-    pub fn new(source: &Source) -> Environment {
+    pub fn new(source: &Source, namespace_name: String) -> Environment {
         let mut result = Environment {
             source: source.clone(),
-            value_symbols: (HashMap::new()),
-            type_symbols: (HashMap::new()),
-            constructor_symbols: (HashMap::new()),
+            value_symbols: SymbolTable::new(),
+            type_symbols: SymbolTable::new(),
+            constructor_symbols: SymbolTable::new(),
             type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
             scope: Scope::new(),
+
+            namespace_name,
+            exported: true,
+            namespaces: vec![],
         };
 
-        built_in_type_symbols().into_iter().for_each(|type_symbol| {
-            result.insert_built_in_type_symbol(type_symbol.name.clone(), type_symbol)
-        });
+        built_in_type_symbols()
+            .into_iter()
+            .for_each(|(name, type_symbol)| result.insert_built_in_type_symbol(name, type_symbol));
 
         built_in_value_symbols()
             .into_iter()
             .map(|(name, value_symbol)| {
-                result.insert_value_symbol(
-                    &Token {
-                        token_type: TokenType::Identifier,
-                        position: Position {
-                            column_end: 0,
-                            column_start: 0,
-                            line_end: 0,
-                            line_start: 0,
-                            character_index_end: 0,
-                            character_index_start: 0,
-                        },
-                        representation: name,
+                let token = Token {
+                    token_type: TokenType::Identifier,
+                    position: Position {
+                        column_end: 0,
+                        column_start: 0,
+                        line_end: 0,
+                        line_start: 0,
+                        character_index_end: 0,
+                        character_index_start: 0,
                     },
-                    value_symbol,
-                )
+                    representation: name,
+                };
+                result.insert_value_symbol(&token, value_symbol)
             })
             .collect::<Result<Vec<()>, UnifyError>>()
             .expect("Compiler error");
@@ -173,13 +337,6 @@ impl Environment {
         self.insert_type_symbol(
             type_variable,
             TypeSymbol {
-                usage_references: Default::default(),
-                name: type_variable.representation.clone(),
-                declaration: Declaration::UserDefined {
-                    source: self.source.clone(),
-                    token: type_variable.clone(),
-                    scope_name: self.current_scope_name(),
-                },
                 type_scheme: TypeScheme {
                     type_variables: vec![],
                     type_value: Type::ExplicitTypeVariable {
@@ -200,19 +357,27 @@ impl Environment {
         };
 
         if let Some(variable_name) = variable_name {
-            self.insert_value_symbol(
-                &variable_name,
-                ValueSymbol {
-                    declaration: Declaration::UserDefined {
-                        source: self.source.clone(),
-                        token: variable_name.clone(),
-                        scope_name: self.scope.get_current_scope_name(),
+            self.value_symbols.insert_symbol(
+                self.scope.get_current_scope_name(),
+                variable_name.clone(),
+                &self.source,
+                SymbolEntry {
+                    meta: SymbolMeta {
+                        exported: false,
+                        name: variable_name.representation.clone(),
+                        declaration: Declaration::UserDefined {
+                            source: self.source.clone(),
+                            token: variable_name.clone(),
+                            scope_name: self.scope.get_current_scope_name(),
+                        },
+                        usage_references: Default::default(),
                     },
-                    type_scheme: TypeScheme {
-                        type_variables: vec![],
-                        type_value: type_value.clone(),
+                    value: ValueSymbol {
+                        type_scheme: TypeScheme {
+                            type_variables: vec![],
+                            type_value: type_value.clone(),
+                        },
                     },
-                    usage_references: Default::default(),
                 },
             )?;
         }
@@ -381,7 +546,7 @@ impl Environment {
                 }
             }
             Some(SubstitutionItem::NotSubstituted) => None,
-            None => None, // panic!("No type variable has the name of {}", type_variable_name),
+            None => None, 
         }
     }
 
@@ -393,17 +558,44 @@ impl Environment {
         self.scope.step_out_to_parent_scope()
     }
 
+    pub fn insert_namespace(&mut self, new_namespace: Environment) -> Result<(), UnifyError> {
+        match self
+            .namespaces
+            .iter()
+            .find(|namespace| namespace.namespace_name == new_namespace.namespace_name)
+        {
+            Some(_) => {
+                panic!("namespace already defined before")
+            }
+            None => {
+                self.namespaces.push(new_namespace);
+                Ok(())
+            }
+        }
+    }
+
     pub fn insert_value_symbol(
         &mut self,
-        token: &Token,
-        value_symbol: ValueSymbol,
+        symbol_name: &Token,
+        value: ValueSymbol,
     ) -> Result<(), UnifyError> {
-        Environment::insert_symbol(
+        self.value_symbols.insert_symbol(
             self.current_scope_name(),
-            &mut self.value_symbols,
-            SymbolName::Token(token.clone()),
+            symbol_name.clone(),
             &self.source,
-            value_symbol,
+            SymbolEntry {
+                meta: SymbolMeta {
+                    name: symbol_name.representation.clone(),
+                    declaration: Declaration::UserDefined {
+                        source: self.source.clone(),
+                        scope_name: self.current_scope_name(),
+                        token: symbol_name.clone(),
+                    },
+                    usage_references: Default::default(),
+                    exported: false,
+                },
+                value,
+            },
         )
     }
 
@@ -418,20 +610,31 @@ impl Environment {
         match type_value {
             None => self.introduce_implicit_type_variable(Some(variable_name)),
             Some(type_value) => {
-                self.insert_value_symbol(
-                    variable_name,
-                    ValueSymbol {
+                let current_scope_name = self.current_scope_name();
+                let source = self.source.clone();
+                let entry = SymbolEntry {
+                    meta: SymbolMeta {
+                        exported: false,
+                        name: variable_name.representation.clone(),
                         declaration: Declaration::UserDefined {
                             source: self.source.clone(),
                             scope_name: self.current_scope_name(),
                             token: variable_name.clone(),
                         },
+                        usage_references: Default::default(),
+                    },
+                    value: ValueSymbol {
                         type_scheme: TypeScheme {
                             type_variables: vec![],
                             type_value: type_value.clone(),
                         },
-                        usage_references: Default::default(),
                     },
+                };
+                self.value_symbols.insert_symbol(
+                    current_scope_name,
+                    variable_name.clone(),
+                    &source,
+                    entry,
                 )?;
                 Ok(type_value)
             }
@@ -442,69 +645,51 @@ impl Environment {
         &self,
         current_scope_name: usize,
     ) -> Result<(), UnifyError> {
-        match self
-            .value_symbols
-            .iter()
-            .filter_map(|(_, symbol)| {
-                if symbol.usage_references.borrow().is_empty() {
-                    match &symbol.declaration {
-                        Declaration::UserDefined {
-                            token, scope_name, ..
-                        } => {
-                            if *scope_name == current_scope_name {
-                                Some(token.clone())
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Token>>()
-            .first()
-        {
-            None => {
-                // Check for unused variables in children scopes
-                let children_scope_names = self.scope.get_children_scope_names(current_scope_name);
-                for child_scope_name in &children_scope_names {
-                    self.check_for_unused_value_symbols(*child_scope_name)?;
-                }
-                Ok(())
-            }
-            Some(token) => Err(UnifyError {
-                position: token.position,
-                kind: UnifyErrorKind::UnusedVariale,
-            }),
-        }
+        self.value_symbols
+            .check_for_unused_value_symbols(&self.scope, current_scope_name)
     }
 
     fn insert_built_in_type_symbol(&mut self, name: String, type_symbol: TypeSymbol) {
-        match Environment::insert_symbol(
-            self.current_scope_name(),
-            &mut self.type_symbols,
-            SymbolName::String(name),
-            &self.source,
+        self.insert_type_symbol(
+            &Token {
+                position: Position {
+                    line_start: 0,
+                    line_end: 0,
+                    character_index_start: 0,
+                    character_index_end: 0,
+                    column_start: 0,
+                    column_end: 0,
+                },
+                token_type: TokenType::Identifier,
+                representation: name,
+            },
             type_symbol,
-        ) {
-            Ok(_) => (),
-            Err(error) => panic!("Compiler error: {:#?}", error),
-        }
+        )
+        .expect("Compiler error, built in type symbol should not clash with each other")
     }
 
     pub fn insert_type_symbol(
         &mut self,
-        token: &Token,
+        symbol_name: &Token,
         type_symbol: TypeSymbol,
     ) -> Result<(), UnifyError> {
-        Environment::insert_symbol(
+        self.type_symbols.insert_symbol(
             self.current_scope_name(),
-            &mut self.type_symbols,
-            SymbolName::Token(token.clone()),
+            symbol_name.clone(),
             &self.source,
-            type_symbol,
+            SymbolEntry {
+                meta: SymbolMeta {
+                    name: symbol_name.representation.clone(),
+                    declaration: Declaration::UserDefined {
+                        source: self.source.clone(),
+                        token: symbol_name.clone(),
+                        scope_name: self.current_scope_name(),
+                    },
+                    exported: false,
+                    usage_references: Default::default(),
+                },
+                value: type_symbol,
+            },
         )
     }
 
@@ -513,144 +698,188 @@ impl Environment {
         token: &Token,
         constructor_symbol: ConstructorSymbol,
     ) -> Result<(), UnifyError> {
-        Environment::insert_symbol(
+        self.constructor_symbols.insert_symbol(
             self.current_scope_name(),
-            &mut self.constructor_symbols,
-            SymbolName::Token(token.clone()),
+            token.clone(),
             &self.source,
-            constructor_symbol,
+            SymbolEntry {
+                meta: SymbolMeta {
+                    name: token.representation.clone(),
+                    exported: false,
+                    declaration: Declaration::UserDefined {
+                        source: self.source.clone(),
+                        token: token.clone(),
+                        scope_name: self.current_scope_name(),
+                    },
+                    usage_references: Default::default(),
+                },
+                value: constructor_symbol,
+            },
         )
-    }
-
-    fn insert_symbol<Symbol: Symbolizable>(
-        current_scope_name: usize,
-        symbols: &mut HashMap<String, Symbol>,
-        symbol_name: SymbolName,
-        source: &Source,
-        new_symbol: Symbol,
-    ) -> Result<(), UnifyError> {
-        match symbol_name {
-            SymbolName::String(name) => match symbols.get(&name) {
-                Some(_) => panic!("Compiler error, duplicated built in symbol name {}", name),
-                None => {
-                    let name = Environment::get_symbol_name(name, current_scope_name);
-                    symbols.insert(name, new_symbol);
-                    Ok(())
-                }
-            },
-            SymbolName::Token(token) => {
-                let name = token.representation.clone();
-                match symbols.get(&name) {
-                    Some(symbol) => Err(UnifyError {
-                        position: token.position,
-                        kind: UnifyErrorKind::DuplicatedIdentifier {
-                            first_declared_at: symbol.declaration(),
-                            then_declared_at: Declaration::UserDefined {
-                                source: source.clone(),
-                                token,
-                                scope_name: current_scope_name,
-                            },
-                            name,
-                        },
-                    }),
-                    None => {
-                        let name = Environment::get_symbol_name(name, current_scope_name);
-                        symbols.insert(name, new_symbol);
-                        Ok(())
-                    }
-                }
-            }
-        }
-    }
-
-    /// Get the symbol name that is stored in the symbols table
-    /// The name contains:
-    /// - scope name
-    /// - symbol name
-    fn get_symbol_name(symbol_name: String, scope_name: usize) -> String {
-        format!("{}-{}", scope_name, symbol_name)
-    }
-
-    fn get_symbol<Symbol: Symbolizable>(
-        &self,
-        symbols: &HashMap<String, Symbol>,
-        symbol_name: SymbolName,
-        scope_name: usize,
-    ) -> Option<Symbol> {
-        let name = Environment::get_symbol_name(
-            match &symbol_name {
-                SymbolName::String(name) => name.clone(),
-                SymbolName::Token(token) => token.representation.clone(),
-            },
-            scope_name,
-        );
-        match symbols.get(&name) {
-            Some(symbol) => match symbol_name {
-                SymbolName::Token(token) => {
-                    symbol.add_usage_reference(token.position, self.source.clone());
-                    // symbols.insert(name, symbol.clone());
-
-                    Some(symbol.clone())
-                }
-                SymbolName::String(_) => Some(symbol.clone()),
-            },
-            None => match self.scope.get_parent_scope_name(scope_name) {
-                None => None,
-                Some(parent_scope_name) => self.get_symbol(symbols, symbol_name, parent_scope_name),
-            },
-        }
     }
 
     pub fn get_enum_constructors(&self, enum_name: &str) -> Vec<ConstructorSymbol> {
         self.constructor_symbols
+            .symbols()
             .iter()
             .filter_map(|(_, constructor_symbol)| {
-                if constructor_symbol.enum_name == enum_name {
-                    Some(constructor_symbol.clone())
+                if constructor_symbol.value.enum_name == enum_name {
+                    Some(constructor_symbol.value.clone())
                 } else {
                     None
                 }
             })
+            .chain(
+                self.namespaces
+                    .iter()
+                    .flat_map(|namespace| namespace.get_enum_constructors(enum_name)),
+            )
             .collect::<Vec<ConstructorSymbol>>()
     }
 
-    pub fn get_type_symbol(&self, name: SymbolName) -> Option<TypeSymbol> {
-        self.get_symbol(
-            &self.type_symbols,
-            name,
-            self.scope.get_current_scope_name(),
+    pub fn get_type_symbol(&self, symbol_name: &Token) -> Option<SymbolEntry<TypeSymbol>> {
+        self.type_symbols.get_symbol(
+            &self.scope,
+            &self.source,
+            &symbol_name,
+            self.current_scope_name(),
         )
     }
 
-    pub fn get_value_symbol(&mut self, name: SymbolName) -> Option<ValueSymbol> {
-        self.get_symbol(
-            &self.value_symbols,
-            name,
-            self.scope.get_current_scope_name(),
+    pub fn get_value_symbol(&mut self, symbol_name: &Token) -> Option<SymbolEntry<ValueSymbol>> {
+        self.value_symbols.get_symbol(
+            &self.scope,
+            &self.source,
+            &symbol_name,
+            self.current_scope_name(),
         )
     }
 
-    pub fn get_consructor_symbol(&mut self, name: SymbolName) -> Option<ConstructorSymbol> {
-        self.get_symbol(
-            &self.constructor_symbols,
-            name,
-            self.scope.get_current_scope_name(),
-        )
+    fn get_matching_constructor_symbols(
+        &self,
+        symbol_name: &Token,
+    ) -> Vec<ScopedSymbol<ConstructorSymbol>> {
+        let mut symbols = self
+            .namespaces
+            .iter()
+            .flat_map(|namespace| {
+                namespace
+                    .get_matching_constructor_symbols(symbol_name)
+                    .into_iter()
+                    .map(|mut scoped_symbol| {
+                        scoped_symbol.scoping.push(namespace.namespace_name.clone());
+                        scoped_symbol.scoping.push(self.namespace_name.clone());
+                        scoped_symbol
+                    })
+                    .collect::<Vec<ScopedSymbol<ConstructorSymbol>>>()
+            })
+            .collect::<Vec<ScopedSymbol<ConstructorSymbol>>>();
+
+        match self.constructor_symbols.get_symbol(
+            &self.scope,
+            &self.source,
+            &symbol_name,
+            self.current_scope_name(),
+        ) {
+            None => symbols,
+            Some(symbol) => {
+                symbols.push(ScopedSymbol {
+                    scoping: vec![],
+                    symbol: symbol.value,
+                });
+                symbols
+            }
+        }
     }
-}
 
-#[derive(Debug, Clone)]
-pub enum SymbolName {
-    /// This is for compiler internal usage only
-    String(String),
+    /// Return a namespace, given a scoping, for example `A::B::C`
+    fn resolve_scoping(&self, scoping: &Vec<Token>) -> Result<&Environment, UnifyError> {
+        scoping
+            .iter()
+            .fold(Ok(&self), |result, namespace_name| match result {
+                Err(error) => Err(error),
+                Ok(namespace) => {
+                    let matching_namespaces =
+                        namespace.find_matching_namespaces(&namespace_name.representation);
+                    match matching_namespaces.get(0) {
+                        None => Err(UnifyError {
+                            position: namespace_name.position,
+                            kind: UnifyErrorKind::UnknownNamespace,
+                        }),
+                        Some((_, namespace)) => {
+                            if matching_namespaces.len() > 1 {
+                                Err(UnifyError {
+                                    position: namespace_name.position,
+                                    kind: UnifyErrorKind::AmbiguousNamespace {
+                                        namespace_name: namespace_name.representation.clone(),
+                                        possible_scopings: matching_namespaces
+                                            .iter()
+                                            .map(|(scoping, _)| scoping.clone())
+                                            .collect(),
+                                    },
+                                })
+                            } else {
+                                Ok(*namespace)
+                            }
+                        }
+                    }
+                }
+            })
+    }
 
-    /// Use this when working with user-defined symbols
-    Token(Token),
+    fn find_matching_namespaces(&self, namespace_name: &str) -> Vec<(Scoping, &Environment)> {
+        let mut namespaces = self
+            .namespaces
+            .iter()
+            .flat_map(|namespace| {
+                namespace
+                    .find_matching_namespaces(namespace_name)
+                    .into_iter()
+                    .map(|(mut scoping, namespace)| {
+                        scoping.push(self.namespace_name.clone());
+                        (scoping, namespace)
+                    })
+                    .collect::<Vec<(Scoping, &Environment)>>()
+            })
+            .collect::<Vec<(Scoping, &Environment)>>();
+        if self.namespace_name == *namespace_name {
+            namespaces.push((vec![], self));
+            namespaces
+        } else {
+            namespaces
+        }
+    }
+
+    pub fn get_constructor_symbol(
+        &mut self,
+        scoped_name: &ScopedName,
+    ) -> Result<Option<ConstructorSymbol>, UnifyError> {
+        let namespace = self.resolve_scoping(&scoped_name.namespaces)?;
+        let constructors = namespace.get_matching_constructor_symbols(&scoped_name.name);
+        match constructors.get(0) {
+            None => Ok(None),
+            Some(constructor) => {
+                if constructors.len() > 1 {
+                    Err(UnifyError {
+                        position: scoped_name.name.position,
+                        kind: UnifyErrorKind::AmbiguousSymbolUsage {
+                            symbol_name: scoped_name.name.representation.clone(),
+                            possible_scopings: constructors
+                                .into_iter()
+                                .map(|constructor| constructor.scoping)
+                                .collect(),
+                        },
+                    })
+                } else {
+                    Ok(Some(constructor.symbol.clone()))
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum Declaration {
-    BuiltIn,
     UserDefined {
         source: Source,
         token: Token,
@@ -660,67 +889,21 @@ pub enum Declaration {
 
 #[derive(Debug, Clone)]
 pub struct TypeSymbol {
-    pub declaration: Declaration,
-    pub name: String,
     pub type_scheme: TypeScheme,
-    pub usage_references: RefCell<Vec<UsageReference>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ValueSymbol {
-    pub declaration: Declaration,
     pub type_scheme: TypeScheme,
-    pub usage_references: RefCell<Vec<UsageReference>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ConstructorSymbol {
-    pub declaration: Declaration,
-
     /// Refers to the name of the enum that contains this constructor
     pub enum_name: String,
     pub constructor_name: String,
     pub type_variables: Vec<String>,
     pub payload: Option<Type>,
-    pub usage_references: RefCell<Vec<UsageReference>>,
-}
-
-pub trait Symbolizable: Clone {
-    fn declaration(&self) -> Declaration;
-    fn add_usage_reference(&self, position: Position, source: Source);
-}
-
-impl Symbolizable for ConstructorSymbol {
-    fn declaration(&self) -> Declaration {
-        self.declaration.clone()
-    }
-    fn add_usage_reference(&self, position: Position, source: Source) {
-        self.usage_references
-            .borrow_mut()
-            .push(UsageReference { position, source });
-    }
-}
-
-impl Symbolizable for ValueSymbol {
-    fn declaration(&self) -> Declaration {
-        self.declaration.clone()
-    }
-    fn add_usage_reference(&self, position: Position, source: Source) {
-        self.usage_references
-            .borrow_mut()
-            .push(UsageReference { position, source });
-    }
-}
-
-impl Symbolizable for TypeSymbol {
-    fn declaration(&self) -> Declaration {
-        self.declaration.clone()
-    }
-    fn add_usage_reference(&self, position: Position, source: Source) {
-        self.usage_references
-            .borrow_mut()
-            .push(UsageReference { position, source });
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -734,8 +917,6 @@ fn built_in_value_symbols() -> Vec<(String, ValueSymbol)> {
     vec![(
         "print".to_string(),
         ValueSymbol {
-            declaration: Declaration::BuiltIn,
-            usage_references: Default::default(),
             type_scheme: TypeScheme {
                 type_variables: vec![type_variable_name.clone()],
                 type_value: Type::Function(FunctionType {
@@ -750,54 +931,54 @@ fn built_in_value_symbols() -> Vec<(String, ValueSymbol)> {
     )]
 }
 
-fn built_in_type_symbols() -> Vec<TypeSymbol> {
+fn built_in_type_symbols() -> Vec<(String, TypeSymbol)> {
     vec![
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            name: "Array".to_string(),
-            type_scheme: TypeScheme {
-                type_variables: vec!["Element".to_string()],
-                type_value: Type::Array(Box::new(Type::ImplicitTypeVariable {
-                    name: "Element".to_string(),
-                })),
+        (
+            "Array".to_string(),
+            TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: vec!["Element".to_string()],
+                    type_value: Type::Array(Box::new(Type::ImplicitTypeVariable {
+                        name: "Element".to_string(),
+                    })),
+                },
             },
-            usage_references: RefCell::new(Vec::new()),
-        },
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            name: "string".to_string(),
-            type_scheme: TypeScheme {
-                type_variables: vec![],
-                type_value: Type::String,
+        ),
+        (
+            "string".to_string(),
+            TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::String,
+                },
             },
-            usage_references: RefCell::new(Vec::new()),
-        },
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            name: "number".to_string(),
-            type_scheme: TypeScheme {
-                type_variables: vec![],
-                type_value: Type::Number,
+        ),
+        (
+            "number".to_string(),
+            TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::Number,
+                },
             },
-            usage_references: RefCell::new(Vec::new()),
-        },
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            name: "null".to_string(),
-            type_scheme: TypeScheme {
-                type_variables: vec![],
-                type_value: Type::Null,
+        ),
+        (
+            "null".to_string(),
+            TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::Null,
+                },
             },
-            usage_references: RefCell::new(Vec::new()),
-        },
-        TypeSymbol {
-            declaration: Declaration::BuiltIn,
-            name: "boolean".to_string(),
-            type_scheme: TypeScheme {
-                type_variables: vec![],
-                type_value: Type::Boolean,
+        ),
+        (
+            "boolean".to_string(),
+            TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::Boolean,
+                },
             },
-            usage_references: RefCell::new(Vec::new()),
-        },
+        ),
     ]
 }

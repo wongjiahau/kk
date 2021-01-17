@@ -167,6 +167,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions, function arguments and enum constructor",
         TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example `[1,2,3]`",
         TokenType::Colon => "only used for annotating types, for example `{ x: string }`",
+        TokenType::ScopeResolution => "only used for scope resolution, for example: `Color::Red()`",
         TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example: `type Box<T> = { value: T }`",
         TokenType::Equals => "used for declaring variables, for example `let x = 1`, and also used in constructing record, for example `{ x = 1 }`",
         TokenType::Period => "used for calling a function, for example `1.add(2)`",
@@ -271,7 +272,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::PatternEnum => ParseContextDescription {
             name: "Enum Pattern",
-            examples: vec!["None()", "Some(x)"],
+            examples: vec!["None()", "Some(x)", "Option::Some(x)"],
         },
         ParseContext::PatternRecord => ParseContextDescription {
             name: "Record Pattern",
@@ -292,6 +293,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::FunctionArguments => ParseContextDescription {
             name: "Function Arguments",
             examples: vec!["x", "x: number"],
+        },
+        ParseContext::ScopeResolution => ParseContextDescription {
+            name: "Scope Resolution",
+            examples: vec!["Foo::Bar::spam", "Foo::bar"],
         },
     }
 }
@@ -315,6 +320,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::RightSquareBracket => "]",
         TokenType::Newline => "\n",
         TokenType::Colon => ":",
+        TokenType::ScopeResolution => "::",
         TokenType::LessThan => "<",
         TokenType::MoreThan => ">",
         TokenType::Equals => "=",
@@ -557,6 +563,36 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 missing_keys.sort();
                 format!("The missing properties are:\n{}", indent_string(missing_keys.join("\n"), 2))
             }
+        },
+        UnifyErrorKind::DuplicatedIdentifier {
+            name,
+            first_declared_at,
+            then_declared_at
+        } => StringifiedError {
+            summary: "Duplicated name".to_string(),
+            body: "This variable is already declared before in this namespace.".to_string()
+        },
+        UnifyErrorKind::AmbiguousSymbolUsage {
+            symbol_name,
+            possible_scopings
+        } => StringifiedError {
+            summary: "Ambiguous Usage".to_string(),
+            body: format!("Possible references:\n\n{}",
+              indent_string(
+                possible_scopings
+                    .into_iter().map(|mut scoping| {
+                        scoping.reverse();
+                        format!("{}::{}", scoping.join("::"), symbol_name)
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n")
+                ,
+                2
+            ))
+        },
+        UnifyErrorKind::UnknownNamespace => StringifiedError {
+            summary: "Unknown Namespace".to_string(),
+            body: "Cannot find this namespace in the current scope".to_string()
         },
         other => panic!("{:#?}", other),
     }

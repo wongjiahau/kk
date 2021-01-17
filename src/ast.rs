@@ -135,7 +135,7 @@ pub enum DestructurePattern {
     Underscore(Token),
     Identifier(Token),
     EnumConstructor {
-        name: Token,
+        scoped_name: ScopedName,
         left_parenthesis: Token,
         payload: Option<Box<DestructurePattern>>,
         right_parenthesis: Token,
@@ -182,7 +182,7 @@ pub enum Expression {
     String(Token),
     Variable(Token),
     EnumConstructor {
-        name: Token,
+        scoped_name: ScopedName,
         left_parenthesis: Token,
         payload: Option<Box<Expression>>,
         right_parenthesis: Token,
@@ -287,6 +287,29 @@ pub struct Token {
     pub representation: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ScopedName {
+    pub namespaces: Vec<Token>,
+    pub name: Token,
+}
+
+impl Token {
+    pub fn dummy_identifier(representation: String) -> Token {
+        Token {
+            token_type: TokenType::Identifier,
+            position: Position {
+                line_start: 0,
+                line_end: 0,
+                character_index_start: 0,
+                character_index_end: 0,
+                column_start: 0,
+                column_end: 0,
+            },
+            representation,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenType {
     KeywordLet,
@@ -319,6 +342,7 @@ pub enum TokenType {
     Identifier,
     String,
     Number,
+    ScopeResolution,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
