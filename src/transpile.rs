@@ -1,6 +1,6 @@
-use crate::ast::*;
+use crate::typechecked_ast::*;
 
-pub fn transpile_statements(statements: Vec<Statement>) -> String {
+pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
     let built_in_library = "
         const print = (x) => console.log(x)
         "
@@ -12,120 +12,87 @@ pub fn transpile_statements(statements: Vec<Statement>) -> String {
     format!("{};{}", built_in_library, user_defined.join(";"))
 }
 
-pub fn transpile_statement(statement: Statement) -> String {
+pub fn transpile_statement(statement: TypecheckedStatement) -> String {
     match statement {
-        Statement::Type { .. } | Statement::Enum { .. } => "".to_string(),
-        Statement::Do { expression, .. } => {
+        TypecheckedStatement::Do { expression, .. } => {
             format!("({});", transpile_expression(expression))
         }
-        Statement::Let { left, right, .. } => match right {
-            Expression::Let { .. } => {
-                format!(
-                    "const {} = (()=>{{{}}})()",
-                    left.representation,
-                    transpile_expression(right)
-                )
-            }
-            _ => {
-                format!(
-                    "const {} = {}",
-                    left.representation,
-                    transpile_expression(right)
-                )
-            }
-        },
+        TypecheckedStatement::Let { left, right, .. } => {
+            format!("const {} = {}", left, transpile_expression(right))
+        }
     }
 }
 
-pub fn transpile_expression(expression: Expression) -> String {
+pub fn transpile_expression(expression: TypecheckedExpression) -> String {
     match expression {
-        Expression::Null(_) => "null".to_string(),
-        Expression::Boolean { value, .. } => {
+        TypecheckedExpression::Null => "null".to_string(),
+        TypecheckedExpression::Boolean(value) => {
             if value {
                 "true".to_string()
             } else {
                 "false".to_string()
             }
         }
-        Expression::String(s) => s.representation,
-        Expression::Number(n) => n.representation,
-        Expression::Variable(v) => v.representation,
-        Expression::EnumConstructor {
-            scoped_name,
+        TypecheckedExpression::String { representation } => representation,
+        TypecheckedExpression::Number { representation } => representation,
+        TypecheckedExpression::Variable { representation } => representation,
+        TypecheckedExpression::EnumConstructor {
+            constructor_name,
             payload,
             ..
         } => format!(
             "{{$:'{}',_:{}}}",
-            scoped_name.name.representation,
+            constructor_name,
             match payload {
                 Some(payload) => transpile_expression(*payload),
                 None => "null".to_string(),
             }
         ),
-        Expression::RecordAccess {
+        TypecheckedExpression::RecordAccess {
             expression,
             property_name,
-        } => format!(
-            "({}).{}",
-            transpile_expression(*expression),
-            property_name.representation
-        ),
-        Expression::Record {
-            spread,
-            key_value_pairs,
-            ..
-        } => format!(
-            "{{{}{}}}",
-            match spread {
-                None => "".to_string(),
-                Some(expression) => format!("...({}),", transpile_expression(*expression)),
-            },
+        } => format!("({}).{}", transpile_expression(*expression), property_name),
+        TypecheckedExpression::Record { key_value_pairs } => format!(
+            "{{{}}}",
             key_value_pairs
                 .into_iter()
-                .map(|RecordKeyValue { key, value, .. }| {
-                    format!("{}: {}", key.representation, transpile_expression(value))
-                })
+                .map(|(key, value)| { format!("{}: {}", key, transpile_expression(value)) })
                 .collect::<Vec<String>>()
                 .join(",")
         ),
-        Expression::Function(function) => {
-            let Function {
+        TypecheckedExpression::Function(function) => {
+            let TypecheckedFunction {
                 first_branch,
-                branches,
+                rest_branches,
             } = *function;
-            let number_of_args = first_branch.rest_arguments().len() + 1;
+            let number_of_args = first_branch.rest_arguments.len() + 1;
             let arguments: Vec<String> = (0..number_of_args).map(|x| format!("_{}", x)).collect();
             let branches = vec![first_branch]
                 .into_iter()
-                .chain(branches.into_iter())
+                .chain(rest_branches.into_iter())
                 .map(transpile_function_branch)
                 .collect::<Vec<String>>()
                 .join("\n");
             format!("({})=>{{{}}}", arguments.join(","), branches)
         }
-        Expression::FunctionCall(function) => {
-            let FunctionCall {
-                function_name,
+        TypecheckedExpression::FunctionCall(function) => {
+            let TypecheckedFunctionCall {
+                function,
                 first_argument,
                 rest_arguments,
-                type_arguments: _,
             } = *function;
             format!(
-                "{}({})",
-                function_name.representation,
+                "({})({})",
+                transpile_expression(*function),
                 vec![*first_argument]
                     .into_iter()
-                    .chain(match rest_arguments {
-                        None => vec![].into_iter(),
-
-                        Some(FunctionCallRestArguments { arguments, .. }) => arguments.into_iter(),
-                    })
+                    .chain(rest_arguments.into_iter())
                     .map(transpile_expression)
                     .collect::<Vec<String>>()
                     .join(",")
             )
         }
-        Expression::Array { elements, .. } => format!(
+        TypecheckedExpression::Array { elements, .. } => format!(
             "[{}]",
             elements
                 .into_iter()
@@ -133,69 +100,66 @@ pub fn transpile_expression(expression: Expression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
-        Expression::Let {
-            left,
-            right,
-            false_branch: else_return,
-            true_branch: return_value,
-            ..
-        } => {
-            let temp_placeholder = "$TEMP".to_string(); //TODO: get from symbol table to prevent name clashing
-            let TranspiledDestructurePattern {
-                bindings,
-                conditions,
-            } = transpile_function_destructure_pattern(*left, temp_placeholder.clone());
-            let init = format!(
-                "var {} = {}",
-                temp_placeholder,
-                transpile_expression(*right)
-            );
-            let return_now = match *return_value {
-                Expression::Let { .. } => "",
-                _ => "return ",
-            };
-            let return_value = transpile_expression(*return_value);
-            if conditions.is_empty() {
-                format!(
-                    "{};{};{}{}",
-                    init,
-                    bindings.join(";"),
-                    return_now,
-                    return_value
-                )
-            } else {
-                let else_return = match else_return {
-                    Some(function) => format!(
-                        "({})({})",
-                        transpile_expression(Expression::Function(function)),
-                        temp_placeholder
-                    ),
-                    None => temp_placeholder,
-                };
-                format!(
-                    "{};if({}){{{};{}{}}}else{{return {}}}",
-                    init,
-                    conditions.join(" && "),
-                    bindings.join(";"),
-                    return_now,
-                    return_value,
-                    else_return
-                )
-            }
-        }
+        // TypecheckedExpression::Let {
+        //     left,
+        //     right,
+        //     false_branch: else_return,
+        //     true_branch: return_value,
+        //     ..
+        // } => {
+        //     let temp_placeholder = "$TEMP".to_string(); //TODO: get from symbol table to prevent name clashing
+        //     let TranspiledDestructurePattern {
+        //         bindings,
+        //         conditions,
+        //     } = transpile_function_destructure_pattern(*left, temp_placeholder.clone());
+        //     let init = format!(
+        //         "var {} = {}",
+        //         temp_placeholder,
+        //         transpile_expression(*right)
+        //     );
+        //     let return_now = match *return_value {
+        //         TypecheckedExpression::Let { .. } => "",
+        //         _ => "return ",
+        //     };
+        //     let return_value = transpile_expression(*return_value);
+        //     if conditions.is_empty() {
+        //         format!(
+        //             "{};{};{}{}",
+        //             init,
+        //             bindings.join(";"),
+        //             return_now,
+        //             return_value
+        //         )
+        //     } else {
+        //         let else_return = match else_return {
+        //             Some(function) => format!(
+        //                 "({})({})",
+        //                 transpile_expression(TypecheckedExpression::Function(function)),
+        //                 temp_placeholder
+        //             ),
+        //             None => temp_placeholder,
+        //         };
+        //         format!(
+        //             "{};if({}){{{};{}{}}}else{{return {}}}",
+        //             init,
+        //             conditions.join(" && "),
+        //             bindings.join(";"),
+        //             return_now,
+        //             return_value,
+        //             else_return
+        //         )
+        //     }
+        // }
     }
 }
 
-pub fn transpile_function_branch(function_branch: FunctionBranch) -> String {
+pub fn transpile_function_branch(function_branch: TypecheckedFunctionBranch) -> String {
     let transpiled_destructure_pattern = vec![*function_branch.first_argument.clone()]
         .into_iter()
-        .chain(function_branch.rest_arguments().into_iter())
+        .chain(function_branch.rest_arguments.into_iter())
         .enumerate()
         .map(|(index, argument)| {
-            transpile_function_destructure_pattern(
-                argument.destructure_pattern,
-                format!("_{}", index),
-            )
+            transpile_function_destructure_pattern(argument, format!("_{}", index))
         })
         .fold(
             TranspiledDestructurePattern {
@@ -205,10 +169,10 @@ pub fn transpile_function_branch(function_branch: FunctionBranch) -> String {
             join_transpiled_destructure_pattern,
         );
 
-    let return_now = match *function_branch.body {
-        Expression::Let { .. } => "",
-        _ => "return ",
-    };
+    // let return_now = match *function_branch.body {
+    //     TypecheckedExpression::Let { .. } => "",
+    //     _ => "return ",
+    // };
     let body = transpile_expression(*function_branch.body);
     let conditions = {
         if transpiled_destructure_pattern.conditions.is_empty() {
@@ -221,10 +185,10 @@ pub fn transpile_function_branch(function_branch: FunctionBranch) -> String {
         }
     };
     format!(
-        "{}{{{};{}{}}}",
+        "{}{{{};return {}}}",
         conditions,
         transpiled_destructure_pattern.bindings.join(";"),
-        return_now,
+        // return_now,
         body
     )
 }
@@ -236,22 +200,34 @@ pub struct TranspiledDestructurePattern {
 }
 
 pub fn transpile_function_destructure_pattern(
-    destructure_pattern: DestructurePattern,
+    destructure_pattern: TypecheckedDestructurePattern,
     from_expression: String,
 ) -> TranspiledDestructurePattern {
     match destructure_pattern {
-        DestructurePattern::Number(token)
-        | DestructurePattern::String(token)
-        | DestructurePattern::Boolean { token, .. }
-        | DestructurePattern::Null(token) => TranspiledDestructurePattern {
-            conditions: vec![format!("{} === {}", token.representation, from_expression)],
+        TypecheckedDestructurePattern::Number { representation }
+        | TypecheckedDestructurePattern::String { representation } => {
+            TranspiledDestructurePattern {
+                conditions: vec![format!("{} === {}", from_expression, representation)],
+                bindings: vec![],
+            }
+        }
+        TypecheckedDestructurePattern::Boolean(value) => TranspiledDestructurePattern {
+            conditions: vec![format!(
+                "{} === {}",
+                from_expression,
+                if value { "true" } else { "false" }
+            )],
             bindings: vec![],
         },
-        DestructurePattern::Underscore(_) => TranspiledDestructurePattern {
+        TypecheckedDestructurePattern::Null => TranspiledDestructurePattern {
+            conditions: vec![format!("{} === null", from_expression)],
+            bindings: vec![],
+        },
+        TypecheckedDestructurePattern::Underscore => TranspiledDestructurePattern {
             conditions: vec![],
             bindings: vec![],
         },
-        DestructurePattern::Array { spread, .. } => match spread {
+        TypecheckedDestructurePattern::Array { spread, .. } => match spread {
             None => TranspiledDestructurePattern {
                 conditions: vec![format!("{}.length === 0", from_expression)],
                 bindings: vec![],
@@ -262,32 +238,26 @@ pub fn transpile_function_destructure_pattern(
                     bindings: vec![],
                 },
                 transpile_function_destructure_pattern(
-                    *spread.left,
+                    *spread.first_element,
                     format!("{}[0]", from_expression),
                 ),
                 transpile_function_destructure_pattern(
-                    *spread.right,
+                    *spread.rest_elements,
                     format!("{}.slice(1)", from_expression),
                 ),
             ]),
         },
-        DestructurePattern::Identifier(identifier) => TranspiledDestructurePattern {
+        TypecheckedDestructurePattern::Identifier(identifier) => TranspiledDestructurePattern {
             conditions: vec![],
-            bindings: vec![format!(
-                "var {} = {}",
-                identifier.representation, from_expression
-            )],
+            bindings: vec![format!("var {} = {}", identifier, from_expression)],
         },
-        DestructurePattern::EnumConstructor {
-            scoped_name,
+        TypecheckedDestructurePattern::EnumConstructor {
+            constructor_name,
             payload,
             ..
         } => {
             let first = TranspiledDestructurePattern {
-                conditions: vec![format!(
-                    "{}.$==='{}'",
-                    from_expression, scoped_name.name.representation
-                )],
+                conditions: vec![format!("{}.$==='{}'", from_expression, constructor_name)],
                 bindings: vec![],
             };
             let rest = match payload {
@@ -302,33 +272,26 @@ pub fn transpile_function_destructure_pattern(
                 Some(rest) => join_transpiled_destructure_pattern(first, rest),
             }
         }
-        DestructurePattern::Record {
-            key_value_pairs, ..
-        } => key_value_pairs.into_iter().fold(
+        TypecheckedDestructurePattern::Record {
+            key_pattern_pairs, ..
+        } => key_pattern_pairs.into_iter().fold(
             TranspiledDestructurePattern {
                 bindings: vec![],
                 conditions: vec![],
             },
-            |result, DestructuredRecordKeyValue { key, as_value, .. }| {
+            |result, (key, destructure_pattern)| {
                 join_transpiled_destructure_pattern(
                     result,
-                    match as_value {
-                        None => TranspiledDestructurePattern {
-                            bindings: vec![format!(
-                                "var {} = {}.{}",
-                                key.representation, from_expression, key.representation
-                            )],
-                            conditions: vec![],
-                        },
-                        Some(destructure_pattern) => transpile_function_destructure_pattern(
-                            destructure_pattern,
-                            format!("{}.{}", from_expression, key.representation),
-                        ),
-                    },
+                    transpile_function_destructure_pattern(
+                        destructure_pattern,
+                        format!("{}.{}", from_expression, key),
+                    ),
                 )
             },
         ),
-        DestructurePattern::Tuple { .. } => panic!("Compiler error, should not reach here"),
+        TypecheckedDestructurePattern::Tuple { .. } => {
+            panic!("Compiler error, should not reach here")
+        }
     }
 }
 

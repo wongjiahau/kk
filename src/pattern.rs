@@ -110,8 +110,12 @@ fn match_pattern_matrix(
                         .collect(),
                 ),
                 WrapResultAs::Array => TypedDestructurePattern::NonEmptyArray {
-                    left: Box::new(key_pattern_pairs.get(0).expect("Compiler error").1.clone()),
-                    right: Box::new(key_pattern_pairs.get(1).expect("Compiler error").1.clone()),
+                    first_element: Box::new(
+                        key_pattern_pairs.get(0).expect("Compiler error").1.clone(),
+                    ),
+                    rest_elements: Box::new(
+                        key_pattern_pairs.get(1).expect("Compiler error").1.clone(),
+                    ),
                 },
             })
             .collect(),
@@ -298,8 +302,8 @@ pub enum TypedDestructurePattern {
     Boolean(bool),
     EmptyArray,
     NonEmptyArray {
-        left: Box<TypedDestructurePattern>,
-        right: Box<TypedDestructurePattern>,
+        first_element: Box<TypedDestructurePattern>,
+        rest_elements: Box<TypedDestructurePattern>,
     },
 }
 
@@ -467,10 +471,10 @@ pub fn match_pattern(
             expanded_patterns: vec![
                 TypedDestructurePattern::EmptyArray,
                 TypedDestructurePattern::NonEmptyArray {
-                    left: Box::new(TypedDestructurePattern::Any {
+                    first_element: Box::new(TypedDestructurePattern::Any {
                         type_value: *element_type.clone(),
                     }),
-                    right: Box::new(TypedDestructurePattern::Any {
+                    rest_elements: Box::new(TypedDestructurePattern::Any {
                         type_value: Type::Array(element_type.clone()),
                     }),
                 },
@@ -484,17 +488,20 @@ pub fn match_pattern(
                 spread: Some(spread),
                 ..
             },
-            TypedDestructurePattern::NonEmptyArray { left, right },
+            TypedDestructurePattern::NonEmptyArray {
+                first_element,
+                rest_elements,
+            },
         ) => match_pattern_matrix(
             environment,
             PatternMatrix::Array {
                 left: Box::new(PatternPair {
-                    expected_pattern: *left.clone(),
-                    actual_pattern: *spread.left.clone(),
+                    expected_pattern: *first_element.clone(),
+                    actual_pattern: *spread.first_element.clone(),
                 }),
                 right: Box::new(PatternPair {
-                    expected_pattern: *right.clone(),
-                    actual_pattern: *spread.right.clone(),
+                    expected_pattern: *rest_elements.clone(),
+                    actual_pattern: *spread.rest_elements.clone(),
                 }),
             },
         ),

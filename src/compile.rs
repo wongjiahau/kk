@@ -12,10 +12,10 @@ pub fn compile(source: Source, code: String) {
             Err(parse_error) => print_parse_error(source, code, parse_error),
             Ok(statements) => match unify_program(Program {
                 source: source.clone(),
-                statements: statements.clone(),
+                statements,
             }) {
                 Err(unify_error) => print_unify_error(source, code, unify_error),
-                Ok(_) => {
+                Ok(statements) => {
                     use std::process::Command;
                     let javascript = transpile_statements(statements);
                     let output = Command::new("node")

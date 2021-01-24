@@ -297,7 +297,7 @@ impl<'a> Parser<'a> {
         }
         Ok(Function {
             first_branch,
-            branches,
+            rest_branches: branches,
         })
     }
 
@@ -851,19 +851,19 @@ impl<'a> Parser<'a> {
                             spread: None,
                         })
                     } else {
-                        let left = Box::new(self.parse_destructure_pattern()?);
+                        let first_element = Box::new(self.parse_destructure_pattern()?);
                         self.eat_token(TokenType::Comma, context)?;
                         let spread_token = self.eat_token(TokenType::Spread, context)?;
-                        let right = Box::new(self.parse_destructure_pattern()?);
+                        let rest_elements = Box::new(self.parse_destructure_pattern()?);
                         let right_square_bracket =
                             self.eat_token(TokenType::RightSquareBracket, context)?;
                         Ok(DestructurePattern::Array {
                             left_square_bracket,
                             right_square_bracket,
                             spread: Some(DestructurePatternArraySpread {
-                                left,
+                                first_element,
                                 spread_token,
-                                right,
+                                rest_elements,
                             }),
                         })
                     }

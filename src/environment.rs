@@ -218,7 +218,6 @@ impl<Symbol: Clone> SymbolTable<Symbol> {
                                 None
                             }
                         }
-                        _ => None,
                     }
                 } else {
                     None
@@ -546,7 +545,7 @@ impl Environment {
                 }
             }
             Some(SubstitutionItem::NotSubstituted) => None,
-            None => None, 
+            None => None,
         }
     }
 

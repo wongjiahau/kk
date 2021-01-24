@@ -603,11 +603,14 @@ pub fn stringify_typed_destrucutre_pattern(
 ) -> String {
     match typed_destructure_pattern {
         TypedDestructurePattern::EmptyArray => "[]".to_string(),
-        TypedDestructurePattern::NonEmptyArray { left, right } => {
+        TypedDestructurePattern::NonEmptyArray {
+            first_element,
+            rest_elements,
+        } => {
             format!(
                 "[{}, ...{}]",
-                stringify_typed_destrucutre_pattern(*left),
-                stringify_typed_destrucutre_pattern(*right)
+                stringify_typed_destrucutre_pattern(*first_element),
+                stringify_typed_destrucutre_pattern(*rest_elements)
             )
         }
         TypedDestructurePattern::Boolean(value) => {

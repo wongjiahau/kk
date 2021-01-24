@@ -1,3 +1,5 @@
+/// The syntax tree here represents raw syntax tree that is not type checked
+
 #[derive(Debug, Clone)]
 pub enum Statement {
     Let {
@@ -159,9 +161,9 @@ pub enum DestructurePattern {
 
 #[derive(Debug, Clone)]
 pub struct DestructurePatternArraySpread {
-    pub left: Box<DestructurePattern>,
+    pub first_element: Box<DestructurePattern>,
     pub spread_token: Token,
-    pub right: Box<DestructurePattern>,
+    pub rest_elements: Box<DestructurePattern>,
 }
 
 #[derive(Debug, Clone)]
@@ -246,7 +248,7 @@ pub struct FunctionCallRestArguments {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub first_branch: FunctionBranch,
-    pub branches: Vec<FunctionBranch>,
+    pub rest_branches: Vec<FunctionBranch>,
 }
 
 #[derive(Debug, Clone)]

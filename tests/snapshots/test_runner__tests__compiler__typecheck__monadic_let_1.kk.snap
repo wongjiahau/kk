@@ -24,9 +24,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_1.kk:3:11
+  ┌─ tests/compiler/typecheck/monadic_let_1.kk:3:16
   │
 3 │     else \_ => 'hi'
-  │           ^ Unreachable case
+  │                ^^^^ Type mismatch
   │
-  = This case is unreachable because all possible cases are already handled by previous branches.
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - number      | + string    |
+    +---------------+-------------+
