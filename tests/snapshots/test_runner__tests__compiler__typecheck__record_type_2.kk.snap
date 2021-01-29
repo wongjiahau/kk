@@ -10,7 +10,7 @@ let x = {
   y = "hello",
 }
 
-let z: string = x.x
+let z: String = x.x
 
 ============
 EXIT CODE
@@ -28,11 +28,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_type_2.kk:6:17
   │
-6 │ let z: string = x.x
+6 │ let z: String = x.x
   │                 ^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - string      | + number    |
+    | - String      | + Number    |
     +---------------+-------------+

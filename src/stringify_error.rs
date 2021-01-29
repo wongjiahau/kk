@@ -519,12 +519,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Duplicated record key".to_string(),
             body: "This key is already declared before in this record. Consider removing or renaming it.".to_string()
         },
-        UnifyErrorKind::UnknownTypeParameterName {
-            expected_names
-        } => StringifiedError {
-            summary: "Unknown type parameter name".to_string(),
-            body: format!("The expected names are:\n{}", indent_string(expected_names.join("\n"), 2))
-        },
         UnifyErrorKind::TypeArgumentsLengthMismatch {
             expected_type_parameter_names,
             actual_length
@@ -566,11 +560,25 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::DuplicatedIdentifier {
             name,
-            first_declared_at,
-            then_declared_at
+            ..
         } => StringifiedError {
             summary: "Duplicated name".to_string(),
             body: "This variable is already declared before in this namespace.".to_string()
+        },
+        UnifyErrorKind::ConflictingFunctionDefinition {
+            function_name,
+            existing_first_parameter_type,
+            new_first_parameter_type,
+            ..
+        } => StringifiedError {
+            summary: "Conflicting function definition".to_string(),
+            body: format!(
+                "The first parameter type of this `{}`:\n\n{}\n\noverlaps with the first parameter type of another `{}` in this scope:\n\n{}\n\n", 
+                function_name,
+                stringify_type(new_first_parameter_type, 2),
+                function_name,
+                stringify_type(existing_first_parameter_type, 2),
+            )
         },
         UnifyErrorKind::AmbiguousSymbolUsage {
             symbol_name,
@@ -670,10 +678,10 @@ pub fn indent_string(string: String, number_of_spaces: usize) -> String {
 
 pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
     match type_value {
-        Type::Boolean => indent_string("boolean".to_string(), indent_level * 2),
-        Type::Number => indent_string("number".to_string(), indent_level * 2),
-        Type::Null => indent_string("null".to_string(), indent_level * 2),
-        Type::String => indent_string("string".to_string(), indent_level * 2),
+        Type::Boolean => indent_string("Boolean".to_string(), indent_level * 2),
+        Type::Number => indent_string("Number".to_string(), indent_level * 2),
+        Type::Null => indent_string("Null".to_string(), indent_level * 2),
+        Type::String => indent_string("String".to_string(), indent_level * 2),
         Type::Array(element_type) => indent_string(
             format!(
                 "Array<\n{}\n>",

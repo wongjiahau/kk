@@ -1,0 +1,29 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo = \(_: String) => "Hello"
+let foo = \(_: Boolean) => "World"
+
+do "test".foo().print()
+do true.foo().print()
+do true.foo().foo().print()
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+Hello
+World
+Hello
+
+============
+STDERR
+============

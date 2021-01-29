@@ -3,4 +3,4 @@ let x = {
   y = "hello",
 }
 
-let z: string = x.x
+let z: String = x.x

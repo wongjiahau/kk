@@ -55,6 +55,19 @@ pub struct UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    ConflictingFunctionDefinition {
+        function_name: String,
+
+        /// First parameter type of existing function
+        existing_first_parameter_type: Type,
+
+        /// First parameter type of the new function to be created
+        new_first_parameter_type: Type,
+        first_declared_at: Declaration,
+    },
+    AmbiguousFunction {
+        available_function_signatures: Vec<FunctionSignature>,
+    },
     UnknownNamespace,
     AmbiguousNamespace {
         namespace_name: String,
@@ -68,9 +81,6 @@ pub enum UnifyErrorKind {
         expected_type: Type,
     },
     DuplicatedRecordKey,
-    UnknownTypeParameterName {
-        expected_names: Vec<String>,
-    },
     TypeArgumentNameMismatch {
         expected_name: String,
     },
@@ -197,15 +207,13 @@ pub fn infer_statement(
 
             // 5. Add this variable into environment
             environment.step_out_to_parent_scope();
-            environment.insert_value_symbol(
-                &left,
-                ValueSymbol {
-                    type_scheme: right_type_scheme,
-                },
-            )?;
+            let uid = environment.insert_value_symbol(&left, right_type_scheme, None)?;
 
             Ok(Some(TypecheckedStatement::Let {
-                left: left.representation,
+                left: Variable {
+                    uid,
+                    representation: left.representation,
+                },
                 right: right.expression,
             }))
         }
@@ -1157,19 +1165,18 @@ fn infer_expression_type_(
             }
         }
         Expression::Variable(variable) => {
-            if let Some(symbol) = environment.get_value_symbol(&variable) {
-                Ok(InferExpressionResult {
-                    type_value: instantiate_type_scheme(environment, symbol.value.type_scheme),
-                    expression: TypecheckedExpression::Variable {
-                        representation: variable.representation.clone(),
-                    },
-                })
-            } else {
-                Err(UnifyError {
-                    position: variable.position,
-                    kind: UnifyErrorKind::UnknownValueSymbol,
-                })
-            }
+            let result = environment.get_value_symbol(
+                &variable,
+                &expected_type,
+                environment.current_scope_name(),
+            )?;
+            Ok(InferExpressionResult {
+                type_value: instantiate_type_scheme(environment, result.type_scheme),
+                expression: TypecheckedExpression::Variable(Variable {
+                    uid: result.symbol_uid,
+                    representation: variable.representation.clone(),
+                }),
+            })
         }
         Expression::RecordAccess {
             expression,
@@ -1355,238 +1362,173 @@ fn infer_expression_type_(
             })
         }
         Expression::FunctionCall(function_call) => {
+            // Get expected function type
+            let expected_function_type = {
+                // Note that we only infer the type of the first argument
+                // The rest arguments is just instantiated with type variables
+                let typechecked_first_argument = infer_expression_type(
+                    environment,
+                    None,
+                    function_call.first_argument.as_ref(),
+                )?;
+                let expected_rest_arguments_types = match &function_call.rest_arguments {
+                    None => Ok(vec![]),
+                    Some(rest_arguments) => rest_arguments
+                        .arguments
+                        .iter()
+                        .map(|_| environment.introduce_implicit_type_variable(None))
+                        .collect::<Result<Vec<Type>, UnifyError>>(),
+                }?;
+                let expected_return_type = environment.introduce_implicit_type_variable(None)?;
+                Type::Function(FunctionType {
+                    first_argument_type: Box::new(typechecked_first_argument.type_value),
+                    rest_arguments_types: expected_rest_arguments_types,
+                    return_type: Box::new(expected_return_type),
+                })
+            };
+
+            // Get the actual function type
+            // note that we use infer_expression_type_ instead of infer_expression_type
+            // This is so that we can throw the error of `cannot invoke non-function`
+            let typechecked_function = infer_expression_type_(
+                environment,
+                Some(expected_function_type),
+                &Expression::Variable(function_call.function_name.clone()),
+            )?;
+
             // Check if expression being invoked is a function
-            match environment.get_value_symbol(&function_call.function_name) {
-                None => Err(UnifyError {
-                    position: function_call.function_name.position,
-                    kind: UnifyErrorKind::UnknownValueSymbol,
-                }),
-                Some(value_symbol) => {
-                    // Substitute explicit type variables
-                    let expected_type = match &function_call.type_arguments {
-                        None => {
-                            instantiate_type_scheme(environment, value_symbol.value.type_scheme)
-                        }
-                        Some(TypeArguments { substitutions, .. }) => {
-                            let remaining_type_variable_names =
-                                value_symbol.value.type_scheme.type_variables;
-
-                            // Substitute all the explicitly declared type variables
-                            let (expected_type, remaining_type_variable_names) =
-                                substitutions.iter().fold(
-                                    Ok((
-                                        value_symbol.value.type_scheme.type_value,
-                                        remaining_type_variable_names,
-                                    )),
-                                    |result, (key, type_annotation)| match result {
-                                        Err(error) => Err(error),
-                                        Ok((expected_type, remaining_type_variable_names)) => {
-                                            if !remaining_type_variable_names
-                                                .iter()
-                                                .any(|name| *name == key.representation)
-                                            {
-                                                return Err(UnifyError {
-                                                    position: key.position,
-                                                    kind:
-                                                        UnifyErrorKind::UnknownTypeParameterName {
-                                                            expected_names:
-                                                                remaining_type_variable_names
-                                                                    .to_vec(),
-                                                        },
-                                                });
-                                            }
-                                            let type_value = type_annotation_to_type(
-                                                environment,
-                                                type_annotation,
-                                            )?;
-
-                                            let expected_type = rewrite_type_variable_in_type(
-                                                &key.representation,
-                                                &type_value,
-                                                expected_type,
-                                            );
-
-                                            Ok((
-                                                expected_type,
-                                                remaining_type_variable_names
-                                                    .iter()
-                                                    .filter_map(|name| {
-                                                        if *name != key.representation {
-                                                            Some(name.clone())
-                                                        } else {
-                                                            None
-                                                        }
-                                                    })
-                                                    .collect(),
-                                            ))
-                                        }
-                                    },
-                                )?;
-
-                            // Instantiate all the remaning type variables that are not substituted
-                            remaining_type_variable_names.into_iter().fold(
-                                expected_type,
-                                |result, remaining_type_variable_name| {
-                                    let type_variable = Type::ImplicitTypeVariable {
-                                        name: environment.get_next_type_variable_name(),
-                                    };
-                                    rewrite_type_variable_in_type(
-                                        &remaining_type_variable_name,
-                                        &type_variable,
-                                        result,
-                                    )
+            match typechecked_function.type_value {
+                Type::Function(expected_function_type) => {
+                    // Tally arguments length
+                    {
+                        let expected_arguments_length =
+                            expected_function_type.rest_arguments_types.len() + 1;
+                        let actual_arguments_length = match &function_call.rest_arguments {
+                            Some(rest_arguments) => rest_arguments.arguments.len() + 1,
+                            None => 1,
+                        };
+                        if actual_arguments_length != expected_arguments_length {
+                            return Err(UnifyError {
+                                position: get_expression_position(&Expression::FunctionCall(
+                                    function_call.clone(),
+                                )),
+                                kind: UnifyErrorKind::InvalidFunctionArgumentLength {
+                                    actual_length: actual_arguments_length,
+                                    expected_length: expected_arguments_length,
                                 },
-                            )
-                        }
-                    };
-                    match expected_type {
-                        Type::Function(expected_function_type) => {
-                            // Tally arguments length
-                            {
-                                let expected_arguments_length =
-                                    expected_function_type.rest_arguments_types.len() + 1;
-                                let actual_arguments_length = match &function_call.rest_arguments {
-                                    Some(rest_arguments) => rest_arguments.arguments.len() + 1,
-                                    None => 1,
-                                };
-                                if actual_arguments_length != expected_arguments_length {
-                                    return Err(UnifyError {
-                                        position: get_expression_position(
-                                            &Expression::FunctionCall(function_call.clone()),
-                                        ),
-                                        kind: UnifyErrorKind::InvalidFunctionArgumentLength {
-                                            actual_length: actual_arguments_length,
-                                            expected_length: expected_arguments_length,
-                                        },
-                                    });
-                                }
-                            }
-
-                            // Unify first argument
-                            let typechecked_first_argument = infer_expression_type(
-                                environment,
-                                Some(*expected_function_type.first_argument_type),
-                                function_call.first_argument.as_ref(),
-                            )?;
-
-                            // Unify the type of each rest argument
-                            let actual_rest_arguments = match function_call.rest_arguments.clone() {
-                                Some(rest_arguments) => rest_arguments.arguments,
-                                None => Vec::new(),
-                            };
-                            let typechecked_rest_arguments = expected_function_type
-                                .rest_arguments_types
-                                .iter()
-                                .zip(actual_rest_arguments.iter())
-                                .map(|(expected_argument_type, actual_argument)| {
-                                    let expected_argument_type = environment
-                                        .apply_subtitution_to_type(expected_argument_type);
-                                    infer_expression_type(
-                                        environment,
-                                        Some(expected_argument_type),
-                                        &actual_argument,
-                                    )
-                                })
-                                .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?;
-
-                            Ok(InferExpressionResult {
-                                type_value: environment.apply_subtitution_to_type(
-                                    expected_function_type.return_type.as_ref(),
-                                ),
-                                expression: TypecheckedExpression::FunctionCall(Box::new(
-                                    TypecheckedFunctionCall {
-                                        function: Box::new(TypecheckedExpression::Variable {
-                                            representation: value_symbol.meta.name,
-                                        }),
-                                        first_argument: Box::new(
-                                            typechecked_first_argument.expression,
-                                        ),
-                                        rest_arguments: typechecked_rest_arguments
-                                            .iter()
-                                            .map(|argument| argument.expression.clone())
-                                            .collect(),
-                                    },
-                                )),
-                            })
-                        }
-                        Type::ImplicitTypeVariable { name } => {
-                            let expected_function_type = Type::ImplicitTypeVariable {
-                                name: environment.get_next_type_variable_name(),
-                            };
-
-                            let position = get_expression_position(&Expression::FunctionCall(
-                                function_call.clone(),
-                            ));
-
-                            unify_type(
-                                environment,
-                                &Type::ImplicitTypeVariable { name },
-                                &expected_function_type,
-                                position,
-                            )?;
-
-                            let return_type = Type::ImplicitTypeVariable {
-                                name: environment.get_next_type_variable_name(),
-                            };
-
-                            let typechecked_first_argument = infer_expression_type(
-                                environment,
-                                None,
-                                function_call.first_argument.as_ref(),
-                            )?;
-
-                            let typechecked_rest_arguments = match &function_call.rest_arguments {
-                                None => Vec::new(),
-                                Some(FunctionCallRestArguments { arguments, .. }) => arguments
-                                    .clone()
-                                    .into_iter()
-                                    .map(|argument| {
-                                        infer_expression_type(environment, None, &argument)
-                                    })
-                                    .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?,
-                            };
-                            let actual_function_type = Type::Function(FunctionType {
-                                first_argument_type: Box::new(
-                                    typechecked_first_argument.type_value,
-                                ),
-                                rest_arguments_types: typechecked_rest_arguments
-                                    .iter()
-                                    .map(|argument| argument.type_value.clone())
-                                    .collect(),
-                                return_type: Box::new(return_type.clone()),
                             });
-
-                            unify_type(
-                                environment,
-                                &actual_function_type,
-                                &expected_function_type,
-                                position,
-                            )?;
-
-                            Ok(InferExpressionResult {
-                                type_value: environment.apply_subtitution_to_type(&return_type),
-                                expression: TypecheckedExpression::FunctionCall(Box::new(
-                                    TypecheckedFunctionCall {
-                                        function: Box::new(TypecheckedExpression::Variable {
-                                            representation: value_symbol.meta.name,
-                                        }),
-                                        first_argument: Box::new(
-                                            typechecked_first_argument.expression,
-                                        ),
-                                        rest_arguments: typechecked_rest_arguments
-                                            .iter()
-                                            .map(|argument| argument.expression.clone())
-                                            .collect(),
-                                    },
-                                )),
-                            })
                         }
-                        other => Err(UnifyError {
-                            position: function_call.function_name.position,
-                            kind: UnifyErrorKind::CannotInvokeNonFunction { actual_type: other },
-                        }),
                     }
+
+                    // Unify first argument
+                    let typechecked_first_argument = infer_expression_type(
+                        environment,
+                        Some(*expected_function_type.first_argument_type),
+                        function_call.first_argument.as_ref(),
+                    )?;
+
+                    // Unify the type of each rest argument
+                    let actual_rest_arguments = match function_call.rest_arguments.clone() {
+                        Some(rest_arguments) => rest_arguments.arguments,
+                        None => Vec::new(),
+                    };
+                    let typechecked_rest_arguments = expected_function_type
+                        .rest_arguments_types
+                        .iter()
+                        .zip(actual_rest_arguments.iter())
+                        .map(|(expected_argument_type, actual_argument)| {
+                            let expected_argument_type =
+                                environment.apply_subtitution_to_type(expected_argument_type);
+                            infer_expression_type(
+                                environment,
+                                Some(expected_argument_type),
+                                &actual_argument,
+                            )
+                        })
+                        .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?;
+
+                    Ok(InferExpressionResult {
+                        type_value: environment
+                            .apply_subtitution_to_type(expected_function_type.return_type.as_ref()),
+                        expression: TypecheckedExpression::FunctionCall(Box::new(
+                            TypecheckedFunctionCall {
+                                function: Box::new(typechecked_function.expression),
+                                first_argument: Box::new(typechecked_first_argument.expression),
+                                rest_arguments: typechecked_rest_arguments
+                                    .iter()
+                                    .map(|argument| argument.expression.clone())
+                                    .collect(),
+                            },
+                        )),
+                    })
                 }
+                Type::ImplicitTypeVariable { name } => {
+                    let expected_function_type = Type::ImplicitTypeVariable {
+                        name: environment.get_next_type_variable_name(),
+                    };
+
+                    let position =
+                        get_expression_position(&Expression::FunctionCall(function_call.clone()));
+
+                    unify_type(
+                        environment,
+                        &Type::ImplicitTypeVariable { name },
+                        &expected_function_type,
+                        position,
+                    )?;
+
+                    let return_type = Type::ImplicitTypeVariable {
+                        name: environment.get_next_type_variable_name(),
+                    };
+
+                    let typechecked_first_argument = infer_expression_type(
+                        environment,
+                        None,
+                        function_call.first_argument.as_ref(),
+                    )?;
+
+                    let typechecked_rest_arguments = match &function_call.rest_arguments {
+                        None => Vec::new(),
+                        Some(FunctionCallRestArguments { arguments, .. }) => arguments
+                            .clone()
+                            .into_iter()
+                            .map(|argument| infer_expression_type(environment, None, &argument))
+                            .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?,
+                    };
+                    let actual_function_type = Type::Function(FunctionType {
+                        first_argument_type: Box::new(typechecked_first_argument.type_value),
+                        rest_arguments_types: typechecked_rest_arguments
+                            .iter()
+                            .map(|argument| argument.type_value.clone())
+                            .collect(),
+                        return_type: Box::new(return_type.clone()),
+                    });
+
+                    unify_type(
+                        environment,
+                        &actual_function_type,
+                        &expected_function_type,
+                        position,
+                    )?;
+
+                    Ok(InferExpressionResult {
+                        type_value: environment.apply_subtitution_to_type(&return_type),
+                        expression: TypecheckedExpression::FunctionCall(Box::new(
+                            TypecheckedFunctionCall {
+                                function: Box::new(typechecked_function.expression),
+                                first_argument: Box::new(typechecked_first_argument.expression),
+                                rest_arguments: typechecked_rest_arguments
+                                    .iter()
+                                    .map(|argument| argument.expression.clone())
+                                    .collect(),
+                            },
+                        )),
+                    })
+                }
+                other => Err(UnifyError {
+                    position: function_call.function_name.position,
+                    kind: UnifyErrorKind::CannotInvokeNonFunction { actual_type: other },
+                }),
             }
         }
         Expression::Record {
@@ -2362,12 +2304,17 @@ fn infer_destructure_pattern_(
             type_value: environment.introduce_implicit_type_variable(None)?,
             destructure_pattern: TypecheckedDestructurePattern::Underscore,
         }),
-        DestructurePattern::Identifier(identifier) => Ok(InferDestructurePatternResult {
-            type_value: environment.insert_value_symbol_with_type(identifier, expected_type)?,
-            destructure_pattern: TypecheckedDestructurePattern::Identifier(
-                identifier.representation.clone(),
-            ),
-        }),
+        DestructurePattern::Identifier(identifier) => {
+            let (uid, type_value) =
+                environment.insert_value_symbol_with_type(identifier, expected_type)?;
+            Ok(InferDestructurePatternResult {
+                type_value,
+                destructure_pattern: TypecheckedDestructurePattern::Variable(Variable {
+                    uid,
+                    representation: identifier.representation.clone(),
+                }),
+            })
+        }
         DestructurePattern::Tuple { values, .. } => {
             let typechecked_values = values
                 .iter()
@@ -2525,14 +2472,17 @@ fn infer_destructure_pattern_(
                                 Ok((actual_key, typechecked_destructure_pattern))
                             }
                             None => {
-                                let type_value = environment
+                                let (uid, type_value) = environment
                                     .insert_value_symbol_with_type(key, expected_type)?;
                                 Ok((
                                     actual_key.clone(),
                                     InferDestructurePatternResult {
                                         type_value,
                                         destructure_pattern:
-                                            TypecheckedDestructurePattern::Identifier(actual_key),
+                                            TypecheckedDestructurePattern::Variable(Variable {
+                                                uid,
+                                                representation: actual_key,
+                                            }),
                                     },
                                 ))
                             }

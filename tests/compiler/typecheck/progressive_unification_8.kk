@@ -1,5 +1,5 @@
 let foo: {
-  f: \{ x: number } => number
+  f: \{ x: Number } => Number
 } = {
   f = \o => o.y
 }

@@ -1,3 +1,3 @@
 let f 
-  : \{foo: number} => number
+  : \{foo: Number} => Number
   = \o => o.bar

@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f = \(x): number => true
+let f = \(x): Number => true
 
 ============
 EXIT CODE
@@ -23,11 +23,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/type_annotation_function_return_type_1.kk:1:25
   │
-1 │ let f = \(x): number => true
+1 │ let f = \(x): Number => true
   │                         ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - number      | + boolean   |
+    | - Number      | + Boolean   |
     +---------------+-------------+

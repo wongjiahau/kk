@@ -1,3 +1,3 @@
 let f 
-  : \number => null
-  = \(x: string) => null
+  : \Number => Null
+  = \(x: String) => null

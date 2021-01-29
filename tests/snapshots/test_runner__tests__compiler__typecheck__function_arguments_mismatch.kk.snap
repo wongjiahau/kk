@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let f =
-    \(x: number) => x
+    \(x: Number) => x
     \(_, _) => 1
 
 ============

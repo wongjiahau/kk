@@ -31,7 +31,7 @@ error:
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Array<      | + boolean   |
-    | -   number    |             |
+    | - Array<      | + Boolean   |
+    | -   Number    |             |
     | - >           |             |
     +---------------+-------------+

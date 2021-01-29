@@ -7,7 +7,7 @@ INPUT
 ============
 type Tuple<Left,Right> = {left: Left, right: Right}
 
-type Foo = Tuple<Left = number>
+type Foo = Tuple<Left = Number>
 
 ============
 EXIT CODE
@@ -25,7 +25,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/explicit_type_variable_2.kk:3:17
   │
-3 │ type Foo = Tuple<Left = number>
+3 │ type Foo = Tuple<Left = Number>
   │                 ^^^^^^^^^^^^^^^ Type arguments length mismatch
   │
   = 1 type arguments are given, but expected 2:

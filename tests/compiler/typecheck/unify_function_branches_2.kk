@@ -1,4 +1,4 @@
-enum Boolean = True() False()
+enum Bool = True() False()
 enum Bomb = Bomb()
-let and: \(Boolean, Boolean) => Boolean = 
+let and: \(Bool, Bool) => Bool = 
   \(True(), Bomb()) => True

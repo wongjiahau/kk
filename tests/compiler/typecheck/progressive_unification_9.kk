@@ -1,5 +1,5 @@
 let bar = \(props: {
-  f: \{ x: number } => number
+  f: \{ x: Number } => Number
 }) =>
   let { f } = props
   {x = 'hi'}.f()

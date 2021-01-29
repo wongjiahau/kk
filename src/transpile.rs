@@ -2,7 +2,7 @@ use crate::typechecked_ast::*;
 
 pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
     let built_in_library = "
-        const print = (x) => console.log(x)
+        const print_0 = (x) => console.log(x)
         "
     .to_string();
     let user_defined = statements
@@ -18,9 +18,17 @@ pub fn transpile_statement(statement: TypecheckedStatement) -> String {
             format!("({});", transpile_expression(expression))
         }
         TypecheckedStatement::Let { left, right, .. } => {
-            format!("const {} = {}", left, transpile_expression(right))
+            format!(
+                "const {} = {}",
+                transpile_variable(left),
+                transpile_expression(right)
+            )
         }
     }
+}
+
+fn transpile_variable(variable: Variable) -> String {
+    format!("{}_{}", variable.representation, variable.uid)
 }
 
 pub fn transpile_expression(expression: TypecheckedExpression) -> String {
@@ -35,7 +43,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
         }
         TypecheckedExpression::String { representation } => representation,
         TypecheckedExpression::Number { representation } => representation,
-        TypecheckedExpression::Variable { representation } => representation,
+        TypecheckedExpression::Variable(variable) => transpile_variable(variable),
         TypecheckedExpression::EnumConstructor {
             constructor_name,
             payload,
@@ -247,9 +255,13 @@ pub fn transpile_function_destructure_pattern(
                 ),
             ]),
         },
-        TypecheckedDestructurePattern::Identifier(identifier) => TranspiledDestructurePattern {
+        TypecheckedDestructurePattern::Variable(variable) => TranspiledDestructurePattern {
             conditions: vec![],
-            bindings: vec![format!("var {} = {}", identifier, from_expression)],
+            bindings: vec![format!(
+                "var {} = {}",
+                transpile_variable(variable),
+                from_expression
+            )],
         },
         TypecheckedDestructurePattern::EnumConstructor {
             constructor_name,

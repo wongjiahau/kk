@@ -10,12 +10,19 @@
 #[derive(Debug, Clone)]
 pub enum TypecheckedStatement {
     Let {
-        left: String,
+        left: Variable,
         right: TypecheckedExpression,
     },
     Do {
         expression: TypecheckedExpression,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct Variable {
+    /// This is needed for disambiguating overloaded functions
+    pub uid: usize,
+    pub representation: String,
 }
 
 #[derive(Debug, Clone)]
@@ -28,9 +35,7 @@ pub enum TypecheckedExpression {
     String {
         representation: String,
     },
-    Variable {
-        representation: String,
-    },
+    Variable(Variable),
     EnumConstructor {
         constructor_name: String,
         payload: Option<Box<TypecheckedExpression>>,
@@ -80,7 +85,7 @@ pub enum TypecheckedDestructurePattern {
     Boolean(bool),
     Null,
     Underscore,
-    Identifier(String),
+    Variable(Variable),
     EnumConstructor {
         constructor_name: String,
         payload: Option<Box<TypecheckedDestructurePattern>>,

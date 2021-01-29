@@ -16,7 +16,7 @@ let arrayMap<From, To> = \(
     \[head, ..._] => [head.f()]
   )
 
-let result: Array<Element= string> = [{x = 2}].arrayMap(\o => o.x)
+let result: Array<Element= String> = [{x = 2}].arrayMap(\o => o.x)
 
 ============
 EXIT CODE
@@ -34,13 +34,13 @@ STDERR
 error:
    ┌─ tests/compiler/typecheck/progressive_unification_7.kk:12:38
    │
-12 │ let result: Array<Element= string> = [{x = 2}].arrayMap(\o => o.x)
+12 │ let result: Array<Element= String> = [{x = 2}].arrayMap(\o => o.x)
    │                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |
      +---------------+-------------+
      |   Array<      |   Array<    |
-     | -   string    | +   number  |
+     | -   String    | +   Number  |
      |   >           |   >         |
      +---------------+-------------+

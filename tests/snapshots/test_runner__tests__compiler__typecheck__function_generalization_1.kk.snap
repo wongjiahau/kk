@@ -7,7 +7,7 @@ INPUT
 ============
 let identity = \x => x
 let x = 'hello'.identity()
-let y: number = x
+let y: Number = x
 
 ============
 EXIT CODE
@@ -25,11 +25,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/function_generalization_1.kk:3:17
   │
-3 │ let y: number = x
+3 │ let y: Number = x
   │                 ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - number      | + string    |
+    | - Number      | + String    |
     +---------------+-------------+

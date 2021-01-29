@@ -1,4 +1,4 @@
-enum Boolean = True() False()
+enum Bool = True() False()
 let and = \(x, y) => 
   let True() = x
   let True() = y

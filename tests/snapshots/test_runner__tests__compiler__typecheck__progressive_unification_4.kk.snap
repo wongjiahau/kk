@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let o: Array<Element= {x: number}> = [{x= null}]
+let o: Array<Element= {x: Number}> = [{x= null}]
 
 ============
 EXIT CODE
@@ -23,11 +23,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/progressive_unification_4.kk:1:43
   │
-1 │ let o: Array<Element= {x: number}> = [{x= null}]
+1 │ let o: Array<Element= {x: Number}> = [{x= null}]
   │                                           ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - number      | + null      |
+    | - Number      | + Null      |
     +---------------+-------------+

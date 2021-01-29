@@ -8,9 +8,9 @@ INPUT
 let identity = \x => x
 let constant = \_ => 2
 let map = \(x, f) => x.f()
-let x: string = 'hello'.map(identity)
-let y: string = 'hello'.map(\_ => 'yo')
-let z: string = 'hello'.map(constant)
+let x: String = 'hello'.map(identity)
+let y: String = 'hello'.map(\_ => 'yo')
+let z: String = 'hello'.map(constant)
 
 ============
 EXIT CODE
@@ -28,11 +28,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/function_generalization_3.kk:6:17
   │
-6 │ let z: string = 'hello'.map(constant)
+6 │ let z: String = 'hello'.map(constant)
   │                 ^^^^^^^^^^^^^^^^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - string      | + number    |
+    | - String      | + Number    |
     +---------------+-------------+

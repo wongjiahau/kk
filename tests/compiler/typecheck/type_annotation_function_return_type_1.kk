@@ -1,1 +1,1 @@
-let f = \(x): number => true
+let f = \(x): Number => true

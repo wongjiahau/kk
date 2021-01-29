@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo: {
-  f: \{ x: number } => number
+  f: \{ x: Number } => Number
 } = {
   f = \o => o.y
 }

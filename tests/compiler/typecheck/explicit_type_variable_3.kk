@@ -1,3 +1,3 @@
 type Tuple<Left,Right> = {left: Left, right: Right}
 
-type Foo = Tuple<Left = number, Left = string>
+type Foo = Tuple<Left = Number, Left = String>

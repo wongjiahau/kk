@@ -1,1 +1,1 @@
-let x: string = 2
+let x: String = 2

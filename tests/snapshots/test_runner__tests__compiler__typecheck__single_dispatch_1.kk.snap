@@ -1,0 +1,36 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo = \(_: String) => "hello"
+let foo<T> = \(_: T) => "hello"
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/single_dispatch_1.kk:2:5
+  │
+2 │ let foo<T> = \(_: T) => "hello"
+  │     ^^^ Conflicting function definition
+  │
+  = The first parameter type of this `foo`:
+
+        T
+
+    overlaps with the first parameter type of another `foo` in this scope:
+
+        String

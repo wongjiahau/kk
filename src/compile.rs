@@ -18,6 +18,7 @@ pub fn compile(source: Source, code: String) {
                 Ok(statements) => {
                     use std::process::Command;
                     let javascript = transpile_statements(statements);
+                    // println!("{}", javascript);
                     let output = Command::new("node")
                         .arg("-e")
                         .arg(javascript)

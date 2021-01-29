@@ -6,8 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo: {
-  x: number,
-  y: number
+  x: Number,
+  y: Number
 } = {
   x = 1
 }

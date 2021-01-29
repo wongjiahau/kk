@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x: string = 2
+let x: String = 2
 
 ============
 EXIT CODE
@@ -23,11 +23,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/type_annotation_let_statement_1.kk:1:17
   │
-1 │ let x: string = 2
+1 │ let x: String = 2
   │                 ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - string      | + number    |
+    | - String      | + Number    |
     +---------------+-------------+
