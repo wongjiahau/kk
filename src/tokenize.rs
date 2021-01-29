@@ -79,6 +79,18 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 }
             }
             '-' | '0'..='9' => {
+                if character.value == '-' {
+                    if let Some(Character { value: '>', .. }) = it.peek() {
+                        let greater_than_character = it.by_ref().next();
+                        tokens.push(Token {
+                            token_type: TokenType::ThinArrowRight,
+                            representation: "->".to_string(),
+                            position: make_position(character, greater_than_character.as_ref()),
+                        });
+                        continue;
+                    }
+                }
+
                 let intergral = it
                     .by_ref()
                     .peeking_take_while(|character| character.value.is_digit(10))
@@ -195,7 +207,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 Some(Character { value: '>', .. }) => {
                     let greater_than_character = it.by_ref().next();
                     tokens.push(Token {
-                        token_type: TokenType::ArrowRight,
+                        token_type: TokenType::FatArrowRight,
                         representation: "=>".to_string(),
                         position: make_position(character, greater_than_character.as_ref()),
                     })

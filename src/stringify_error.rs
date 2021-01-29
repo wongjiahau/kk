@@ -174,7 +174,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Spread => panic!("Subject to change"),
         TokenType::Comma => "used for separating arguments in function, key-value pairs in record, elements in array etc",
         TokenType::Minus => "only used to represent negative numbers, for example `-123.4`",
-        TokenType::ArrowRight | TokenType::Backslash => "only used for creating function, for example `\\x => x.add(1)`",
+        TokenType::FatArrowRight | TokenType::Backslash => "only used for creating function, for example `\\x => x.add(1)`",
+        TokenType::ThinArrowRight => "only used for annotating the return type of a function, for example `\\x -> String => \"Hello\"`",
         TokenType::Underscore => "used in pattern matching to match values that are not used afterwards",
         TokenType::Identifier => "used to represent the name of a variable",
         TokenType::String => "only used to represent string values",
@@ -199,7 +200,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Function",
             examples: vec![
                 "\\x => x.add(1)",
-                "\\(x: number, y: number): number => x.add(y)",
+                "\\(x: String, y: String) -> String => x.concat(y)",
                 "\\(true, true) => true\n\\(_, _) => false",
             ],
         },
@@ -258,8 +259,8 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::TypeAnnotationFunction => ParseContextDescription {
             name: "Function Type Annotation",
             examples: vec![
-                "\\boolean => boolean",
-                "\\(left: number, right: number) => number",
+                "\\boolean -> boolean",
+                "\\(left: number, right: number) -> number",
             ],
         },
         ParseContext::Pattern => ParseContextDescription {
@@ -328,7 +329,8 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Spread => "...",
         TokenType::Comma => ",",
         TokenType::Minus => "-",
-        TokenType::ArrowRight => "=>",
+        TokenType::FatArrowRight => "=>",
+        TokenType::ThinArrowRight => "->",
         TokenType::Backslash => "\\",
         TokenType::Underscore => "_",
         TokenType::Identifier => "abc",

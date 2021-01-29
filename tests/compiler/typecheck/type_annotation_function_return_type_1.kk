@@ -1,1 +1,1 @@
-let f = \(x): Number => true
+let f = \(x) -> String => true

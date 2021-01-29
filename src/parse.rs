@@ -310,8 +310,8 @@ impl<'a> Parser<'a> {
             first_argument,
             rest_arguments,
         } = self.parse_function_arguments()?;
-        let return_type_annotation = self.try_parse_colon_type_annotation(context)?;
-        self.eat_token(TokenType::ArrowRight, context)?;
+        let return_type_annotation = self.try_parse_function_return_type_annotation(context)?;
+        self.eat_token(TokenType::FatArrowRight, context)?;
         let body = self.parse_expression()?;
         Ok(FunctionBranch {
             start_token: backslash_token,
@@ -367,6 +367,20 @@ impl<'a> Parser<'a> {
             destructure_pattern,
             type_annotation,
         })
+    }
+
+    fn try_parse_function_return_type_annotation(
+        &mut self,
+        context: ParseContext,
+    ) -> Result<Option<TypeAnnotation>, ParseError> {
+        if self.try_eat_token(TokenType::ThinArrowRight).is_some() {
+            match self.parse_type_annotation(context) {
+                Ok(type_annotation) => Ok(Some(type_annotation)),
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     fn try_parse_colon_type_annotation(
@@ -433,7 +447,7 @@ impl<'a> Parser<'a> {
                             (self.parse_type_annotation(context)?, vec![])
                         };
 
-                    self.eat_token(TokenType::ArrowRight, context)?;
+                    self.eat_token(TokenType::ThinArrowRight, context)?;
                     let return_type = self.parse_type_annotation(context)?;
                     Ok(TypeAnnotation::Function {
                         start_token,

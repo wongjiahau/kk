@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let bar = \(null): Number =>
+let bar = \(null) -> Number =>
   let x = "hello"
   x
 

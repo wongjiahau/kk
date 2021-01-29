@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let f
-  : \Number => Null
+  : \Number -> Null
   = \(x: String) => null
 
 ============

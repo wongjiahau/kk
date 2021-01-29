@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x = \x -> 2
+let x = \x - 2
 
 ============
 EXIT CODE
@@ -23,7 +23,7 @@ STDERR
 error:
   ┌─ tests/compiler/parse/expected_expression_function.kk:1:12
   │
-1 │ let x = \x -> 2
+1 │ let x = \x - 2
   │            ^ Syntax error: not expecting `-` here
   │
   = The expected token here is `=>`.
@@ -39,7 +39,7 @@ error:
 
     Example #2:
 
-      \(x: number, y: number): number => x.add(y)
+      \(x: String, y: String) -> String => x.concat(y)
 
     Example #3:
 

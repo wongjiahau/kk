@@ -6,8 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let f
-  : \Number => Null
-  = \(x): Number => 2
+  : \Number -> Null
+  = \x -> Number => 2
 
 ============
 EXIT CODE
@@ -25,7 +25,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/progressive_unification_3.kk:3:11
   │
-3 │   = \(x): Number => 2
+3 │   = \x -> Number => 2
   │           ^^^^^^ Wrong type annotation
   │
   = The expected type annotation is:

@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let bar = \(props: {
-  f: \{ x: Number } => Number
+  f: \{ x: Number } -> Number
 }) =>
   let { f } = props
   {x = 'hi'}.f()
