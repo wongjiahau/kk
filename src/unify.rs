@@ -455,6 +455,11 @@ pub fn get_type_annotation_position(type_annotation: &TypeAnnotation) -> Positio
             start_token.position,
             get_type_annotation_position(return_type.as_ref()),
         ),
+        TypeAnnotation::Array {
+            left_square_bracket,
+            right_square_bracket,
+            ..
+        } => join_position(left_square_bracket.position, right_square_bracket.position),
         TypeAnnotation::Record {
             left_curly_bracket,
             right_curly_bracket,
@@ -2147,6 +2152,9 @@ pub fn type_annotation_to_type(
                 .collect::<Result<Vec<(String, Type)>, UnifyError>>()?;
             Ok(Type::Record { key_type_pairs })
         }
+        TypeAnnotation::Array { element_type, .. } => Ok(Type::Array(Box::new(
+            type_annotation_to_type(environment, element_type)?,
+        ))),
         TypeAnnotation::Function {
             parameters_types,
             return_type,

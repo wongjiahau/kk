@@ -40,6 +40,7 @@ pub enum ParseContext {
 
     // Type annotation
     TypeAnnotationRecord,
+    TypeAnnotationArray,
     TypeAnnotationFunction,
 
     // Destructure pattern
@@ -401,6 +402,18 @@ impl<'a> Parser<'a> {
                     Ok(TypeAnnotation::Named {
                         name,
                         type_arguments: self.try_parse_type_arguments()?,
+                    })
+                }
+                TokenType::LeftSquareBracket => {
+                    let context = ParseContext::TypeAnnotationArray;
+                    let left_square_bracket = token.clone();
+                    let element_type = self.parse_type_annotation(context)?;
+                    let right_square_bracket =
+                        self.eat_token(TokenType::RightSquareBracket, context)?;
+                    Ok(TypeAnnotation::Array {
+                        left_square_bracket,
+                        element_type: Box::new(element_type),
+                        right_square_bracket,
                     })
                 }
                 TokenType::LeftCurlyBracket => {

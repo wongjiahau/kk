@@ -5,9 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let guess = \x =>
-  let [0, ..._] = x
-  true
+let x: [String] = "Hello"
 
 ============
 EXIT CODE
@@ -23,15 +21,15 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_array_1.kk:3:3
+  ┌─ tests/compiler/typecheck/type_annotation_array_1.kk:1:19
   │
-3 │   true
-  │   ^^^^ Type mismatch
+1 │ let x: [String] = "Hello"
+  │                   ^^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - [           | + Boolean   |
-    | -   Number    |             |
+    | - [           | + String    |
+    | -   String    |             |
     | - ]           |             |
     +---------------+-------------+

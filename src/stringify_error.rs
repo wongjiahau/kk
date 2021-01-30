@@ -252,6 +252,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
                 "enum List<Element> = Nil() Cons({current: Element, next: List<Element = Element>})"
             ],
         },
+        ParseContext::TypeAnnotationArray => ParseContextDescription {
+            name: "Array Type Annotation",
+            examples: vec!["[String]", "[[{x: Boolean}]]"],
+        },
         ParseContext::TypeAnnotationRecord => ParseContextDescription {
             name: "Record Type Annotation",
             examples: vec!["{ x: string, y: { z: number } }"],
@@ -712,10 +716,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Null => indent_string("Null".to_string(), indent_level * 2),
         Type::String => indent_string("String".to_string(), indent_level * 2),
         Type::Array(element_type) => indent_string(
-            format!(
-                "Array<\n{}\n>",
-                stringify_type(*element_type, indent_level + 1)
-            ),
+            format!("[\n{}\n]", stringify_type(*element_type, indent_level + 1)),
             indent_level * 2,
         ),
         Type::Named {

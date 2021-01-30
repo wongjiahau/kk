@@ -116,6 +116,11 @@ pub enum TypeAnnotation {
         key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
         right_curly_bracket: Token,
     },
+    Array {
+        left_square_bracket: Token,
+        element_type: Box<TypeAnnotation>,
+        right_square_bracket: Token,
+    },
     Underscore(Token),
     Function {
         start_token: Token,

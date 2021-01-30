@@ -1220,17 +1220,6 @@ fn built_in_value_symbols() -> Vec<(String, usize, TypeScheme)> {
 fn built_in_type_symbols() -> Vec<(String, TypeSymbol)> {
     vec![
         (
-            "Array".to_string(),
-            TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: vec!["Element".to_string()],
-                    type_value: Type::Array(Box::new(Type::ImplicitTypeVariable {
-                        name: "Element".to_string(),
-                    })),
-                },
-            },
-        ),
-        (
             "String".to_string(),
             TypeSymbol {
                 type_scheme: TypeScheme {

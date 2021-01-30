@@ -8,15 +8,15 @@ INPUT
 let match = \(x, f) => x.f()
 
 let arrayMap<From, To> = \(
-  xs: Array<Element= From>,
+  xs: [From],
   f: \From -> To
-) -> Array<Element= To> =>
+) -> [To] =>
   xs.match(
     \[] => []
     \[head, ..._] => [head.f()]
   )
 
-let result: Array<Element= String> = [{x = 2}].arrayMap(\o => o.x)
+let result: [String] = [{x = 2}].arrayMap(\o => o.x)
 
 ============
 EXIT CODE
@@ -32,15 +32,15 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/progressive_unification_7.kk:12:38
+   ┌─ tests/compiler/typecheck/progressive_unification_7.kk:12:24
    │
-12 │ let result: Array<Element= String> = [{x = 2}].arrayMap(\o => o.x)
-   │                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
+12 │ let result: [String] = [{x = 2}].arrayMap(\o => o.x)
+   │                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |
      +---------------+-------------+
-     |   Array<      |   Array<    |
+     |   [           |   [         |
      | -   String    | +   Number  |
-     |   >           |   >         |
+     |   ]           |   ]         |
      +---------------+-------------+

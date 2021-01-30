@@ -1,1 +1,1 @@
-let o: Array<Element= {x: Number}> = [{x= null}]
+let o: [{x: Number}] = [{x= null}]
