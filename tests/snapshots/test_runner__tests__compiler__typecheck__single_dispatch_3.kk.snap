@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo = 2
+let foo = \(_: String) => "Hello"
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/single_dispatch_3.kk:2:5
+  │
+2 │ let foo = \(_: String) => "Hello"
+  │     ^^^ Duplicated name
+  │
+  = This variable is already declared before in this namespace.
