@@ -850,11 +850,16 @@ impl Environment {
                         kind: UnifyErrorKind::UnknownValueSymbol,
                     });
                 }
+
                 let matching_function_symbols = self
                     .function_symbols
                     .iter()
-                    .filter(|symbol| symbol.meta.name == symbol_name.representation)
+                    .filter(|symbol| {
+                        symbol.meta.name == symbol_name.representation
+                            && symbol.meta.scope_name == scope_name
+                    })
                     .collect::<Vec<&FunctionSymbol>>();
+
                 match matching_function_symbols.get(0) {
                     Some(function_symbol) => {
                         if matching_function_symbols.len() == 1 {
@@ -918,7 +923,18 @@ impl Environment {
                             }
                         }
                     }
-                    None => panic!("no matching functions found"),
+
+                    // If no matching function signatures found in this scope
+                    // Look into parent scope
+                    None => match self.scope.get_parent_scope_name(scope_name) {
+                        None => panic!(
+                            "no matching functions found for {}",
+                            symbol_name.representation
+                        ),
+                        Some(scope_name) => {
+                            self.get_value_symbol(symbol_name, expected_type, scope_name)
+                        }
+                    },
                 }
             }
         }

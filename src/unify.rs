@@ -179,15 +179,15 @@ pub fn infer_statement(
             let type_annotation_type =
                 optional_type_annotation_to_type(environment, &type_annotation)?;
 
-            match type_annotation_type.clone() {
+            let uid = match type_annotation_type.clone() {
                 Some(Type::Function(function_type)) => {
-                    environment.insert_value_symbol_with_type(
+                    let (uid, _) = environment.insert_value_symbol_with_type(
                         &left,
                         Some(Type::Function(function_type)),
                     )?;
-                    Ok(())
+                    Ok(Some(uid))
                 }
-                _ => Ok(()),
+                _ => Ok(None),
             }?;
 
             // 2. Check if right matches type annotation
@@ -208,8 +208,9 @@ pub fn infer_statement(
             let right_type_scheme = generalize_type(right_type);
 
             // 5. Add this variable into environment
+            //    Note that we have to use back the same uid if this is a recursive function
             environment.step_out_to_parent_scope();
-            let uid = environment.insert_value_symbol(&left, right_type_scheme, None)?;
+            let uid = environment.insert_value_symbol(&left, right_type_scheme, uid)?;
 
             Ok(Some(TypecheckedStatement::Let {
                 left: Variable {

@@ -1,0 +1,34 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Nat =
+  Zero()
+  Succ(Nat)
+
+let add: \(Nat, Nat) -> Nat =
+  \(Zero(), n) => n
+  \(n, Zero()) => n
+  \(Succ(n), a) => Succ(n.add(a))
+
+let one = Succ(Zero())
+let two = Succ(one)
+let three = Succ(two)
+do one.add(one).print()
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+{ '$': 'Succ', _: { '$': 'Succ', _: { '$': 'Zero', _: null } } }
+
+============
+STDERR
+============
