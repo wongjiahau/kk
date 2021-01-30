@@ -603,7 +603,33 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Unknown Namespace".to_string(),
             body: "Cannot find this namespace in the current scope".to_string()
         },
-        other => panic!("{:#?}", other),
+        UnifyErrorKind::AmbiguousFunction { available_function_signatures } => StringifiedError {
+            summary: "Ambiguous Reference".to_string(),
+            body: format!(
+                "This function is overloaded with multiple signatures, but the first argument provided has unknown type.\n{}\n\n{}",
+                "To disambiguate, annotate the type of the first argument of this function call with any of the following types:",
+                indent_string(
+                    available_function_signatures.into_iter().map(|signature| {
+                        stringify_type(signature.function_type.parameters_types.first().clone(), 0)
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n\n"),
+                    2
+                ),
+            )
+        },
+        UnifyErrorKind::AmbiguousNamespace {..} => {
+            panic!()
+        }
+        UnifyErrorKind::DoBodyMustHaveNullType => {
+            panic!()
+        }
+        UnifyErrorKind::ThisTagDoesNotRequirePayload => {
+            panic!()
+        }
+        UnifyErrorKind::ThisTagRequiresPaylod {..} => {
+            panic!()
+        }
     }
 }
 

@@ -870,6 +870,26 @@ impl Environment {
                         } else {
                             match expected_type {
                                 Some(Type::Function(function_type)) => {
+                                    // check if the actual first parameter type is not implicit type variable
+                                    if let Type::ImplicitTypeVariable { .. } = self
+                                        .apply_subtitution_to_type(
+                                            function_type.parameters_types.first(),
+                                        )
+                                    {
+                                        return Err(UnifyError {
+                                            position: symbol_name.position,
+                                            kind: UnifyErrorKind::AmbiguousFunction {
+                                                available_function_signatures:
+                                                    matching_function_symbols
+                                                        .iter()
+                                                        .map(|symbol| {
+                                                            symbol.function_signature.clone()
+                                                        })
+                                                        .collect(),
+                                            },
+                                        });
+                                    }
+
                                     // find matching function signatures based on concrete type
                                     let matching_function_signature =
                                         matching_function_symbols.iter().find(|signature| {
@@ -886,9 +906,8 @@ impl Environment {
                                     match matching_function_signature {
                                         // If no matching function signature found, search in parent scope
                                         None => {
-                                            let parent_scope_name = self
-                                                .scope
-                                                .get_parent_scope_name(self.current_scope_name());
+                                            let parent_scope_name =
+                                                self.scope.get_parent_scope_name(scope_name);
                                             match parent_scope_name {
                                                 None => Err(UnifyError {
                                                     position: symbol_name.position,
@@ -1090,8 +1109,8 @@ pub struct FunctionSymbol {
 
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
-    type_variables: Vec<String>,
-    function_type: FunctionType,
+    pub type_variables: Vec<String>,
+    pub function_type: FunctionType,
 }
 
 impl FunctionSignature {

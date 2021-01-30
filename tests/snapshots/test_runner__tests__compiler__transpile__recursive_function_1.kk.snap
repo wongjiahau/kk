@@ -15,8 +15,6 @@ let add: \(Nat, Nat) -> Nat =
   \(Succ(n), a) => Succ(n.add(a))
 
 let one = Succ(Zero())
-let two = Succ(one)
-let three = Succ(two)
 do one.add(one).print()
 
 ============

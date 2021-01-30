@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo = \(_: String) => "Hello"
+let foo = \(_: Boolean) => "World"
+
+let bar = \x => x.foo()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/single_dispatch_2.kk:4:19
+  │
+4 │ let bar = \x => x.foo()
+  │                   ^^^ Ambiguous Reference
+  │
+  = This function is overloaded with multiple signatures, but the first argument provided has unknown type.
+    To disambiguate, annotate the type of the first argument of this function call with any of the following types:
+
+      String
+
+      Boolean
