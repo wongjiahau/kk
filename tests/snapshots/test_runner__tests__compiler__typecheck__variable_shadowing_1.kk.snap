@@ -29,4 +29,4 @@ error:
 3 │   let x = x
   │       ^ Unused variable
   │
-  = This variable created but not used anywhere, consider removing it.
+  = This variable is declared but not used anywhere, consider removing it.

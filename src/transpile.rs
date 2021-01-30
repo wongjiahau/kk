@@ -69,17 +69,12 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 .join(",")
         ),
         TypecheckedExpression::Function(function) => {
-            let TypecheckedFunction {
-                first_branch,
-                rest_branches,
-            } = *function;
-            let number_of_args = first_branch.rest_arguments.len() + 1;
+            let TypecheckedFunction { branches } = *function;
+            let number_of_args = branches.first().parameters.len();
             let arguments: Vec<String> = (0..number_of_args).map(|x| format!("_{}", x)).collect();
-            let branches = vec![first_branch]
-                .into_iter()
-                .chain(rest_branches.into_iter())
+            let branches = branches
                 .map(transpile_function_branch)
-                .collect::<Vec<String>>()
+                .into_vector()
                 .join("\n");
             format!("({})=>{{{}}}", arguments.join(","), branches)
         }
@@ -162,12 +157,13 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
 }
 
 pub fn transpile_function_branch(function_branch: TypecheckedFunctionBranch) -> String {
-    let transpiled_destructure_pattern = vec![*function_branch.first_argument.clone()]
+    let transpiled_destructure_pattern = function_branch
+        .parameters
+        .into_vector()
         .into_iter()
-        .chain(function_branch.rest_arguments.into_iter())
         .enumerate()
-        .map(|(index, argument)| {
-            transpile_function_destructure_pattern(argument, format!("_{}", index))
+        .map(|(index, pattern)| {
+            transpile_function_destructure_pattern(pattern, format!("_{}", index))
         })
         .fold(
             TranspiledDestructurePattern {

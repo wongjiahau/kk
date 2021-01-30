@@ -1,3 +1,4 @@
+use crate::non_empty::NonEmpty;
 /// The syntax tree here represents the syntax tree that is type-checked
 /// Which contain information necessary for the transpilation
 /// For example, multiple-dispatch requires the typechecker
@@ -63,14 +64,12 @@ pub struct TypecheckedFunctionCall {
 
 #[derive(Debug, Clone)]
 pub struct TypecheckedFunction {
-    pub first_branch: TypecheckedFunctionBranch,
-    pub rest_branches: Vec<TypecheckedFunctionBranch>,
+    pub branches: Box<NonEmpty<TypecheckedFunctionBranch>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TypecheckedFunctionBranch {
-    pub first_argument: Box<TypecheckedDestructurePattern>,
-    pub rest_arguments: Vec<TypecheckedDestructurePattern>,
+    pub parameters: Box<NonEmpty<TypecheckedDestructurePattern>>,
     pub body: Box<TypecheckedExpression>,
 }
 
@@ -97,7 +96,7 @@ pub enum TypecheckedDestructurePattern {
         spread: Option<TypecheckedDesturcturePatternArraySpread>,
     },
     Tuple {
-        values: Vec<TypecheckedDestructurePattern>,
+        values: Box<NonEmpty<TypecheckedDestructurePattern>>,
     },
 }
 

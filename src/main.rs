@@ -20,6 +20,8 @@ mod compile;
 
 mod pattern;
 
+mod non_empty;
+
 fn main() {
     cli();
 }

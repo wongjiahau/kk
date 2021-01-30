@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::non_empty::NonEmpty;
 use core::slice::Iter;
 use std::iter::Peekable;
 
@@ -53,11 +54,6 @@ pub enum ParseContext {
     TypeVariablesDeclaration,
     FunctionArguments,
     ScopeResolution,
-}
-
-pub struct ParseFunctionArgumentResult {
-    pub first_argument: Box<FunctionArgument>,
-    pub rest_arguments: Option<FunctionBranchRestArguments>,
 }
 
 pub struct Parser<'a> {
@@ -296,8 +292,10 @@ impl<'a> Parser<'a> {
             branches.push(branch);
         }
         Ok(Function {
-            first_branch,
-            rest_branches: branches,
+            branches: NonEmpty {
+                head: first_branch,
+                tail: branches,
+            },
         })
     }
 
@@ -306,32 +304,28 @@ impl<'a> Parser<'a> {
         backslash_token: Token,
     ) -> Result<FunctionBranch, ParseError> {
         let context = ParseContext::ExpressionFunction;
-        let ParseFunctionArgumentResult {
-            first_argument,
-            rest_arguments,
-        } = self.parse_function_arguments()?;
+        let parameters = self.parse_function_parameters()?;
         let return_type_annotation = self.try_parse_function_return_type_annotation(context)?;
         self.eat_token(TokenType::FatArrowRight, context)?;
         let body = self.parse_expression()?;
         Ok(FunctionBranch {
             start_token: backslash_token,
-            first_argument,
-            rest_arguments,
+            parameters,
             body: Box::new(body),
             return_type_annotation,
         })
     }
-    fn parse_function_arguments(&mut self) -> Result<ParseFunctionArgumentResult, ParseError> {
+    fn parse_function_parameters(&mut self) -> Result<FunctionParameters, ParseError> {
         let context = ParseContext::FunctionArguments;
         if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis) {
-            let first_argument = Box::new(self.parse_function_argument(context)?);
-            let mut rest_arguments = Vec::<FunctionArgument>::new();
+            let first_parameter = self.parse_function_parameter(context)?;
+            let mut rest_parameters = Vec::<FunctionParameter>::new();
             let right_parenthesis = loop {
                 if self.try_eat_token(TokenType::Comma).is_none() {
                     break self.eat_token(TokenType::RightParenthesis, context)?;
                 }
-                let argument = self.parse_function_argument(context)?;
-                rest_arguments.push(argument);
+                let argument = self.parse_function_parameter(context)?;
+                rest_parameters.push(argument);
                 if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis) {
                     break right_parenthesis;
                 } else {
@@ -342,28 +336,27 @@ impl<'a> Parser<'a> {
                     }
                 }
             };
-            Ok(ParseFunctionArgumentResult {
-                first_argument,
-                rest_arguments: Some(FunctionBranchRestArguments {
-                    left_parenthesis,
-                    rest_arguments,
-                    right_parenthesis,
-                }),
+            Ok(FunctionParameters::WithParenthesis {
+                left_parenthesis,
+                right_parenthesis,
+                parameters: NonEmpty {
+                    head: first_parameter,
+                    tail: rest_parameters,
+                },
             })
         } else {
-            Ok(ParseFunctionArgumentResult {
-                first_argument: Box::new(self.parse_function_argument(context)?),
-                rest_arguments: None,
+            Ok(FunctionParameters::NoParenthesis {
+                parameter: self.parse_function_parameter(context)?,
             })
         }
     }
-    fn parse_function_argument(
+    fn parse_function_parameter(
         &mut self,
         context: ParseContext,
-    ) -> Result<FunctionArgument, ParseError> {
+    ) -> Result<FunctionParameter, ParseError> {
         let destructure_pattern = self.parse_destructure_pattern()?;
         let type_annotation = self.try_parse_colon_type_annotation(context)?;
-        Ok(FunctionArgument {
+        Ok(FunctionParameter {
             destructure_pattern,
             type_annotation,
         })
@@ -451,8 +444,10 @@ impl<'a> Parser<'a> {
                     let return_type = self.parse_type_annotation(context)?;
                     Ok(TypeAnnotation::Function {
                         start_token,
-                        first_argument_type: Box::new(first_argument_type),
-                        rest_arguments_types,
+                        parameters_types: Box::new(NonEmpty {
+                            head: first_argument_type,
+                            tail: rest_arguments_types,
+                        }),
                         return_type: Box::new(return_type),
                     })
                 }

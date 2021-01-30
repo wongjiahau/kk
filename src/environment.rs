@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::non_empty::NonEmpty;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
 use std::cell::{Cell, RefCell};
@@ -459,12 +460,11 @@ impl Environment {
             Type::Array(type_value) => Type::Array(Box::new(
                 self.apply_subtitution_to_type(type_value.as_ref()),
             )),
-            Type::Tuple(types) => Type::Tuple(
+            Type::Tuple(types) => Type::Tuple(Box::new(
                 types
-                    .iter()
-                    .map(|type_value| self.apply_subtitution_to_type(type_value))
-                    .collect(),
-            ),
+                    .clone()
+                    .map(|type_value| self.apply_subtitution_to_type(&type_value)),
+            )),
             Type::ImplicitTypeVariable { name } => {
                 match self.get_type_variable_terminal_type(name.clone()) {
                     Some(type_value) => self.apply_subtitution_to_type(&type_value),
@@ -501,19 +501,16 @@ impl Environment {
     pub fn apply_subtitution_to_function_type(
         &self,
         FunctionType {
-            first_argument_type,
-            rest_arguments_types,
+            parameters_types,
             return_type,
         }: &FunctionType,
     ) -> FunctionType {
         FunctionType {
-            first_argument_type: Box::new(
-                self.apply_subtitution_to_type(first_argument_type.as_ref()),
+            parameters_types: Box::new(
+                parameters_types
+                    .clone()
+                    .map(|argument_type| self.apply_subtitution_to_type(&argument_type)),
             ),
-            rest_arguments_types: rest_arguments_types
-                .iter()
-                .map(|argument_type| self.apply_subtitution_to_type(argument_type))
-                .collect(),
             return_type: Box::new(self.apply_subtitution_to_type(return_type.as_ref())),
         }
     }
@@ -631,9 +628,9 @@ impl Environment {
                                         symbol
                                             .function_signature
                                             .function_type
-                                            .first_argument_type
-                                            .as_ref(),
-                                        function_type.first_argument_type.as_ref(),
+                                            .parameters_types
+                                            .first(),
+                                        function_type.parameters_types.first(),
                                     )
                             });
 
@@ -642,13 +639,15 @@ impl Environment {
                                 position: symbol_name.position,
                                 kind: UnifyErrorKind::ConflictingFunctionDefinition {
                                     function_name: symbol_name.representation.clone(),
-                                    new_first_parameter_type: *function_type
-                                        .first_argument_type
+                                    new_first_parameter_type: function_type
+                                        .parameters_types
+                                        .first()
                                         .clone(),
-                                    existing_first_parameter_type: *function_symbol
+                                    existing_first_parameter_type: function_symbol
                                         .function_signature
                                         .function_type
-                                        .first_argument_type
+                                        .parameters_types
+                                        .first()
                                         .clone(),
                                     first_declared_at: function_symbol.meta.declaration.clone(),
                                 },
@@ -873,9 +872,9 @@ impl Environment {
                                                 signature
                                                     .function_signature
                                                     .function_type
-                                                    .first_argument_type
-                                                    .as_ref(),
-                                                function_type.first_argument_type.as_ref(),
+                                                    .parameters_types
+                                                    .first(),
+                                                function_type.parameters_types.first(),
                                             )
                                         });
 
@@ -1102,7 +1101,7 @@ fn overlap(a: &Type, b: &Type) -> bool {
         (Type::Boolean, Type::Boolean) => true,
         (Type::Number, Type::Number) => true,
         (Type::Tuple(xs), Type::Tuple(ys)) => {
-            xs.len() == ys.len() && xs.iter().zip(ys.iter()).all(|(a, b)| overlap(a, b))
+            xs.len() == ys.len() && xs.clone().zip(*ys.clone()).all(|(a, b)| overlap(a, b))
         }
         (Type::Record { key_type_pairs: a }, Type::Record { key_type_pairs: b }) => {
             let mut a = a.clone();
@@ -1117,16 +1116,12 @@ fn overlap(a: &Type, b: &Type) -> bool {
                     })
         }
         (Type::Function(a), Type::Function(b)) => {
-            a.rest_arguments_types.len() == b.rest_arguments_types.len()
+            a.parameters_types.len() == b.parameters_types.len()
                 && (a
-                    .rest_arguments_types
-                    .iter()
-                    .zip(b.rest_arguments_types.iter())
+                    .parameters_types
+                    .clone()
+                    .zip(*b.parameters_types.clone())
                     .all(|(a, b)| overlap(a, b))
-                    && overlap(
-                        a.first_argument_type.as_ref(),
-                        b.first_argument_type.as_ref(),
-                    )
                     && overlap(a.return_type.as_ref(), b.return_type.as_ref()))
         }
         (Type::Array(a), Type::Array(b)) => overlap(a.as_ref(), b.as_ref()),
@@ -1175,10 +1170,12 @@ fn built_in_value_symbols() -> Vec<(String, usize, TypeScheme)> {
         TypeScheme {
             type_variables: vec![type_variable_name.clone()],
             type_value: Type::Function(FunctionType {
-                first_argument_type: Box::new(Type::ImplicitTypeVariable {
-                    name: type_variable_name,
+                parameters_types: Box::new(NonEmpty {
+                    head: Type::ImplicitTypeVariable {
+                        name: type_variable_name,
+                    },
+                    tail: vec![],
                 }),
-                rest_arguments_types: vec![],
                 return_type: Box::new(Type::Null),
             }),
         },

@@ -495,7 +495,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::UnusedVariale => StringifiedError {
             summary: "Unused variable".to_string(),
-            body: "This variable created but not used anywhere, consider removing it.".to_string()
+            body: "This variable is declared but not used anywhere, consider removing it.".to_string()
         },
         UnifyErrorKind::NoSuchPropertyOnThisRecord {
             mut expected_keys
@@ -561,7 +561,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             }
         },
         UnifyErrorKind::DuplicatedIdentifier {
-            name,
             ..
         } => StringifiedError {
             summary: "Duplicated name".to_string(),
@@ -643,12 +642,14 @@ pub fn stringify_typed_destrucutre_pattern(
                 .join(", ")
         ),
         TypedDestructurePattern::Tuple(patterns) => format!(
-            "({})",
-            patterns
+            "{left}{center}{right}",
+            left = if patterns.len() > 1 { "(" } else { "" },
+            right = if patterns.len() > 1 { ")" } else { "" },
+            center = patterns
                 .into_iter()
                 .map(stringify_typed_destrucutre_pattern)
                 .collect::<Vec<String>>()
-                .join(", ")
+                .join(", "),
         ),
         TypedDestructurePattern::Any { .. } => "_".to_string(),
         TypedDestructurePattern::EnumConstructor { name, payload } => format!(
@@ -717,9 +718,8 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Tuple(types) => format!(
             "(\n{}\n)",
             types
-                .into_iter()
                 .map(|type_value| stringify_type(type_value, indent_level + 1))
-                .collect::<Vec<String>>()
+                .into_vector()
                 .join(",\n")
         ),
         Type::ImplicitTypeVariable { name } | Type::ExplicitTypeVariable { name } => {
@@ -747,11 +747,10 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Function(function_type) => {
             let result = format!(
                 "\\(\n{}\n) =>\n{}",
-                vec![*function_type.first_argument_type]
-                    .into_iter()
-                    .chain(function_type.rest_arguments_types.into_iter())
+                function_type
+                    .parameters_types
                     .map(|argument_type| { indent_string(stringify_type(argument_type, 0), 2) })
-                    .collect::<Vec<String>>()
+                    .into_vector()
                     .join(",\n"),
                 indent_string(stringify_type(*function_type.return_type, 0), 2)
             );

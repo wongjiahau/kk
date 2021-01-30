@@ -1,3 +1,4 @@
+use crate::non_empty::NonEmpty;
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -62,7 +63,7 @@ pub enum Type {
         type_arguments: Vec<(String, Type)>,
     },
     Function(FunctionType),
-    Tuple(Vec<Type>),
+    Tuple(Box<NonEmpty<Type>>),
     Boolean,
     Number,
     String,
@@ -84,8 +85,7 @@ pub struct TypeScheme {
 
 #[derive(Debug, Clone)]
 pub struct FunctionType {
-    pub first_argument_type: Box<Type>,
-    pub rest_arguments_types: Vec<Type>,
+    pub parameters_types: Box<NonEmpty<Type>>,
     pub return_type: Box<Type>,
 }
 
@@ -119,8 +119,7 @@ pub enum TypeAnnotation {
     Underscore(Token),
     Function {
         start_token: Token,
-        first_argument_type: Box<TypeAnnotation>,
-        rest_arguments_types: Vec<TypeAnnotation>,
+        parameters_types: Box<NonEmpty<TypeAnnotation>>,
         return_type: Box<TypeAnnotation>,
     },
 }
@@ -152,11 +151,12 @@ pub enum DestructurePattern {
         right_square_bracket: Token,
         spread: Option<DestructurePatternArraySpread>,
     },
-    Tuple {
-        left_parenthesis: Token,
-        values: Vec<DestructurePattern>,
-        right_parenthesis: Token,
-    },
+    Tuple(DestructurePatternTuple),
+}
+#[derive(Debug, Clone)]
+pub struct DestructurePatternTuple {
+    pub parentheses: Option<(/*left*/ Token, /*right*/ Token)>,
+    pub values: Box<NonEmpty<DestructurePattern>>,
 }
 
 #[derive(Debug, Clone)]
@@ -247,37 +247,50 @@ pub struct FunctionCallRestArguments {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub first_branch: FunctionBranch,
-    pub rest_branches: Vec<FunctionBranch>,
+    pub branches: NonEmpty<FunctionBranch>,
 }
 
 #[derive(Debug, Clone)]
 pub struct FunctionBranch {
     pub start_token: Token,
-    pub first_argument: Box<FunctionArgument>,
-    pub rest_arguments: Option<FunctionBranchRestArguments>,
+    pub parameters: FunctionParameters,
     pub body: Box<Expression>,
     pub return_type_annotation: Option<TypeAnnotation>,
 }
 
 impl FunctionBranch {
-    pub fn rest_arguments(&self) -> Vec<FunctionArgument> {
-        match &self.rest_arguments {
-            Some(FunctionBranchRestArguments { rest_arguments, .. }) => rest_arguments.clone(),
-            None => vec![],
+    pub fn parameters(&self) -> NonEmpty<FunctionParameter> {
+        match &self.parameters {
+            FunctionParameters::NoParenthesis { parameter } => NonEmpty {
+                head: parameter.clone(),
+                tail: vec![],
+            },
+            FunctionParameters::WithParenthesis { parameters, .. } => parameters.clone(),
         }
     }
 }
 
 #[derive(Debug, Clone)]
+pub enum FunctionParameters {
+    NoParenthesis {
+        parameter: FunctionParameter,
+    },
+    WithParenthesis {
+        left_parenthesis: Token,
+        parameters: NonEmpty<FunctionParameter>,
+        right_parenthesis: Token,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionBranchRestArguments {
     pub left_parenthesis: Token,
-    pub rest_arguments: Vec<FunctionArgument>,
+    pub rest_arguments: Vec<FunctionParameter>,
     pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionArgument {
+pub struct FunctionParameter {
     pub destructure_pattern: DestructurePattern,
     pub type_annotation: Option<TypeAnnotation>,
 }

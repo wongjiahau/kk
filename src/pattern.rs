@@ -191,11 +191,9 @@ pub fn expand_pattern(
         ],
         Type::Tuple(types) => vec![TypedDestructurePattern::Tuple(
             types
-                .iter()
-                .map(|type_value| TypedDestructurePattern::Any {
-                    type_value: type_value.clone(),
-                })
-                .collect(),
+                .clone()
+                .map(|type_value| TypedDestructurePattern::Any { type_value })
+                .into_vector(),
         )],
         Type::Record { key_type_pairs } => vec![TypedDestructurePattern::Record {
             key_pattern_pairs: key_type_pairs
@@ -390,17 +388,13 @@ pub fn match_pattern(
                 }
             }
         }
-        (
-            DestructurePattern::Tuple {
-                values: actual_patterns,
-                ..
-            },
-            TypedDestructurePattern::Tuple(expected_patterns),
-        ) => {
+        (DestructurePattern::Tuple(tuple), TypedDestructurePattern::Tuple(expected_patterns)) => {
+            let actual_patterns = tuple.values.clone();
             if actual_patterns.len() != expected_patterns.len() {
                 MatchPatternResult::NotMatched
             } else {
                 let pattern_pairs = actual_patterns
+                    .into_vector()
                     .iter()
                     .zip(expected_patterns.iter())
                     .map(|(actual_pattern, expected_pattern)| PatternPair {
