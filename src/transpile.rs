@@ -41,8 +41,10 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 "false".to_string()
             }
         }
-        TypecheckedExpression::String { representation } => representation,
-        TypecheckedExpression::Number { representation } => representation,
+        TypecheckedExpression::String { representation }
+        | TypecheckedExpression::Character { representation }
+        | TypecheckedExpression::Float { representation }
+        | TypecheckedExpression::Integer { representation } => representation,
         TypecheckedExpression::Variable(variable) => transpile_variable(variable),
         TypecheckedExpression::EnumConstructor {
             constructor_name,
@@ -103,56 +105,6 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
-        // TypecheckedExpression::Let {
-        //     left,
-        //     right,
-        //     false_branch: else_return,
-        //     true_branch: return_value,
-        //     ..
-        // } => {
-        //     let temp_placeholder = "$TEMP".to_string(); //TODO: get from symbol table to prevent name clashing
-        //     let TranspiledDestructurePattern {
-        //         bindings,
-        //         conditions,
-        //     } = transpile_function_destructure_pattern(*left, temp_placeholder.clone());
-        //     let init = format!(
-        //         "var {} = {}",
-        //         temp_placeholder,
-        //         transpile_expression(*right)
-        //     );
-        //     let return_now = match *return_value {
-        //         TypecheckedExpression::Let { .. } => "",
-        //         _ => "return ",
-        //     };
-        //     let return_value = transpile_expression(*return_value);
-        //     if conditions.is_empty() {
-        //         format!(
-        //             "{};{};{}{}",
-        //             init,
-        //             bindings.join(";"),
-        //             return_now,
-        //             return_value
-        //         )
-        //     } else {
-        //         let else_return = match else_return {
-        //             Some(function) => format!(
-        //                 "({})({})",
-        //                 transpile_expression(TypecheckedExpression::Function(function)),
-        //                 temp_placeholder
-        //             ),
-        //             None => temp_placeholder,
-        //         };
-        //         format!(
-        //             "{};if({}){{{};{}{}}}else{{return {}}}",
-        //             init,
-        //             conditions.join(" && "),
-        //             bindings.join(";"),
-        //             return_now,
-        //             return_value,
-        //             else_return
-        //         )
-        //     }
-        // }
     }
 }
 
@@ -208,8 +160,9 @@ pub fn transpile_function_destructure_pattern(
     from_expression: String,
 ) -> TranspiledDestructurePattern {
     match destructure_pattern {
-        TypecheckedDestructurePattern::Number { representation }
-        | TypecheckedDestructurePattern::String { representation } => {
+        TypecheckedDestructurePattern::Integer { representation }
+        | TypecheckedDestructurePattern::String { representation }
+        | TypecheckedDestructurePattern::Character { representation } => {
             TranspiledDestructurePattern {
                 conditions: vec![format!("{} === {}", from_expression, representation)],
                 bindings: vec![],

@@ -7,7 +7,7 @@ INPUT
 ============
 let guess = \x =>
   let 0 = x
-  'bomb'
+  "bomb"
 
 ============
 EXIT CODE
@@ -25,11 +25,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/monadic_let_number_1.kk:3:3
   │
-3 │   'bomb'
+3 │   "bomb"
   │   ^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Number      | + String    |
+    | - Integer     | + String    |
     +---------------+-------------+

@@ -1,6 +1,6 @@
 enum Color = Red() Green() Blue() Yellow()
 
-let colorToNumber = \xs =>
+let colorToInteger = \xs =>
   let Red() = xs 
     else 
       \Green() => 0

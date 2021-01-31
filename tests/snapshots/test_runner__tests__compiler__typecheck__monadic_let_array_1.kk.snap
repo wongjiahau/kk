@@ -32,6 +32,6 @@ error:
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
     | - [           | + Boolean   |
-    | -   Number    |             |
+    | -   Integer   |             |
     | - ]           |             |
     +---------------+-------------+

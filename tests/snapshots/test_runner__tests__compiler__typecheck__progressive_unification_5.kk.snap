@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f = \({ x = { z } }: { x: { y: Number } }) => 2
+let f = \({ x = { z } }: { x: { y: Integer } }) => 2
 
 ============
 EXIT CODE
@@ -23,7 +23,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/progressive_unification_5.kk:1:19
   │
-1 │ let f = \({ x = { z } }: { x: { y: Number } }) => 2
+1 │ let f = \({ x = { z } }: { x: { y: Integer } }) => 2
   │                   ^ No such property
   │
   = Available properties:

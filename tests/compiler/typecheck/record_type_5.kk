@@ -1,6 +1,6 @@
 let foo: {
-  x: Number,
-  y: Number
+  x: Integer,
+  y: Integer
 } = {
   x = 1
 }

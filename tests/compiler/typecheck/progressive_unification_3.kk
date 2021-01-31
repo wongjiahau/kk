@@ -1,3 +1,3 @@
 let f 
-  : \Number -> Null
-  = \x -> Number => 2
+  : \Integer -> Null
+  = \x -> Integer => 2

@@ -1,3 +1,3 @@
 let f 
-  : \Number -> Null
+  : \Integer -> Null
   = \(x: String) => null

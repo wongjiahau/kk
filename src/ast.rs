@@ -65,8 +65,10 @@ pub enum Type {
     Function(FunctionType),
     Tuple(Box<NonEmpty<Type>>),
     Boolean,
-    Number,
+    Float,
+    Integer,
     String,
+    Character,
     Null,
     Array(Box<Type>),
 }
@@ -132,7 +134,8 @@ pub enum TypeAnnotation {
 #[derive(Debug, Clone)]
 pub enum DestructurePattern {
     String(Token),
-    Number(Token),
+    Character(Token),
+    Integer(Token),
     Boolean {
         token: Token,
         value: bool,
@@ -185,8 +188,10 @@ pub enum Expression {
         token: Token,
         value: bool,
     },
-    Number(Token),
+    Float(Token),
+    Integer(Token),
     String(Token),
+    Character(Token),
     Variable(Token),
     EnumConstructor {
         scoped_name: ScopedName,
@@ -362,7 +367,9 @@ pub enum TokenType {
     Underscore,
     Identifier,
     String,
-    Number,
+    Character,
+    Integer,
+    Float,
     ScopeResolution,
 }
 

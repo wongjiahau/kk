@@ -372,10 +372,12 @@ pub fn rewrite_explicit_type_variables_as_implicit(
             }
         }
         t @ Type::Underscore => t,
-        t @ Type::Number => t,
+        t @ Type::Float => t,
+        t @ Type::Integer => t,
         t @ Type::Null => t,
         t @ Type::Boolean => t,
         t @ Type::String => t,
+        t @ Type::Character => t,
         Type::ImplicitTypeVariable { name } => Type::ImplicitTypeVariable { name },
         Type::Tuple(types) => Type::Tuple(Box::new(types.map(|type_value| {
             rewrite_explicit_type_variables_as_implicit(type_value, explicit_type_variable_names)
@@ -491,8 +493,9 @@ pub fn join_position(start_position: Position, end_position: Position) -> Positi
 
 pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern) -> Position {
     match destructure_pattern {
-        DestructurePattern::Number(token)
+        DestructurePattern::Integer(token)
         | DestructurePattern::String(token)
+        | DestructurePattern::Character(token)
         | DestructurePattern::Identifier(token)
         | DestructurePattern::Underscore(token)
         | DestructurePattern::Boolean { token, .. }
@@ -537,7 +540,9 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             ..
         } => join_position(left_square_bracket.position, right_square_bracket.position),
         Expression::String(token)
-        | Expression::Number(token)
+        | Expression::Character(token)
+        | Expression::Float(token)
+        | Expression::Integer(token)
         | Expression::Variable(token)
         | Expression::Null(token)
         | Expression::Boolean { token, .. } => token.position,
@@ -626,9 +631,11 @@ pub fn unify_type_(
     position: Position,
 ) -> Result<Type, UnifyError> {
     match (expected.clone(), actual.clone()) {
-        (Type::Number, Type::Number) => Ok(Type::Number),
+        (Type::Float, Type::Float) => Ok(Type::Float),
+        (Type::Integer, Type::Integer) => Ok(Type::Integer),
         (Type::Boolean, Type::Boolean) => Ok(Type::Boolean),
         (Type::String, Type::String) => Ok(Type::String),
+        (Type::Character, Type::Character) => Ok(Type::Character),
         (Type::Null, Type::Null) => Ok(Type::Null),
         (
             Type::ExplicitTypeVariable {
@@ -902,9 +909,11 @@ pub fn rewrite_type_variable_in_type(
     in_type: Type,
 ) -> Type {
     match in_type {
-        Type::Number => Type::Number,
+        Type::Float => Type::Float,
+        Type::Integer => Type::Integer,
         Type::Boolean => Type::Boolean,
         Type::String => Type::String,
+        Type::Character => Type::Character,
         Type::Null => Type::Null,
         Type::ExplicitTypeVariable { name } => Type::ExplicitTypeVariable { name },
         Type::Array(type_value) => Type::Array(Box::new(rewrite_type_variable_in_type(
@@ -1083,9 +1092,21 @@ fn infer_expression_type_(
                 representation: token.representation.clone(),
             },
         }),
-        Expression::Number(token) => Ok(InferExpressionResult {
-            type_value: Type::Number,
-            expression: TypecheckedExpression::Number {
+        Expression::Character(token) => Ok(InferExpressionResult {
+            type_value: Type::Character,
+            expression: TypecheckedExpression::Character {
+                representation: token.representation.clone(),
+            },
+        }),
+        Expression::Float(token) => Ok(InferExpressionResult {
+            type_value: Type::Float,
+            expression: TypecheckedExpression::Float {
+                representation: token.representation.clone(),
+            },
+        }),
+        Expression::Integer(token) => Ok(InferExpressionResult {
+            type_value: Type::Integer,
+            expression: TypecheckedExpression::Integer {
                 representation: token.representation.clone(),
             },
         }),
@@ -2207,9 +2228,15 @@ fn infer_destructure_pattern_(
                 representation: token.representation.clone(),
             },
         }),
-        DestructurePattern::Number(token) => Ok(InferDestructurePatternResult {
-            type_value: Type::Number,
-            destructure_pattern: TypecheckedDestructurePattern::Number {
+        DestructurePattern::Character(token) => Ok(InferDestructurePatternResult {
+            type_value: Type::Character,
+            destructure_pattern: TypecheckedDestructurePattern::Character {
+                representation: token.representation.clone(),
+            },
+        }),
+        DestructurePattern::Integer(token) => Ok(InferDestructurePatternResult {
+            type_value: Type::Integer,
+            destructure_pattern: TypecheckedDestructurePattern::Integer {
                 representation: token.representation.clone(),
             },
         }),
@@ -2428,8 +2455,10 @@ fn substitute_type_variable_in_type(
 ) -> Type {
     match in_type {
         Type::String => Type::String,
+        Type::Character => Type::Character,
         Type::Null => Type::Null,
-        Type::Number => Type::Number,
+        Type::Float => Type::Float,
+        Type::Integer => Type::Integer,
         Type::Boolean => Type::Boolean,
         Type::ExplicitTypeVariable { name } => Type::ExplicitTypeVariable { name: name.clone() },
         Type::Array(type_value) => Type::Array(Box::new(substitute_type_variable_in_type(
@@ -2492,8 +2521,10 @@ fn substitute_type_variable_in_type(
 
 fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
     match type_value {
-        Type::Number
+        Type::Float
+        | Type::Integer
         | Type::String
+        | Type::Character
         | Type::Null
         | Type::Boolean
         | Type::Underscore

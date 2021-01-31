@@ -6,10 +6,10 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let bar = \(props: {
-  f: \{ x: Number } -> Number
+  f: \{ x: Integer } -> Integer
 }) =>
   let { f } = props
-  {x = 'hi'}.f()
+  {x = "hi"}.f()
 
 ============
 EXIT CODE
@@ -27,11 +27,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/progressive_unification_9.kk:5:8
   │
-5 │   {x = 'hi'}.f()
+5 │   {x = "hi"}.f()
   │        ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Number      | + String    |
+    | - Integer     | + String    |
     +---------------+-------------+

@@ -26,7 +26,7 @@ error:
 1 │ let x = {x: 2
   │             ^ Syntax error: not expecting `2` here
   │
-  = Note that `2` is only used to represent number values.
+  = Note that `2` is only used to represent integer values.
 
     We found this error when we are trying to parse a Record.
     Examples of Record are:

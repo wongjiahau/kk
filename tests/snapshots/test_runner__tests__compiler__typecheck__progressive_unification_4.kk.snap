@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let o: [{x: Number}] = [{x= null}]
+let o: [{x: Integer}] = [{x= null}]
 
 ============
 EXIT CODE
@@ -21,13 +21,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_4.kk:1:29
+  ┌─ tests/compiler/typecheck/progressive_unification_4.kk:1:30
   │
-1 │ let o: [{x: Number}] = [{x= null}]
-  │                             ^^^^ Type mismatch
+1 │ let o: [{x: Integer}] = [{x= null}]
+  │                              ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Number      | + Null      |
+    | - Integer     | + Null      |
     +---------------+-------------+

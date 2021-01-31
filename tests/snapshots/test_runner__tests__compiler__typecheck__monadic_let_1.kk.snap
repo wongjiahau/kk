@@ -7,7 +7,7 @@ INPUT
 ============
 let colorIsRed = \_ =>
   let x = 1
-    else \_ => 'hi'
+    else \_ => "hi"
   x
 
 ============
@@ -26,11 +26,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/monadic_let_1.kk:3:16
   │
-3 │     else \_ => 'hi'
+3 │     else \_ => "hi"
   │                ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Number      | + String    |
+    | - Integer     | + String    |
     +---------------+-------------+

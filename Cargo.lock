@@ -137,15 +137,14 @@ dependencies = [
 
 [[package]]
 name = "console"
-version = "0.12.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0b1aacfaffdbff75be81c15a399b4bedf78aaefe840e8af1d299ac2ade885d2"
+checksum = "7cc80946b3480f421c2f17ed1cb841753a371c7c5104f51d507e13f532c856aa"
 dependencies = [
  "encode_unicode",
  "lazy_static",
  "libc",
  "terminal_size",
- "termios",
  "winapi",
 ]
 
@@ -270,16 +269,17 @@ dependencies = [
 
 [[package]]
 name = "insta"
-version = "1.3.0"
+version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "863bf97e7130bf788f29a99bc4073735af6b8ecc3da6a39c23b3a688d2d3109a"
+checksum = "f62fca340815e6190f0ab60fd2729d297a55bcf9863025e5a8a4ce68f50066c4"
 dependencies = [
  "console",
- "difference",
  "lazy_static",
  "serde",
  "serde_json",
  "serde_yaml",
+ "similar",
+ "uuid",
 ]
 
 [[package]]
@@ -483,6 +483,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "similar"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c2c5334976f6000d0c36cf95a0b70ff4daa310b935aa4ce190d02f1012c81d0"
+
+[[package]]
 name = "strip-ansi-escapes"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -539,15 +545,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "termios"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "411c5bf740737c7918b8b1fe232dca4dc9f8e754b8ad5e20966814001ed0ac6b"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "textwrap"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -579,6 +576,12 @@ name = "utf8parse"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8772a4ccbb4e89959023bc5b7cb8623a795caa7092d99f3aa9501b9484d4557d"
+
+[[package]]
+name = "uuid"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
 
 [[package]]
 name = "vec_map"

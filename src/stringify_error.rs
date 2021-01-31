@@ -44,10 +44,7 @@ pub fn print_tokenize_error(source: Source, code: String, tokenize_error: Tokeni
                 },
             )
         }
-        TokenizeError::UnterminatedString {
-            quote_char,
-            position,
-        } => {
+        TokenizeError::UnterminatedCharacterLiteral { position } => {
             let range = ErrorRange {
                 character_index_start: position.character_index_start,
                 character_index_end: position.character_index_end,
@@ -57,11 +54,42 @@ pub fn print_tokenize_error(source: Source, code: String, tokenize_error: Tokeni
                 code,
                 range,
                 StringifiedError {
-                    summary: "Syntax error: unterminated string".to_string(),
+                    summary: "Syntax error: unterminated character literal".to_string(),
+                    body: "This character literal is not terminated, try adding single quote (') after here.".to_string(),
+                },
+            )
+        }
+        TokenizeError::UnterminatedStringLiteral { position } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            print_error(
+                source,
+                code,
+                range,
+                StringifiedError {
+                    summary: "Syntax error: unterminated string literal".to_string(),
                     body: format!(
-                        "This string is not terminated, try adding `{}` after here.",
-                        quote_char
+                        "This string is not terminated, try adding double quote (\") after here.",
                     ),
+                },
+            )
+        }
+        TokenizeError::CharacterLiteralCannotBeEmpty { position } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+
+            print_error(
+                source,
+                code,
+                range,
+                StringifiedError {
+                    summary: "Syntax error: character literal cannot be empty".to_string(),
+                    body: "Character literal must contain exactly one character. For example: 'x'"
+                        .to_string(),
                 },
             )
         }
@@ -179,7 +207,9 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Underscore => "used in pattern matching to match values that are not used afterwards",
         TokenType::Identifier => "used to represent the name of a variable",
         TokenType::String => "only used to represent string values",
-        TokenType::Number => "only used to represent number values",
+        TokenType::Float => "only used to represent floating point values",
+        TokenType::Integer => "only used to represent integer values",
+        TokenType::Character => "only used to represent character"
     }
 }
 
@@ -338,8 +368,10 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Backslash => "\\",
         TokenType::Underscore => "_",
         TokenType::Identifier => "abc",
-        TokenType::String => "'abc'",
-        TokenType::Number => "123",
+        TokenType::String => "\"abc\"",
+        TokenType::Character => "'c'",
+        TokenType::Float => "123.0",
+        TokenType::Integer => "123",
     }
 }
 
@@ -712,9 +744,11 @@ pub fn indent_string(string: String, number_of_spaces: usize) -> String {
 pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
     match type_value {
         Type::Boolean => indent_string("Boolean".to_string(), indent_level * 2),
-        Type::Number => indent_string("Number".to_string(), indent_level * 2),
+        Type::Float => indent_string("Float".to_string(), indent_level * 2),
+        Type::Integer => indent_string("Integer".to_string(), indent_level * 2),
         Type::Null => indent_string("Null".to_string(), indent_level * 2),
         Type::String => indent_string("String".to_string(), indent_level * 2),
+        Type::Character => indent_string("Character".to_string(), indent_level * 2),
         Type::Array(element_type) => indent_string(
             format!("[\n{}\n]", stringify_type(*element_type, indent_level + 1)),
             indent_level * 2,

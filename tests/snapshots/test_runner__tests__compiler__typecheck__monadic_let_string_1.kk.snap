@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let guess = \x =>
-  let 'hey' = x
+  let "hey" = x
   2
 
 ============
@@ -31,5 +31,5 @@ error:
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - String      | + Number    |
+    | - String      | + Integer   |
     +---------------+-------------+

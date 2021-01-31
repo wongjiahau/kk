@@ -11,7 +11,7 @@ let arrayMap =
   \([], _) => []
   \([head, ..._], f) => [head.f()]
 
-let result = [{foo = 2, bar = 'hi'}].arrayMap(\o => o.zap)
+let result = [{foo = 2, bar = "hi"}].arrayMap(\o => o.zap)
 
 ============
 EXIT CODE
@@ -29,7 +29,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/progressive_unification_6.kk:7:55
   │
-7 │ let result = [{foo = 2, bar = 'hi'}].arrayMap(\o => o.zap)
+7 │ let result = [{foo = 2, bar = "hi"}].arrayMap(\o => o.zap)
   │                                                       ^^^ No such property
   │
   = Available properties:

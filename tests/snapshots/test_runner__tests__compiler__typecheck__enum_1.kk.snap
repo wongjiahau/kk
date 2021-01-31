@@ -42,5 +42,5 @@ error:
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |
      +---------------+-------------+
-     | - Number      | + Boolean   |
+     | - Integer     | + Boolean   |
      +---------------+-------------+

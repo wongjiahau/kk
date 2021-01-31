@@ -450,9 +450,11 @@ impl Environment {
      */
     pub fn apply_subtitution_to_type(&self, type_value: &Type) -> Type {
         match type_value {
-            Type::Number => Type::Number,
+            Type::Float => Type::Float,
+            Type::Integer => Type::Integer,
             Type::Boolean => Type::Boolean,
             Type::String => Type::String,
+            Type::Character => Type::Character,
             Type::Null => Type::Null,
             Type::ExplicitTypeVariable { name } => {
                 Type::ExplicitTypeVariable { name: name.clone() }
@@ -1134,7 +1136,7 @@ fn overlap(a: &Type, b: &Type) -> bool {
         (Type::Null, Type::Null) => true,
         (Type::String, Type::String) => true,
         (Type::Boolean, Type::Boolean) => true,
-        (Type::Number, Type::Number) => true,
+        (Type::Float, Type::Float) => true,
         (Type::Tuple(xs), Type::Tuple(ys)) => {
             xs.len() == ys.len() && xs.clone().zip(*ys.clone()).all(|(a, b)| overlap(a, b))
         }
@@ -1229,11 +1231,29 @@ fn built_in_type_symbols() -> Vec<(String, TypeSymbol)> {
             },
         ),
         (
-            "Number".to_string(),
+            "Character".to_string(),
             TypeSymbol {
                 type_scheme: TypeScheme {
                     type_variables: vec![],
-                    type_value: Type::Number,
+                    type_value: Type::Character,
+                },
+            },
+        ),
+        (
+            "Integer".to_string(),
+            TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::Integer,
+                },
+            },
+        ),
+        (
+            "Float".to_string(),
+            TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: vec![],
+                    type_value: Type::Float,
                 },
             },
         ),

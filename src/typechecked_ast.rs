@@ -30,10 +30,16 @@ pub struct Variable {
 pub enum TypecheckedExpression {
     Null,
     Boolean(bool),
-    Number {
+    Float {
+        representation: String,
+    },
+    Integer {
         representation: String,
     },
     String {
+        representation: String,
+    },
+    Character {
         representation: String,
     },
     Variable(Variable),
@@ -78,7 +84,10 @@ pub enum TypecheckedDestructurePattern {
     String {
         representation: String,
     },
-    Number {
+    Character {
+        representation: String,
+    },
+    Integer {
         representation: String,
     },
     Boolean(bool),

@@ -7,7 +7,7 @@ INPUT
 ============
 type Tuple<Left,Right> = {left: Left, right: Right}
 
-type Foo = Tuple<Left = Number, Left = String>
+type Foo = Tuple<Left = Integer, Left = String>
 
 ============
 EXIT CODE
@@ -23,9 +23,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/explicit_type_variable_3.kk:3:33
+  ┌─ tests/compiler/typecheck/explicit_type_variable_3.kk:3:34
   │
-3 │ type Foo = Tuple<Left = Number, Left = String>
-  │                                 ^^^^ Type argument name mismatch
+3 │ type Foo = Tuple<Left = Integer, Left = String>
+  │                                  ^^^^ Type argument name mismatch
   │
   = The expected name here is `Right`.

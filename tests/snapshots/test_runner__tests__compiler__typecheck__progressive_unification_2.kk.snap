@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let f
-  : \Number -> Null
+  : \Integer -> Null
   = \(x: String) => null
 
 ============
@@ -30,4 +30,4 @@ error:
   │
   = The expected type annotation is:
 
-      Number
+      Integer

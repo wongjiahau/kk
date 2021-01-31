@@ -510,9 +510,9 @@ pub fn match_pattern(
             MatchPatternResult::Matched
         }
         (
-            DestructurePattern::Number(_),
+            DestructurePattern::Integer(_),
             TypedDestructurePattern::Any {
-                type_value: Type::Number,
+                type_value: Type::Integer,
             },
         ) => {
             // always return NotMatched because there are infinite possible combination of numbers
@@ -522,6 +522,15 @@ pub fn match_pattern(
             DestructurePattern::String(_),
             TypedDestructurePattern::Any {
                 type_value: Type::String,
+            },
+        ) => {
+            // always return NotMatched because there are infinite possible combination of string
+            MatchPatternResult::NotMatched
+        }
+        (
+            DestructurePattern::Character(_),
+            TypedDestructurePattern::Any {
+                type_value: Type::Character,
             },
         ) => {
             // always return NotMatched because there are infinite possible combination of string

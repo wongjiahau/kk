@@ -10,17 +10,11 @@ pub struct Character {
 }
 
 pub enum TokenizeError {
-    UnterminatedString {
-        position: Position,
-        quote_char: char,
-    },
-    InvalidToken {
-        error: String,
-        position: Position,
-    },
-    UnknownCharacter {
-        character: Character,
-    },
+    CharacterLiteralCannotBeEmpty { position: Position },
+    UnterminatedCharacterLiteral { position: Position },
+    UnterminatedStringLiteral { position: Position },
+    InvalidToken { error: String, position: Position },
+    UnknownCharacter { character: Character },
 }
 
 pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
@@ -57,7 +51,36 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 representation: "_".to_string(),
                 position: make_position(character, None),
             }),
-            '\'' | '"' => {
+            '\'' => match it.next() {
+                Some(quote @ Character { value: '\'', .. }) => {
+                    return Err(TokenizeError::CharacterLiteralCannotBeEmpty {
+                        position: make_position(character, Some(&quote)),
+                    })
+                }
+                Some(c) => match it.next() {
+                    Some(end_quote @ Character { value: '\'', .. }) => tokens.push(Token {
+                        token_type: TokenType::Character,
+                        representation: format!("'{}'", c.value),
+                        position: make_position(character, Some(&end_quote)),
+                    }),
+                    Some(other_character) => {
+                        return Err(TokenizeError::UnterminatedCharacterLiteral {
+                            position: make_position(character, Some(&other_character)),
+                        })
+                    }
+                    None => {
+                        return Err(TokenizeError::UnterminatedCharacterLiteral {
+                            position: make_position(character, None),
+                        })
+                    }
+                },
+                None => {
+                    return Err(TokenizeError::UnterminatedCharacterLiteral {
+                        position: make_position(character, None),
+                    })
+                }
+            },
+            '"' => {
                 let quote = character.value;
                 let content: Vec<Character> = it
                     .by_ref()
@@ -71,8 +94,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                         position: make_position(character, Some(&ending_quote)),
                     }),
                     None => {
-                        return Err(TokenizeError::UnterminatedString {
-                            quote_char: quote,
+                        return Err(TokenizeError::UnterminatedStringLiteral {
                             position: make_position(character, content.last()),
                         })
                     }
@@ -142,24 +164,26 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                     }
                     _ => None,
                 };
-                tokens.push(Token {
-                    token_type: TokenType::Number,
-                    representation: match &fractional {
-                        Some(fractional) => format!(
+                tokens.push(match fractional {
+                    None => Token {
+                        token_type: TokenType::Integer,
+                        representation: format!(
+                            "{}{}",
+                            character.value,
+                            stringify(intergral.clone())
+                        ),
+                        position: make_position(character, intergral.last()),
+                    },
+                    Some(fractional) => Token {
+                        token_type: TokenType::Float,
+                        representation: format!(
                             "{}{}.{}",
                             character.value,
                             stringify(intergral.clone()),
                             stringify(fractional.clone())
                         ),
-                        None => format!("{}{}", character.value, stringify(intergral.clone())),
+                        position: make_position(character, fractional.last()),
                     },
-                    position: make_position(
-                        character,
-                        match &fractional {
-                            Some(fractional) => fractional.last(),
-                            None => intergral.last(),
-                        },
-                    ),
                 })
             }
             'A'..='Z' | 'a'..='z' => {

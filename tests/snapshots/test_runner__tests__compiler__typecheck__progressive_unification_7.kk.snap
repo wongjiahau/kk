@@ -41,6 +41,6 @@ error:
      | EXPECTED TYPE | ACTUAL TYPE |
      +---------------+-------------+
      |   [           |   [         |
-     | -   String    | +   Number  |
+     | -   String    | +   Integer |
      |   ]           |   ]         |
      +---------------+-------------+

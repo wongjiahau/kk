@@ -583,6 +583,20 @@ impl<'a> Parser<'a> {
         if let Some(token) = self.tokens.next() {
             match &token.token_type {
                 TokenType::String => Ok(Expression::String(token.clone())),
+                TokenType::Character => Ok(Expression::Character(token.clone())),
+                TokenType::LeftCurlyBracket => self.parse_record(token.clone()),
+                TokenType::LeftSquareBracket => self.parse_array(token.clone()),
+                TokenType::Float => Ok(Expression::Float(token.clone())),
+                TokenType::Integer => Ok(Expression::Integer(token.clone())),
+                TokenType::KeywordTrue => Ok(Expression::Boolean {
+                    token: token.clone(),
+                    value: true,
+                }),
+                TokenType::KeywordFalse => Ok(Expression::Boolean {
+                    token: token.clone(),
+                    value: false,
+                }),
+                TokenType::KeywordNull => Ok(Expression::Null(token.clone())),
                 TokenType::Identifier => match self.tokens.peek() {
                     Some(Token {
                         token_type: TokenType::ScopeResolution,
@@ -620,18 +634,6 @@ impl<'a> Parser<'a> {
                     }
                     _ => Ok(Expression::Variable(token.clone())),
                 },
-                TokenType::LeftCurlyBracket => self.parse_record(token.clone()),
-                TokenType::LeftSquareBracket => self.parse_array(token.clone()),
-                TokenType::Number => Ok(Expression::Number(token.clone())),
-                TokenType::KeywordTrue => Ok(Expression::Boolean {
-                    token: token.clone(),
-                    value: true,
-                }),
-                TokenType::KeywordFalse => Ok(Expression::Boolean {
-                    token: token.clone(),
-                    value: false,
-                }),
-                TokenType::KeywordNull => Ok(Expression::Null(token.clone())),
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             }
         } else {
@@ -850,8 +852,9 @@ impl<'a> Parser<'a> {
                         right_curly_bracket,
                     })
                 }
-                TokenType::Number => Ok(DestructurePattern::Number(token.clone())),
+                TokenType::Integer => Ok(DestructurePattern::Integer(token.clone())),
                 TokenType::String => Ok(DestructurePattern::String(token.clone())),
+                TokenType::Character => Ok(DestructurePattern::Character(token.clone())),
                 TokenType::KeywordTrue => Ok(DestructurePattern::Boolean {
                     token: token.clone(),
                     value: true,

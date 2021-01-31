@@ -5,9 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let guess = \x =>
-  let true = x
-  2
+let a: String = "hi"
+let b: String = 'h'
 
 ============
 EXIT CODE
@@ -23,13 +22,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_boolean_1.kk:3:3
+  ┌─ tests/compiler/typecheck/type_annotation_string_1.kk:2:17
   │
-3 │   2
-  │   ^ Type mismatch
+2 │ let b: String = 'h'
+  │                 ^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Boolean     | + Integer   |
+    | - String      | + Character |
     +---------------+-------------+

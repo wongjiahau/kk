@@ -26,6 +26,6 @@ error:
 1 │   let x = "hello world
   │ ╭─────────^
 2 │ │
-  │ ╰^ Syntax error: unterminated string
+  │ ╰^ Syntax error: unterminated string literal
   │
-  = This string is not terminated, try adding `"` after here.
+  = This string is not terminated, try adding double quote (") after here.

@@ -1,3 +1,3 @@
 let f = 
-    \(x: Number) => x
+    \(x: Integer) => x
     \(_, _) => 1
