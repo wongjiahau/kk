@@ -189,6 +189,9 @@ pub fn expand_pattern(
             TypedDestructurePattern::Boolean(true),
             TypedDestructurePattern::Boolean(false),
         ],
+        Type::Integer | Type::Character | Type::String => vec![TypedDestructurePattern::Infinite {
+            handled_cases: vec![],
+        }],
         Type::Tuple(types) => vec![TypedDestructurePattern::Tuple(
             types
                 .clone()
@@ -284,7 +287,7 @@ pub fn expand_pattern_matrix(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypedDestructurePattern {
     Any {
         type_value: Type,
@@ -302,6 +305,12 @@ pub enum TypedDestructurePattern {
     NonEmptyArray {
         first_element: Box<TypedDestructurePattern>,
         rest_elements: Box<TypedDestructurePattern>,
+    },
+
+    /// Used for representing patterns for String, Integer, Character etc.
+    Infinite {
+        /// This is for checking unreachable cases
+        handled_cases: Vec<String>,
     },
 }
 
@@ -340,6 +349,23 @@ pub fn match_pattern(
             DestructurePattern::Boolean { value: false, .. },
             TypedDestructurePattern::Boolean(false),
         ) => MatchPatternResult::Matched,
+        (
+            DestructurePattern::Infinite { token, .. },
+            TypedDestructurePattern::Infinite { handled_cases },
+        ) => {
+            if handled_cases
+                .iter()
+                .any(|case| *case == token.representation)
+            {
+                MatchPatternResult::NotMatched
+            } else {
+                let mut handled_cases = handled_cases.clone();
+                handled_cases.push(token.representation.clone());
+                MatchPatternResult::PartiallyMatched {
+                    expanded_patterns: vec![TypedDestructurePattern::Infinite { handled_cases }],
+                }
+            }
+        }
         (
             DestructurePattern::EnumConstructor {
                 scoped_name: actual_name,
@@ -509,33 +535,33 @@ pub fn match_pattern(
             // as long as there is one branch matching for null
             MatchPatternResult::Matched
         }
-        (
-            DestructurePattern::Integer(_),
-            TypedDestructurePattern::Any {
-                type_value: Type::Integer,
-            },
-        ) => {
-            // always return NotMatched because there are infinite possible combination of numbers
-            MatchPatternResult::NotMatched
-        }
-        (
-            DestructurePattern::String(_),
-            TypedDestructurePattern::Any {
-                type_value: Type::String,
-            },
-        ) => {
-            // always return NotMatched because there are infinite possible combination of string
-            MatchPatternResult::NotMatched
-        }
-        (
-            DestructurePattern::Character(_),
-            TypedDestructurePattern::Any {
-                type_value: Type::Character,
-            },
-        ) => {
-            // always return NotMatched because there are infinite possible combination of string
-            MatchPatternResult::NotMatched
-        }
+        // (
+        //     DestructurePattern::Integer(_),
+        //     TypedDestructurePattern::Any {
+        //         type_value: Type::Integer,
+        //     },
+        // ) => {
+        //     // always return NotMatched because there are infinite possible combination of numbers
+        //     MatchPatternResult::NotMatched
+        // }
+        // (
+        //     DestructurePattern::String(_),
+        //     TypedDestructurePattern::Any {
+        //         type_value: Type::String,
+        //     },
+        // ) => {
+        //     // always return NotMatched because there are infinite possible combination of string
+        //     MatchPatternResult::NotMatched
+        // }
+        // (
+        //     DestructurePattern::Character(_),
+        //     TypedDestructurePattern::Any {
+        //         type_value: Type::Character,
+        //     },
+        // ) => {
+        //     // always return NotMatched because there are infinite possible combination of string
+        //     MatchPatternResult::NotMatched
+        // }
         (_, TypedDestructurePattern::Any { type_value }) => MatchPatternResult::PartiallyMatched {
             expanded_patterns: expand_pattern(environment, type_value),
         },

@@ -860,9 +860,18 @@ impl<'a> Parser<'a> {
                         right_curly_bracket,
                     })
                 }
-                TokenType::Integer => Ok(DestructurePattern::Integer(token.clone())),
-                TokenType::String => Ok(DestructurePattern::String(token.clone())),
-                TokenType::Character => Ok(DestructurePattern::Character(token.clone())),
+                TokenType::Integer => Ok(DestructurePattern::Infinite {
+                    token: token.clone(),
+                    kind: InfinitePatternKind::Integer,
+                }),
+                TokenType::String => Ok(DestructurePattern::Infinite {
+                    token: token.clone(),
+                    kind: InfinitePatternKind::String,
+                }),
+                TokenType::Character => Ok(DestructurePattern::Infinite {
+                    token: token.clone(),
+                    kind: InfinitePatternKind::Character,
+                }),
                 TokenType::KeywordTrue => Ok(DestructurePattern::Boolean {
                     token: token.clone(),
                     value: true,

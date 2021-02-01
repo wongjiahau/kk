@@ -1,6 +1,6 @@
 /// Modified from https://docs.rs/nonempty/0.6.0/src/nonempty/lib.rs.html#32-35
 use std::{iter, mem};
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NonEmpty<T> {
     pub head: T,
     pub tail: Vec<T>,

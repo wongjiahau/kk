@@ -726,7 +726,9 @@ pub fn stringify_typed_destrucutre_pattern(
                 .collect::<Vec<String>>()
                 .join(", "),
         ),
-        TypedDestructurePattern::Any { .. } => "_".to_string(),
+        TypedDestructurePattern::Any { .. } | TypedDestructurePattern::Infinite { .. } => {
+            "_".to_string()
+        }
         TypedDestructurePattern::EnumConstructor { name, payload } => format!(
             "{}({})",
             name,

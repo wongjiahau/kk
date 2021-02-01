@@ -41,7 +41,7 @@ pub struct TypeVariable {
     pub token: Token,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Underscore,
 
@@ -85,7 +85,7 @@ pub struct TypeScheme {
     pub type_value: Type,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionType {
     pub parameters_types: Box<NonEmpty<Type>>,
     pub return_type: Box<Type>,
@@ -132,10 +132,18 @@ pub enum TypeAnnotation {
 }
 
 #[derive(Debug, Clone)]
+pub enum InfinitePatternKind {
+    String,
+    Character,
+    Integer,
+}
+
+#[derive(Debug, Clone)]
 pub enum DestructurePattern {
-    String(Token),
-    Character(Token),
-    Integer(Token),
+    Infinite {
+        kind: InfinitePatternKind,
+        token: Token,
+    },
     Boolean {
         token: Token,
         value: bool,

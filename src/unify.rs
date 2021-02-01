@@ -493,9 +493,7 @@ pub fn join_position(start_position: Position, end_position: Position) -> Positi
 
 pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern) -> Position {
     match destructure_pattern {
-        DestructurePattern::Integer(token)
-        | DestructurePattern::String(token)
-        | DestructurePattern::Character(token)
+        DestructurePattern::Infinite { token, .. }
         | DestructurePattern::Identifier(token)
         | DestructurePattern::Underscore(token)
         | DestructurePattern::Boolean { token, .. }
@@ -1839,11 +1837,20 @@ pub fn check_exhaustiveness_(
                         kind: UnifyErrorKind::UnreachableCase,
                     })
                 } else {
-                    Ok(match_patterns(
-                        environment,
-                        &actual_pattern,
-                        expected_patterns,
-                    ))
+                    let new_patterns =
+                        match_patterns(environment, &actual_pattern, expected_patterns.clone());
+
+                    if new_patterns.eq(&expected_patterns) {
+                        // If new_patterns equals to the current expected_patterns
+                        // Then this actual_pattern is also an unreachable case
+                        //  as it does not remove any patterns from expected_patterns
+                        Err(UnifyError {
+                            position: get_destructure_pattern_position(&actual_pattern),
+                            kind: UnifyErrorKind::UnreachableCase,
+                        })
+                    } else {
+                        Ok(new_patterns)
+                    }
                 }
             }
         },
@@ -2222,19 +2229,28 @@ fn infer_destructure_pattern_(
     destructure_pattern: &DestructurePattern,
 ) -> Result<InferDestructurePatternResult, UnifyError> {
     match destructure_pattern {
-        DestructurePattern::String(token) => Ok(InferDestructurePatternResult {
+        DestructurePattern::Infinite {
+            token,
+            kind: InfinitePatternKind::String,
+        } => Ok(InferDestructurePatternResult {
             type_value: Type::String,
             destructure_pattern: TypecheckedDestructurePattern::String {
                 representation: token.representation.clone(),
             },
         }),
-        DestructurePattern::Character(token) => Ok(InferDestructurePatternResult {
+        DestructurePattern::Infinite {
+            token,
+            kind: InfinitePatternKind::Character,
+        } => Ok(InferDestructurePatternResult {
             type_value: Type::Character,
             destructure_pattern: TypecheckedDestructurePattern::Character {
                 representation: token.representation.clone(),
             },
         }),
-        DestructurePattern::Integer(token) => Ok(InferDestructurePatternResult {
+        DestructurePattern::Infinite {
+            token,
+            kind: InfinitePatternKind::Integer,
+        } => Ok(InferDestructurePatternResult {
             type_value: Type::Integer,
             destructure_pattern: TypecheckedDestructurePattern::Integer {
                 representation: token.representation.clone(),
