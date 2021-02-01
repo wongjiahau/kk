@@ -12,6 +12,7 @@ pub struct Character {
 pub enum TokenizeError {
     CharacterLiteralCannotBeEmpty { position: Position },
     UnterminatedCharacterLiteral { position: Position },
+    UnterminatedComment { position: Position },
     UnterminatedStringLiteral { position: Position },
     InvalidToken { error: String, position: Position },
     UnknownCharacter { character: Character },
@@ -51,6 +52,35 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 representation: "_".to_string(),
                 position: make_position(character, None),
             }),
+            '/' => {
+                let first_slash = character;
+                match it.next() {
+                    Some(Character { value: '/', .. }) => {
+                        let content: Vec<Character> = it
+                            .by_ref()
+                            .peeking_take_while(|character| character.value != '\n')
+                            .collect();
+
+                        tokens.push(Token {
+                            token_type: match it.next() {
+                                Some(Character { value: '/', .. }) => TokenType::Documentation,
+                                _ => TokenType::Comment,
+                            },
+                            representation: content
+                                .iter()
+                                .map(|character| character.value.to_string())
+                                .collect::<Vec<String>>()
+                                .join(""),
+                            position: make_position(first_slash, content.last()),
+                        })
+                    }
+                    other => {
+                        return Err(TokenizeError::UnterminatedComment {
+                            position: make_position(first_slash, other.as_ref()),
+                        })
+                    }
+                }
+            }
             '\'' => match it.next() {
                 Some(quote @ Character { value: '\'', .. }) => {
                     return Err(TokenizeError::CharacterLiteralCannotBeEmpty {
@@ -63,14 +93,9 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                         representation: format!("'{}'", c.value),
                         position: make_position(character, Some(&end_quote)),
                     }),
-                    Some(other_character) => {
+                    other => {
                         return Err(TokenizeError::UnterminatedCharacterLiteral {
-                            position: make_position(character, Some(&other_character)),
-                        })
-                    }
-                    None => {
-                        return Err(TokenizeError::UnterminatedCharacterLiteral {
-                            position: make_position(character, None),
+                            position: make_position(character, other.as_ref()),
                         })
                     }
                 },

@@ -65,7 +65,15 @@ impl<'a> Parser<'a> {
     pub fn parse(tokens: Vec<Token>) -> Result<Vec<Statement>, ParseError> {
         let tokens = tokens
             .into_iter()
-            .filter(|token| !matches!(token.token_type, TokenType::Whitespace | TokenType::Newline))
+            .filter(|token| {
+                !matches!(
+                    token.token_type,
+                    TokenType::Whitespace
+                        | TokenType::Newline
+                        | TokenType::Comment
+                        | TokenType::Documentation
+                )
+            })
             .collect::<Vec<Token>>();
         let mut parser = Parser {
             tokens: tokens.iter().peekable(),

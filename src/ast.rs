@@ -371,6 +371,12 @@ pub enum TokenType {
     Integer,
     Float,
     ScopeResolution,
+
+    /// Comments starts with double slash (//)
+    Comment,
+
+    /// Documentation starts with triple slash (///)
+    Documentation,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

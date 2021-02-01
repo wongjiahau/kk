@@ -14,6 +14,16 @@ use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
 pub fn print_tokenize_error(source: Source, code: String, tokenize_error: TokenizeError) {
     match tokenize_error {
+        TokenizeError::UnterminatedComment { position } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            print_error(source, code, range, StringifiedError {
+                summary: "Syntax error: Unterminated comment".to_string(),
+                body: "Comments must start with two slashes. Consider adding a slash (/) after here.".to_string()
+            })
+        }
         TokenizeError::InvalidToken { error, position } => {
             let range = ErrorRange {
                 character_index_start: position.character_index_start,
@@ -70,9 +80,8 @@ pub fn print_tokenize_error(source: Source, code: String, tokenize_error: Tokeni
                 range,
                 StringifiedError {
                     summary: "Syntax error: unterminated string literal".to_string(),
-                    body: format!(
-                        "This string is not terminated, try adding double quote (\") after here.",
-                    ),
+                    body: "This string is not terminated, try adding double quote (\") after here."
+                        .to_string(),
                 },
             )
         }
@@ -209,7 +218,9 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::String => "only used to represent string values",
         TokenType::Float => "only used to represent floating point values",
         TokenType::Integer => "only used to represent integer values",
-        TokenType::Character => "only used to represent character"
+        TokenType::Character => "only used to represent character",
+        TokenType::Comment => "only used for commenting",
+        TokenType::Documentation => "only used for documentation"
     }
 }
 
@@ -372,6 +383,8 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Character => "'c'",
         TokenType::Float => "123.0",
         TokenType::Integer => "123",
+        TokenType::Comment => "// this is a comment",
+        TokenType::Documentation => "/// This is a documentation.",
     }
 }
 
