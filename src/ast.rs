@@ -58,6 +58,9 @@ pub enum Type {
     Record {
         key_type_pairs: Vec<(String, Type)>,
     },
+
+    /// Also known as enum type  
+    /// Also known as nominal type
     Named {
         name: String,
         type_arguments: Vec<(String, Type)>,
@@ -131,7 +134,7 @@ pub enum TypeAnnotation {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InfinitePatternKind {
     String,
     Character,

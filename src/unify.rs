@@ -98,7 +98,7 @@ pub enum UnifyErrorKind {
         actual_type: Type,
     },
     UnusedVariale,
-    MissingCases(Vec<TypedDestructurePattern>),
+    MissingCases(Vec<ExpandablePattern>),
     ThisTagDoesNotRequirePayload,
     ThisTagRequiresPaylod {
         payload_type: Type,
@@ -973,8 +973,8 @@ pub fn rewrite_type_variable_in_type(
 }
 
 pub struct GetEnumTypeResult {
-    expected_enum_type: Type,
-    expected_payload_type: Option<Type>,
+    pub expected_enum_type: Type,
+    pub expected_payload_type: Option<Type>,
 }
 
 pub fn get_enum_type(
@@ -1247,9 +1247,37 @@ fn infer_expression_type_(
                             // the type of this let expression should be true_branch_type
                             Ok(typechecked_true_branch.type_value)
                         }
-                        Err(_) => {
-                            // If the pattern of the left is NOT exhaustive
-                            // the type of this let expression should be left_type
+                        Err(UnifyError {
+                            kind: UnifyErrorKind::MissingCases(_),
+                            ..
+                        }) => {
+                            // If the pattern of the `left` is NOT exhaustive
+                            // the type of this let expression should be type of `cases` unified together
+                            // This unification is for handling cases as such:
+                            //
+                            //      let foo = \null =>
+                            //          let Ok(x) = Ok(1)
+                            //          Ok({x})
+                            //
+                            // In this case, the implicit return type should be Result<T, U>, not Result<Integer, U>
+                            // This is required such that the ending type can be Result<X, U>, where X can be not Integer
+
+                            // TODO: complete this part
+                            // let type_value = expandable_patterns
+                            //     .into_iter()
+                            //     .map(|expandable_pattern| expandable_pattern.to_type())
+                            //     .fold(
+                            //         environment.introduce_implicit_type_variable(None),
+                            //         |result, type_value| match result {
+                            //             Err(error) => Err(error),
+                            //             Ok(expected_type) => unify_type(
+                            //                 environment,
+                            //                 &expected_type,
+                            //                 &type_value,
+                            //                 Position::null(),
+                            //             ),
+                            //         },
+                            //     )?;
                             let type_value = unify_type(
                                 environment,
                                 &typechecked_left.type_value,
@@ -1258,6 +1286,7 @@ fn infer_expression_type_(
                             )?;
                             Ok(type_value)
                         }
+                        Err(other_error) => Err(other_error),
                     }?;
 
                     Ok(InferExpressionResult {
@@ -1806,7 +1835,7 @@ pub fn check_exhaustiveness(
 ) -> Result<(), UnifyError> {
     check_exhaustiveness_(
         environment,
-        vec![TypedDestructurePattern::Any {
+        vec![ExpandablePattern::Any {
             type_value: expected_type,
         }],
         actual_patterns,
@@ -1816,7 +1845,7 @@ pub fn check_exhaustiveness(
 
 pub fn check_exhaustiveness_(
     environment: &Environment,
-    expected_patterns: Vec<TypedDestructurePattern>,
+    expected_patterns: Vec<ExpandablePattern>,
     actual_patterns: NonEmpty<DestructurePattern>,
     position: Position,
 ) -> Result<(), UnifyError> {

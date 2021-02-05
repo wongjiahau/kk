@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::parse::{ParseContext, ParseError, ParseErrorKind};
-use crate::pattern::TypedDestructurePattern;
+use crate::pattern::ExpandablePattern;
 use crate::tokenize::TokenizeError;
 use crate::unify::{UnifyError, UnifyErrorKind};
 use colored::*;
@@ -532,7 +532,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 "Missing case(s):\n\n{}",
                 missing_patterns
                     .into_iter()
-                    .map(stringify_typed_destrucutre_pattern)
+                    .map(stringify_expandable_pattern)
                     .map(|result| format!("  \\{} => ...", result))
                     .collect::<Vec<String>>()
                     .join("\n")
@@ -682,58 +682,54 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
     }
 }
 
-pub fn stringify_typed_destrucutre_pattern(
-    typed_destructure_pattern: TypedDestructurePattern,
-) -> String {
-    match typed_destructure_pattern {
-        TypedDestructurePattern::EmptyArray => "[]".to_string(),
-        TypedDestructurePattern::NonEmptyArray {
+pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> String {
+    match expandable_pattern {
+        ExpandablePattern::EmptyArray => "[]".to_string(),
+        ExpandablePattern::NonEmptyArray {
             first_element,
             rest_elements,
         } => {
             format!(
                 "[{}, ...{}]",
-                stringify_typed_destrucutre_pattern(*first_element),
-                stringify_typed_destrucutre_pattern(*rest_elements)
+                stringify_expandable_pattern(*first_element),
+                stringify_expandable_pattern(*rest_elements)
             )
         }
-        TypedDestructurePattern::Boolean(value) => {
+        ExpandablePattern::Boolean(value) => {
             if value {
                 "true".to_string()
             } else {
                 "false".to_string()
             }
         }
-        TypedDestructurePattern::Record { key_pattern_pairs } => format!(
+        ExpandablePattern::Record { key_pattern_pairs } => format!(
             "{{ {} }}",
             key_pattern_pairs
                 .into_iter()
                 .map(|(key, pattern)| format!(
                     "{} = {}",
                     key,
-                    stringify_typed_destrucutre_pattern(pattern)
+                    stringify_expandable_pattern(pattern)
                 ))
                 .collect::<Vec<String>>()
                 .join(", ")
         ),
-        TypedDestructurePattern::Tuple(patterns) => format!(
+        ExpandablePattern::Tuple(patterns) => format!(
             "{left}{center}{right}",
             left = if patterns.len() > 1 { "(" } else { "" },
             right = if patterns.len() > 1 { ")" } else { "" },
             center = patterns
                 .into_iter()
-                .map(stringify_typed_destrucutre_pattern)
+                .map(stringify_expandable_pattern)
                 .collect::<Vec<String>>()
                 .join(", "),
         ),
-        TypedDestructurePattern::Any { .. } | TypedDestructurePattern::Infinite { .. } => {
-            "_".to_string()
-        }
-        TypedDestructurePattern::EnumConstructor { name, payload } => format!(
+        ExpandablePattern::Any { .. } | ExpandablePattern::Infinite { .. } => "_".to_string(),
+        ExpandablePattern::EnumConstructor { name, payload, .. } => format!(
             "{}({})",
             name,
             match payload {
-                Some(payload) => stringify_typed_destrucutre_pattern(*payload),
+                Some(payload) => stringify_expandable_pattern(*payload),
                 None => "".to_string(),
             }
         ),

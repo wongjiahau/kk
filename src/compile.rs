@@ -2,7 +2,7 @@ use crate::ast::*;
 use crate::parse::Parser;
 use crate::stringify_error::{print_parse_error, print_tokenize_error, print_unify_error};
 use crate::tokenize::tokenize;
-use crate::transpile::transpile_statements;
+use crate::transpile_cps::transpile_statements;
 use crate::unify::{unify_program, Program};
 
 pub fn compile(source: Source, code: String) {

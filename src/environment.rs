@@ -306,7 +306,7 @@ impl Environment {
             type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
             scope: Scope::new(),
-            current_uid: Cell::new(0),
+            current_uid: Cell::new(1000), // start from 1000 to reserve from built in function
             namespace_name,
             exported: true,
             namespaces: vec![],
@@ -1201,22 +1201,44 @@ pub struct UsageReference {
 
 fn built_in_value_symbols() -> Vec<(String, usize, TypeScheme)> {
     let type_variable_name = "T".to_string();
-    vec![(
-        "print".to_string(),
-        0, // uid
-        TypeScheme {
-            type_variables: vec![type_variable_name.clone()],
-            type_value: Type::Function(FunctionType {
-                parameters_types: Box::new(NonEmpty {
-                    head: Type::ImplicitTypeVariable {
-                        name: type_variable_name,
-                    },
-                    tail: vec![],
+    vec![
+        (
+            "print".to_string(),
+            0, // uid
+            TypeScheme {
+                type_variables: vec![type_variable_name.clone()],
+                type_value: Type::Function(FunctionType {
+                    parameters_types: Box::new(NonEmpty {
+                        head: Type::ImplicitTypeVariable {
+                            name: type_variable_name,
+                        },
+                        tail: vec![],
+                    }),
+                    return_type: Box::new(Type::Null),
                 }),
-                return_type: Box::new(Type::Null),
-            }),
-        },
-    )]
+            },
+        ),
+        (
+            "read_file".to_string(),
+            1, // uid
+            TypeScheme {
+                type_variables: vec![],
+                type_value: Type::Function(FunctionType {
+                    parameters_types: Box::new(NonEmpty {
+                        head: Type::String,
+                        tail: vec![],
+                    }),
+                    return_type: Box::new(Type::Named {
+                        name: "Result".to_string(),
+                        type_arguments: vec![
+                            ("Ok".into(), Type::String),
+                            ("Error".into(), Type::String),
+                        ],
+                    }),
+                }),
+            },
+        ),
+    ]
 }
 
 fn built_in_type_symbols() -> Vec<(String, TypeSymbol)> {

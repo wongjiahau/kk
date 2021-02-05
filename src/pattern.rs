@@ -8,7 +8,7 @@ pub enum MatchPatternResult {
     Matched,
     NotMatched,
     PartiallyMatched {
-        expanded_patterns: Vec<TypedDestructurePattern>,
+        expanded_patterns: Vec<ExpandablePattern>,
     },
 }
 
@@ -26,7 +26,7 @@ enum PatternMatrix {
 }
 
 struct PatternPair {
-    expected_pattern: TypedDestructurePattern,
+    expected_pattern: ExpandablePattern,
     actual_pattern: DestructurePattern,
 }
 
@@ -43,7 +43,7 @@ fn match_pattern_matrix(
     struct RawPatternMatrix {
         key: String,
         actual_pattern: DestructurePattern,
-        expected_pattern: TypedDestructurePattern,
+        expected_pattern: ExpandablePattern,
     }
 
     fn match_raw_pattern_matrix(
@@ -65,7 +65,7 @@ fn match_pattern_matrix(
                     )
                 },
             )
-            .collect::<Vec<((String, TypedDestructurePattern), MatchPatternResult)>>();
+            .collect::<Vec<((String, ExpandablePattern), MatchPatternResult)>>();
         if pattern_matrices.iter().all(|(_, match_pattern_result)| {
             matches!(match_pattern_result, MatchPatternResult::Matched)
         }) {
@@ -102,14 +102,14 @@ fn match_pattern_matrix(
             )
             .into_iter()
             .map(|key_pattern_pairs| match wrap_result_as {
-                WrapResultAs::Record => TypedDestructurePattern::Record { key_pattern_pairs },
-                WrapResultAs::Tuple => TypedDestructurePattern::Tuple(
+                WrapResultAs::Record => ExpandablePattern::Record { key_pattern_pairs },
+                WrapResultAs::Tuple => ExpandablePattern::Tuple(
                     key_pattern_pairs
                         .into_iter()
                         .map(|(_, pattern)| pattern)
                         .collect(),
                 ),
-                WrapResultAs::Array => TypedDestructurePattern::NonEmptyArray {
+                WrapResultAs::Array => ExpandablePattern::NonEmptyArray {
                     first_element: Box::new(
                         key_pattern_pairs.get(0).expect("Compiler error").1.clone(),
                     ),
@@ -180,31 +180,37 @@ fn match_pattern_matrix(
     }
 }
 
-pub fn expand_pattern(
-    environment: &Environment,
-    type_value: &Type,
-) -> Vec<TypedDestructurePattern> {
+pub fn expand_pattern(environment: &Environment, type_value: &Type) -> Vec<ExpandablePattern> {
     match type_value {
         Type::Boolean => vec![
-            TypedDestructurePattern::Boolean(true),
-            TypedDestructurePattern::Boolean(false),
+            ExpandablePattern::Boolean(true),
+            ExpandablePattern::Boolean(false),
         ],
-        Type::Integer | Type::Character | Type::String => vec![TypedDestructurePattern::Infinite {
+        Type::Integer => vec![ExpandablePattern::Infinite {
             handled_cases: vec![],
+            kind: InfinitePatternKind::Integer,
         }],
-        Type::Tuple(types) => vec![TypedDestructurePattern::Tuple(
+        Type::String => vec![ExpandablePattern::Infinite {
+            handled_cases: vec![],
+            kind: InfinitePatternKind::String,
+        }],
+        Type::Character => vec![ExpandablePattern::Infinite {
+            handled_cases: vec![],
+            kind: InfinitePatternKind::Character,
+        }],
+        Type::Tuple(types) => vec![ExpandablePattern::Tuple(
             types
                 .clone()
-                .map(|type_value| TypedDestructurePattern::Any { type_value })
+                .map(|type_value| ExpandablePattern::Any { type_value })
                 .into_vector(),
         )],
-        Type::Record { key_type_pairs } => vec![TypedDestructurePattern::Record {
+        Type::Record { key_type_pairs } => vec![ExpandablePattern::Record {
             key_pattern_pairs: key_type_pairs
                 .iter()
                 .map(|(key, type_value)| {
                     (
                         key.clone(),
-                        TypedDestructurePattern::Any {
+                        ExpandablePattern::Any {
                             type_value: type_value.clone(),
                         },
                     )
@@ -219,17 +225,23 @@ pub fn expand_pattern(
             .into_iter()
             .map(|constructor_symbol| {
                 let constructor_name = constructor_symbol.constructor_name.clone();
+                let enum_type = EnumType {
+                    name: name.clone(),
+                    type_arguments: type_arguments.clone(),
+                };
                 match &constructor_symbol.payload {
-                    None => TypedDestructurePattern::EnumConstructor {
+                    None => ExpandablePattern::EnumConstructor {
                         name: constructor_name,
                         payload: None,
+                        enum_type,
                     },
                     Some(payload) => {
                         let payload =
                             rewrite_type_variables_in_type(type_arguments.clone(), payload.clone());
-                        TypedDestructurePattern::EnumConstructor {
+                        ExpandablePattern::EnumConstructor {
                             name: constructor_name,
-                            payload: Some(Box::new(TypedDestructurePattern::Any {
+                            enum_type,
+                            payload: Some(Box::new(ExpandablePattern::Any {
                                 type_value: payload,
                             })),
                         }
@@ -252,73 +264,105 @@ pub fn expand_pattern(
 /// ]
 /// ```
 pub fn expand_pattern_matrix(
-    types: Vec<
-        Vec<(
-            /*key*/ String,
-            /*pattern*/ TypedDestructurePattern,
-        )>,
-    >,
-) -> Vec<
-    Vec<(
-        /*key*/ String,
-        /*pattern*/ TypedDestructurePattern,
-    )>,
-> {
+    types: Vec<Vec<(/*key*/ String, /*pattern*/ ExpandablePattern)>>,
+) -> Vec<Vec<(/*key*/ String, /*pattern*/ ExpandablePattern)>> {
     match types.split_first() {
         None => vec![],
         Some((head, tail)) => head
             .iter()
-            .flat_map(|(key, typed_destructure_pattern)| {
+            .flat_map(|(key, expandable_pattern)| {
                 let tail = expand_pattern_matrix(tail.to_vec());
                 if tail.is_empty() {
-                    vec![vec![(key.clone(), typed_destructure_pattern.clone())]]
+                    vec![vec![(key.clone(), expandable_pattern.clone())]]
                 } else {
                     tail.into_iter()
                         .map(|patterns| {
-                            vec![(key.clone(), typed_destructure_pattern.clone())]
+                            vec![(key.clone(), expandable_pattern.clone())]
                                 .into_iter()
                                 .chain(patterns.into_iter())
                                 .collect()
                         })
-                        .collect::<Vec<Vec<(String, TypedDestructurePattern)>>>()
+                        .collect::<Vec<Vec<(String, ExpandablePattern)>>>()
                 }
             })
-            .collect::<Vec<Vec<(String, TypedDestructurePattern)>>>(),
+            .collect::<Vec<Vec<(String, ExpandablePattern)>>>(),
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TypedDestructurePattern {
+pub struct EnumType {
+    pub name: String,
+    pub type_arguments: Vec<(String, Type)>,
+}
+
+/// This is used for checking pattern exhaustiveness + unreachable cases
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpandablePattern {
     Any {
         type_value: Type,
     },
     EnumConstructor {
         name: String,
-        payload: Option<Box<TypedDestructurePattern>>,
+        payload: Option<Box<ExpandablePattern>>,
+        enum_type: EnumType,
     },
-    Tuple(Vec<TypedDestructurePattern>),
+    Tuple(Vec<ExpandablePattern>),
     Record {
-        key_pattern_pairs: Vec<(String, TypedDestructurePattern)>,
+        key_pattern_pairs: Vec<(String, ExpandablePattern)>,
     },
     Boolean(bool),
     EmptyArray,
     NonEmptyArray {
-        first_element: Box<TypedDestructurePattern>,
-        rest_elements: Box<TypedDestructurePattern>,
+        first_element: Box<ExpandablePattern>,
+        rest_elements: Box<ExpandablePattern>,
     },
 
     /// Used for representing patterns for String, Integer, Character etc.
     Infinite {
         /// This is for checking unreachable cases
         handled_cases: Vec<String>,
+        kind: InfinitePatternKind,
     },
 }
+
+// impl ExpandablePattern {
+//     pub fn to_type(&self, environment: &mut Environment) -> Type {
+//         match &self {
+//             ExpandablePattern::Any { type_value } => type_value.clone(),
+//             ExpandablePattern::EnumConstructor { name, payload } => {
+//                 let enum_type = get_enum_type(
+//                     environment,
+//                     None,
+//                     ScopedName {
+//                         name,
+//                         namespaces: vec![],
+//                     },
+//                 )?;
+//                 match paylod {
+//                     None => Ok(enum_type.expected_enum_type),
+//                 }
+//             }
+//             ExpandablePattern::Tuple(_) => {}
+//             ExpandablePattern::Record { key_pattern_pairs } => {}
+//             ExpandablePattern::Boolean(_) => {}
+//             ExpandablePattern::EmptyArray => {}
+//             ExpandablePattern::NonEmptyArray {
+//                 first_element,
+//                 rest_elements,
+//             } => {}
+//             ExpandablePattern::Infinite {
+//                 handled_cases,
+//                 kind,
+//             } => {}
+//         }
+//     }
+// }
 
 pub fn match_patterns(
     environment: &Environment,
     actual_pattern: &DestructurePattern,
-    expected_patterns: Vec<TypedDestructurePattern>,
-) -> Vec<TypedDestructurePattern> {
+    expected_patterns: Vec<ExpandablePattern>,
+) -> Vec<ExpandablePattern> {
     expected_patterns
         .into_iter()
         .flat_map(|expected_pattern| {
@@ -336,22 +380,23 @@ pub fn match_patterns(
 pub fn match_pattern(
     environment: &Environment,
     actual_pattern: &DestructurePattern,
-    expected_pattern: &TypedDestructurePattern,
+    expected_pattern: &ExpandablePattern,
 ) -> MatchPatternResult {
     match (actual_pattern, expected_pattern) {
         (DestructurePattern::Underscore(_), _) => MatchPatternResult::Matched,
         (DestructurePattern::Identifier(_), _) => MatchPatternResult::Matched,
-        (
-            DestructurePattern::Boolean { value: true, .. },
-            TypedDestructurePattern::Boolean(true),
-        ) => MatchPatternResult::Matched,
-        (
-            DestructurePattern::Boolean { value: false, .. },
-            TypedDestructurePattern::Boolean(false),
-        ) => MatchPatternResult::Matched,
+        (DestructurePattern::Boolean { value: true, .. }, ExpandablePattern::Boolean(true)) => {
+            MatchPatternResult::Matched
+        }
+        (DestructurePattern::Boolean { value: false, .. }, ExpandablePattern::Boolean(false)) => {
+            MatchPatternResult::Matched
+        }
         (
             DestructurePattern::Infinite { token, .. },
-            TypedDestructurePattern::Infinite { handled_cases },
+            ExpandablePattern::Infinite {
+                handled_cases,
+                kind,
+            },
         ) => {
             if handled_cases
                 .iter()
@@ -362,7 +407,10 @@ pub fn match_pattern(
                 let mut handled_cases = handled_cases.clone();
                 handled_cases.push(token.representation.clone());
                 MatchPatternResult::PartiallyMatched {
-                    expanded_patterns: vec![TypedDestructurePattern::Infinite { handled_cases }],
+                    expanded_patterns: vec![ExpandablePattern::Infinite {
+                        handled_cases,
+                        kind: kind.clone(),
+                    }],
                 }
             }
         }
@@ -372,9 +420,10 @@ pub fn match_pattern(
                 payload: None,
                 ..
             },
-            TypedDestructurePattern::EnumConstructor {
+            ExpandablePattern::EnumConstructor {
                 name: expected_name,
                 payload: None,
+                ..
             },
         ) => {
             if actual_name.name.representation != *expected_name {
@@ -389,9 +438,10 @@ pub fn match_pattern(
                 payload: Some(actual_payload),
                 ..
             },
-            TypedDestructurePattern::EnumConstructor {
+            ExpandablePattern::EnumConstructor {
                 name: expected_name,
                 payload: Some(expected_payload),
+                enum_type,
             },
         ) => {
             if actual_name.name.representation != *expected_name {
@@ -404,9 +454,10 @@ pub fn match_pattern(
                         MatchPatternResult::PartiallyMatched {
                             expanded_patterns: expanded_patterns
                                 .into_iter()
-                                .map(|pattern| TypedDestructurePattern::EnumConstructor {
+                                .map(|pattern| ExpandablePattern::EnumConstructor {
                                     name: expected_name.clone(),
                                     payload: Some(Box::new(pattern)),
+                                    enum_type: enum_type.clone(),
                                 })
                                 .collect(),
                         }
@@ -414,7 +465,7 @@ pub fn match_pattern(
                 }
             }
         }
-        (DestructurePattern::Tuple(tuple), TypedDestructurePattern::Tuple(expected_patterns)) => {
+        (DestructurePattern::Tuple(tuple), ExpandablePattern::Tuple(expected_patterns)) => {
             let actual_patterns = tuple.values.clone();
             if actual_patterns.len() != expected_patterns.len() {
                 MatchPatternResult::NotMatched
@@ -437,7 +488,7 @@ pub fn match_pattern(
                 key_value_pairs: actual_key_pattern_pairs,
                 ..
             },
-            TypedDestructurePattern::Record {
+            ExpandablePattern::Record {
                 key_pattern_pairs: expected_key_pattern_pairs,
             },
         ) => {
@@ -484,23 +535,23 @@ pub fn match_pattern(
         }
         (
             DestructurePattern::Array { .. },
-            TypedDestructurePattern::Any {
+            ExpandablePattern::Any {
                 type_value: Type::Array(element_type),
             },
         ) => MatchPatternResult::PartiallyMatched {
             expanded_patterns: vec![
-                TypedDestructurePattern::EmptyArray,
-                TypedDestructurePattern::NonEmptyArray {
-                    first_element: Box::new(TypedDestructurePattern::Any {
+                ExpandablePattern::EmptyArray,
+                ExpandablePattern::NonEmptyArray {
+                    first_element: Box::new(ExpandablePattern::Any {
                         type_value: *element_type.clone(),
                     }),
-                    rest_elements: Box::new(TypedDestructurePattern::Any {
+                    rest_elements: Box::new(ExpandablePattern::Any {
                         type_value: Type::Array(element_type.clone()),
                     }),
                 },
             ],
         },
-        (DestructurePattern::Array { spread: None, .. }, TypedDestructurePattern::EmptyArray) => {
+        (DestructurePattern::Array { spread: None, .. }, ExpandablePattern::EmptyArray) => {
             MatchPatternResult::Matched
         }
         (
@@ -508,7 +559,7 @@ pub fn match_pattern(
                 spread: Some(spread),
                 ..
             },
-            TypedDestructurePattern::NonEmptyArray {
+            ExpandablePattern::NonEmptyArray {
                 first_element,
                 rest_elements,
             },
@@ -527,7 +578,7 @@ pub fn match_pattern(
         ),
         (
             DestructurePattern::Null(_),
-            TypedDestructurePattern::Any {
+            ExpandablePattern::Any {
                 type_value: Type::Null,
             },
         ) => {
@@ -562,7 +613,7 @@ pub fn match_pattern(
         //     // always return NotMatched because there are infinite possible combination of string
         //     MatchPatternResult::NotMatched
         // }
-        (_, TypedDestructurePattern::Any { type_value }) => MatchPatternResult::PartiallyMatched {
+        (_, ExpandablePattern::Any { type_value }) => MatchPatternResult::PartiallyMatched {
             expanded_patterns: expand_pattern(environment, type_value),
         },
         _ => MatchPatternResult::NotMatched,

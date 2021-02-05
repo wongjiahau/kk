@@ -1,0 +1,28 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo = \_ => 123
+let xs =
+  let x = null.foo()
+  let y = {x = null.foo()}.x
+  [x, y]
+
+do xs.print()
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+[ 123, 123 ]
+
+============
+STDERR
+============
