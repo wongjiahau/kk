@@ -222,6 +222,12 @@ pub enum Expression {
         expression: Box<Expression>,
         property_name: Token,
     },
+    RecordUpdate {
+        expression: Box<Expression>,
+        left_curly_bracket: Token,
+        updates: Vec<RecordUpdate>,
+        right_curly_bracket: Token,
+    },
     Array {
         left_square_bracket: Token,
         elements: Vec<Expression>,
@@ -234,6 +240,23 @@ pub enum Expression {
         right: Box<Expression>,
         true_branch: Box<Expression>,
         false_branch: Option<Box<Function>>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum RecordUpdate {
+    /// For example, `x.{ a = 3 }`
+    ValueUpdate {
+        property_name: Token,
+        equals: Token,
+        new_value: Expression,
+    },
+
+    /// For example, `x. { a => .square() }`
+    FunctionalUpdate {
+        property_name: Token,
+        fat_arrow_right: Token,
+        function: Expression,
     },
 }
 

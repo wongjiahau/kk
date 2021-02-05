@@ -26,9 +26,10 @@ pub enum ParseContext {
     Expression,
     ExpressionLet,
     ExpressionFunction,
-    ExpressionFunctionCallOrPropertyAccess,
+    DotExpression,
     ExpressionFunctionCall,
     ExpressionRecord,
+    ExpressionRecordUpdate,
     ExpressionArray,
     ExpressionEnumConstructor,
 
@@ -479,15 +480,25 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_function_call_or_property_access(
+    /// Dot expressions means either of the following:
+    /// - function call, e.g. `x.f()`  
+    /// - property access, e.g. `x.f`  
+    /// - record update, e.g. `x.{ a = 3}` or `x.{ a => .square() }`
+    fn parse_dot_expression(
         &mut self,
         first_argument: Expression,
     ) -> Result<Expression, ParseError> {
         if self.try_eat_token(TokenType::Period).is_none() {
             return Ok(first_argument);
         }
-        let context = ParseContext::ExpressionFunctionCallOrPropertyAccess;
+        let context = ParseContext::DotExpression;
+
         let first_argument = {
+            if let Some(left_curly_bracket) = self.try_eat_token(TokenType::LeftCurlyBracket) {
+                // Then this is a record update
+                return self.parse_record_update(first_argument, left_curly_bracket);
+            }
+
             let name = self.eat_token(TokenType::Identifier, context)?;
             match self.tokens.peek() {
                 Some(Token {
@@ -517,7 +528,47 @@ impl<'a> Parser<'a> {
                 }
             }
         };
-        self.parse_function_call_or_property_access(first_argument)
+        self.parse_dot_expression(first_argument)
+    }
+
+    fn parse_record_update(
+        &mut self,
+        expression: Expression,
+        left_curly_bracket: Token,
+    ) -> Result<Expression, ParseError> {
+        let context = ParseContext::ExpressionRecordUpdate;
+        let mut record_updates: Vec<RecordUpdate> = Vec::new();
+        let record_updates = loop {
+            let property_name = self.eat_token(TokenType::Identifier, context)?;
+            if let Some(fat_arrow_right) = self.try_eat_token(TokenType::FatArrowRight) {
+                // Then this is functional update
+                let function = self.parse_expression()?;
+                record_updates.push(RecordUpdate::FunctionalUpdate {
+                    function,
+                    fat_arrow_right,
+                    property_name,
+                })
+            } else {
+                // this is a value update
+                let equals = self.eat_token(TokenType::Equals, context)?;
+                let new_value = self.parse_expression()?;
+                record_updates.push(RecordUpdate::ValueUpdate {
+                    property_name,
+                    equals,
+                    new_value,
+                })
+            }
+            if self.try_eat_token(TokenType::Comma).is_none() {
+                break record_updates;
+            }
+        };
+
+        Ok(Expression::RecordUpdate {
+            left_curly_bracket,
+            expression: Box::new(expression),
+            updates: record_updates,
+            right_curly_bracket: self.eat_token(TokenType::RightCurlyBracket, context)?,
+        })
     }
 
     fn parse_function_call_rest_arguments(
@@ -557,7 +608,7 @@ impl<'a> Parser<'a> {
                 token_type: TokenType::Period,
                 ..
             }) => {
-                let function_call = self.parse_function_call_or_property_access(first_argument)?;
+                let function_call = self.parse_dot_expression(first_argument)?;
                 Ok(function_call)
             }
             _ => Ok(first_argument),

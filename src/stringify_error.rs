@@ -245,9 +245,9 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
                 "\\(true, true) => true\n\\(_, _) => false",
             ],
         },
-        ParseContext::ExpressionFunctionCallOrPropertyAccess => ParseContextDescription {
-            name: "Function Call or Property Access",
-            examples: vec!["x.add(1)", "people.name"],
+        ParseContext::DotExpression => ParseContextDescription {
+            name: "Dot Expression: Function Call, Property Access, or Record Update",
+            examples: vec!["x.add(1)", "people.name", "x.{a = 3}", "x.{a => .square()}"],
         },
         ParseContext::ExpressionFunctionCall => ParseContextDescription {
             name: "Function call",
@@ -260,6 +260,14 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::ExpressionRecord => ParseContextDescription {
             name: "Record",
             examples: vec!["{ x = 2, y = 3 }", "{ x: number = 2 }", "{ x, y }"],
+        },
+        ParseContext::ExpressionRecordUpdate => ParseContextDescription {
+            name: "Record Update",
+            examples: vec![
+                "a.{ x = 2 }",
+                "a.{ x => \\x => x.add(1) }",
+                "a.{ x = 2, y => square }",
+            ],
         },
         ParseContext::ExpressionArray => ParseContextDescription {
             name: "Array",
@@ -678,6 +686,17 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         }
         UnifyErrorKind::ThisTagRequiresPaylod {..} => {
             panic!()
+        }
+        UnifyErrorKind::CannotPerformRecordUpdateOnNonRecord { actual_type } => StringifiedError {
+            summary: "This is not a record.".to_string(),
+            body: format!(
+                "{}{}{}{}",
+                "You can only perform record update on expression that has the type of Record, ",
+                "for example: `{ name: String }`.\n",
+                "But the type of this expression is:\n\n",
+                stringify_type(actual_type, 2)
+            )
+
         }
     }
 }

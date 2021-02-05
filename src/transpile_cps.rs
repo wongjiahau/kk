@@ -4,6 +4,15 @@ use crate::typechecked_ast::*;
 
 pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
     let built_in_library = "
+        const kk_apply_functional_updates = (record, functional_updates) =>
+            functional_updates.reduce((record, {key, func}, index) => {
+                return Promise.all([record, func]).then(([record, func]) => {
+                    return func(record[key]).then(result => ({
+                        ...record,
+                        [key]: result
+                    }))
+                })
+            }, record)
         const print_0 = (x) => { console.log(x); return Promise.resolve(null)}
         const read_file_1 = (filename) => new Promise(resolve => require('fs').readFile(filename, (err, content) => {
             if(err) {
@@ -79,6 +88,57 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
             property_name,
             property_name
         ),
+        TypecheckedExpression::RecordUpdate {
+            expression,
+            updates,
+        } => {
+            type KeyValue = Vec<(String, (TypecheckedExpression, bool))>;
+            let (value_updates, functional_updates): (KeyValue, KeyValue) = updates
+                .into_iter()
+                .map(|update| match update {
+                    TypecheckedRecordUpdate::ValueUpdate {
+                        property_name,
+                        new_value,
+                    } => (property_name, (new_value, true)),
+                    TypecheckedRecordUpdate::FunctionalUpdate {
+                        property_name,
+                        function,
+                    } => (property_name, (function, false)),
+                })
+                .partition(|(_, (_, is_value_update))| *is_value_update);
+
+            let (value_updates_keys, value_updates_values): (
+                Vec<String>,
+                Vec<(TypecheckedExpression, bool)>,
+            ) = value_updates.into_iter().unzip();
+            format!(
+                "Promise.all([{},{}]).then(([record,{value_update_keys}]) => 
+                    kk_apply_functional_updates(
+                        {{...record, {value_update_keys}}},
+                        [{functional_updates}]
+                    )
+                )
+                ",
+                transpile_expression(*expression),
+                value_updates_values
+                    .into_iter()
+                    .map(|(expression, _)| transpile_expression(expression))
+                    .collect::<Vec<String>>()
+                    .join(","),
+                value_update_keys = value_updates_keys.join(","),
+                functional_updates = functional_updates
+                    .into_iter()
+                    .map(|(key, (function, _))| {
+                        format!(
+                            "{{key: '{}', func: {}}}",
+                            key,
+                            transpile_expression(function)
+                        )
+                    })
+                    .collect::<Vec<String>>()
+                    .join(",")
+            )
+        }
         TypecheckedExpression::Record { key_value_pairs } => {
             let (keys, values): (Vec<String>, Vec<TypecheckedExpression>) =
                 key_value_pairs.into_iter().unzip();

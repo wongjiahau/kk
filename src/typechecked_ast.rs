@@ -56,11 +56,26 @@ pub enum TypecheckedExpression {
         expression: Box<TypecheckedExpression>,
         property_name: String,
     },
+    RecordUpdate {
+        expression: Box<TypecheckedExpression>,
+        updates: Vec<TypecheckedRecordUpdate>,
+    },
     Array {
         elements: Vec<TypecheckedExpression>,
     },
 }
 
+#[derive(Debug, Clone)]
+pub enum TypecheckedRecordUpdate {
+    ValueUpdate {
+        property_name: String,
+        new_value: TypecheckedExpression,
+    },
+    FunctionalUpdate {
+        property_name: String,
+        function: TypecheckedExpression,
+    },
+}
 #[derive(Debug, Clone)]
 pub struct TypecheckedFunctionCall {
     pub function: Box<TypecheckedExpression>,

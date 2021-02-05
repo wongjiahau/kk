@@ -1,0 +1,32 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let a = { x = 2, y = { z = 3} }
+let b = a.{ b = 3 } // 'b' is a non-existing property
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/record_update_1.kk:2:13
+  │
+2 │ let b = a.{ b = 3 } // 'b' is a non-existing property
+  │             ^ No such property
+  │
+  = Available properties:
+      x
+      y

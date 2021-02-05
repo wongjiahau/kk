@@ -97,6 +97,9 @@ pub enum UnifyErrorKind {
     CannotAccessPropertyOfNonRecord {
         actual_type: Type,
     },
+    CannotPerformRecordUpdateOnNonRecord {
+        actual_type: Type,
+    },
     UnusedVariale,
     MissingCases(Vec<ExpandablePattern>),
     ThisTagDoesNotRequirePayload,
@@ -561,6 +564,14 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             right_curly_bracket,
             ..
         } => join_position(left_curly_bracket.position, right_curly_bracket.position),
+        Expression::RecordUpdate {
+            expression,
+            right_curly_bracket,
+            ..
+        } => join_position(
+            get_expression_position(expression.as_ref()),
+            right_curly_bracket.position,
+        ),
         Expression::FunctionCall(function_call) => {
             let first_argument = function_call.first_argument.as_ref();
             let start_position = get_expression_position(&first_argument);
@@ -1196,6 +1207,98 @@ fn infer_expression_type_(
                 actual_type => Err(UnifyError {
                     position: property_name.position,
                     kind: UnifyErrorKind::CannotAccessPropertyOfNonRecord { actual_type },
+                }),
+            }
+        }
+
+        Expression::RecordUpdate {
+            expression,
+            updates,
+            ..
+        } => {
+            let typechecked_expression =
+                infer_expression_type(environment, expected_type, expression)?;
+
+            match &typechecked_expression.type_value {
+                Type::Record { key_type_pairs } => {
+                    let typechecked_updates = updates
+                        .iter()
+                        .map(|update| {
+                            let actual_key = match &update {
+                                RecordUpdate::FunctionalUpdate { property_name, .. } => {
+                                    property_name
+                                }
+                                RecordUpdate::ValueUpdate { property_name, .. } => property_name,
+                            };
+                            let matching_key_type_pair = key_type_pairs
+                                .iter()
+                                .find(|(key, _)| *key == actual_key.representation);
+
+                            match matching_key_type_pair {
+                                None => Err(UnifyError {
+                                    position: actual_key.position,
+                                    kind: UnifyErrorKind::NoSuchPropertyOnThisRecord {
+                                        expected_keys: key_type_pairs
+                                            .iter()
+                                            .map(|(key, _)| key.clone())
+                                            .collect(),
+                                    },
+                                }),
+                                Some((_, expected_type)) => match update {
+                                    RecordUpdate::ValueUpdate {
+                                        new_value,
+                                        property_name,
+                                        ..
+                                    } => {
+                                        let typechecked_value = infer_expression_type(
+                                            environment,
+                                            Some(expected_type.clone()),
+                                            new_value,
+                                        )?;
+                                        Ok(TypecheckedRecordUpdate::ValueUpdate {
+                                            property_name: property_name.representation.clone(),
+                                            new_value: typechecked_value.expression,
+                                        })
+                                    }
+                                    RecordUpdate::FunctionalUpdate {
+                                        function,
+                                        property_name,
+                                        ..
+                                    } => {
+                                        let expected_type = Type::Function(FunctionType {
+                                            parameters_types: Box::new(NonEmpty {
+                                                head: expected_type.clone(),
+                                                tail: vec![],
+                                            }),
+                                            return_type: Box::new(expected_type.clone()),
+                                        });
+                                        let typechecked_function = infer_expression_type(
+                                            environment,
+                                            Some(expected_type),
+                                            function,
+                                        )?;
+                                        Ok(TypecheckedRecordUpdate::FunctionalUpdate {
+                                            property_name: property_name.representation.clone(),
+                                            function: typechecked_function.expression,
+                                        })
+                                    }
+                                },
+                            }
+                        })
+                        .collect::<Result<Vec<TypecheckedRecordUpdate>, UnifyError>>()?;
+                    Ok(InferExpressionResult {
+                        type_value: typechecked_expression.type_value,
+                        expression: TypecheckedExpression::RecordUpdate {
+                            expression: Box::new(typechecked_expression.expression),
+                            updates: typechecked_updates,
+                        },
+                    })
+                }
+                other_type => Err(UnifyError {
+                    position: get_expression_position(expression.as_ref()),
+                    kind: UnifyErrorKind::CannotPerformRecordUpdateOnNonRecord {
+                        actual_type: other_type.clone(),
+                    },
                 }),
             }
         }
