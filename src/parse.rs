@@ -486,11 +486,9 @@ impl<'a> Parser<'a> {
     /// - record update, e.g. `x.{ a = 3}` or `x.{ a => .square() }`
     fn parse_dot_expression(
         &mut self,
+        _period: Token,
         first_argument: Expression,
     ) -> Result<Expression, ParseError> {
-        if self.try_eat_token(TokenType::Period).is_none() {
-            return Ok(first_argument);
-        }
         let context = ParseContext::DotExpression;
 
         let first_argument = {
@@ -528,7 +526,7 @@ impl<'a> Parser<'a> {
                 }
             }
         };
-        self.parse_dot_expression(first_argument)
+        self.try_parse_dot_expression(first_argument)
     }
 
     fn parse_record_update(
@@ -599,7 +597,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn try_parse_function_call(
+    fn try_parse_dot_expression(
         &mut self,
         first_argument: Expression,
     ) -> Result<Expression, ParseError> {
@@ -608,8 +606,8 @@ impl<'a> Parser<'a> {
                 token_type: TokenType::Period,
                 ..
             }) => {
-                let function_call = self.parse_dot_expression(first_argument)?;
-                Ok(function_call)
+                let period = self.eat_token(TokenType::Period, ParseContext::DotExpression)?;
+                self.parse_dot_expression(period, first_argument)
             }
             _ => Ok(first_argument),
         }
@@ -627,9 +625,39 @@ impl<'a> Parser<'a> {
                     let let_token = self.tokens.next().unwrap().clone();
                     self.parse_let_expression(let_token)
                 }
+                TokenType::Period => {
+                    let period = self.eat_token(TokenType::Period, ParseContext::DotExpression)?;
+                    let phantom_variable = Token {
+                        token_type: TokenType::Identifier,
+                        representation: "$".to_string(),
+                        position: period.position,
+                    };
+                    let function_body = self.parse_dot_expression(
+                        period,
+                        Expression::Variable(phantom_variable.clone()),
+                    )?;
+                    Ok(Expression::Function(Box::new(Function {
+                        branches: NonEmpty {
+                            head: FunctionBranch {
+                                start_token: phantom_variable.clone(),
+                                parameters: FunctionParameters::NoParenthesis {
+                                    parameter: FunctionParameter {
+                                        destructure_pattern: DestructurePattern::Identifier(
+                                            phantom_variable,
+                                        ),
+                                        type_annotation: None,
+                                    },
+                                },
+                                body: Box::new(function_body),
+                                return_type_annotation: None,
+                            },
+                            tail: vec![],
+                        },
+                    })))
+                }
                 _ => {
                     let simple_expression = self.parse_simple_expression()?;
-                    self.try_parse_function_call(simple_expression)
+                    self.try_parse_dot_expression(simple_expression)
                 }
             }
         } else {

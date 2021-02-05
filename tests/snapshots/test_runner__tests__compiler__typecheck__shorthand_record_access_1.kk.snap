@@ -1,0 +1,32 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let match = \(x, f) => x.f()
+
+do { a = 2 }.match(.b).print()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/shorthand_record_access_1.kk:3:21
+  │
+3 │ do { a = 2 }.match(.b).print()
+  │                     ^ No such property
+  │
+  = Available properties:
+      a

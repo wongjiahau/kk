@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo = \(x, y) => [x, y]
+
+let match = \(x, f) => x.f()
+
+do "hello".match(.foo(2)).print()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/shorthand_function_call_1.kk:5:23
+  │
+5 │ do "hello".match(.foo(2)).print()
+  │                       ^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - String      | + Integer   |
+    +---------------+-------------+
