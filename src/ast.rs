@@ -155,7 +155,7 @@ pub enum DestructurePattern {
     Underscore(Token),
     Identifier(Token),
     EnumConstructor {
-        scoped_name: ScopedName,
+        name: Token,
         left_parenthesis: Token,
         payload: Option<Box<DestructurePattern>>,
         right_parenthesis: Token,
@@ -205,7 +205,7 @@ pub enum Expression {
     Character(Token),
     Variable(Token),
     EnumConstructor {
-        scoped_name: ScopedName,
+        name: Token,
         left_parenthesis: Token,
         payload: Option<Box<Expression>>,
         right_parenthesis: Token,
@@ -346,12 +346,6 @@ pub struct Token {
     pub representation: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct ScopedName {
-    pub namespaces: Vec<Token>,
-    pub name: Token,
-}
-
 impl Token {
     pub fn dummy_identifier(representation: String) -> Token {
         Token {
@@ -404,7 +398,7 @@ pub enum TokenType {
     Character,
     Integer,
     Float,
-    ScopeResolution,
+    DoubleColon,
 
     /// Comments starts with double slash (//)
     Comment,

@@ -55,7 +55,6 @@ pub enum ParseContext {
     EnumConstructorDefinition,
     TypeVariablesDeclaration,
     FunctionArguments,
-    ScopeResolution,
 }
 
 pub struct Parser<'a> {
@@ -686,22 +685,18 @@ impl<'a> Parser<'a> {
                 TokenType::KeywordNull => Ok(Expression::Null(token.clone())),
                 TokenType::Identifier => match self.tokens.peek() {
                     Some(Token {
-                        token_type: TokenType::ScopeResolution,
-                        ..
-                    })
-                    | Some(Token {
                         token_type: TokenType::LeftParenthesis,
                         ..
                     }) => {
                         let context = ParseContext::ExpressionEnumConstructor;
-                        let scoped_name = self.parse_scoped_name(token.clone())?;
+                        let name = token.clone();
                         let left_parenthesis =
                             self.eat_token(TokenType::LeftParenthesis, context)?;
                         if let Some(right_parenthesis) =
                             self.try_eat_token(TokenType::RightParenthesis)
                         {
                             Ok(Expression::EnumConstructor {
-                                scoped_name,
+                                name,
                                 left_parenthesis,
                                 payload: None,
                                 right_parenthesis,
@@ -712,7 +707,7 @@ impl<'a> Parser<'a> {
                                 self.eat_token(TokenType::RightParenthesis, context)?;
 
                             Ok(Expression::EnumConstructor {
-                                scoped_name,
+                                name,
                                 left_parenthesis,
                                 payload: Some(Box::new(payload)),
                                 right_parenthesis,
@@ -836,59 +831,23 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_scoped_name(&mut self, first_token: Token) -> Result<ScopedName, ParseError> {
-        let mut namespaces = vec![];
-        let namespaces = loop {
-            match self.tokens.peek() {
-                Some(Token {
-                    token_type: TokenType::ScopeResolution,
-                    ..
-                }) => {
-                    self.tokens.next();
-                    let namespace =
-                        self.eat_token(TokenType::Identifier, ParseContext::ScopeResolution)?;
-                    namespaces.push(namespace)
-                }
-                _ => break namespaces,
-            }
-        };
-        match namespaces.split_last() {
-            None => Ok(ScopedName {
-                name: first_token,
-                namespaces,
-            }),
-            Some((last, namespaces)) => {
-                let mut namespaces = namespaces.to_vec();
-                namespaces.push(first_token);
-                Ok(ScopedName {
-                    name: last.clone(),
-                    namespaces,
-                })
-            }
-        }
-    }
-
     fn parse_destructure_pattern(&mut self) -> Result<DestructurePattern, ParseError> {
         if let Some(token) = self.tokens.next() {
             match &token.token_type {
                 TokenType::Identifier => match self.tokens.peek() {
                     Some(Token {
-                        token_type: TokenType::ScopeResolution,
-                        ..
-                    })
-                    | Some(Token {
                         token_type: TokenType::LeftParenthesis,
                         ..
                     }) => {
-                        let scoped_name = self.parse_scoped_name(token.clone())?;
                         let context = ParseContext::PatternEnum;
+                        let name = token.clone();
                         let left_parenthesis =
                             self.eat_token(TokenType::LeftParenthesis, context)?;
                         if let Some(right_parenthesis) =
                             self.try_eat_token(TokenType::RightParenthesis)
                         {
                             Ok(DestructurePattern::EnumConstructor {
-                                scoped_name,
+                                name,
                                 left_parenthesis,
                                 payload: None,
                                 right_parenthesis,
@@ -898,7 +857,7 @@ impl<'a> Parser<'a> {
                             let right_parenthesis =
                                 self.eat_token(TokenType::RightParenthesis, context)?;
                             Ok(DestructurePattern::EnumConstructor {
-                                scoped_name,
+                                name,
                                 left_parenthesis,
                                 payload: Some(Box::new(destructure_pattern)),
                                 right_parenthesis,

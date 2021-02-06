@@ -275,10 +275,6 @@ pub struct Environment {
     current_uid: Cell<usize>,
     scope: Scope,
     pub source: Source,
-
-    exported: bool,
-    namespace_name: String,
-    namespaces: Vec<Environment>,
 }
 
 #[derive(Debug, Clone)]
@@ -296,7 +292,7 @@ pub struct ScopedSymbol<Symbol> {
     symbol: Symbol,
 }
 impl Environment {
-    pub fn new(source: &Source, namespace_name: String) -> Environment {
+    pub fn new(source: &Source) -> Environment {
         let mut result = Environment {
             source: source.clone(),
             value_symbols: SymbolTable::new(),
@@ -307,9 +303,6 @@ impl Environment {
             type_variable_index: Cell::new(0),
             scope: Scope::new(),
             current_uid: Cell::new(1000), // start from 1000 to reserve from built in function
-            namespace_name,
-            exported: true,
-            namespaces: vec![],
         };
 
         built_in_type_symbols()
@@ -571,22 +564,6 @@ impl Environment {
         self.scope.step_out_to_parent_scope()
     }
 
-    pub fn insert_namespace(&mut self, new_namespace: Environment) -> Result<(), UnifyError> {
-        match self
-            .namespaces
-            .iter()
-            .find(|namespace| namespace.namespace_name == new_namespace.namespace_name)
-        {
-            Some(_) => {
-                panic!("namespace already defined before")
-            }
-            None => {
-                self.namespaces.push(new_namespace);
-                Ok(())
-            }
-        }
-    }
-
     /// This function returns the uid for this symbol upon successful insertion
     pub fn insert_value_symbol(
         &mut self,
@@ -813,11 +790,6 @@ impl Environment {
                     None
                 }
             })
-            .chain(
-                self.namespaces
-                    .iter()
-                    .flat_map(|namespace| namespace.get_enum_constructors(enum_name)),
-            )
             .collect::<Vec<ConstructorSymbol>>()
     }
 
@@ -965,111 +937,35 @@ impl Environment {
         &self,
         symbol_name: &Token,
     ) -> Vec<ScopedSymbol<ConstructorSymbol>> {
-        let mut symbols = self
-            .namespaces
-            .iter()
-            .flat_map(|namespace| {
-                namespace
-                    .get_matching_constructor_symbols(symbol_name)
-                    .into_iter()
-                    .map(|mut scoped_symbol| {
-                        scoped_symbol.scoping.push(namespace.namespace_name.clone());
-                        scoped_symbol.scoping.push(self.namespace_name.clone());
-                        scoped_symbol
-                    })
-                    .collect::<Vec<ScopedSymbol<ConstructorSymbol>>>()
-            })
-            .collect::<Vec<ScopedSymbol<ConstructorSymbol>>>();
-
         match self.constructor_symbols.get_symbol(
             &self.scope,
             &self.source,
             &symbol_name,
             self.current_scope_name(),
         ) {
-            None => symbols,
+            None => vec![],
             Some(symbol) => {
-                symbols.push(ScopedSymbol {
+                vec![ScopedSymbol {
                     scoping: vec![],
                     symbol: symbol.value,
-                });
-                symbols
+                }]
             }
-        }
-    }
-
-    /// Return a namespace, given a scoping, for example `A::B::C`
-    fn resolve_scoping(&self, scoping: &Vec<Token>) -> Result<&Environment, UnifyError> {
-        scoping
-            .iter()
-            .fold(Ok(&self), |result, namespace_name| match result {
-                Err(error) => Err(error),
-                Ok(namespace) => {
-                    let matching_namespaces =
-                        namespace.find_matching_namespaces(&namespace_name.representation);
-                    match matching_namespaces.get(0) {
-                        None => Err(UnifyError {
-                            position: namespace_name.position,
-                            kind: UnifyErrorKind::UnknownNamespace,
-                        }),
-                        Some((_, namespace)) => {
-                            if matching_namespaces.len() > 1 {
-                                Err(UnifyError {
-                                    position: namespace_name.position,
-                                    kind: UnifyErrorKind::AmbiguousNamespace {
-                                        namespace_name: namespace_name.representation.clone(),
-                                        possible_scopings: matching_namespaces
-                                            .iter()
-                                            .map(|(scoping, _)| scoping.clone())
-                                            .collect(),
-                                    },
-                                })
-                            } else {
-                                Ok(*namespace)
-                            }
-                        }
-                    }
-                }
-            })
-    }
-
-    fn find_matching_namespaces(&self, namespace_name: &str) -> Vec<(Scoping, &Environment)> {
-        let mut namespaces = self
-            .namespaces
-            .iter()
-            .flat_map(|namespace| {
-                namespace
-                    .find_matching_namespaces(namespace_name)
-                    .into_iter()
-                    .map(|(mut scoping, namespace)| {
-                        scoping.push(self.namespace_name.clone());
-                        (scoping, namespace)
-                    })
-                    .collect::<Vec<(Scoping, &Environment)>>()
-            })
-            .collect::<Vec<(Scoping, &Environment)>>();
-        if self.namespace_name == *namespace_name {
-            namespaces.push((vec![], self));
-            namespaces
-        } else {
-            namespaces
         }
     }
 
     pub fn get_constructor_symbol(
         &mut self,
-        scoped_name: &ScopedName,
+        constructor_name: &Token,
     ) -> Result<Option<ConstructorSymbol>, UnifyError> {
-        let namespace = self.resolve_scoping(&scoped_name.namespaces)?;
-        let constructors = namespace.get_matching_constructor_symbols(&scoped_name.name);
+        let constructors = self.get_matching_constructor_symbols(&constructor_name);
         match constructors.get(0) {
             None => Ok(None),
             Some(constructor) => {
                 if constructors.len() > 1 {
                     Err(UnifyError {
-                        position: scoped_name.name.position,
+                        position: constructor_name.position,
                         kind: UnifyErrorKind::AmbiguousSymbolUsage {
-                            symbol_name: scoped_name.name.representation.clone(),
+                            symbol_name: constructor_name.representation.clone(),
                             possible_scopings: constructors
                                 .into_iter()
                                 .map(|constructor| constructor.scoping)

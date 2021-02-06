@@ -6,7 +6,6 @@ use crate::pattern::*;
 use crate::typechecked_ast::*;
 use std::collections::HashSet;
 use std::iter;
-use std::path::Path;
 
 #[derive(Debug)]
 pub struct Program {
@@ -17,24 +16,7 @@ pub struct Program {
 pub fn unify_program(program: Program) -> Result<Vec<TypecheckedStatement>, UnifyError> {
     // 1. TODO: Populate environment with imported symbols
     let source = program.source.clone();
-    let mut environment: Environment = Environment::new(
-        &source,
-        match program.source {
-            Source::File { path } => match Path::new(&path).file_stem() {
-                Some(name) => match name.to_str() {
-                    Some(namespace_name) => {
-                        // TODO: validate that namespace_name is a vaid namespace_name
-                        // a valid namespace_name should be PascalCase and contains only
-                        // alphanumeric characters
-                        namespace_name.to_string()
-                    }
-                    None => panic!("Not handled yet"),
-                },
-                None => panic!("Not handled yet"),
-            },
-            Source::NonFile { env_name } => env_name,
-        },
-    );
+    let mut environment: Environment = Environment::new(&source);
 
     // 2. Type check this program
     let statements = program
@@ -69,11 +51,6 @@ pub enum UnifyErrorKind {
     },
     AmbiguousFunction {
         available_function_signatures: Vec<FunctionSignature>,
-    },
-    UnknownNamespace,
-    AmbiguousNamespace {
-        namespace_name: String,
-        possible_scopings: Vec<Scoping>,
     },
     AmbiguousSymbolUsage {
         symbol_name: String,
@@ -347,15 +324,12 @@ pub fn infer_statement(
 
             environment.step_out_to_parent_scope();
 
-            let mut enum_namespace = Environment::new(&environment.source, enum_name);
             constructor_symbols
                 .into_iter()
                 .map(|(token, constructor_symbol)| {
-                    enum_namespace.insert_constructor_symbol(token, constructor_symbol)
+                    environment.insert_constructor_symbol(token, constructor_symbol)
                 })
                 .collect::<Result<Vec<()>, UnifyError>>()?;
-
-            environment.insert_namespace(enum_namespace)?;
 
             Ok(None)
         }
@@ -502,10 +476,10 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
         | DestructurePattern::Boolean { token, .. }
         | DestructurePattern::Null(token) => token.position,
         DestructurePattern::EnumConstructor {
-            scoped_name: name,
+            name,
             right_parenthesis,
             ..
-        } => join_position(name.name.position, right_parenthesis.position),
+        } => join_position(name.position, right_parenthesis.position),
         DestructurePattern::Record {
             left_curly_bracket,
             right_curly_bracket,
@@ -526,13 +500,6 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
     }
 }
 
-pub fn get_scoped_name_position(scoped_name: &ScopedName) -> Position {
-    match scoped_name.namespaces.last() {
-        None => scoped_name.name.position,
-        Some(namespace) => join_position(namespace.position, scoped_name.name.position),
-    }
-}
-
 pub fn get_expression_position(expression_value: &Expression) -> Position {
     match expression_value {
         Expression::Array {
@@ -548,13 +515,10 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         | Expression::Null(token)
         | Expression::Boolean { token, .. } => token.position,
         Expression::EnumConstructor {
-            scoped_name,
+            name,
             right_parenthesis,
             ..
-        } => join_position(
-            get_scoped_name_position(scoped_name),
-            right_parenthesis.position,
-        ),
+        } => join_position(name.position, right_parenthesis.position),
         Expression::RecordAccess {
             expression,
             property_name,
@@ -991,14 +955,14 @@ pub struct GetEnumTypeResult {
 pub fn get_enum_type(
     environment: &mut Environment,
     expected_type: Option<Type>,
-    scoped_name: &ScopedName,
+    token: &Token,
 ) -> Result<GetEnumTypeResult, UnifyError> {
     // Look up constructor
-    let constructor = match environment.get_constructor_symbol(&scoped_name)? {
+    let constructor = match environment.get_constructor_symbol(&token)? {
         Some(constructor_symbol) => constructor_symbol,
         None => {
             return Err(UnifyError {
-                position: scoped_name.name.position,
+                position: token.position,
                 kind: UnifyErrorKind::UnknownEnumConstructor,
             })
         }
@@ -1124,17 +1088,17 @@ fn infer_expression_type_(
             expression: TypecheckedExpression::Boolean(*value),
         }),
         Expression::EnumConstructor {
-            scoped_name,
+            name,
             payload,
             left_parenthesis,
             right_parenthesis,
         } => {
-            let result = get_enum_type(environment, expected_type, scoped_name)?;
+            let result = get_enum_type(environment, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(InferExpressionResult {
                     type_value: result.expected_enum_type,
                     expression: TypecheckedExpression::EnumConstructor {
-                        constructor_name: scoped_name.name.representation.clone(),
+                        constructor_name: name.representation.clone(),
                         payload: None,
                     },
                 }),
@@ -1143,7 +1107,7 @@ fn infer_expression_type_(
                     kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
-                    position: scoped_name.name.position,
+                    position: name.position,
                     kind: UnifyErrorKind::ThisTagRequiresPaylod {
                         payload_type: expected_payload_type,
                     },
@@ -1154,7 +1118,7 @@ fn infer_expression_type_(
                     Ok(InferExpressionResult {
                         type_value: result.expected_enum_type,
                         expression: TypecheckedExpression::EnumConstructor {
-                            constructor_name: scoped_name.name.representation.clone(),
+                            constructor_name: name.representation.clone(),
                             payload: Some(Box::new(typechecked_payload.expression)),
                         },
                     })
@@ -2425,17 +2389,13 @@ fn infer_destructure_pattern_(
                 },
             })
         }
-        DestructurePattern::EnumConstructor {
-            scoped_name,
-            payload,
-            ..
-        } => {
-            let result = get_enum_type(environment, expected_type, scoped_name)?;
+        DestructurePattern::EnumConstructor { name, payload, .. } => {
+            let result = get_enum_type(environment, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(InferDestructurePatternResult {
                     type_value: result.expected_enum_type,
                     destructure_pattern: TypecheckedDestructurePattern::EnumConstructor {
-                        constructor_name: scoped_name.name.representation.clone(),
+                        constructor_name: name.representation.clone(),
                         payload: None,
                     },
                 }),
@@ -2444,7 +2404,7 @@ fn infer_destructure_pattern_(
                     kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
-                    position: scoped_name.name.position,
+                    position: name.position,
                     kind: UnifyErrorKind::ThisTagRequiresPaylod {
                         payload_type: expected_payload_type,
                     },
@@ -2458,7 +2418,7 @@ fn infer_destructure_pattern_(
                     Ok(InferDestructurePatternResult {
                         type_value: result.expected_enum_type,
                         destructure_pattern: TypecheckedDestructurePattern::EnumConstructor {
-                            constructor_name: scoped_name.name.representation.clone(),
+                            constructor_name: name.representation.clone(),
                             payload: Some(Box::new(typechecked_payload.destructure_pattern)),
                         },
                     })

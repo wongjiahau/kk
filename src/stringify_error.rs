@@ -204,7 +204,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions, function arguments and enum constructor",
         TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example `[1,2,3]`",
         TokenType::Colon => "only used for annotating types, for example `{ x: string }`",
-        TokenType::ScopeResolution => "only used for scope resolution, for example: `Color::Red()`",
+        TokenType::DoubleColon => "only used for scope resolution, for example: `Color::Red()`",
         TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example: `type Box<T> = { value: T }`",
         TokenType::Equals => "used for declaring variables, for example `let x = 1`, and also used in constructing record, for example `{ x = 1 }`",
         TokenType::Period => "used for calling a function, for example `1.add(2)`",
@@ -348,10 +348,6 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Function Arguments",
             examples: vec!["x", "x: number"],
         },
-        ParseContext::ScopeResolution => ParseContextDescription {
-            name: "Scope Resolution",
-            examples: vec!["Foo::Bar::spam", "Foo::bar"],
-        },
     }
 }
 
@@ -374,7 +370,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::RightSquareBracket => "]",
         TokenType::Newline => "\n",
         TokenType::Colon => ":",
-        TokenType::ScopeResolution => "::",
+        TokenType::DoubleColon => "::",
         TokenType::LessThan => "<",
         TokenType::MoreThan => ">",
         TokenType::Equals => "=",
@@ -656,10 +652,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 2
             ))
         },
-        UnifyErrorKind::UnknownNamespace => StringifiedError {
-            summary: "Unknown Namespace".to_string(),
-            body: "Cannot find this namespace in the current scope".to_string()
-        },
         UnifyErrorKind::AmbiguousFunction { available_function_signatures } => StringifiedError {
             summary: "Ambiguous Reference".to_string(),
             body: format!(
@@ -675,9 +667,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 ),
             )
         },
-        UnifyErrorKind::AmbiguousNamespace {..} => {
-            panic!()
-        }
         UnifyErrorKind::DoBodyMustHaveNullType => {
             panic!()
         }

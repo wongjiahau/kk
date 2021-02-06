@@ -271,7 +271,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 Some(Character { value: ':', .. }) => {
                     let colon = it.by_ref().next();
                     tokens.push(Token {
-                        token_type: TokenType::ScopeResolution,
+                        token_type: TokenType::DoubleColon,
                         representation: "::".to_string(),
                         position: make_position(character, colon.as_ref()),
                     })
