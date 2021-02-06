@@ -422,3 +422,16 @@ pub struct Position {
     pub character_index_start: usize,
     pub character_index_end: usize,
 }
+
+impl Position {
+    pub fn dummy() -> Position {
+        Position {
+            line_start: 0,
+            line_end: 0,
+            column_start: 0,
+            column_end: 0,
+            character_index_start: 0,
+            character_index_end: 0,
+        }
+    }
+}

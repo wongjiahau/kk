@@ -680,21 +680,41 @@ pub fn unify_type_(
             } else if expected_arguments.len() != actual_arguments.len() {
                 panic!("Shoud not be possible, should be compiler bug")
             } else {
-                expected_arguments
+                let unify_type_arguments_result = expected_arguments
                     .clone()
                     .into_iter()
-                    .zip(actual_arguments.into_iter())
+                    .zip(actual_arguments.clone().into_iter())
                     .map(
                         |((expected_key, expected_type), (actual_key, actual_type))| {
                             assert_eq!(expected_key, actual_key);
                             unify_type(environment, &expected_type, &actual_type, position)
                         },
                     )
-                    .collect::<Result<Vec<Type>, UnifyError>>()?;
-                Ok(Type::Named {
-                    name: expected_name,
-                    type_arguments: expected_arguments,
-                })
+                    .collect::<Result<Vec<Type>, UnifyError>>();
+
+                match unify_type_arguments_result {
+                    Ok(_) => Ok(Type::Named {
+                        name: expected_name,
+                        type_arguments: expected_arguments,
+                    }),
+                    Err(UnifyError {
+                        kind: UnifyErrorKind::TypeMismatch { .. },
+                        ..
+                    }) => Err(UnifyError {
+                        position,
+                        kind: UnifyErrorKind::TypeMismatch {
+                            expected_type: Type::Named {
+                                name: expected_name,
+                                type_arguments: expected_arguments,
+                            },
+                            actual_type: Type::Named {
+                                name: actual_name,
+                                type_arguments: actual_arguments,
+                            },
+                        },
+                    }),
+                    Err(other) => Err(other),
+                }
             }
         }
         (Type::Underscore, other) | (other, Type::Underscore) => Ok(other),
@@ -1298,8 +1318,6 @@ fn infer_expression_type_(
                     let typechecked_true_branch =
                         infer_expression_type(environment, expected_type, true_branch)?;
 
-                    // If the expanded patterns only has length of one,
-                    // then return the type of true branch
                     let result_type = match check_exhaustiveness(
                         environment,
                         typechecked_left.type_value.clone(),
@@ -1315,7 +1333,7 @@ fn infer_expression_type_(
                             Ok(typechecked_true_branch.type_value)
                         }
                         Err(UnifyError {
-                            kind: UnifyErrorKind::MissingCases(_),
+                            kind: UnifyErrorKind::MissingCases(remaining_patterns),
                             ..
                         }) => {
                             // If the pattern of the `left` is NOT exhaustive
@@ -1328,26 +1346,32 @@ fn infer_expression_type_(
                             //
                             // In this case, the implicit return type should be Result<T, U>, not Result<Integer, U>
                             // This is required such that the ending type can be Result<X, U>, where X can be not Integer
+                            let expected_type = {
+                                let type_value = Type::ImplicitTypeVariable {
+                                    name: environment.get_next_type_variable_name(),
+                                };
+                                let types = remaining_patterns
+                                    .into_iter()
+                                    .map(|expandable_pattern| {
+                                        expandable_pattern.to_type(environment)
+                                    })
+                                    .collect::<Vec<Type>>();
+                                types
+                                    .into_iter()
+                                    .fold(Ok(type_value), |result, type_value| match result {
+                                        Err(error) => Err(error),
+                                        Ok(expected_type) => unify_type(
+                                            environment,
+                                            &expected_type,
+                                            &type_value,
+                                            Position::dummy(),
+                                        ),
+                                    })?
+                            };
 
-                            // TODO: complete this part
-                            // let type_value = expandable_patterns
-                            //     .into_iter()
-                            //     .map(|expandable_pattern| expandable_pattern.to_type())
-                            //     .fold(
-                            //         environment.introduce_implicit_type_variable(None),
-                            //         |result, type_value| match result {
-                            //             Err(error) => Err(error),
-                            //             Ok(expected_type) => unify_type(
-                            //                 environment,
-                            //                 &expected_type,
-                            //                 &type_value,
-                            //                 Position::null(),
-                            //             ),
-                            //         },
-                            //     )?;
                             let type_value = unify_type(
                                 environment,
-                                &typechecked_left.type_value,
+                                &expected_type,
                                 &typechecked_true_branch.type_value,
                                 get_expression_position(true_branch),
                             )?;

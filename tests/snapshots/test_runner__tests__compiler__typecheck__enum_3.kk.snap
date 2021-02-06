@@ -1,0 +1,42 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Option<T> = Some(T) None()
+
+let a = Some(None())
+let x: Option<T=String> = a
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/enum_3.kk:4:27
+  │
+4 │ let x: Option<T=String> = a
+  │                           ^ Type mismatch
+  │
+  = +---------------+-------------------+
+    | EXPECTED TYPE |    ACTUAL TYPE    |
+    +---------------+-------------------+
+    |   Option<     |   Option<         |
+    |     T=        |     T=            |
+    | -     String, | +     Option<     |
+    |   >           | +       T=        |
+    |               | +         @TVAR2, |
+    |               | +     >,          |
+    |               |   >               |
+    +---------------+-------------------+

@@ -1,6 +1,6 @@
-use crate::ast::*;
-use crate::environment::*;
 use crate::unify::rewrite_type_variables_in_type;
+use crate::{ast::*, unify::get_enum_type};
+use crate::{environment::*, unify::unify_type};
 use std::collections::HashSet;
 
 #[derive(Debug)]
@@ -225,22 +225,16 @@ pub fn expand_pattern(environment: &Environment, type_value: &Type) -> Vec<Expan
             .into_iter()
             .map(|constructor_symbol| {
                 let constructor_name = constructor_symbol.constructor_name.clone();
-                let enum_type = EnumType {
-                    name: name.clone(),
-                    type_arguments: type_arguments.clone(),
-                };
                 match &constructor_symbol.payload {
                     None => ExpandablePattern::EnumConstructor {
                         name: constructor_name,
                         payload: None,
-                        enum_type,
                     },
                     Some(payload) => {
                         let payload =
                             rewrite_type_variables_in_type(type_arguments.clone(), payload.clone());
                         ExpandablePattern::EnumConstructor {
                             name: constructor_name,
-                            enum_type,
                             payload: Some(Box::new(ExpandablePattern::Any {
                                 type_value: payload,
                             })),
@@ -249,6 +243,12 @@ pub fn expand_pattern(environment: &Environment, type_value: &Type) -> Vec<Expan
                 }
             })
             .collect(),
+        Type::ImplicitTypeVariable { name } => {
+            match environment.get_type_variable_terminal_type(name.clone()) {
+                Some(type_value) => expand_pattern(environment, &type_value),
+                None => vec![],
+            }
+        }
         _ => vec![],
     }
 }
@@ -304,7 +304,6 @@ pub enum ExpandablePattern {
     EnumConstructor {
         name: String,
         payload: Option<Box<ExpandablePattern>>,
-        enum_type: EnumType,
     },
     Tuple(Vec<ExpandablePattern>),
     Record {
@@ -325,38 +324,57 @@ pub enum ExpandablePattern {
     },
 }
 
-// impl ExpandablePattern {
-//     pub fn to_type(&self, environment: &mut Environment) -> Type {
-//         match &self {
-//             ExpandablePattern::Any { type_value } => type_value.clone(),
-//             ExpandablePattern::EnumConstructor { name, payload } => {
-//                 let enum_type = get_enum_type(
-//                     environment,
-//                     None,
-//                     ScopedName {
-//                         name,
-//                         namespaces: vec![],
-//                     },
-//                 )?;
-//                 match paylod {
-//                     None => Ok(enum_type.expected_enum_type),
-//                 }
-//             }
-//             ExpandablePattern::Tuple(_) => {}
-//             ExpandablePattern::Record { key_pattern_pairs } => {}
-//             ExpandablePattern::Boolean(_) => {}
-//             ExpandablePattern::EmptyArray => {}
-//             ExpandablePattern::NonEmptyArray {
-//                 first_element,
-//                 rest_elements,
-//             } => {}
-//             ExpandablePattern::Infinite {
-//                 handled_cases,
-//                 kind,
-//             } => {}
-//         }
-//     }
-// }
+impl ExpandablePattern {
+    pub fn to_type(&self, environment: &mut Environment) -> Type {
+        match &self {
+            ExpandablePattern::Any { type_value } => type_value.clone(),
+            ExpandablePattern::EnumConstructor { name, payload, .. } => {
+                let enum_type =
+                    get_enum_type(environment, None, &Token::dummy_identifier(name.clone()))
+                        .expect("Compile error, should be able to get enum_type without error");
+
+                let expected_payload_type = enum_type.expected_payload_type;
+                let actual_payload_type =
+                    payload.clone().map(|payload| payload.to_type(environment));
+                match (&expected_payload_type, &actual_payload_type) {
+                    (None, None) => enum_type.expected_enum_type,
+                    (Some(expected_payload_type), Some(actual_payload_type)) => {
+                        unify_type(
+                            environment,
+                            expected_payload_type,
+                            actual_payload_type,
+                            Position::dummy(),
+                        )
+                        .expect("Compile error");
+                        enum_type.expected_enum_type
+                    }
+                    _ => panic!("Compiler error"),
+                }
+            }
+            ExpandablePattern::Tuple(_) => {
+                panic!("Should not be possible to reach this branch, since we don't allow user to construct Tuple values")
+            }
+            ExpandablePattern::Record { key_pattern_pairs } => Type::Record {
+                key_type_pairs: key_pattern_pairs
+                    .iter()
+                    .map(|(key, pattern)| (key.clone(), pattern.to_type(environment)))
+                    .collect(),
+            },
+            ExpandablePattern::EmptyArray => Type::Array(Box::new(Type::ImplicitTypeVariable {
+                name: environment.get_next_type_variable_name(),
+            })),
+            ExpandablePattern::NonEmptyArray { first_element, .. } => {
+                Type::Array(Box::new(first_element.to_type(environment)))
+            }
+            ExpandablePattern::Boolean(_) => Type::Boolean,
+            ExpandablePattern::Infinite { kind, .. } => match kind {
+                InfinitePatternKind::String => Type::String,
+                InfinitePatternKind::Character => Type::Character,
+                InfinitePatternKind::Integer => Type::Integer,
+            },
+        }
+    }
+}
 
 pub fn match_patterns(
     environment: &Environment,
@@ -441,7 +459,6 @@ pub fn match_pattern(
             ExpandablePattern::EnumConstructor {
                 name: expected_name,
                 payload: Some(expected_payload),
-                enum_type,
             },
         ) => {
             if actual_name.representation != *expected_name {
@@ -457,7 +474,6 @@ pub fn match_pattern(
                                 .map(|pattern| ExpandablePattern::EnumConstructor {
                                     name: expected_name.clone(),
                                     payload: Some(Box::new(pattern)),
-                                    enum_type: enum_type.clone(),
                                 })
                                 .collect(),
                         }
