@@ -52,6 +52,10 @@ pub enum UnifyErrorKind {
     AmbiguousFunction {
         available_function_signatures: Vec<FunctionSignature>,
     },
+    NoMatchingFunction {
+        actual_first_argument_type: Type,
+        expected_first_argument_types: Vec<Type>,
+    },
     AmbiguousSymbolUsage {
         symbol_name: String,
         possible_scopings: Vec<Scoping>,
@@ -67,7 +71,9 @@ pub enum UnifyErrorKind {
         type_variable_name: String,
         in_type: Type,
     },
-    DoBodyMustHaveNullType,
+    DoBodyMustHaveNullType {
+        actual_type: Type,
+    },
     NoSuchPropertyOnThisRecord {
         expected_keys: Vec<String>,
     },
@@ -79,8 +85,8 @@ pub enum UnifyErrorKind {
     },
     UnusedVariale,
     MissingCases(Vec<ExpandablePattern>),
-    ThisTagDoesNotRequirePayload,
-    ThisTagRequiresPaylod {
+    ThisEnumConstructorDoesNotRequirePayload,
+    ThisEnumConstructorRequiresPaylod {
         payload_type: Type,
     },
     UnreachableCase,
@@ -134,9 +140,11 @@ pub fn infer_statement(
                     expression,
                     type_value: Type::Null,
                 } => Ok(Some(TypecheckedStatement::Do { expression })),
-                _ => Err(UnifyError {
+                InferExpressionResult { type_value, .. } => Err(UnifyError {
                     position: get_expression_position(&expression),
-                    kind: UnifyErrorKind::DoBodyMustHaveNullType,
+                    kind: UnifyErrorKind::DoBodyMustHaveNullType {
+                        actual_type: type_value,
+                    },
                 }),
             }
         }
@@ -1107,12 +1115,7 @@ fn infer_expression_type_(
             type_value: Type::Boolean,
             expression: TypecheckedExpression::Boolean(*value),
         }),
-        Expression::EnumConstructor {
-            name,
-            payload,
-            left_parenthesis,
-            right_parenthesis,
-        } => {
+        Expression::EnumConstructor { name, payload, .. } => {
             let result = get_enum_type(environment, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(InferExpressionResult {
@@ -1122,13 +1125,13 @@ fn infer_expression_type_(
                         payload: None,
                     },
                 }),
-                (None, Some(_)) => Err(UnifyError {
-                    position: join_position(left_parenthesis.position, right_parenthesis.position),
-                    kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
+                (None, Some(payload)) => Err(UnifyError {
+                    position: get_expression_position(payload.as_ref()),
+                    kind: UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
                     position: name.position,
-                    kind: UnifyErrorKind::ThisTagRequiresPaylod {
+                    kind: UnifyErrorKind::ThisEnumConstructorRequiresPaylod {
                         payload_type: expected_payload_type,
                     },
                 }),
@@ -2425,11 +2428,11 @@ fn infer_destructure_pattern_(
                 }),
                 (None, Some(payload)) => Err(UnifyError {
                     position: get_destructure_pattern_position(&payload),
-                    kind: UnifyErrorKind::ThisTagDoesNotRequirePayload,
+                    kind: UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
                     position: name.position,
-                    kind: UnifyErrorKind::ThisTagRequiresPaylod {
+                    kind: UnifyErrorKind::ThisEnumConstructorRequiresPaylod {
                         payload_type: expected_payload_type,
                     },
                 }),

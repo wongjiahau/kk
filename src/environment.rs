@@ -885,7 +885,24 @@ impl Environment {
                                             match parent_scope_name {
                                                 None => Err(UnifyError {
                                                     position: symbol_name.position,
-                                                    kind: UnifyErrorKind::UnknownValueSymbol,
+                                                    kind: UnifyErrorKind::NoMatchingFunction {
+                                                        actual_first_argument_type: function_type
+                                                            .parameters_types
+                                                            .first()
+                                                            .clone(),
+                                                        expected_first_argument_types:
+                                                            matching_function_symbols
+                                                                .into_iter()
+                                                                .map(|signature| {
+                                                                    signature
+                                                                        .function_signature
+                                                                        .function_type
+                                                                        .parameters_types
+                                                                        .first()
+                                                                        .clone()
+                                                                })
+                                                                .collect(),
+                                                    },
                                                 }),
                                                 Some(parent_scope_name) => self.get_value_symbol(
                                                     symbol_name,
@@ -920,10 +937,10 @@ impl Environment {
                     // If no matching function signatures found in this scope
                     // Look into parent scope
                     None => match self.scope.get_parent_scope_name(scope_name) {
-                        None => panic!(
-                            "no matching functions found for {}",
-                            symbol_name.representation
-                        ),
+                        None => Err(UnifyError {
+                            position: symbol_name.position,
+                            kind: UnifyErrorKind::UnknownValueSymbol,
+                        }),
                         Some(scope_name) => {
                             self.get_value_symbol(symbol_name, expected_type, scope_name)
                         }

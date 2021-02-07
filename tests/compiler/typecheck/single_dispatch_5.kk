@@ -1,0 +1,1 @@
+do true.foo().print()

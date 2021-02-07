@@ -667,15 +667,26 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 ),
             )
         },
-        UnifyErrorKind::DoBodyMustHaveNullType => {
-            panic!()
-        }
-        UnifyErrorKind::ThisTagDoesNotRequirePayload => {
-            panic!()
-        }
-        UnifyErrorKind::ThisTagRequiresPaylod {..} => {
-            panic!()
-        }
+        UnifyErrorKind::DoBodyMustHaveNullType { actual_type} => StringifiedError {
+            summary: "Type Mismatch".to_string(),
+            body: format!(
+                "The body of do-expression must have the type of Null.\n{}\n\n{}",
+                "But this expression has the type of:",
+                stringify_type(actual_type, 2)
+            )
+        },
+        UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload => StringifiedError {
+            summary: "Unexpected Payload".to_string(),
+            body: "This enum constructor does not require payload, consider removing this expression.".to_string()
+        },
+        UnifyErrorKind::ThisEnumConstructorRequiresPaylod { payload_type} => StringifiedError {
+            summary: "Missing Payload".to_string(),
+            body: format!(
+                "{}\n\n{}", 
+                "This enum constructor requires a payload with the type of:", 
+                stringify_type(payload_type, 2)
+            )
+        },
         UnifyErrorKind::CannotPerformRecordUpdateOnNonRecord { actual_type } => StringifiedError {
             summary: "This is not a record.".to_string(),
             body: format!(
@@ -686,6 +697,16 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 stringify_type(actual_type, 2)
             )
 
+        },
+        UnifyErrorKind::NoMatchingFunction { actual_first_argument_type, expected_first_argument_types } => StringifiedError {
+            summary: "No matching overload found.".to_string(),
+            body: format!(
+                "\n{}\n\n{}\n\n{}\n\n{}",
+                "I cannot find a version of this function that takes the following type as first argument:",
+                stringify_type(actual_first_argument_type, 2),
+                "But I found other versions of this function that take any of the following type as first argument:",
+                expected_first_argument_types.into_iter().map(|type_value| stringify_type(type_value, 2)).collect::<Vec<String>>().join("\n\n")
+            )
         }
     }
 }

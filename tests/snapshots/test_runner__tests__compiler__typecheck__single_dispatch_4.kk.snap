@@ -1,0 +1,41 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo = \(_: String) => "Hello"
+let foo = \(_: Integer) => "World"
+
+do true.foo().print()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/single_dispatch_4.kk:4:9
+  │
+4 │ do true.foo().print()
+  │         ^^^ No matching overload found.
+  │
+  =
+    I cannot find a version of this function that takes the following type as first argument:
+
+        Boolean
+
+    But I found other versions of this function that take any of the following type as first argument:
+
+        String
+
+        Integer
