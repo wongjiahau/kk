@@ -634,23 +634,18 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 stringify_type(existing_first_parameter_type, 2),
             )
         },
-        UnifyErrorKind::AmbiguousSymbolUsage {
-            symbol_name,
-            possible_scopings
+        UnifyErrorKind::AmbiguousConstructorUsage {
+            constructor_name,
+            possible_enum_names
         } => StringifiedError {
-            summary: "Ambiguous Usage".to_string(),
-            body: format!("Possible references:\n\n{}",
-              indent_string(
-                possible_scopings
-                    .into_iter().map(|mut scoping| {
-                        scoping.reverse();
-                        format!("{}::{}", scoping.join("::"), symbol_name)
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n")
-                ,
-                2
-            ))
+            summary: "Ambiguous Constructor Usage".to_string(),
+            body: format!(
+                "The constructor `{}` belongs to more than one enums, which are:\n\n{}\n\n{}\n\n{}",
+                constructor_name,
+                indent_string(possible_enum_names.clone().into_vector().join("\n"), 2),
+                "You can use type annotation to resolve this problem, for example:",
+                indent_string(format!("let x: {} = {}()", possible_enum_names.first(), constructor_name), 2)
+            )
         },
         UnifyErrorKind::AmbiguousFunction { available_function_signatures } => StringifiedError {
             summary: "Ambiguous Reference".to_string(),

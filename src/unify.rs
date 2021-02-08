@@ -56,9 +56,9 @@ pub enum UnifyErrorKind {
         actual_first_argument_type: Type,
         expected_first_argument_types: Vec<Type>,
     },
-    AmbiguousSymbolUsage {
-        symbol_name: String,
-        possible_scopings: Vec<Scoping>,
+    AmbiguousConstructorUsage {
+        constructor_name: String,
+        possible_enum_names: NonEmpty<String>,
     },
     WrongTypeAnnotation {
         expected_type: Type,
@@ -310,34 +310,42 @@ pub fn infer_statement(
             let constructor_symbols = constructors
                 .iter()
                 .map(|constructor| {
-                    Ok((
-                        &constructor.name,
-                        ConstructorSymbol {
-                            enum_name: enum_name.clone(),
-                            constructor_name: constructor.name.representation.clone(),
-                            type_variables: type_variable_names.clone(),
-                            payload: match &constructor.payload {
-                                None => None,
-                                Some(payload) => {
-                                    // validate type annotation
-                                    let payload_type_value =
-                                        type_annotation_to_type(environment, payload.as_ref())?;
-                                    Some(payload_type_value)
-                                }
-                            },
+                    Ok(ConstructorSymbol {
+                        enum_name: enum_name.clone(),
+                        constructor_name: constructor.name.representation.clone(),
+                        type_variables: type_variable_names.clone(),
+                        payload: match &constructor.payload {
+                            None => None,
+                            Some(payload) => {
+                                // validate type annotation
+                                let payload_type_value =
+                                    type_annotation_to_type(environment, payload.as_ref())?;
+                                Some(payload_type_value)
+                            }
                         },
-                    ))
+                        meta: SymbolMeta {
+                            uid: environment.get_next_symbol_uid(),
+                            name: constructor.name.representation.clone(),
+                            scope_name: environment.current_scope_name(),
+                            exported: false,
+                            declaration: Declaration::UserDefined {
+                                source: environment.source.clone(),
+                                token: constructor.name.clone(),
+                                scope_name: environment.current_scope_name(),
+                            },
+                            usage_references: Default::default(),
+                        },
+                    })
                 })
-                .collect::<Result<Vec<(&Token, ConstructorSymbol)>, UnifyError>>()?;
+                .collect::<Result<Vec<ConstructorSymbol>, UnifyError>>()?;
 
             environment.step_out_to_parent_scope();
 
             constructor_symbols
                 .into_iter()
-                .map(|(token, constructor_symbol)| {
-                    environment.insert_constructor_symbol(token, constructor_symbol)
-                })
-                .collect::<Result<Vec<()>, UnifyError>>()?;
+                .for_each(|constructor_symbol| {
+                    environment.insert_constructor_symbol(constructor_symbol)
+                });
 
             Ok(None)
         }
@@ -985,16 +993,12 @@ pub fn get_enum_type(
     expected_type: Option<Type>,
     token: &Token,
 ) -> Result<GetEnumTypeResult, UnifyError> {
-    // Look up constructor
-    let constructor = match environment.get_constructor_symbol(&token)? {
-        Some(constructor_symbol) => constructor_symbol,
-        None => {
-            return Err(UnifyError {
-                position: token.position,
-                kind: UnifyErrorKind::UnknownEnumConstructor,
-            })
-        }
+    let expected_enum_name = match &expected_type {
+        Some(Type::Named { name, .. }) => Some(name.clone()),
+        _ => None,
     };
+    // Look up constructor
+    let constructor = environment.get_constructor_symbol(expected_enum_name, &token)?;
 
     let enum_type = environment
         .get_type_symbol(&Token::dummy_identifier(constructor.enum_name.clone()))
@@ -1029,11 +1033,11 @@ pub fn get_enum_type(
         enum_type.value.type_scheme.type_value,
     );
 
-    let expected_payload_type = match constructor.payload {
+    let expected_payload_type = match &constructor.payload {
         None => None,
         Some(expected_payload) => Some(rewrite_type_variables_in_type(
             instantiated_type_variables,
-            expected_payload,
+            expected_payload.clone(),
         )),
     };
 

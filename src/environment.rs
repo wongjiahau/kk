@@ -134,10 +134,6 @@ impl<Symbol: Clone> SymbolTable<Symbol> {
         }
     }
 
-    pub fn symbols(&self) -> &HashMap<SymbolId, SymbolEntry<Symbol>> {
-        &self.symbols
-    }
-
     /// This function will return error if the symbol to be inserted clashes with existing names
     pub fn insert_symbol(
         &mut self,
@@ -262,12 +258,16 @@ pub struct Environment {
     /// Non-function symbols
     value_symbols: SymbolTable<ValueSymbol>,
 
-    /// Function symbols is stored in Vector instead of HashMap.
+    /// Function symbols are stored in Vector instead of HashMap.
     /// This is because to implement multi-dispatch, a simple name-lookup is not enough,
     /// we need to iterate through the list to find the best fit.
     function_symbols: Vec<FunctionSymbol>,
     type_symbols: SymbolTable<TypeSymbol>,
-    constructor_symbols: SymbolTable<ConstructorSymbol>,
+
+    /// Constructor symbols are also stored in Vector instead of HashMap.
+    /// This is because to constructor name to be overloaded, a simple name-lookup is not enough,
+    /// we need to iterate through the list to find the best fit.
+    constructor_symbols: Vec<ConstructorSymbol>,
     type_variable_substitutions: Substitution,
     type_variable_index: Cell<usize>,
 
@@ -284,13 +284,6 @@ enum SubstitutionItem {
     NotSubstituted,
 }
 
-/// NOTE: this list is reversed,
-/// for example: `vec!['A', 'B', 'C']` means `C:B:A`
-pub type Scoping = Vec<String>;
-pub struct ScopedSymbol<Symbol> {
-    scoping: Scoping,
-    symbol: Symbol,
-}
 impl Environment {
     pub fn new(source: &Source) -> Environment {
         let mut result = Environment {
@@ -298,7 +291,7 @@ impl Environment {
             value_symbols: SymbolTable::new(),
             function_symbols: vec![],
             type_symbols: SymbolTable::new(),
-            constructor_symbols: SymbolTable::new(),
+            constructor_symbols: vec![],
             type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
             scope: Scope::new(),
@@ -364,7 +357,7 @@ impl Environment {
         )
     }
 
-    fn get_next_symbol_uid(&mut self) -> usize {
+    pub fn get_next_symbol_uid(&mut self) -> usize {
         let result = self.current_uid.get();
         self.current_uid.set(result + 1);
         result
@@ -751,41 +744,16 @@ impl Environment {
         )
     }
 
-    pub fn insert_constructor_symbol(
-        &mut self,
-        token: &Token,
-        constructor_symbol: ConstructorSymbol,
-    ) -> Result<(), UnifyError> {
-        let uid = self.get_next_symbol_uid();
-        self.constructor_symbols.insert_symbol(
-            self.current_scope_name(),
-            token.clone(),
-            &self.source,
-            SymbolEntry {
-                meta: SymbolMeta {
-                    uid,
-                    name: token.representation.clone(),
-                    scope_name: self.current_scope_name(),
-                    exported: false,
-                    declaration: Declaration::UserDefined {
-                        source: self.source.clone(),
-                        token: token.clone(),
-                        scope_name: self.current_scope_name(),
-                    },
-                    usage_references: Default::default(),
-                },
-                value: constructor_symbol,
-            },
-        )
+    pub fn insert_constructor_symbol(&mut self, constructor_symbol: ConstructorSymbol) {
+        self.constructor_symbols.push(constructor_symbol);
     }
 
     pub fn get_enum_constructors(&self, enum_name: &str) -> Vec<ConstructorSymbol> {
         self.constructor_symbols
-            .symbols()
             .iter()
-            .filter_map(|(_, constructor_symbol)| {
-                if constructor_symbol.value.enum_name == enum_name {
-                    Some(constructor_symbol.value.clone())
+            .filter_map(|constructor_symbol| {
+                if constructor_symbol.enum_name == enum_name {
+                    Some(constructor_symbol.clone())
                 } else {
                     None
                 }
@@ -950,47 +918,53 @@ impl Environment {
         }
     }
 
-    fn get_matching_constructor_symbols(
-        &self,
-        symbol_name: &Token,
-    ) -> Vec<ScopedSymbol<ConstructorSymbol>> {
-        match self.constructor_symbols.get_symbol(
-            &self.scope,
-            &self.source,
-            &symbol_name,
-            self.current_scope_name(),
-        ) {
-            None => vec![],
-            Some(symbol) => {
-                vec![ScopedSymbol {
-                    scoping: vec![],
-                    symbol: symbol.value,
-                }]
-            }
-        }
-    }
-
+    /// `expected_enum_name` -
+    ///     This is for disambiguating constructors with the same name that belongs to different enums
     pub fn get_constructor_symbol(
-        &mut self,
+        &self,
+        expected_enum_name: Option<String>,
         constructor_name: &Token,
-    ) -> Result<Option<ConstructorSymbol>, UnifyError> {
-        let constructors = self.get_matching_constructor_symbols(&constructor_name);
-        match constructors.get(0) {
-            None => Ok(None),
-            Some(constructor) => {
-                if constructors.len() > 1 {
-                    Err(UnifyError {
-                        position: constructor_name.position,
-                        kind: UnifyErrorKind::AmbiguousSymbolUsage {
-                            symbol_name: constructor_name.representation.clone(),
-                            possible_scopings: constructors
-                                .into_iter()
-                                .map(|constructor| constructor.scoping)
-                                .collect(),
-                        },
-                    })
+    ) -> Result<ConstructorSymbol, UnifyError> {
+        let matching_constructors = self
+            .constructor_symbols
+            .iter()
+            .filter(|constructor| constructor.constructor_name == constructor_name.representation)
+            .collect::<Vec<&ConstructorSymbol>>();
+
+        match matching_constructors.split_first() {
+            None => Err(UnifyError {
+                position: constructor_name.position,
+                kind: UnifyErrorKind::UnknownEnumConstructor,
+            }),
+            Some((constructor, tail)) => {
+                if tail.is_empty() {
+                    Ok(ConstructorSymbol::clone(constructor))
                 } else {
-                    Ok(Some(constructor.symbol.clone()))
+                    // If more than one matching constructors found
+                    // Need to disambiguate using expected_enum_name
+                    let error = Err(UnifyError {
+                        position: constructor_name.position,
+                        kind: UnifyErrorKind::AmbiguousConstructorUsage {
+                            constructor_name: constructor_name.representation.clone(),
+                            possible_enum_names: NonEmpty {
+                                head: constructor.enum_name.clone(),
+                                tail: tail
+                                    .iter()
+                                    .map(|constructor| constructor.enum_name.clone())
+                                    .collect(),
+                            },
+                        },
+                    });
+                    match expected_enum_name {
+                        None => error,
+                        Some(expected_enum_name) => match matching_constructors
+                            .into_iter()
+                            .find(|constructor| constructor.enum_name == expected_enum_name)
+                        {
+                            Some(constructor_symbol) => Ok(constructor_symbol.clone()),
+                            None => error,
+                        },
+                    }
                 }
             }
         }
@@ -1104,6 +1078,7 @@ pub struct ConstructorSymbol {
     pub constructor_name: String,
     pub type_variables: Vec<String>,
     pub payload: Option<Type>,
+    pub meta: SymbolMeta,
 }
 
 #[derive(Debug, Clone)]

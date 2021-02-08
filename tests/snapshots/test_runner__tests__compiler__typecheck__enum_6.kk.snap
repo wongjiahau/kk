@@ -1,0 +1,39 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Food = Nut()
+enum Tool = Nut()
+
+let a = Nut()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/enum_6.kk:4:9
+  │
+4 │ let a = Nut()
+  │         ^^^ Ambiguous Constructor Usage
+  │
+  = The constructor `Nut` belongs to more than one enums, which are:
+
+      Food
+      Tool
+
+    You can use type annotation to resolve this problem, for example:
+
+      let x: Food = Nut()
