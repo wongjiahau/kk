@@ -1,0 +1,32 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// name clashing
+import "./import_1.kk" foo
+
+let foo = 2
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/import_2.kk:4:5
+  │
+4 │ let foo = 2
+  │     ^^^ Duplicated name
+  │
+  = This variable is already declared before in this namespace.

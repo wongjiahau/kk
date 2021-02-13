@@ -350,6 +350,10 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordFalse
     } else if s.eq("null") {
         TokenType::KeywordNull
+    } else if s.eq("import") {
+        TokenType::KeywordImport
+    } else if s.eq("export") {
+        TokenType::KeywordExport
     } else {
         TokenType::Identifier
     }

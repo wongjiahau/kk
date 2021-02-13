@@ -38,6 +38,7 @@ pub enum ParseContext {
     StatementLet,
     StatementType,
     StatementEnum,
+    StatementImport,
 
     // Type annotation
     TypeAnnotationRecord,
@@ -112,47 +113,80 @@ impl<'a> Parser<'a> {
         let context = ParseContext::Statement;
         match self.tokens.next() {
             Some(token) => match token.token_type {
-                TokenType::KeywordLet => self.parse_let_statement(token.clone()),
-                TokenType::KeywordType => self.parse_type_statement(token.clone()),
-                TokenType::KeywordEnum => self.parse_enum_statement(token.clone()),
+                TokenType::KeywordLet => self.parse_let_statement(None, token.clone()),
+                TokenType::KeywordType => self.parse_type_statement(None, token.clone()),
+                TokenType::KeywordEnum => self.parse_enum_statement(None, token.clone()),
                 TokenType::KeywordDo => self.parse_do_statement(token.clone()),
+                TokenType::KeywordImport => self.parse_import_statement(token.clone()),
+                TokenType::KeywordExport => {
+                    let keyword_export = Some(token.clone());
+                    match self.tokens.next() {
+                        Some(token) => match token.token_type {
+                            TokenType::KeywordLet => {
+                                self.parse_let_statement(keyword_export, token.clone())
+                            }
+                            TokenType::KeywordType => {
+                                self.parse_type_statement(keyword_export, token.clone())
+                            }
+                            TokenType::KeywordEnum => {
+                                self.parse_enum_statement(keyword_export, token.clone())
+                            }
+                            _ => Err(Parser::invalid_token(token.clone(), context)),
+                        },
+                        None => Err(Parser::unexpected_eof(context)),
+                    }
+                }
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             },
             None => Err(Parser::unexpected_eof(context)),
         }
     }
 
-    fn parse_let_statement(&mut self, keyword_let: Token) -> Result<Statement, ParseError> {
+    fn parse_let_statement(
+        &mut self,
+        keyword_export: Option<Token>,
+        keyword_let: Token,
+    ) -> Result<Statement, ParseError> {
         let context = ParseContext::StatementLet;
         let left = self.eat_token(TokenType::Identifier, context)?;
         let type_variables = self.try_parse_type_variables_declaration()?;
         let type_annotation = self.try_parse_colon_type_annotation(context)?;
         self.eat_token(TokenType::Equals, context)?;
         let right = self.parse_expression()?;
-        Ok(Statement::Let {
+        Ok(Statement::Let(LetStatement {
+            keyword_export,
             keyword_let,
             left,
             right,
             type_variables,
             type_annotation,
-        })
+        }))
     }
 
-    fn parse_type_statement(&mut self, keyword_type: Token) -> Result<Statement, ParseError> {
+    fn parse_type_statement(
+        &mut self,
+        keyword_export: Option<Token>,
+        keyword_type: Token,
+    ) -> Result<Statement, ParseError> {
         let context = ParseContext::StatementType;
         let left = self.eat_token(TokenType::Identifier, context)?;
         let type_variables = self.try_parse_type_variables_declaration()?;
         self.eat_token(TokenType::Equals, context)?;
         let right = self.parse_type_annotation(context)?;
-        Ok(Statement::Type {
+        Ok(Statement::Type(TypeStatement {
+            keyword_export,
             keyword_type,
             left,
             type_variables,
             right,
-        })
+        }))
     }
 
-    fn parse_enum_statement(&mut self, keyword_enum: Token) -> Result<Statement, ParseError> {
+    fn parse_enum_statement(
+        &mut self,
+        keyword_export: Option<Token>,
+        keyword_enum: Token,
+    ) -> Result<Statement, ParseError> {
         let context = ParseContext::StatementEnum;
         let name = self.eat_token(TokenType::Identifier, context)?;
         let type_variables = self.try_parse_type_variables_declaration()?;
@@ -167,20 +201,66 @@ impl<'a> Parser<'a> {
         {
             constructors.push(self.parse_enum_constructor_definition()?)
         }
-        Ok(Statement::Enum {
+        Ok(Statement::Enum(EnumStatement {
+            keyword_export,
             keyword_enum,
             name,
             type_variables,
             constructors,
-        })
+        }))
     }
 
     fn parse_do_statement(&mut self, keyword_do: Token) -> Result<Statement, ParseError> {
         let expression = self.parse_expression()?;
-        Ok(Statement::Do {
+        Ok(Statement::Do(DoStatement {
             keyword_do,
             expression,
-        })
+        }))
+    }
+
+    fn parse_import_statement(&mut self, keyword_import: Token) -> Result<Statement, ParseError> {
+        let context = ParseContext::StatementImport;
+        let url = self.eat_token(TokenType::String, context)?;
+        let first_name = self.parse_imported_name(context)?;
+        let other_names = {
+            let mut other_names = Vec::new();
+            loop {
+                if self.try_eat_token(TokenType::Comma).is_some() {
+                    other_names.push(self.parse_imported_name(context)?)
+                } else {
+                    break other_names;
+                }
+            }
+        };
+        Ok(Statement::Import(ImportStatement {
+            keyword_import,
+            url,
+            imported_names: NonEmpty {
+                head: first_name,
+                tail: other_names,
+            },
+        }))
+    }
+
+    fn parse_imported_name(&mut self, context: ParseContext) -> Result<ImportedName, ParseError> {
+        let name = self.eat_token(TokenType::Identifier, context)?;
+        match self.tokens.peek() {
+            Some(Token {
+                token_type: TokenType::Equals,
+                ..
+            }) => {
+                self.eat_token(TokenType::Equals, context)?;
+                let alias_as = self.eat_token(TokenType::Identifier, context)?;
+                Ok(ImportedName {
+                    name,
+                    alias_as: Some(alias_as),
+                })
+            }
+            _ => Ok(ImportedName {
+                name,
+                alias_as: None,
+            }),
+        }
     }
 
     fn eat_token(

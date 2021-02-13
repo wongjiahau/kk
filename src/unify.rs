@@ -1,34 +1,58 @@
-use crate::non_empty::NonEmpty;
+use crate::{
+    compile::{CompileError, CompileErrorKind},
+    non_empty::NonEmpty,
+    parse::Parser,
+    tokenize::tokenize,
+};
 
 use crate::ast::*;
 use crate::environment::*;
 use crate::pattern::*;
 use crate::typechecked_ast::*;
-use std::collections::HashSet;
+use relative_path::RelativePath;
+use std::fs;
 use std::iter;
+use std::{collections::HashSet, path::Path};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Program {
-    pub statements: Vec<Statement>,
     pub source: Source,
+    pub code: String,
+
+    /// This is used for checking circular references
+    pub import_relations: Vec<ImportRelation>,
 }
 
-pub fn unify_program(program: Program) -> Result<Vec<TypecheckedStatement>, UnifyError> {
+#[derive(Debug, Clone)]
+pub struct ImportRelation {
+    pub importer_path: String,
+    pub importee_path: String,
+}
+
+pub struct UnifyProgramResult {
+    pub statements: Vec<TypecheckedStatement>,
+    pub environment: Environment,
+}
+
+pub fn unify_statements(
+    program: Program,
+    statements: Vec<Statement>,
+) -> Result<UnifyProgramResult, CompileError> {
     // 1. TODO: Populate environment with imported symbols
-    let source = program.source.clone();
-    let mut environment: Environment = Environment::new(&source);
+    let mut environment: Environment = Environment::new(program);
 
     // 2. Type check this program
-    let statements = program
-        .statements
+    let statements = statements
         .into_iter()
         .map(|statement| infer_statement(&mut environment, statement))
-        .collect::<Result<Vec<Option<TypecheckedStatement>>, UnifyError>>()?
+        .collect::<Result<Vec<Vec<TypecheckedStatement>>, CompileError>>()?
         .into_iter()
         .flatten()
         .collect();
-
-    Ok(statements)
+    Ok(UnifyProgramResult {
+        statements,
+        environment,
+    })
 }
 
 #[derive(Debug)]
@@ -37,8 +61,25 @@ pub struct UnifyError {
     pub kind: UnifyErrorKind,
 }
 
+impl UnifyError {
+    pub fn into_compile_error(self, program: Program) -> CompileError {
+        CompileError {
+            program,
+            kind: CompileErrorKind::UnifyError(Box::new(self)),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    CyclicDependency {
+        import_relations: Vec<ImportRelation>,
+    },
+    CannotImportPrivateSymbol,
+    UnknownImportedName,
+    ErrorneousImportPath {
+        extra_information: String,
+    },
     ConflictingFunctionDefinition {
         function_name: String,
 
@@ -124,231 +165,434 @@ pub enum UnifyErrorKind {
 pub fn infer_statement(
     environment: &mut Environment,
     statement: Statement,
-) -> Result<Option<TypecheckedStatement>, UnifyError> {
+) -> Result<Vec<TypecheckedStatement>, CompileError> {
     match statement {
-        Statement::Do { expression, .. } => {
-            match infer_expression_type(
-                environment,
-                // NOTE: we could have pass in Some(Type::Null) instead of None here.
-                //       The reason is because we want to provide better error message with context.
-                //       So instead of saying expected type is null, we tell the user
-                //       that the body of a `do` statement must be null
-                None,
-                &expression,
-            )? {
-                InferExpressionResult {
-                    expression,
-                    type_value: Type::Null,
-                } => Ok(Some(TypecheckedStatement::Do { expression })),
-                InferExpressionResult { type_value, .. } => Err(UnifyError {
-                    position: get_expression_position(&expression),
-                    kind: UnifyErrorKind::DoBodyMustHaveNullType {
-                        actual_type: type_value,
-                    },
-                }),
+        Statement::Do(do_statement) => match infer_do_statement(environment, do_statement) {
+            Ok(statement) => Ok(vec![statement]),
+            Err(unify_error) => Err(unify_error.into_compile_error(environment.program.clone())),
+        },
+        Statement::Let(let_statement) => match infer_let_statement(environment, let_statement) {
+            Ok(statement) => Ok(vec![statement]),
+            Err(unify_error) => Err(unify_error.into_compile_error(environment.program.clone())),
+        },
+        Statement::Type(type_statement) => {
+            match infer_type_statement(environment, type_statement) {
+                Ok(()) => Ok(vec![]),
+                Err(unify_error) => {
+                    Err(unify_error.into_compile_error(environment.program.clone()))
+                }
             }
         }
-        Statement::Let {
-            left,
-            right,
-            type_annotation,
-            type_variables,
-            ..
-        } => {
-            // 0. Populate type variables
-            environment.step_into_new_child_scope();
-            type_variables
-                .iter()
-                .map(|type_variable| environment.insert_explicit_type_variable(type_variable))
-                .collect::<Result<Vec<_>, UnifyError>>()?;
-
-            // 1. Add itself into current scope to enable recursive definition if type annotation
-            //    is present, and is type of function
-            let type_annotation_type =
-                optional_type_annotation_to_type(environment, &type_annotation)?;
-
-            let uid = match type_annotation_type.clone() {
-                Some(Type::Function(function_type)) => {
-                    let (uid, _) = environment.insert_value_symbol_with_type(
-                        &left,
-                        Some(Type::Function(function_type)),
-                    )?;
-                    Ok(Some(uid))
+        Statement::Enum(enum_statement) => {
+            match infer_enum_statement(environment, enum_statement) {
+                Ok(()) => Ok(vec![]),
+                Err(unify_error) => {
+                    Err(unify_error.into_compile_error(environment.program.clone()))
                 }
-                _ => Ok(None),
+            }
+        }
+        Statement::Import(import_statement) => {
+            infer_import_statement(environment, import_statement)
+        }
+    }
+}
+
+pub fn infer_import_statement(
+    environment: &mut Environment,
+    ImportStatement {
+        url,
+        imported_names,
+        ..
+    }: ImportStatement,
+) -> Result<Vec<TypecheckedStatement>, CompileError> {
+    let current_path = environment.source().path();
+    let import_path = url.representation.trim_matches('"');
+    let path = RelativePath::new(&current_path)
+        .parent()
+        .expect("Should always have parent")
+        .join(RelativePath::new(import_path))
+        .normalize();
+    let path_string = path.to_string();
+    if environment
+        .program
+        .import_relations
+        .iter()
+        .any(|relation| path_string == relation.importer_path)
+    {
+        return Err(UnifyError {
+            position: url.position,
+            kind: UnifyErrorKind::CyclicDependency {
+                import_relations: {
+                    let mut relations = environment.program.import_relations.clone();
+                    relations.push(ImportRelation {
+                        importer_path: environment.source().path(),
+                        importee_path: path_string,
+                    });
+                    relations
+                },
+            },
+        }
+        .into_compile_error(environment.program.clone()));
+    }
+    match fs::read_to_string(path.to_path(Path::new("."))) {
+        Ok(code) => {
+            // Compile the imported file
+            let source = Source::File {
+                path: path_string.clone(),
+            };
+            let program = Program {
+                source,
+                code: code.clone(),
+                import_relations: {
+                    let mut importer_paths = environment.program.import_relations.clone();
+                    importer_paths.push(ImportRelation {
+                        importer_path: environment.program.source.path(),
+                        importee_path: path_string,
+                    });
+                    importer_paths
+                },
+            };
+            let tokens = match tokenize(code) {
+                Ok(tokens) => Ok(tokens),
+                Err(tokenize_error) => Err(CompileError {
+                    program: program.clone(),
+                    kind: CompileErrorKind::TokenizeError(tokenize_error),
+                }),
+            }?;
+            let statements = match Parser::parse(tokens) {
+                Ok(statements) => Ok(statements),
+                Err(parse_error) => Err(CompileError {
+                    program: program.clone(),
+                    kind: CompileErrorKind::ParseError(Box::new(parse_error)),
+                }),
             }?;
 
-            // 2. Check if right matches type annotation
-            let right = infer_expression_type(environment, type_annotation_type, &right)?;
-
-            // 3. Rewrite explicit type variable as implicit type variables
-            let explicit_type_variable_names = type_variables
-                .iter()
-                .map(|token| token.representation.clone())
-                .collect();
-
-            let right_type = rewrite_explicit_type_variables_as_implicit(
-                right.type_value,
-                &explicit_type_variable_names,
-            );
-
-            // 4. Generalize if possible
-            let right_type_scheme = generalize_type(right_type);
-
-            // 5. Add this variable into environment
-            //    Note that we have to use back the same uid if this is a recursive function
-            environment.step_out_to_parent_scope();
-            let uid = environment.insert_value_symbol(&left, right_type_scheme, uid)?;
-
-            Ok(Some(TypecheckedStatement::Let {
-                left: Variable {
-                    uid,
-                    representation: left.representation,
-                },
-                right: right.expression,
-            }))
-        }
-        Statement::Type {
-            left,
-            right,
-            type_variables,
-            ..
-        } => {
-            environment.step_into_new_child_scope();
-            // 1. Populate type variables into current environment
-            environment.step_into_new_child_scope();
-            for type_variable in type_variables.clone() {
-                environment.insert_type_symbol(
-                    &type_variable,
-                    TypeSymbol {
-                        type_scheme: TypeScheme {
-                            type_value: Type::ImplicitTypeVariable {
-                                name: type_variable.clone().representation,
-                            },
-                            type_variables: vec![],
-                        },
-                    },
-                )?;
-            }
-
-            // 2. verify type declaration
-            let type_value = type_annotation_to_type(environment, &right)?;
-
-            // 3. Add this symbol into environment
-            environment.step_out_to_parent_scope();
-            environment.insert_type_symbol(
-                &left,
-                TypeSymbol {
-                    type_scheme: TypeScheme {
-                        type_variables: type_variables
-                            .into_iter()
-                            .map(|type_variable| type_variable.representation)
-                            .collect(),
-                        type_value,
-                    },
-                },
-            )?;
-
-            Ok(None)
-        }
-        Statement::Enum {
-            name,
-            type_variables,
-            constructors,
-            ..
-        } => {
-            // 1. Add this enum into environment first, to allow recursive definition
-            let enum_name = name.representation.clone();
-            let enum_type = Type::Named {
-                name: enum_name.clone(),
-                type_arguments: type_variables
-                    .clone()
-                    .into_iter()
-                    .map(|type_variable| {
-                        (
-                            type_variable.representation.clone(),
-                            Type::ImplicitTypeVariable {
-                                name: type_variable.representation,
-                            },
-                        )
-                    })
-                    .collect(),
-            };
-            let type_variable_names = type_variables
-                .clone()
+            // Check whether each imported name exists and is exported in this program
+            let result = unify_statements(program.clone(), statements)?;
+            let statements = imported_names
+                .into_vector()
                 .into_iter()
-                .map(|type_variable| type_variable.representation)
-                .collect::<Vec<String>>();
+                .map(|imported_name| {
+                    let matching_symbols = result
+                        .environment
+                        .get_all_matching_symbols(&program.source, &imported_name.name);
 
-            environment.insert_type_symbol(
-                &name,
-                TypeSymbol {
-                    type_scheme: TypeScheme {
-                        type_variables: type_variable_names.clone(),
-                        type_value: enum_type,
-                    },
-                },
-            )?;
+                    if matching_symbols.is_empty() {
+                        Err(UnifyError {
+                            position: imported_name.name.position,
+                            kind: UnifyErrorKind::UnknownImportedName,
+                        }
+                        .into_compile_error(environment.program.clone()))
+                    } else {
+                        let name = match &imported_name.alias_as {
+                            Some(name) => name,
+                            None => &imported_name.name,
+                        };
 
-            // 2. Populate type variables into current environment
-            environment.step_into_new_child_scope();
-            for type_variable in type_variables.clone() {
-                environment.insert_type_symbol(
-                    &type_variable,
-                    TypeSymbol {
-                        type_scheme: TypeScheme {
-                            type_value: Type::ImplicitTypeVariable {
-                                name: type_variable.clone().representation,
-                            },
-                            type_variables: vec![],
-                        },
-                    },
-                )?;
-            }
-
-            // 3. Add each tags into the enum namespace
-            let constructor_symbols = constructors
-                .iter()
-                .map(|constructor| {
-                    Ok(ConstructorSymbol {
-                        enum_name: enum_name.clone(),
-                        constructor_name: constructor.name.representation.clone(),
-                        type_variables: type_variable_names.clone(),
-                        payload: match &constructor.payload {
-                            None => None,
-                            Some(payload) => {
-                                // validate type annotation
-                                let payload_type_value =
-                                    type_annotation_to_type(environment, payload.as_ref())?;
-                                Some(payload_type_value)
+                        // Insert the matching value symbol into the current environment
+                        let mut statements = Vec::new();
+                        if let Some(value_symbol) = matching_symbols.value_symbol {
+                            if !value_symbol.meta.exported {
+                                return Err(UnifyError {
+                                    position: imported_name.name.position,
+                                    kind: UnifyErrorKind::CannotImportPrivateSymbol,
+                                }
+                                .into_compile_error(environment.program.clone()));
                             }
-                        },
-                        meta: SymbolMeta {
-                            uid: environment.get_next_symbol_uid(),
-                            name: constructor.name.representation.clone(),
-                            scope_name: environment.current_scope_name(),
-                            exported: false,
-                            declaration: Declaration::UserDefined {
-                                source: environment.source.clone(),
-                                token: constructor.name.clone(),
-                                scope_name: environment.current_scope_name(),
-                            },
-                            usage_references: Default::default(),
-                        },
-                    })
+                            let uid = environment.get_next_symbol_uid();
+                            match environment.insert_value_symbol(
+                                &name,
+                                value_symbol.value.type_scheme,
+                                Some(uid),
+                                false,
+                            ) {
+                                Ok(_) => {
+                                    statements.push(TypecheckedStatement::Let {
+                                        left: Variable {
+                                            uid,
+                                            representation: name.representation.clone(),
+                                        },
+                                        right: TypecheckedExpression::Variable(Variable {
+                                            uid: value_symbol.meta.uid,
+                                            representation: value_symbol.meta.name,
+                                        }),
+                                    });
+                                }
+                                Err(unify_error) => {
+                                    return Err(unify_error.into_compile_error(program.clone()))
+                                }
+                            }
+                        }
+
+                        // Insert the matching type symbol into the current environment
+                        if let Some(type_symbol) = matching_symbols.type_symbol {
+                            panic!("Not implemented yet")
+                            // environment.insert_type_symbol(&name, type_symbol, false)?;
+                        }
+
+                        // TODO: Insert matching function symbols into the current environment
+
+                        // TODO: Insert matching constructor symbols into the current environment
+
+                        Ok(statements)
+                    }
                 })
-                .collect::<Result<Vec<ConstructorSymbol>, UnifyError>>()?;
-
-            environment.step_out_to_parent_scope();
-
-            constructor_symbols
+                .collect::<Result<Vec<Vec<TypecheckedStatement>>, CompileError>>()?;
+            Ok(result
+                .statements
                 .into_iter()
-                .for_each(|constructor_symbol| {
-                    environment.insert_constructor_symbol(constructor_symbol)
-                });
-
-            Ok(None)
+                .chain(statements.into_iter().flatten())
+                .collect())
         }
+        Err(error) => Err(UnifyError {
+            position: url.position,
+            kind: UnifyErrorKind::ErrorneousImportPath {
+                extra_information: format!("{}", error),
+            },
+        }
+        .into_compile_error(environment.program.clone())),
+    }
+}
+
+pub fn infer_enum_statement(
+    environment: &mut Environment,
+    EnumStatement {
+        name,
+        constructors,
+        type_variables,
+        keyword_export,
+        ..
+    }: EnumStatement,
+) -> Result<(), UnifyError> {
+    // 1. Add this enum into environment first, to allow recursive definition
+    let enum_name = name.representation.clone();
+    let enum_type = Type::Named {
+        name: enum_name.clone(),
+        type_arguments: type_variables
+            .clone()
+            .into_iter()
+            .map(|type_variable| {
+                (
+                    type_variable.representation.clone(),
+                    Type::ImplicitTypeVariable {
+                        name: type_variable.representation,
+                    },
+                )
+            })
+            .collect(),
+    };
+    let type_variable_names = type_variables
+        .clone()
+        .into_iter()
+        .map(|type_variable| type_variable.representation)
+        .collect::<Vec<String>>();
+
+    environment.insert_type_symbol(
+        &name,
+        TypeSymbol {
+            type_scheme: TypeScheme {
+                type_variables: type_variable_names.clone(),
+                type_value: enum_type,
+            },
+        },
+        keyword_export.is_some(),
+    )?;
+
+    // 2. Populate type variables into current environment
+    environment.step_into_new_child_scope();
+    for type_variable in type_variables.clone() {
+        environment.insert_type_symbol(
+            &type_variable,
+            TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_value: Type::ImplicitTypeVariable {
+                        name: type_variable.clone().representation,
+                    },
+                    type_variables: vec![],
+                },
+            },
+            false,
+        )?;
+    }
+
+    // 3. Add each tags into the enum namespace
+    let constructor_symbols = constructors
+        .iter()
+        .map(|constructor| {
+            Ok(ConstructorSymbol {
+                enum_name: enum_name.clone(),
+                constructor_name: constructor.name.representation.clone(),
+                type_variables: type_variable_names.clone(),
+                payload: match &constructor.payload {
+                    None => None,
+                    Some(payload) => {
+                        // validate type annotation
+                        let payload_type_value =
+                            type_annotation_to_type(environment, payload.as_ref())?;
+                        Some(payload_type_value)
+                    }
+                },
+                meta: SymbolMeta {
+                    uid: environment.get_next_symbol_uid(),
+                    name: constructor.name.representation.clone(),
+                    scope_name: environment.current_scope_name(),
+                    exported: keyword_export.is_some(),
+                    declaration: Declaration::UserDefined {
+                        source: environment.source(),
+                        token: constructor.name.clone(),
+                        scope_name: environment.current_scope_name(),
+                    },
+                    usage_references: Default::default(),
+                },
+            })
+        })
+        .collect::<Result<Vec<ConstructorSymbol>, UnifyError>>()?;
+
+    environment.step_out_to_parent_scope();
+
+    constructor_symbols
+        .into_iter()
+        .for_each(|constructor_symbol| environment.insert_constructor_symbol(constructor_symbol));
+
+    Ok(())
+}
+
+pub fn infer_type_statement(
+    environment: &mut Environment,
+    TypeStatement {
+        keyword_export,
+        left,
+        right,
+        type_variables,
+        ..
+    }: TypeStatement,
+) -> Result<(), UnifyError> {
+    environment.step_into_new_child_scope();
+    // 1. Populate type variables into current environment
+    environment.step_into_new_child_scope();
+    for type_variable in type_variables.clone() {
+        environment.insert_type_symbol(
+            &type_variable,
+            TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_value: Type::ImplicitTypeVariable {
+                        name: type_variable.clone().representation,
+                    },
+                    type_variables: vec![],
+                },
+            },
+            false,
+        )?;
+    }
+
+    // 2. verify type declaration
+    let type_value = type_annotation_to_type(environment, &right)?;
+
+    // 3. Add this symbol into environment
+    environment.step_out_to_parent_scope();
+    environment.insert_type_symbol(
+        &left,
+        TypeSymbol {
+            type_scheme: TypeScheme {
+                type_variables: type_variables
+                    .into_iter()
+                    .map(|type_variable| type_variable.representation)
+                    .collect(),
+                type_value,
+            },
+        },
+        keyword_export.is_some(),
+    )?;
+
+    Ok(())
+}
+
+pub fn infer_let_statement(
+    environment: &mut Environment,
+    LetStatement {
+        keyword_export,
+        left,
+        type_variables,
+        right,
+        type_annotation,
+        ..
+    }: LetStatement,
+) -> Result<TypecheckedStatement, UnifyError> {
+    // 0. Populate type variables
+    environment.step_into_new_child_scope();
+    type_variables
+        .iter()
+        .map(|type_variable| environment.insert_explicit_type_variable(type_variable))
+        .collect::<Result<Vec<_>, UnifyError>>()?;
+
+    // 1. Add itself into current scope to enable recursive definition if type annotation
+    //    is present, and is type of function
+    let type_annotation_type = optional_type_annotation_to_type(environment, &type_annotation)?;
+
+    let uid = match type_annotation_type.clone() {
+        Some(Type::Function(function_type)) => {
+            let (uid, _) = environment
+                .insert_value_symbol_with_type(&left, Some(Type::Function(function_type)))?;
+            Ok(Some(uid))
+        }
+        _ => Ok(None),
+    }?;
+
+    // 2. Check if right matches type annotation
+    let right = infer_expression_type(environment, type_annotation_type, &right)?;
+
+    // 3. Rewrite explicit type variable as implicit type variables
+    let explicit_type_variable_names = type_variables
+        .iter()
+        .map(|token| token.representation.clone())
+        .collect();
+
+    let right_type = rewrite_explicit_type_variables_as_implicit(
+        right.type_value,
+        &explicit_type_variable_names,
+    );
+
+    // 4. Generalize if possible
+    let right_type_scheme = generalize_type(right_type);
+
+    // 5. Add this variable into environment
+    //    Note that we have to use back the same uid if this is a recursive function
+    environment.step_out_to_parent_scope();
+    let uid =
+        environment.insert_value_symbol(&left, right_type_scheme, uid, keyword_export.is_some())?;
+
+    Ok(TypecheckedStatement::Let {
+        left: Variable {
+            uid,
+            representation: left.representation,
+        },
+        right: right.expression,
+    })
+}
+
+pub fn infer_do_statement(
+    environment: &mut Environment,
+    do_statement: DoStatement,
+) -> Result<TypecheckedStatement, UnifyError> {
+    match infer_expression_type(
+        environment,
+        // NOTE: we could have pass in Some(Type::Null) instead of None here.
+        //       The reason is because we want to provide better error message with context.
+        //       So instead of saying expected type is null, we tell the user
+        //       that the body of a `do` statement must be null
+        None,
+        &do_statement.expression,
+    )? {
+        InferExpressionResult {
+            expression,
+            type_value: Type::Null,
+        } => Ok(TypecheckedStatement::Do { expression }),
+        InferExpressionResult { type_value, .. } => Err(UnifyError {
+            position: get_expression_position(&do_statement.expression),
+            kind: UnifyErrorKind::DoBodyMustHaveNullType {
+                actual_type: type_value,
+            },
+        }),
     }
 }
 

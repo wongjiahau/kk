@@ -1,7 +1,7 @@
-use crate::ast::*;
 use crate::non_empty::NonEmpty;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
+use crate::{ast::*, unify::Program};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
@@ -180,6 +180,8 @@ impl<Symbol: Clone> SymbolTable<Symbol> {
     /// NOTE: This method is not pure.
     /// When using this method to lookup say variable A,
     /// then the usage references of A will be updated.
+    ///
+    /// `source` - for updating usage references
     pub fn get_symbol(
         &self,
         scope: &Scope,
@@ -253,6 +255,21 @@ impl<Symbol: Clone> SymbolTable<Symbol> {
     }
 }
 
+pub struct GetAllMatchingSymbolsResult {
+    pub value_symbol: Option<SymbolEntry<ValueSymbol>>,
+    pub type_symbol: Option<SymbolEntry<TypeSymbol>>,
+    pub function_symbols: Vec<FunctionSymbol>,
+    pub constructor_symbols: Vec<ConstructorSymbol>,
+}
+
+impl GetAllMatchingSymbolsResult {
+    pub fn is_empty(&self) -> bool {
+        self.value_symbol.is_none()
+            && self.type_symbol.is_none()
+            && self.function_symbols.is_empty()
+            && self.constructor_symbols.is_empty()
+    }
+}
 #[derive(Debug, Clone)]
 pub struct Environment {
     /// Non-function symbols
@@ -274,7 +291,7 @@ pub struct Environment {
     /// Every symbol in an environment will be assigned a unique ID, regardless of the scope
     current_uid: Cell<usize>,
     scope: Scope,
-    pub source: Source,
+    pub program: Program,
 }
 
 #[derive(Debug, Clone)]
@@ -285,9 +302,8 @@ enum SubstitutionItem {
 }
 
 impl Environment {
-    pub fn new(source: &Source) -> Environment {
+    pub fn new(program: Program) -> Environment {
         let mut result = Environment {
-            source: source.clone(),
             value_symbols: SymbolTable::new(),
             function_symbols: vec![],
             type_symbols: SymbolTable::new(),
@@ -296,6 +312,7 @@ impl Environment {
             type_variable_index: Cell::new(0),
             scope: Scope::new(),
             current_uid: Cell::new(1000), // start from 1000 to reserve from built in function
+            program,
         };
 
         built_in_type_symbols()
@@ -317,12 +334,16 @@ impl Environment {
                     },
                     representation: name,
                 };
-                result.insert_value_symbol(&token, value_symbol, Some(uid))
+                result.insert_value_symbol(&token, value_symbol, Some(uid), true)
             })
             .collect::<Result<Vec<usize>, UnifyError>>()
             .expect("Compiler error");
 
         result
+    }
+
+    pub fn source(&self) -> Source {
+        self.program.source.clone()
     }
 
     pub fn current_scope_name(&self) -> usize {
@@ -354,6 +375,7 @@ impl Environment {
                     },
                 },
             },
+            false,
         )
     }
 
@@ -380,6 +402,7 @@ impl Environment {
                     type_value: type_value.clone(),
                 },
                 None,
+                false,
             )?;
         }
 
@@ -563,6 +586,7 @@ impl Environment {
         symbol_name: &Token,
         type_scheme: TypeScheme,
         uid: Option<usize>,
+        exported: bool,
     ) -> Result<usize, UnifyError> {
         let uid = match uid {
             Some(uid) => uid,
@@ -573,12 +597,12 @@ impl Environment {
             name: symbol_name.representation.clone(),
             scope_name: self.current_scope_name(),
             declaration: Declaration::UserDefined {
-                source: self.source.clone(),
+                source: self.source(),
                 scope_name: self.current_scope_name(),
                 token: symbol_name.clone(),
             },
             usage_references: Default::default(),
-            exported: false,
+            exported,
         };
         match type_scheme.type_value {
             Type::Function(function_type) => {
@@ -639,7 +663,7 @@ impl Environment {
                             name: symbol_name.representation.clone(),
                             first_declared_at: symbol.meta.declaration.clone(),
                             then_declared_at: Declaration::UserDefined {
-                                source: self.source.clone(),
+                                source: self.source(),
                                 token: symbol_name.clone(),
                                 scope_name: self.current_scope_name(),
                             },
@@ -653,7 +677,7 @@ impl Environment {
                 self.value_symbols.insert_symbol(
                     self.current_scope_name(),
                     symbol_name.clone(),
-                    &self.source,
+                    &self.source(),
                     SymbolEntry {
                         meta,
                         value: ValueSymbol { type_scheme },
@@ -685,6 +709,7 @@ impl Environment {
                 type_value: type_value.clone(),
             },
             None,
+            false,
         )?;
         Ok((uid, type_value))
     }
@@ -712,6 +737,7 @@ impl Environment {
                 representation: name,
             },
             type_symbol,
+            true,
         )
         .expect("Compiler error, built in type symbol should not clash with each other")
     }
@@ -720,23 +746,24 @@ impl Environment {
         &mut self,
         symbol_name: &Token,
         type_symbol: TypeSymbol,
+        exported: bool,
     ) -> Result<(), UnifyError> {
         let uid = self.get_next_symbol_uid();
         self.type_symbols.insert_symbol(
             self.current_scope_name(),
             symbol_name.clone(),
-            &self.source,
+            &self.source(),
             SymbolEntry {
                 meta: SymbolMeta {
                     uid,
                     name: symbol_name.representation.clone(),
                     scope_name: self.current_scope_name(),
                     declaration: Declaration::UserDefined {
-                        source: self.source.clone(),
+                        source: self.source(),
                         token: symbol_name.clone(),
                         scope_name: self.current_scope_name(),
                     },
-                    exported: false,
+                    exported,
                     usage_references: Default::default(),
                 },
                 value: type_symbol,
@@ -746,6 +773,60 @@ impl Environment {
 
     pub fn insert_constructor_symbol(&mut self, constructor_symbol: ConstructorSymbol) {
         self.constructor_symbols.push(constructor_symbol);
+    }
+
+    pub fn get_all_matching_symbols(
+        &self,
+        reference_source: &Source,
+        symbol_name: &Token,
+    ) -> GetAllMatchingSymbolsResult {
+        // get matching value symbol
+        let value_symbol = self.value_symbols.get_symbol(
+            &self.scope,
+            reference_source,
+            symbol_name,
+            self.current_scope_name(),
+        );
+
+        // get matching function symbols
+        let function_symbols: Vec<FunctionSymbol> = self
+            .function_symbols
+            .iter()
+            .filter_map(|function_symbol| {
+                if function_symbol.meta.name == symbol_name.representation {
+                    Some(function_symbol.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // get matching type symbol
+        let type_symbol = self.type_symbols.get_symbol(
+            &self.scope,
+            &reference_source,
+            symbol_name,
+            self.current_scope_name(),
+        );
+
+        // get matching constructor symbols
+        let constructor_symbols: Vec<ConstructorSymbol> = self
+            .constructor_symbols
+            .iter()
+            .filter_map(|constructor_symbol| {
+                if constructor_symbol.constructor_name == symbol_name.representation {
+                    Some(constructor_symbol.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        GetAllMatchingSymbolsResult {
+            value_symbol,
+            function_symbols,
+            type_symbol,
+            constructor_symbols,
+        }
     }
 
     pub fn get_enum_constructors(&self, enum_name: &str) -> Vec<ConstructorSymbol> {
@@ -764,7 +845,7 @@ impl Environment {
     pub fn get_type_symbol(&self, symbol_name: &Token) -> Option<SymbolEntry<TypeSymbol>> {
         self.type_symbols.get_symbol(
             &self.scope,
-            &self.source,
+            &self.source(),
             &symbol_name,
             self.current_scope_name(),
         )
@@ -779,7 +860,7 @@ impl Environment {
     ) -> Result<GetValueSymbolResult, UnifyError> {
         let symbol =
             self.value_symbols
-                .get_symbol(&self.scope, &self.source, &symbol_name, scope_name);
+                .get_symbol(&self.scope, &self.source(), &symbol_name, scope_name);
         match symbol {
             Some(symbol) => Ok(GetValueSymbolResult {
                 symbol_uid: symbol.meta.uid,
@@ -987,13 +1068,13 @@ pub struct TypeSymbol {
 
 #[derive(Debug, Clone)]
 pub struct ValueSymbol {
-    type_scheme: TypeScheme,
+    pub type_scheme: TypeScheme,
 }
 
 #[derive(Debug, Clone)]
 pub struct FunctionSymbol {
-    meta: SymbolMeta,
-    function_signature: FunctionSignature,
+    pub meta: SymbolMeta,
+    pub function_signature: FunctionSignature,
 }
 
 #[derive(Debug, Clone)]

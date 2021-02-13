@@ -1,23 +1,30 @@
-use crate::ast::*;
-use crate::parse::Parser;
-use crate::stringify_error::{print_parse_error, print_tokenize_error, print_unify_error};
+use crate::stringify_error::{print_parse_error, print_tokenize_error};
 use crate::tokenize::tokenize;
 use crate::transpile_cps::transpile_statements;
-use crate::unify::{unify_program, Program};
+use crate::unify::{unify_statements, Program};
+use crate::{parse::*, stringify_error::print_compile_error};
+use crate::{tokenize::TokenizeError, unify::UnifyError};
 
-pub fn compile(source: Source, code: String) {
-    match tokenize(code.clone()) {
-        Err(tokenize_error) => print_tokenize_error(source, code, tokenize_error),
+pub struct CompileError {
+    pub kind: CompileErrorKind,
+    pub program: Program,
+}
+pub enum CompileErrorKind {
+    TokenizeError(TokenizeError),
+    ParseError(Box<ParseError>),
+    UnifyError(Box<UnifyError>),
+}
+
+pub fn compile(program: Program) {
+    match tokenize(program.code.clone()) {
+        Err(tokenize_error) => print_tokenize_error(program, tokenize_error),
         Ok(tokens) => match Parser::parse(tokens) {
-            Err(parse_error) => print_parse_error(source, code, parse_error),
-            Ok(statements) => match unify_program(Program {
-                source: source.clone(),
-                statements,
-            }) {
-                Err(unify_error) => print_unify_error(source, code, unify_error),
-                Ok(statements) => {
+            Err(parse_error) => print_parse_error(program, parse_error),
+            Ok(statements) => match unify_statements(program, statements) {
+                Err(compile_error) => print_compile_error(compile_error),
+                Ok(result) => {
                     use std::process::Command;
-                    let javascript = transpile_statements(statements);
+                    let javascript = transpile_statements(result.statements);
                     // println!("{}", javascript);
                     let output = Command::new("node")
                         .arg("-e")

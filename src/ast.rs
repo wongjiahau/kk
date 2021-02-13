@@ -3,29 +3,58 @@ use crate::non_empty::NonEmpty;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Let {
-        keyword_let: Token,
-        left: Token,
-        type_variables: Vec<Token>,
-        right: Expression,
-        type_annotation: Option<TypeAnnotation>,
-    },
-    Type {
-        keyword_type: Token,
-        left: Token,
-        right: TypeAnnotation,
-        type_variables: Vec<Token>,
-    },
-    Enum {
-        keyword_enum: Token,
-        name: Token,
-        constructors: Vec<EnumConstructor>,
-        type_variables: Vec<Token>,
-    },
-    Do {
-        keyword_do: Token,
-        expression: Expression,
-    },
+    Let(LetStatement),
+    Type(TypeStatement),
+    Enum(EnumStatement),
+    Do(DoStatement),
+    Import(ImportStatement),
+}
+
+#[derive(Debug, Clone)]
+pub struct LetStatement {
+    pub keyword_export: Option<Token>,
+    pub keyword_let: Token,
+    pub left: Token,
+    pub type_variables: Vec<Token>,
+    pub right: Expression,
+    pub type_annotation: Option<TypeAnnotation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeStatement {
+    pub keyword_export: Option<Token>,
+    pub keyword_type: Token,
+    pub left: Token,
+    pub right: TypeAnnotation,
+    pub type_variables: Vec<Token>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumStatement {
+    pub keyword_export: Option<Token>,
+    pub keyword_enum: Token,
+    pub name: Token,
+    pub constructors: Vec<EnumConstructor>,
+    pub type_variables: Vec<Token>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportStatement {
+    pub keyword_import: Token,
+    pub url: Token,
+    pub imported_names: NonEmpty<ImportedName>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DoStatement {
+    pub keyword_do: Token,
+    pub expression: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportedName {
+    pub name: Token,
+    pub alias_as: Option<Token>,
 }
 
 #[derive(Debug, Clone)]
@@ -373,6 +402,8 @@ pub enum TokenType {
     KeywordNull,
     KeywordTrue,
     KeywordFalse,
+    KeywordImport,
+    KeywordExport,
     Whitespace,
     LeftCurlyBracket,
     RightCurlyBracket,
@@ -410,7 +441,16 @@ pub enum TokenType {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Source {
     File { path: String },
-    NonFile { env_name: String },
+    NonFile { env_name: String, path: String },
+}
+
+impl Source {
+    pub fn path(&self) -> String {
+        match self {
+            Source::File { path } => path.clone(),
+            Source::NonFile { path, .. } => path.clone(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

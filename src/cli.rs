@@ -1,5 +1,5 @@
-use crate::ast::Source;
 use crate::compile::compile;
+use crate::{ast::Source, unify::Program};
 use clap::Clap;
 use std::fs;
 
@@ -25,11 +25,17 @@ pub fn cli() {
     let opts: Opts = Opts::parse();
 
     match opts.subcmd {
-        SubCommand::Run(run) => match fs::read_to_string(&run.filename) {
-            Err(_) => {
-                eprintln!("Unable to find file '{}'", run.filename);
+        SubCommand::Run(run) => {
+            match fs::read_to_string(&run.filename) {
+                Err(_) => {
+                    eprintln!("Unable to find file '{}'", run.filename);
+                }
+                Ok(code) => compile(Program {
+                    source: Source::File { path: run.filename },
+                    code,
+                    import_relations: vec![], // empty, because this is the root
+                }),
             }
-            Ok(code) => compile(Source::File { path: run.filename }, code),
-        },
+        }
     }
 }

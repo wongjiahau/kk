@@ -1,9 +1,13 @@
-use crate::ast::*;
-use crate::parse::{ParseContext, ParseError, ParseErrorKind};
-use crate::pattern::ExpandablePattern;
 use crate::tokenize::TokenizeError;
 use crate::unify::{UnifyError, UnifyErrorKind};
+use crate::{ast::*, compile::CompileError};
+use crate::{
+    compile::CompileErrorKind,
+    parse::{ParseContext, ParseError, ParseErrorKind},
+};
+use crate::{pattern::ExpandablePattern, unify::Program};
 use colored::*;
+use core::panic;
 use prettytable::{format::Alignment, Cell, Row, Table};
 use std::ops::Range;
 
@@ -12,14 +16,14 @@ use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
-pub fn print_tokenize_error(source: Source, code: String, tokenize_error: TokenizeError) {
+pub fn print_tokenize_error(program: Program, tokenize_error: TokenizeError) {
     match tokenize_error {
         TokenizeError::UnterminatedComment { position } => {
             let range = ErrorRange {
                 character_index_start: position.character_index_start,
                 character_index_end: position.character_index_end,
             };
-            print_error(source, code, range, StringifiedError {
+            print_error(program, range, StringifiedError {
                 summary: "Syntax error: Unterminated comment".to_string(),
                 body: "Comments must start with two slashes. Consider adding a slash (/) after here.".to_string()
             })
@@ -30,8 +34,7 @@ pub fn print_tokenize_error(source: Source, code: String, tokenize_error: Tokeni
                 character_index_end: position.character_index_end,
             };
             print_error(
-                source,
-                code,
+                program,
                 range,
                 StringifiedError {
                     summary: "Syntax error: Invalid token".to_string(),
@@ -45,8 +48,7 @@ pub fn print_tokenize_error(source: Source, code: String, tokenize_error: Tokeni
                 character_index_end: character.index,
             };
             print_error(
-                source,
-                code,
+                program,
                 range,
                 StringifiedError {
                     summary: "Syntax error: Unknown character".to_string(),
@@ -60,8 +62,7 @@ pub fn print_tokenize_error(source: Source, code: String, tokenize_error: Tokeni
                 character_index_end: position.character_index_end,
             };
             print_error(
-                source,
-                code,
+                program,
                 range,
                 StringifiedError {
                     summary: "Syntax error: unterminated character literal".to_string(),
@@ -75,8 +76,7 @@ pub fn print_tokenize_error(source: Source, code: String, tokenize_error: Tokeni
                 character_index_end: position.character_index_end,
             };
             print_error(
-                source,
-                code,
+                program,
                 range,
                 StringifiedError {
                     summary: "Syntax error: unterminated string literal".to_string(),
@@ -92,8 +92,7 @@ pub fn print_tokenize_error(source: Source, code: String, tokenize_error: Tokeni
             };
 
             print_error(
-                source,
-                code,
+                program,
                 range,
                 StringifiedError {
                     summary: "Syntax error: character literal cannot be empty".to_string(),
@@ -105,7 +104,7 @@ pub fn print_tokenize_error(source: Source, code: String, tokenize_error: Tokeni
     }
 }
 
-pub fn print_parse_error(source: Source, code: String, parse_error: ParseError) {
+pub fn print_parse_error(program: Program, parse_error: ParseError) {
     let parse_context_description = get_parse_context_description(parse_error.context);
     let parse_context_description = format!(
         "We found this error when we are trying to parse a {}.\nExamples of {} are:\n\n{}",
@@ -156,14 +155,14 @@ pub fn print_parse_error(source: Source, code: String, parse_error: ParseError) 
                     expected_token_message, actual_token_explanation, parse_context_description
                 ),
             };
-            print_error(source, code, range, error)
+            print_error(program, range, error)
         }
         ParseErrorKind::UnexpectedEOF {
             expected_token_type,
         } => {
             let range = ErrorRange {
-                character_index_start: code.len() - 1,
-                character_index_end: code.len() - 1,
+                character_index_start: program.code.len() - 1,
+                character_index_end: program.code.len() - 1,
             };
             let expected_token_message = match expected_token_type {
                 None => "".to_string(),
@@ -178,7 +177,7 @@ pub fn print_parse_error(source: Source, code: String, parse_error: ParseError) 
                 summary: "Syntax error: unexpected EOF (end of file)".to_string(),
                 body: format!("{}{}", expected_token_message, parse_context_description),
             };
-            print_error(source, code, range, error)
+            print_error(program, range, error)
         }
     }
 }
@@ -193,11 +192,13 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordLet => "used for defining variables, for example `let x = 1`",
         TokenType::KeywordType => "used for defining type alias, for example `type People = { name: String }`",
         TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example `enum Color = Red() Blue()`",
-        TokenType::KeywordDo => "used for defining expression with side effects, such as `do 'Hello world'.print()`",
-        TokenType::KeywordElse => "only used in monadic let bindings, for example: `let Some(x) = y else \\_ => 'Nope'`",
+        TokenType::KeywordDo => "used for defining expression with side effects, such as `do \"Hello world\".print()`",
+        TokenType::KeywordElse => "only used in monadic let bindings, for example: `let Some(x) = y else \\_ => \"Nope\"`",
         TokenType::KeywordNull => "only used to create a value with the null type (i.e. unit type)",
         TokenType::KeywordTrue | TokenType::KeywordFalse
             => "only used to create a boolean value",
+        TokenType::KeywordImport => "only used for importing symbols from other files, for example: `import \"./foo.kk\" bar`",
+        TokenType::KeywordExport => "only used for exporting symbols, for example: `export let foo = 1`",
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
         TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example `{ x: string }`, and constructing record value, for example `{ x = 'hello' }`",
 
@@ -286,6 +287,13 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
                 "enum Color = Red() Green()",
             ],
         },
+        ParseContext::StatementImport => ParseContextDescription {
+            name: "Import Statement",
+            examples: vec![
+                "import \"./foo.kk\" bar",
+                "import \"./foo.kk\" bar = spam, baz",
+            ],
+        },
         ParseContext::StatementLet => ParseContextDescription {
             name: "Let Statement",
             examples: vec!["let x = 1", "let identity<T> = \\(x: T): T => x"],
@@ -361,6 +369,8 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordNull => "null",
         TokenType::KeywordTrue => "true",
         TokenType::KeywordFalse => "false",
+        TokenType::KeywordImport => "import",
+        TokenType::KeywordExport => "export",
         TokenType::Whitespace => " ",
         TokenType::LeftCurlyBracket => "{",
         TokenType::RightCurlyBracket => "}",
@@ -392,14 +402,24 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
     }
 }
 
-pub fn print_unify_error(source: Source, code: String, unify_error: UnifyError) {
+pub fn print_compile_error(CompileError { kind, program }: CompileError) {
+    match kind {
+        CompileErrorKind::TokenizeError(tokenize_error) => {
+            print_tokenize_error(program, tokenize_error)
+        }
+        CompileErrorKind::ParseError(parse_error) => print_parse_error(program, *parse_error),
+        CompileErrorKind::UnifyError(unify_error) => print_unify_error(program, *unify_error),
+    }
+}
+
+pub fn print_unify_error(program: Program, unify_error: UnifyError) {
     let error = stringify_unify_error_kind(unify_error.kind);
     let range = ErrorRange {
         character_index_start: unify_error.position.character_index_start,
         character_index_end: unify_error.position.character_index_end,
     };
 
-    print_error(source, code, range, error)
+    print_error(program, range, error)
 }
 
 struct ErrorRange {
@@ -407,10 +427,10 @@ struct ErrorRange {
     character_index_end: usize,
 }
 
-fn print_error(source: Source, code: String, range: ErrorRange, error: StringifiedError) {
-    let origin = match source {
+fn print_error(program: Program, range: ErrorRange, error: StringifiedError) {
+    let origin = match program.source {
         Source::File { path } => path,
-        Source::NonFile { env_name } => env_name,
+        Source::NonFile { env_name, .. } => env_name,
     };
 
     let range = {
@@ -421,7 +441,7 @@ fn print_error(source: Source, code: String, range: ErrorRange, error: Stringifi
 
     let mut files = SimpleFiles::new();
 
-    let file_id = files.add(origin, code);
+    let file_id = files.add(origin, program.code);
     let diagnostic = Diagnostic::error()
         .with_labels(vec![Label::primary(
             file_id,
@@ -702,7 +722,38 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 "But I found other versions of this function that take any of the following type as first argument:",
                 expected_first_argument_types.into_iter().map(|type_value| stringify_type(type_value, 2)).collect::<Vec<String>>().join("\n\n")
             )
+        },
+        UnifyErrorKind::ErrorneousImportPath { extra_information } => StringifiedError {
+            summary: "Errorneous Import Path.".to_string(),
+            body: extra_information
+        },
+        UnifyErrorKind::UnknownImportedName => StringifiedError {
+            summary: "Unknown Name".to_string(),
+            body: "This name cannot be found in the imported file.".to_string()
+        },
+        UnifyErrorKind::CannotImportPrivateSymbol => StringifiedError {
+            summary: "Cannot import private symbol.".to_string(),
+            body: format!(
+                "{}{}",
+                "Consider exporting this symbol if you want to import it in this file.\nFor example:\n\n",
+                "    export let x = 2"
+            )
+        },
+        UnifyErrorKind::CyclicDependency {
+            import_relations
+        } => StringifiedError {
+            summary: "Cyclic dependencies detected.".to_string(),
+            body: format!(
+                "Explanation:\n\n{}",
+                indent_string(
+                    import_relations.into_iter().map(|relation| {
+                        format!("{} imports {}", relation.importer_path, relation.importee_path)
+                    }).collect::<Vec<String>>().join("\n"), 
+                    2
+                )
+            )
         }
+
     }
 }
 
