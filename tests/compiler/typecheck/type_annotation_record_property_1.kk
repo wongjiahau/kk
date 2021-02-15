@@ -1,1 +1,1 @@
-let x = {a: String = 2}
+let x = {a:String 2}

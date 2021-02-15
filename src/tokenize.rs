@@ -298,7 +298,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                         ',' => TokenType::Comma,
                         '<' => TokenType::LessThan,
                         '>' => TokenType::MoreThan,
-                        '\\' => TokenType::Backslash,
+                        '|' => TokenType::Pipe,
                         '_' => TokenType::Underscore,
                         '\n' => TokenType::Newline,
                         _ => return Err(TokenizeError::UnknownCharacter { character }),

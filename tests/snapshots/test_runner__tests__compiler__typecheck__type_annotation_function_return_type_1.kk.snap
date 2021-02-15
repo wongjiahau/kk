@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f = \(x) -> String => true
+let f = | x -> String => true
 
 ============
 EXIT CODE
@@ -21,10 +21,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/type_annotation_function_return_type_1.kk:1:27
+  ┌─ tests/compiler/typecheck/type_annotation_function_return_type_1.kk:1:26
   │
-1 │ let f = \(x) -> String => true
-  │                           ^^^^ Type mismatch
+1 │ let f = | x -> String => true
+  │                          ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

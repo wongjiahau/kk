@@ -7,11 +7,11 @@ INPUT
 ============
 enum List<T> =
   Nil()
-  Cons({current: T, next: List<T = T>})
+  Cons({current: T next: List<T T>})
 
 let bomb =
-  \Nil() => true
-  \Cons({current = _, next = Nil()}) => true
+  | Nil() => true
+  | Cons({current _ next Nil()}) => true
 
 ============
 EXIT CODE
@@ -29,10 +29,10 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_1.kk:6:3
   │
-6 │ ╭   \Nil() => true
-7 │ │   \Cons({current = _, next = Nil()}) => true
-  │ ╰────────────────────────────────────────────^ Non-exhaustive cases
+6 │ ╭   | Nil() => true
+7 │ │   | Cons({current _ next Nil()}) => true
+  │ ╰────────────────────────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      \Cons({ current = _, next = Cons(_) }) => ...
+      | Cons({ current _ next Cons(_) }) => ...

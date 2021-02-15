@@ -1,4 +1,4 @@
 let isFriendly = 
-  \"cat" => true
-  \"tiger" => false
+  | "cat" => true
+  | "tiger" => false
 

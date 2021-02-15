@@ -6,8 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo =
-  \[] => true
-  \[_, ...[]] => false
+  | [] => true
+  | [_ ...[]] => false
 
 ============
 EXIT CODE
@@ -25,10 +25,10 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/case_exhaustiveness_array_1.kk:2:3
   │
-2 │ ╭   \[] => true
-3 │ │   \[_, ...[]] => false
+2 │ ╭   | [] => true
+3 │ │   | [_ ...[]] => false
   │ ╰──────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      \[_, ...[_, ..._]] => ...
+      | [_ ...[_ ..._]] => ...

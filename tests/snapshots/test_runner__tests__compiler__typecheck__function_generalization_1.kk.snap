@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let identity = \x => x
+let identity = | x => x
 let x = "hello".identity()
 let y: Integer = x
 

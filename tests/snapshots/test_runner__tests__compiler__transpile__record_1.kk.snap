@@ -5,8 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo = \_ => 123
-let x = {x = null.foo(), y = "456"}
+let foo = | _ => 123
+let z = 3
+let x = {
+  x null.foo()
+  y "456"
+  z,
+}
 
 do x.print()
 
@@ -18,7 +23,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ x: 123, y: '456' }
+{ x: 123, y: '456', z: 3 }
 
 ============
 STDERR

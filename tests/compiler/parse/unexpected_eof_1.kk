@@ -1,1 +1,1 @@
-let f = \x =>
+let f = | x =>

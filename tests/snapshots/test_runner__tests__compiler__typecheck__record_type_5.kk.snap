@@ -6,10 +6,10 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo: {
-  x: Integer,
+  x: Integer
   y: Integer
 } = {
-  x = 1
+  x 1
 }
 
 ============
@@ -30,7 +30,7 @@ error:
   │
 4 │   } = {
   │ ╭─────^
-5 │ │   x = 1
+5 │ │   x 1
 6 │ │ }
   │ ╰─^ Missing properties
   │

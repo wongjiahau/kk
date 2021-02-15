@@ -1672,11 +1672,12 @@ fn infer_expression_type_(
                                 0,
                                 FunctionBranch {
                                     start_token: keyword_let.clone(),
-                                    parameters: FunctionParameters::NoParenthesis {
-                                        parameter: FunctionParameter {
+                                    parameters: NonEmpty {
+                                        head: FunctionParameter {
                                             destructure_pattern: *left.clone(),
                                             type_annotation: type_annotation.clone(),
                                         },
+                                        tail: vec![],
                                     },
                                     body: true_branch.clone(),
                                     return_type_annotation: None,
@@ -2146,26 +2147,14 @@ fn infer_function(
 pub fn function_branch_parameters_to_tuple(
     function_branch: &FunctionBranch,
 ) -> DestructurePatternTuple {
-    match &function_branch.parameters {
-        FunctionParameters::NoParenthesis { parameter } => DestructurePatternTuple {
-            parentheses: None,
-            values: Box::new(NonEmpty {
-                head: parameter.destructure_pattern.clone(),
-                tail: vec![],
-            }),
-        },
-        FunctionParameters::WithParenthesis {
-            left_parenthesis,
-            right_parenthesis,
-            parameters,
-        } => DestructurePatternTuple {
-            parentheses: Some((left_parenthesis.clone(), right_parenthesis.clone())),
-            values: Box::new(
-                parameters
-                    .clone()
-                    .map(|argument| argument.destructure_pattern),
-            ),
-        },
+    DestructurePatternTuple {
+        parentheses: None,
+        values: Box::new(
+            function_branch
+                .parameters
+                .clone()
+                .map(|argument| argument.destructure_pattern),
+        ),
     }
 }
 

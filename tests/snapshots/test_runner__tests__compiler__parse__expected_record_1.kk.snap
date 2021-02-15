@@ -33,12 +33,12 @@ error:
 
     Example #1:
 
-      { x = 2, y = 3 }
+      { x 2 y 3 }
 
     Example #2:
 
-      { x: number = 2 }
+      { x:Integer 2 }
 
     Example #3:
 
-      { x, y }
+      { x, y, }

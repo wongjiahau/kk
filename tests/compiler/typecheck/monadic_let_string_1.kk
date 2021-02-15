@@ -1,3 +1,3 @@
-let guess = \x => 
+let guess = | x => 
   let "hey" = x
   2

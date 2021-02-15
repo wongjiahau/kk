@@ -6,8 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let and =
-  \(true, true) => true
-  \(false, true) => false
+  | true true => true
+  | false true => false
 
 ============
 EXIT CODE
@@ -25,11 +25,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_2.kk:2:3
   │
-2 │ ╭   \(true, true) => true
-3 │ │   \(false, true) => false
-  │ ╰─────────────────────────^ Non-exhaustive cases
+2 │ ╭   | true true => true
+3 │ │   | false true => false
+  │ ╰───────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      \(true, false) => ...
-      \(false, false) => ...
+      | true false => ...
+      | false false => ...

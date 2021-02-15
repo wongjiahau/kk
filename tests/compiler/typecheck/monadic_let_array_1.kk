@@ -1,3 +1,3 @@
-let guess = \x => 
-  let [0, ..._] = x
+let guess = | x => 
+  let [0 ..._] = x
   true

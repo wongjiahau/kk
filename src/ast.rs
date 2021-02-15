@@ -243,7 +243,6 @@ pub enum Expression {
     FunctionCall(Box<FunctionCall>),
     Record {
         left_curly_bracket: Token,
-        spread: Option<Box<Expression>>,
         key_value_pairs: Vec<RecordKeyValue>,
         right_curly_bracket: Token,
     },
@@ -274,17 +273,15 @@ pub enum Expression {
 
 #[derive(Debug, Clone)]
 pub enum RecordUpdate {
-    /// For example, `x.{ a = 3 }`
+    /// For example, `x.{ a 3 }`
     ValueUpdate {
         property_name: Token,
-        equals: Token,
         new_value: Expression,
     },
 
-    /// For example, `x. { a => .square() }`
+    /// For example, `x.{ a.square() }`
     FunctionalUpdate {
         property_name: Token,
-        fat_arrow_right: Token,
         function: Expression,
     },
 }
@@ -326,20 +323,14 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub struct FunctionBranch {
     pub start_token: Token,
-    pub parameters: FunctionParameters,
+    pub parameters: NonEmpty<FunctionParameter>,
     pub body: Box<Expression>,
     pub return_type_annotation: Option<TypeAnnotation>,
 }
 
 impl FunctionBranch {
     pub fn parameters(&self) -> NonEmpty<FunctionParameter> {
-        match &self.parameters {
-            FunctionParameters::NoParenthesis { parameter } => NonEmpty {
-                head: parameter.clone(),
-                tail: vec![],
-            },
-            FunctionParameters::WithParenthesis { parameters, .. } => parameters.clone(),
-        }
+        self.parameters.clone()
     }
 }
 
@@ -422,7 +413,7 @@ pub enum TokenType {
     Minus,
     FatArrowRight,
     ThinArrowRight,
-    Backslash,
+    Pipe,
     Underscore,
     Identifier,
     String,

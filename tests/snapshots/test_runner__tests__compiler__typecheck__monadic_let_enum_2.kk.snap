@@ -7,11 +7,11 @@ INPUT
 ============
 enum Color = Red() Green() Blue() Yellow()
 
-let colorToInteger = \xs =>
+let colorToInteger = | xs =>
   let Red() = xs
     else
-      \Green() => 0
-      \Blue() => 0
+      | Green() => 0
+      | Blue() => 0
   1
 
 ============
@@ -32,10 +32,10 @@ error:
   │
 4 │ ╭   let Red() = xs
 5 │ │     else
-6 │ │       \Green() => 0
-7 │ │       \Blue() => 0
-  │ ╰──────────────────^ Non-exhaustive cases
+6 │ │       | Green() => 0
+7 │ │       | Blue() => 0
+  │ ╰───────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      \Yellow() => ...
+      | Yellow() => ...

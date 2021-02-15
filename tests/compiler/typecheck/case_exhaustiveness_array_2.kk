@@ -1,6 +1,6 @@
 let bar = 
-  \[] => true
-  \[true, ..._] => false
-  \[false, ..._] => false
-  \_ => false
+  | [] => true
+  | [true ..._] => false
+  | [false ..._] => false
+  | _ => false
 

@@ -5,10 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo = \(x: String) => [x]
+let foo = | x:String => [x]
 
-let a = { x = 2, y = { z = 3} }
-let b = a.{ x => foo } // expected Integer, got String
+let a = { x 2 y {z 3} }
+let b = a.{ x.foo() } // expected String, got Integer
 
 ============
 EXIT CODE
@@ -24,18 +24,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_update_4.kk:4:18
+  ┌─ tests/compiler/typecheck/record_update_4.kk:4:13
   │
-4 │ let b = a.{ x => foo } // expected Integer, got String
-  │                  ^^^ Type mismatch
+4 │ let b = a.{ x.foo() } // expected String, got Integer
+  │             ^ Type mismatch
   │
-  = +---------------+--------------+
-    | EXPECTED TYPE | ACTUAL TYPE  |
-    +---------------+--------------+
-    |   \(          |   \(         |
-    | -   Integer   | +   String   |
-    |   ) =>        |   ) =>       |
-    | -   Integer   | +   [        |
-    |               | +     String |
-    |               | +   ]        |
-    +---------------+--------------+
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - String      | + Integer   |
+    +---------------+-------------+

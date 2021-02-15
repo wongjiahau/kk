@@ -6,8 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let f
-  : \Integer -> Null
-  = \(x: String) => null
+  : | Integer -> Null
+  = | x: String => null
 
 ============
 EXIT CODE
@@ -25,7 +25,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/progressive_unification_2.kk:3:10
   │
-3 │   = \(x: String) => null
+3 │   = | x: String => null
   │          ^^^^^^ Wrong type annotation
   │
   = The expected type annotation is:

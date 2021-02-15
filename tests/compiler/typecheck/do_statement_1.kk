@@ -1,3 +1,3 @@
-let foo = \null => 123
+let foo = | null => 123
 
 do null.foo()

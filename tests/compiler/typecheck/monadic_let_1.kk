@@ -1,4 +1,4 @@
-let colorIsRed = \_ => 
+let colorIsRed = | _ => 
   let x = 1 
-    else \_ => "hi"
+    else | _ => "hi"
   x

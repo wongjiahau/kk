@@ -5,13 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let match = \(x, f) => x.f()
+let match = | x f => x.f()
 
 let arrayMap =
-  \([], _) => []
-  \([head, ..._], f) => [head.f()]
+  | [] _ => []
+  | [head ..._] f => [head.f()]
 
-let result = [{foo = 2, bar = "hi"}].arrayMap(\o => o.zap)
+let result = [{foo 2 bar "hi"}].arrayMap(|.zap)
 
 ============
 EXIT CODE
@@ -27,10 +27,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_6.kk:7:55
+  ┌─ tests/compiler/typecheck/progressive_unification_6.kk:7:44
   │
-7 │ let result = [{foo = 2, bar = "hi"}].arrayMap(\o => o.zap)
-  │                                                       ^^^ No such property
+7 │ let result = [{foo 2 bar "hi"}].arrayMap(|.zap)
+  │                                            ^^^ No such property
   │
   = Available properties:
       bar

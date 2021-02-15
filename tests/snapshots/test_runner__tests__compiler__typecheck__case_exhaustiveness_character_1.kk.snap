@@ -6,8 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo =
-  \'a' => true
-  \'b' => false
+  | 'a' => true
+  | 'b' => false
 
 ============
 EXIT CODE
@@ -25,10 +25,10 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/case_exhaustiveness_character_1.kk:2:3
   │
-2 │ ╭   \'a' => true
-3 │ │   \'b' => false
-  │ ╰───────────────^ Non-exhaustive cases
+2 │ ╭   | 'a' => true
+3 │ │   | 'b' => false
+  │ ╰────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      \_ => ...
+      | _ => ...

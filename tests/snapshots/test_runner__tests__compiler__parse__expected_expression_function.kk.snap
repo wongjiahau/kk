@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x = \x - 2
+let x = | x - 2
 
 ============
 EXIT CODE
@@ -21,27 +21,36 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/parse/expected_expression_function.kk:1:12
+  ┌─ tests/compiler/parse/expected_expression_function.kk:1:13
   │
-1 │ let x = \x - 2
-  │            ^ Syntax error: not expecting `-` here
+1 │ let x = | x - 2
+  │             ^ Syntax error: not expecting `-` here
   │
-  = The expected token here is `=>`.
+  = Note that `-` is only used to represent negative numbers, for example `-123.4`.
 
-    Note that `-` is only used to represent negative numbers, for example `-123.4`.
-
-    We found this error when we are trying to parse a Function.
-    Examples of Function are:
+    We found this error when we are trying to parse a Pattern.
+    Examples of Pattern are:
 
     Example #1:
 
-      \x => x.add(1)
+      1
 
     Example #2:
 
-      \(x: String, y: String) -> String => x.concat(y)
+      "hello world"
 
     Example #3:
 
-      \(true, true) => true
-      \(_, _) => false
+      true
+
+    Example #4:
+
+      Some(x)
+
+    Example #5:
+
+      []
+
+    Example #6:
+
+      { x, y, }

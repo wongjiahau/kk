@@ -1,6 +1,6 @@
 let and = 
-  \(true, true) => true
-  \(_, _) => false
+  | true true => true
+  | _ _ => false
 
 do true.and(true).print()
 do true.and(false).print()

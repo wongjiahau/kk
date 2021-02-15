@@ -8,7 +8,7 @@ INPUT
 enum Option<T> = Some(T) None()
 
 let is_some_some =
-  \Some(Some(_)) => true
+  | Some(Some(_)) => true
 
 ============
 EXIT CODE
@@ -26,10 +26,10 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_3.kk:4:3
   │
-4 │   \Some(Some(_)) => true
-  │   ^^^^^^^^^^^^^^^^^^^^^^ Non-exhaustive cases
+4 │   | Some(Some(_)) => true
+  │   ^^^^^^^^^^^^^^^^^^^^^^^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      \Some(None()) => ...
-      \None() => ...
+      | Some(None()) => ...
+      | None() => ...

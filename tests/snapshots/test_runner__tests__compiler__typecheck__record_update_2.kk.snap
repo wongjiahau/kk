@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let a = { x = 2, y = { z = 3} }
-let b = a.{ x = "hi" } // expected Integer, got String
+let a = { x 2 }
+let b = a.{ x "hi" } // expected Integer, got String
 
 ============
 EXIT CODE
@@ -22,10 +22,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_update_2.kk:2:17
+  ┌─ tests/compiler/typecheck/record_update_2.kk:2:15
   │
-2 │ let b = a.{ x = "hi" } // expected Integer, got String
-  │                 ^^^^ Type mismatch
+2 │ let b = a.{ x "hi" } // expected Integer, got String
+  │               ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

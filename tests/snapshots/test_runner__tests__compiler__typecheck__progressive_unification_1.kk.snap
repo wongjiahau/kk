@@ -6,8 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let f
-  : \{foo: Float} -> Float
-  = \o => o.bar
+  : | {foo: Float} -> Float
+  = | o => o.bar
 
 ============
 EXIT CODE
@@ -23,10 +23,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_1.kk:3:13
+  ┌─ tests/compiler/typecheck/progressive_unification_1.kk:3:14
   │
-3 │   = \o => o.bar
-  │             ^^^ No such property
+3 │   = | o => o.bar
+  │              ^^^ No such property
   │
   = Available properties:
       foo

@@ -1,4 +1,4 @@
 let bomb = 
-  \null => true
-  \null => false
+  | null => true
+  | null => false
 

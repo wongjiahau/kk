@@ -5,9 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let match = \(x, f) => x.f()
+let match = | x f => x.f()
 
-do { a = 2 }.match(.b).print()
+do { a 2 }.match(|.b).print()
 
 ============
 EXIT CODE
@@ -23,10 +23,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/shorthand_record_access_1.kk:3:21
+  ┌─ tests/compiler/typecheck/shorthand_record_access_1.kk:3:20
   │
-3 │ do { a = 2 }.match(.b).print()
-  │                     ^ No such property
+3 │ do { a 2 }.match(|.b).print()
+  │                    ^ No such property
   │
   = Available properties:
       a

@@ -5,9 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let colorIsRed = \_ =>
+let colorIsRed = | _ =>
   let x = 1
-    else \_ => "hi"
+    else | _ => "hi"
   x
 
 ============
@@ -24,10 +24,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_1.kk:3:16
+  ┌─ tests/compiler/typecheck/monadic_let_1.kk:3:17
   │
-3 │     else \_ => "hi"
-  │                ^^^^ Type mismatch
+3 │     else | _ => "hi"
+  │                 ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

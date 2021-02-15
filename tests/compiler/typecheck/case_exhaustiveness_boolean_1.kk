@@ -1,4 +1,4 @@
 let and = 
-  \(true, true) => true
-  \(_, _) => false
-  \(_, _) => false
+  | true true => true
+  | _ _ => false
+  | _ _ => false

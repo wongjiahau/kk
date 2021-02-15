@@ -1,4 +1,4 @@
 let foo = 
-  \'a' => true
-  \'b' => false
+  | 'a' => true
+  | 'b' => false
 

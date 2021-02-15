@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo = 2
-let foo = \(_: String) => "Hello"
+let foo = | _: String => "Hello"
 
 ============
 EXIT CODE
@@ -24,7 +24,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/single_dispatch_3.kk:2:5
   │
-2 │ let foo = \(_: String) => "Hello"
+2 │ let foo = | _: String => "Hello"
   │     ^^^ Duplicated name
   │
   = This variable is already declared before in this namespace.

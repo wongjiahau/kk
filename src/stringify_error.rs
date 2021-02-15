@@ -193,7 +193,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordType => "used for defining type alias, for example `type People = { name: String }`",
         TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example `enum Color = Red() Blue()`",
         TokenType::KeywordDo => "used for defining expression with side effects, such as `do \"Hello world\".print()`",
-        TokenType::KeywordElse => "only used in monadic let bindings, for example: `let Some(x) = y else \\_ => \"Nope\"`",
+        TokenType::KeywordElse => "only used in monadic let bindings, for example: `let Some(x) = y else | _ => \"Nope\"`",
         TokenType::KeywordNull => "only used to create a value with the null type (i.e. unit type)",
         TokenType::KeywordTrue | TokenType::KeywordFalse
             => "only used to create a boolean value",
@@ -202,18 +202,18 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
         TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example `{ x: string }`, and constructing record value, for example `{ x = 'hello' }`",
 
-        TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions, function arguments and enum constructor",
+        TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions and enum constructor only.",
         TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example `[1,2,3]`",
         TokenType::Colon => "only used for annotating types, for example `{ x: string }`",
         TokenType::DoubleColon => "only used for scope resolution, for example: `Color::Red()`",
         TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example: `type Box<T> = { value: T }`",
-        TokenType::Equals => "used for declaring variables, for example `let x = 1`, and also used in constructing record, for example `{ x = 1 }`",
+        TokenType::Equals => "used for declaring variables, for example `let x = 1`",
         TokenType::Period => "used for calling a function, for example `1.add(2)`",
         TokenType::Spread => panic!("Subject to change"),
-        TokenType::Comma => "used for separating arguments in function, key-value pairs in record, elements in array etc",
+        TokenType::Comma => "used for record punning, for example `{x,}`",
         TokenType::Minus => "only used to represent negative numbers, for example `-123.4`",
-        TokenType::FatArrowRight | TokenType::Backslash => "only used for creating function, for example `\\x => x.add(1)`",
-        TokenType::ThinArrowRight => "only used for annotating the return type of a function, for example `\\x -> String => \"Hello\"`",
+        TokenType::FatArrowRight | TokenType::Pipe => "only used for creating function, for example `| x => x.add(1)`",
+        TokenType::ThinArrowRight => "only used for annotating the return type of a function, for example `| x -> String => \"Hello\"`",
         TokenType::Underscore => "used in pattern matching to match values that are not used afterwards",
         TokenType::Identifier => "used to represent the name of a variable",
         TokenType::String => "only used to represent string values",
@@ -229,46 +229,38 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
     match parse_context {
         ParseContext::Expression => ParseContextDescription {
             name: "Expression",
-            examples: vec!["123", "'hello world'", "{ x = 3 }", "[ 2 ]", "Some(true)"],
+            examples: vec!["123", "\"hello world\"", "{ x 3 }", "[ 2 ]", "Some(true)"],
         },
         ParseContext::ExpressionLet => ParseContextDescription {
             name: "Let Expression",
             examples: vec![
                 "let x = 1\nlet y = 2\nx.add(y)",
-                "let Some(x) = a \\else => Error('oops')\nOk(x)",
+                "let Some(x) = a else | _ => Error(\"oops\")\nOk(x)",
             ],
         },
         ParseContext::ExpressionFunction => ParseContextDescription {
             name: "Function",
             examples: vec![
-                "\\x => x.add(1)",
-                "\\(x: String, y: String) -> String => x.concat(y)",
-                "\\(true, true) => true\n\\(_, _) => false",
+                "| x => x.add(1)",
+                "| x:String  y:String -> String => x.concat(y)",
+                "| true true => true\n| _ _ => false",
             ],
         },
         ParseContext::DotExpression => ParseContextDescription {
             name: "Dot Expression: Function Call, Property Access, or Record Update",
-            examples: vec!["x.add(1)", "people.name", "x.{a = 3}", "x.{a => .square()}"],
+            examples: vec!["x.add(1)", "people.name", "x.{a 3}", "x.{a.square()}"],
         },
         ParseContext::ExpressionFunctionCall => ParseContextDescription {
             name: "Function call",
-            examples: vec![
-                "'hello world'.print()",
-                "x.add(y)",
-                "value.as<Type= number>()",
-            ],
+            examples: vec!["\"Hello world\".print()", "x.add(y)"],
         },
         ParseContext::ExpressionRecord => ParseContextDescription {
             name: "Record",
-            examples: vec!["{ x = 2, y = 3 }", "{ x: number = 2 }", "{ x, y }"],
+            examples: vec!["{ x 2 y 3 }", "{ x:Integer 2 }", "{ x, y, }"],
         },
         ParseContext::ExpressionRecordUpdate => ParseContextDescription {
             name: "Record Update",
-            examples: vec![
-                "a.{ x = 2 }",
-                "a.{ x => \\x => x.add(1) }",
-                "a.{ x = 2, y => square }",
-            ],
+            examples: vec!["a.{ x 2 }", "a.{ x.add(1) }", "a.{ x 2 y.square() }"],
         },
         ParseContext::ExpressionArray => ParseContextDescription {
             name: "Array",
@@ -282,8 +274,8 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Statement",
             examples: vec![
                 "let x = 1",
-                "type People = { name: string }",
-                "do 'hello world'.print()",
+                "type People = { name: String }",
+                "do \"hello world\".print()",
                 "enum Color = Red() Green()",
             ],
         },
@@ -296,7 +288,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::StatementLet => ParseContextDescription {
             name: "Let Statement",
-            examples: vec!["let x = 1", "let identity<T> = \\(x: T): T => x"],
+            examples: vec!["let x = 1", "let identity<T> = | x:T -> T => x"],
         },
         ParseContext::StatementType => ParseContextDescription {
             name: "Type Statement",
@@ -305,8 +297,8 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::StatementEnum => ParseContextDescription {
             name: "Enum Statement",
             examples: vec![
-                "enum Color = Red() Green()", 
-                "enum List<Element> = Nil() Cons({current: Element, next: List<Element = Element>})"
+                "enum Color = Red() Green()",
+                "enum List<Element> = Nil() Cons({current: Element next: List<Element Element>})",
             ],
         },
         ParseContext::TypeAnnotationArray => ParseContextDescription {
@@ -315,30 +307,31 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::TypeAnnotationRecord => ParseContextDescription {
             name: "Record Type Annotation",
-            examples: vec!["{ x: string, y: { z: number } }"],
+            examples: vec!["{ x: String  y: { z: Integer } }"],
         },
         ParseContext::TypeAnnotationFunction => ParseContextDescription {
             name: "Function Type Annotation",
             examples: vec![
-                "\\boolean -> boolean",
-                "\\(left: number, right: number) -> number",
+                "| Boolean -> Boolean",
+                "| Integer Integer -> Integer",
+                "| left:Integer right:Integer -> Integer",
             ],
         },
         ParseContext::Pattern => ParseContextDescription {
             name: "Pattern",
-            examples: vec!["1", "'hello world'", "true", "Some(x)", "[]", "{ x, y }"],
+            examples: vec!["1", "\"hello world\"", "true", "Some(x)", "[]", "{ x, y, }"],
         },
         ParseContext::PatternArray => ParseContextDescription {
             name: "Array Pattern",
-            examples: vec!["[]", "[head, ...tail]"],
+            examples: vec!["[]", "[head ...tail]"],
         },
         ParseContext::PatternEnum => ParseContextDescription {
             name: "Enum Pattern",
-            examples: vec!["None()", "Some(x)", "Option::Some(x)"],
+            examples: vec!["None()", "Some(x)"],
         },
         ParseContext::PatternRecord => ParseContextDescription {
             name: "Record Pattern",
-            examples: vec!["{ x, y }", "{ x = true, y = Nil() }"],
+            examples: vec!["{ x, y, }", "{ x true y Nil() }"],
         },
         ParseContext::TypeArguments => ParseContextDescription {
             name: "Type Arguments",
@@ -350,11 +343,11 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::TypeVariablesDeclaration => ParseContextDescription {
             name: "Type Variables Declaration",
-            examples: vec!["<T>", "<T, U>"],
+            examples: vec!["<T>", "<T U>"],
         },
         ParseContext::FunctionArguments => ParseContextDescription {
             name: "Function Arguments",
-            examples: vec!["x", "x: number"],
+            examples: vec!["x", "x:Number"],
         },
     }
 }
@@ -390,7 +383,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Minus => "-",
         TokenType::FatArrowRight => "=>",
         TokenType::ThinArrowRight => "->",
-        TokenType::Backslash => "\\",
+        TokenType::Pipe => "|",
         TokenType::Underscore => "_",
         TokenType::Identifier => "abc",
         TokenType::String => "\"abc\"",
@@ -557,7 +550,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 missing_patterns
                     .into_iter()
                     .map(stringify_expandable_pattern)
-                    .map(|result| format!("  \\{} => ...", result))
+                    .map(|result| format!("  | {} => ...", result))
                     .collect::<Vec<String>>()
                     .join("\n")
             ),
@@ -765,7 +758,7 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
             rest_elements,
         } => {
             format!(
-                "[{}, ...{}]",
+                "[{} ...{}]",
                 stringify_expandable_pattern(*first_element),
                 stringify_expandable_pattern(*rest_elements)
             )
@@ -781,24 +774,15 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
             "{{ {} }}",
             key_pattern_pairs
                 .into_iter()
-                .map(|(key, pattern)| format!(
-                    "{} = {}",
-                    key,
-                    stringify_expandable_pattern(pattern)
-                ))
+                .map(|(key, pattern)| format!("{} {}", key, stringify_expandable_pattern(pattern)))
                 .collect::<Vec<String>>()
-                .join(", ")
+                .join(" ")
         ),
-        ExpandablePattern::Tuple(patterns) => format!(
-            "{left}{center}{right}",
-            left = if patterns.len() > 1 { "(" } else { "" },
-            right = if patterns.len() > 1 { ")" } else { "" },
-            center = patterns
-                .into_iter()
-                .map(stringify_expandable_pattern)
-                .collect::<Vec<String>>()
-                .join(", "),
-        ),
+        ExpandablePattern::Tuple(patterns) => patterns
+            .into_iter()
+            .map(stringify_expandable_pattern)
+            .collect::<Vec<String>>()
+            .join(" "),
         ExpandablePattern::Any { .. } | ExpandablePattern::Infinite { .. } => "_".to_string(),
         ExpandablePattern::EnumConstructor { name, payload, .. } => format!(
             "{}({})",
@@ -852,7 +836,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                     arguments
                         .into_iter()
                         .map(|(key, type_value)| format!(
-                            "{}=\n{},",
+                            "{}\n{},",
                             indent_string(key, 2),
                             indent_string(stringify_type(type_value, 0), 4)
                         ),)
@@ -893,7 +877,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         }
         Type::Function(function_type) => {
             let result = format!(
-                "\\(\n{}\n) =>\n{}",
+                "| (\n{}\n) =>\n{}",
                 function_type
                     .parameters_types
                     .map(|argument_type| { indent_string(stringify_type(argument_type, 0), 2) })

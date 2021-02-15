@@ -1,3 +1,3 @@
 let foo = 
-  \[] => true
-  \[_, ...[]] => false
+  | [] => true
+  | [_ ...[]] => false

@@ -1,1 +1,1 @@
-let x = [1, null]
+let x = [1 null]

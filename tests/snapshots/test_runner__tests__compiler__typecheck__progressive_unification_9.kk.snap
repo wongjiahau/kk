@@ -5,11 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let bar = \(props: {
-  f: \{ x: Integer } -> Integer
-}) =>
-  let { f } = props
-  {x = "hi"}.f()
+let bar = | props: {
+  f: | { x: Integer } -> Integer
+} =>
+  let { f, } = props
+  {x "hi"}.f()
 
 ============
 EXIT CODE
@@ -25,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_9.kk:5:8
+  ┌─ tests/compiler/typecheck/progressive_unification_9.kk:5:6
   │
-5 │   {x = "hi"}.f()
-  │        ^^^^ Type mismatch
+5 │   {x "hi"}.f()
+  │      ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

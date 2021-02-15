@@ -5,11 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo = \(x, y) => [x, y]
+let foo = | x y => [x y]
 
-let match = \(x, f) => x.f()
+let match = | x f => x.f()
 
-do "hello".match(.foo(2)).print()
+do "hello".match(|.foo(2)).print()
 
 ============
 EXIT CODE
@@ -25,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/shorthand_function_call_1.kk:5:23
+  ┌─ tests/compiler/typecheck/shorthand_function_call_1.kk:5:24
   │
-5 │ do "hello".match(.foo(2)).print()
-  │                       ^ Type mismatch
+5 │ do "hello".match(|.foo(2)).print()
+  │                        ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

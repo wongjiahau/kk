@@ -1,4 +1,4 @@
-let foo = \(_: String) => "Hello"
-let foo = \(_: Boolean) => "World"
+let foo = | _: String => "Hello"
+let foo = | _: Boolean => "World"
 
-let bar = \x => x.foo()
+let bar = | x => x.foo()

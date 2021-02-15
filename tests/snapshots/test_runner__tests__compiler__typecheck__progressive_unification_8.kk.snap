@@ -6,9 +6,9 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo: {
-  f: \{ x: Integer } -> Integer
+  f: | { x: Integer } -> Integer
 } = {
-  f = \o => o.y
+  f | o => o.y
 }
 
 ============
@@ -25,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_8.kk:4:15
+  ┌─ tests/compiler/typecheck/progressive_unification_8.kk:4:14
   │
-4 │   f = \o => o.y
-  │               ^ No such property
+4 │   f | o => o.y
+  │              ^ No such property
   │
   = Available properties:
       x

@@ -5,11 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let identity = \x => x
-let constant = \_ => 2
-let map = \(x, f) => x.f()
+let identity = | x => x
+let constant = | _ => 2
+let map = | x f => x.f()
 let x: String = "hello".map(identity)
-let y: String = "hello".map(\_ => "yo")
+let y: String = "hello".map(| _ => "yo")
 let z: String = "hello".map(constant)
 
 ============

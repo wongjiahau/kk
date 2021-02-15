@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let guess = \x =>
+let guess = | x =>
   let 0 = x
   "bomb"
 

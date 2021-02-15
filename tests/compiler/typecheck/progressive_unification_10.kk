@@ -1,4 +1,4 @@
-let bar = \(null) -> Integer =>
+let bar = | Null -> Integer =>
   let x = "hello"
   x
 

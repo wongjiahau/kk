@@ -1,5 +1,5 @@
-let foo = \(x, y) => [x, y]
+let foo = | x y => [x y]
 
-let match = \(x, f) => x.f()
+let match = | x f => x.f()
 
-do "hello".match(.foo("world")).print()
+do "hello".match(|.foo("world")).print()
