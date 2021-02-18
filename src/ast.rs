@@ -34,7 +34,7 @@ pub struct EnumStatement {
     pub keyword_export: Option<Token>,
     pub keyword_enum: Token,
     pub name: Token,
-    pub constructors: Vec<EnumConstructor>,
+    pub constructors: Vec<EnumConstructorDefinition>,
     pub type_variables: Vec<Token>,
 }
 
@@ -58,10 +58,15 @@ pub struct ImportedName {
 }
 
 #[derive(Debug, Clone)]
-pub struct EnumConstructor {
+pub struct EnumConstructorDefinition {
     pub name: Token,
+    pub payload: Option<Box<EnumConstructorDefinitionPayload>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumConstructorDefinitionPayload {
     pub left_parenthesis: Token,
-    pub payload: Option<Box<TypeAnnotation>>,
+    pub type_annotation: TypeAnnotation,
     pub right_parenthesis: Token,
 }
 
@@ -189,9 +194,7 @@ pub enum DestructurePattern {
     Identifier(Token),
     EnumConstructor {
         name: Token,
-        left_parenthesis: Token,
-        payload: Option<Box<DestructurePattern>>,
-        right_parenthesis: Token,
+        payload: Option<Box<DestructurePatternEnumConstructorPayload>>,
     },
     Record {
         left_curly_bracket: Token,
@@ -204,6 +207,13 @@ pub enum DestructurePattern {
         spread: Option<DestructurePatternArraySpread>,
     },
     Tuple(DestructurePatternTuple),
+}
+
+#[derive(Debug, Clone)]
+pub struct DestructurePatternEnumConstructorPayload {
+    pub left_parenthesis: Token,
+    pub pattern: DestructurePattern,
+    pub right_parenthesis: Token,
 }
 #[derive(Debug, Clone)]
 pub struct DestructurePatternTuple {
@@ -239,9 +249,7 @@ pub enum Expression {
     Variable(Token),
     EnumConstructor {
         name: Token,
-        left_parenthesis: Token,
-        payload: Option<Box<Expression>>,
-        right_parenthesis: Token,
+        payload: Option<Box<ExpressionEnumConstructorPayload>>,
     },
     Function(Box<Function>),
     FunctionCall(Box<FunctionCall>),
@@ -273,6 +281,13 @@ pub enum Expression {
         true_branch: Box<Expression>,
         false_branch: Option<Box<Function>>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct ExpressionEnumConstructorPayload {
+    pub left_parenthesis: Token,
+    pub expression: Expression,
+    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]

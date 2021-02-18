@@ -555,10 +555,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Unreachable case".to_string(),
             body: "This case is unreachable because all possible cases are already handled by previous branches.".to_string()
         },
-        UnifyErrorKind::UnusedVariale => StringifiedError {
-            summary: "Unused variable".to_string(),
-            body: "This variable is declared but not used anywhere, consider removing it.".to_string()
-        },
         UnifyErrorKind::NoSuchPropertyOnThisRecord {
             mut expected_keys
         } => {

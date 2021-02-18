@@ -329,25 +329,26 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_enum_constructor_definition(&mut self) -> Result<EnumConstructor, ParseError> {
+    fn parse_enum_constructor_definition(
+        &mut self,
+    ) -> Result<EnumConstructorDefinition, ParseError> {
         let context = ParseContext::EnumConstructorDefinition;
         let name = self.eat_token(TokenType::Identifier, context)?;
-        let left_parenthesis = self.eat_token(TokenType::LeftParenthesis, context)?;
-        if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis) {
-            Ok(EnumConstructor {
-                name,
-                left_parenthesis,
-                payload: None,
-                right_parenthesis,
-            })
-        } else {
+        if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis) {
             let type_annotation = self.parse_type_annotation(context)?;
             let right_parenthesis = self.eat_token(TokenType::RightParenthesis, context)?;
-            Ok(EnumConstructor {
+            Ok(EnumConstructorDefinition {
                 name,
-                left_parenthesis,
-                right_parenthesis,
-                payload: Some(Box::new(type_annotation)),
+                payload: Some(Box::new(EnumConstructorDefinitionPayload {
+                    left_parenthesis,
+                    type_annotation,
+                    right_parenthesis,
+                })),
+            })
+        } else {
+            Ok(EnumConstructorDefinition {
+                name,
+                payload: None,
             })
         }
     }
@@ -795,39 +796,26 @@ impl<'a> Parser<'a> {
                     value: false,
                 }),
                 TokenType::KeywordNull => Ok(Expression::Null(token.clone())),
-                TokenType::Identifier => match self.tokens.peek() {
-                    Some(Token {
-                        token_type: TokenType::LeftParenthesis,
-                        ..
-                    }) => {
+                TokenType::Identifier => {
+                    if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis) {
                         let context = ParseContext::ExpressionEnumConstructor;
                         let name = token.clone();
-                        let left_parenthesis =
-                            self.eat_token(TokenType::LeftParenthesis, context)?;
-                        if let Some(right_parenthesis) =
-                            self.try_eat_token(TokenType::RightParenthesis)
-                        {
-                            Ok(Expression::EnumConstructor {
-                                name,
-                                left_parenthesis,
-                                payload: None,
-                                right_parenthesis,
-                            })
-                        } else {
-                            let payload = self.parse_expression()?;
-                            let right_parenthesis =
-                                self.eat_token(TokenType::RightParenthesis, context)?;
+                        let expression = self.parse_expression()?;
+                        let right_parenthesis =
+                            self.eat_token(TokenType::RightParenthesis, context)?;
 
-                            Ok(Expression::EnumConstructor {
-                                name,
+                        Ok(Expression::EnumConstructor {
+                            name,
+                            payload: Some(Box::new(ExpressionEnumConstructorPayload {
                                 left_parenthesis,
-                                payload: Some(Box::new(payload)),
+                                expression,
                                 right_parenthesis,
-                            })
-                        }
+                            })),
+                        })
+                    } else {
+                        Ok(Expression::Variable(token.clone()))
                     }
-                    _ => Ok(Expression::Variable(token.clone())),
-                },
+                }
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             }
         } else {
@@ -923,26 +911,17 @@ impl<'a> Parser<'a> {
                         let name = token.clone();
                         let left_parenthesis =
                             self.eat_token(TokenType::LeftParenthesis, context)?;
-                        if let Some(right_parenthesis) =
-                            self.try_eat_token(TokenType::RightParenthesis)
-                        {
-                            Ok(DestructurePattern::EnumConstructor {
-                                name,
+                        let pattern = self.parse_destructure_pattern()?;
+                        let right_parenthesis =
+                            self.eat_token(TokenType::RightParenthesis, context)?;
+                        Ok(DestructurePattern::EnumConstructor {
+                            name,
+                            payload: Some(Box::new(DestructurePatternEnumConstructorPayload {
                                 left_parenthesis,
-                                payload: None,
+                                pattern,
                                 right_parenthesis,
-                            })
-                        } else {
-                            let destructure_pattern = self.parse_destructure_pattern()?;
-                            let right_parenthesis =
-                                self.eat_token(TokenType::RightParenthesis, context)?;
-                            Ok(DestructurePattern::EnumConstructor {
-                                name,
-                                left_parenthesis,
-                                payload: Some(Box::new(destructure_pattern)),
-                                right_parenthesis,
-                            })
-                        }
+                            })),
+                        })
                     }
                     _ => Ok(DestructurePattern::Identifier(token.clone())),
                 },

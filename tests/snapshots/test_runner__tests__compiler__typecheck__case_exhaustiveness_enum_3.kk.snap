@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Option<T> = Some(T) None()
+enum Option<T> = Some(T) None
 
 let is_some_some =
   | Some(Some(_)) => true

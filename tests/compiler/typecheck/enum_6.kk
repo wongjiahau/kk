@@ -1,4 +1,4 @@
-enum Food = Nut()
-enum Tool = Nut()
+enum Food = Nut
+enum Tool = Nut
 
-let a = Nut()
+let a = Nut

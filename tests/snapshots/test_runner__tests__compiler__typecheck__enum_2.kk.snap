@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 enum List<Element> =
-  Nil()
+  Nil
   Cons({
     current: Element
     next: List<Element Element>
@@ -16,7 +16,7 @@ let foo = | Cons({
   current 1
   next Cons({
     current true
-    next Nil()
+    next Nil
   })
 }) => 0
 

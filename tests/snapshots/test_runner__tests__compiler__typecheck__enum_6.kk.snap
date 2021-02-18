@@ -5,10 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Food = Nut()
-enum Tool = Nut()
+enum Food = Nut
+enum Tool = Nut
 
-let a = Nut()
+let a = Nut
 
 ============
 EXIT CODE
@@ -26,7 +26,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/enum_6.kk:4:9
   │
-4 │ let a = Nut()
+4 │ let a = Nut
   │         ^^^ Ambiguous Constructor Usage
   │
   = The constructor `Nut` belongs to more than one enums, which are:

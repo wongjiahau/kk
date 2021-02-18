@@ -1,6 +1,6 @@
 // This test should fail
 
-enum Option<T> = Some(T) None()
+enum Option<T> = Some(T) None
 
 let baz = | a => 
   let Some(Some(b)) = a // This should implicitly return Option<Option<T>>

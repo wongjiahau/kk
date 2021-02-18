@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Foo = Bar()
+enum Foo = Bar
 
 let a = Bar("hi")
 

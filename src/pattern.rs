@@ -403,7 +403,21 @@ pub fn match_pattern(
 ) -> MatchPatternResult {
     match (actual_pattern, expected_pattern) {
         (DestructurePattern::Underscore(_), _) => MatchPatternResult::Matched,
-        (DestructurePattern::Identifier(_), _) => MatchPatternResult::Matched,
+        (DestructurePattern::Identifier(identifier), _) => {
+            // check if identifier matches any enum constructor
+            if environment.matches_some_enum_constructor(&identifier.representation) {
+                match_pattern(
+                    environment,
+                    &DestructurePattern::EnumConstructor {
+                        name: identifier.clone(),
+                        payload: None,
+                    },
+                    expected_pattern,
+                )
+            } else {
+                MatchPatternResult::Matched
+            }
+        }
         (DestructurePattern::Boolean { value: true, .. }, ExpandablePattern::Boolean(true)) => {
             MatchPatternResult::Matched
         }
@@ -465,7 +479,7 @@ pub fn match_pattern(
             if actual_name.representation != *expected_name {
                 MatchPatternResult::NotMatched
             } else {
-                match match_pattern(environment, &actual_payload, expected_payload) {
+                match match_pattern(environment, &actual_payload.pattern, expected_payload) {
                     MatchPatternResult::Matched => MatchPatternResult::Matched,
                     MatchPatternResult::NotMatched => MatchPatternResult::NotMatched,
                     MatchPatternResult::PartiallyMatched { expanded_patterns } => {

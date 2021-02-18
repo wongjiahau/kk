@@ -1,10 +1,10 @@
 enum List<Of> = 
-  Nil()
+  Nil
   Cons({current: Of next: List<Of Of>})
 
 let list_map<From To> : | List<Of From> | From -> To -> List<Of To> = 
-  | Nil() _ => Nil()
+  | Nil _ => Nil
   | Cons({current, next,}) f => Cons({
       current current.f()
-      next Cons({current 0 next Nil()}).list_map(f)
+      next Cons({current 0 next Nil}).list_map(f)
   })

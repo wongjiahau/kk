@@ -1,7 +1,7 @@
 enum List<T> = 
-  Nil()
+  Nil
   Cons({current: T next: List<T T>})
 
 let bomb = 
-  | Nil() => true
+  | Nil => true
   | Cons({current true next _}) => true 

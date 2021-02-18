@@ -126,7 +126,6 @@ pub enum UnifyErrorKind {
     CannotPerformRecordUpdateOnNonRecord {
         actual_type: Type,
     },
-    UnusedVariale,
     MissingCases(Vec<ExpandablePattern>),
     ThisEnumConstructorDoesNotRequirePayload,
     ThisEnumConstructorRequiresPaylod {
@@ -469,7 +468,7 @@ pub fn infer_enum_statement(
                         Some(payload) => {
                             // validate type annotation
                             let payload_type_value =
-                                type_annotation_to_type(environment, payload.as_ref())?;
+                                type_annotation_to_type(environment, &payload.type_annotation)?;
                             Some(payload_type_value)
                         }
                     },
@@ -788,11 +787,10 @@ pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern
         | DestructurePattern::Underscore(token)
         | DestructurePattern::Boolean { token, .. }
         | DestructurePattern::Null(token) => token.position,
-        DestructurePattern::EnumConstructor {
-            name,
-            right_parenthesis,
-            ..
-        } => join_position(name.position, right_parenthesis.position),
+        DestructurePattern::EnumConstructor { name, payload, .. } => match payload {
+            None => name.position,
+            Some(payload) => join_position(name.position, payload.right_parenthesis.position),
+        },
         DestructurePattern::Record {
             left_curly_bracket,
             right_curly_bracket,
@@ -827,11 +825,10 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         | Expression::Variable(token)
         | Expression::Null(token)
         | Expression::Boolean { token, .. } => token.position,
-        Expression::EnumConstructor {
-            name,
-            right_parenthesis,
-            ..
-        } => join_position(name.position, right_parenthesis.position),
+        Expression::EnumConstructor { name, payload, .. } => match payload {
+            None => name.position,
+            Some(payload) => join_position(name.position, payload.right_parenthesis.position),
+        },
         Expression::RecordAccess {
             expression,
             property_name,
@@ -1436,7 +1433,7 @@ fn infer_expression_type_(
                     },
                 }),
                 (None, Some(payload)) => Err(UnifyError {
-                    position: get_expression_position(payload.as_ref()),
+                    position: get_expression_position(&payload.expression),
                     kind: UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
@@ -1446,8 +1443,11 @@ fn infer_expression_type_(
                     },
                 }),
                 (Some(expected_payload_type), Some(payload)) => {
-                    let typechecked_payload =
-                        infer_expression_type(environment, Some(expected_payload_type), &payload)?;
+                    let typechecked_payload = infer_expression_type(
+                        environment,
+                        Some(expected_payload_type),
+                        &payload.expression,
+                    )?;
                     Ok(InferExpressionResult {
                         type_value: result.expected_enum_type,
                         expression: TypecheckedExpression::EnumConstructor {
@@ -1459,18 +1459,30 @@ fn infer_expression_type_(
             }
         }
         Expression::Variable(variable) => {
-            let result = environment.get_value_symbol(
-                &variable,
-                &expected_type,
-                environment.current_scope_name(),
-            )?;
-            Ok(InferExpressionResult {
-                type_value: instantiate_type_scheme(environment, result.type_scheme),
-                expression: TypecheckedExpression::Variable(Variable {
-                    uid: result.symbol_uid,
-                    representation: variable.representation.clone(),
-                }),
-            })
+            // check if the variable name matches any constructor
+            if environment.matches_some_enum_constructor(&variable.representation) {
+                infer_expression_type_(
+                    environment,
+                    expected_type,
+                    &Expression::EnumConstructor {
+                        name: variable.clone(),
+                        payload: None,
+                    },
+                )
+            } else {
+                let result = environment.get_value_symbol(
+                    &variable,
+                    &expected_type,
+                    environment.current_scope_name(),
+                )?;
+                Ok(InferExpressionResult {
+                    type_value: instantiate_type_scheme(environment, result.type_scheme),
+                    expression: TypecheckedExpression::Variable(Variable {
+                        uid: result.symbol_uid,
+                        representation: variable.representation.clone(),
+                    }),
+                })
+            }
         }
         Expression::RecordAccess {
             expression,
@@ -2689,15 +2701,31 @@ fn infer_destructure_pattern_(
             destructure_pattern: TypecheckedDestructurePattern::Underscore,
         }),
         DestructurePattern::Identifier(identifier) => {
-            let (uid, type_value) =
-                environment.insert_value_symbol_with_type(identifier, expected_type)?;
-            Ok(InferDestructurePatternResult {
-                type_value,
-                destructure_pattern: TypecheckedDestructurePattern::Variable(Variable {
-                    uid,
-                    representation: identifier.representation.clone(),
-                }),
-            })
+            // If this identifier matches any enum constructor,
+            // then treat it as an enum constructor
+            if environment.matches_some_enum_constructor(&identifier.representation) {
+                infer_destructure_pattern(
+                    environment,
+                    expected_type,
+                    &DestructurePattern::EnumConstructor {
+                        name: identifier.clone(),
+                        payload: None,
+                    },
+                )
+            }
+            // If this identifier does not match any enum constructor
+            // then treat it as a new variable
+            else {
+                let (uid, type_value) =
+                    environment.insert_value_symbol_with_type(identifier, expected_type)?;
+                Ok(InferDestructurePatternResult {
+                    type_value,
+                    destructure_pattern: TypecheckedDestructurePattern::Variable(Variable {
+                        uid,
+                        representation: identifier.representation.clone(),
+                    }),
+                })
+            }
         }
         DestructurePattern::Tuple(tuple) => {
             let typechecked_values = tuple.values.clone().fold_result(|destructure_pattern| {
@@ -2724,7 +2752,7 @@ fn infer_destructure_pattern_(
                     },
                 }),
                 (None, Some(payload)) => Err(UnifyError {
-                    position: get_destructure_pattern_position(&payload),
+                    position: get_destructure_pattern_position(&payload.pattern),
                     kind: UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
@@ -2737,7 +2765,7 @@ fn infer_destructure_pattern_(
                     let typechecked_payload = infer_destructure_pattern(
                         environment,
                         Some(expected_payload_type),
-                        &payload,
+                        &payload.pattern,
                     )?;
                     Ok(InferDestructurePatternResult {
                         type_value: result.expected_enum_type,

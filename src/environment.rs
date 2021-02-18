@@ -528,19 +528,21 @@ impl Environment {
                 self.symbol_entries
                     .iter()
                     .map(|entry| {
-                        if entry.scope_name == scope_name
-                            && entry.symbol.meta.name.representation == name
-                        {
+                        if entry.scope_name == scope_name && entry.symbol.meta.name.representation == name {
+                            let error = Err(UnifyError {
+                                position: new_symbol.meta.name.position,
+                                kind: UnifyErrorKind::DuplicatedIdentifier {
+                                    name: entry.symbol.meta.name.representation.clone(),
+                                    first_declared_at: entry.symbol.meta.name.position,
+                                    then_declared_at: new_symbol.meta.name.position,
+                                },
+                            });
                             match &entry.symbol.kind {
+                                SymbolKind::EnumConstructor(constructor)
+                                    if constructor.constructor_name == new_symbol.meta.name.representation => {
+                                    error
+                                }
                                 SymbolKind::Value(value_symbol) => {
-                                    let error = Err(UnifyError {
-                                        position: new_symbol.meta.name.position,
-                                        kind: UnifyErrorKind::DuplicatedIdentifier {
-                                            name: entry.symbol.meta.name.representation.clone(),
-                                            first_declared_at: entry.symbol.meta.name.position,
-                                            then_declared_at: new_symbol.meta.name.position,
-                                        },
-                                    });
                                     match &value_symbol.type_scheme.type_value {
                                         Type::Function(function_type) => {
                                             match &new_value_symbol.type_scheme.type_value {
@@ -810,6 +812,19 @@ impl Environment {
                 }
             }
         }
+    }
+
+    pub fn matches_some_enum_constructor(&self, name: &str) -> bool {
+        self.symbol_entries
+            .iter()
+            .any(|entry| match &entry.symbol.kind {
+                SymbolKind::EnumConstructor(enum_constructor_symbol)
+                    if enum_constructor_symbol.constructor_name == *name =>
+                {
+                    true
+                }
+                _ => false,
+            })
     }
 
     /// `expected_enum_name` -
