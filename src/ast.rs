@@ -91,6 +91,10 @@ pub enum Type {
     /// Also known as enum type  
     /// Also known as nominal type
     Named {
+        /// This is needed to differentiate two named types that has the same name
+        ///  which are declared in different modules
+        /// Also needed for looking up constructors for this type
+        symbol_uid: usize,
         name: String,
         type_arguments: Vec<(String, Type)>,
     },

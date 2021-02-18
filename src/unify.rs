@@ -34,12 +34,14 @@ pub struct UnifyProgramResult {
     pub environment: Environment,
 }
 
+/// `starting_symbol_uid` is needed to make sure each symbol has a UID that is unique across different modules
 pub fn unify_statements(
     program: Program,
     statements: Vec<Statement>,
+    starting_symbol_uid: usize,
 ) -> Result<UnifyProgramResult, CompileError> {
     // 1. TODO: Populate environment with imported symbols
-    let mut environment: Environment = Environment::new(program);
+    let mut environment: Environment = Environment::new(program, starting_symbol_uid);
 
     // 2. Type check this program
     let statements = statements
@@ -88,7 +90,7 @@ pub enum UnifyErrorKind {
 
         /// First parameter type of the new function to be created
         new_first_parameter_type: Type,
-        first_declared_at: Declaration,
+        first_declared_at: Position,
     },
     AmbiguousFunction {
         available_function_signatures: Vec<FunctionSignature>,
@@ -146,8 +148,8 @@ pub enum UnifyErrorKind {
     },
     DuplicatedIdentifier {
         name: String,
-        first_declared_at: Declaration,
-        then_declared_at: Declaration,
+        first_declared_at: Position,
+        then_declared_at: Position,
     },
     InvalidFunctionArgumentLength {
         expected_length: usize,
@@ -268,16 +270,17 @@ pub fn infer_import_statement(
             }?;
 
             // Check whether each imported name exists and is exported in this program
-            let result = unify_statements(program.clone(), statements)?;
+            let imported =
+                unify_statements(program, statements, environment.get_next_symbol_uid())?;
             let statements = imported_names
                 .into_vector()
                 .into_iter()
                 .map(|imported_name| {
-                    let matching_symbols = result
+                    let matching_symbol_entries = imported
                         .environment
-                        .get_all_matching_symbols(&program.source, &imported_name.name);
+                        .get_all_matching_symbols(&imported_name.name);
 
-                    if matching_symbols.is_empty() {
+                    if matching_symbol_entries.is_empty() {
                         Err(UnifyError {
                             position: imported_name.name.position,
                             kind: UnifyErrorKind::UnknownImportedName,
@@ -290,58 +293,78 @@ pub fn infer_import_statement(
                         };
 
                         // Insert the matching value symbol into the current environment
-                        let mut statements = Vec::new();
-                        if let Some(value_symbol) = matching_symbols.value_symbol {
-                            if !value_symbol.meta.exported {
-                                return Err(UnifyError {
-                                    position: imported_name.name.position,
-                                    kind: UnifyErrorKind::CannotImportPrivateSymbol,
+                        let statements = matching_symbol_entries
+                            .iter()
+                            .map(|entry| {
+                                if !entry.symbol.meta.exported {
+                                    return Err(UnifyError {
+                                        position: imported_name.name.position,
+                                        kind: UnifyErrorKind::CannotImportPrivateSymbol,
+                                    }
+                                    .into_compile_error(environment.program.clone()));
                                 }
-                                .into_compile_error(environment.program.clone()));
-                            }
-                            let uid = environment.get_next_symbol_uid();
-                            match environment.insert_value_symbol(
-                                &name,
-                                value_symbol.value.type_scheme,
-                                Some(uid),
-                                false,
-                            ) {
-                                Ok(_) => {
-                                    statements.push(TypecheckedStatement::Let {
-                                        left: Variable {
-                                            uid,
-                                            representation: name.representation.clone(),
+                                match environment.insert_symbol(
+                                    Some(entry.uid),
+                                    Symbol {
+                                        meta: SymbolMeta {
+                                            name: name.clone(),
+                                            ..entry.symbol.meta
                                         },
-                                        right: TypecheckedExpression::Variable(Variable {
-                                            uid: value_symbol.meta.uid,
-                                            representation: value_symbol.meta.name,
-                                        }),
-                                    });
+                                        kind: entry.symbol.kind.clone(),
+                                    },
+                                ) {
+                                    Ok(uid) => {
+                                        // only insert new typechecked statement if import alias is defined
+                                        match imported_name.clone().alias_as {
+                                            Some(alias_as) => match entry.symbol.kind {
+                                                SymbolKind::Value(_) => {
+                                                    Ok(vec![TypecheckedStatement::Let {
+                                                        left: Variable {
+                                                            uid,
+                                                            representation: alias_as.representation,
+                                                        },
+                                                        right: TypecheckedExpression::Variable(
+                                                            Variable {
+                                                                uid: entry.uid,
+                                                                representation: entry
+                                                                    .symbol
+                                                                    .meta
+                                                                    .name
+                                                                    .representation
+                                                                    .clone(),
+                                                            },
+                                                        ),
+                                                    }])
+                                                }
+                                                _ => Ok(vec![]),
+                                            },
+                                            None => Ok(vec![]),
+                                        }
+                                    }
+                                    Err(unify_error) => {
+                                        Err(unify_error
+                                            .into_compile_error(environment.program.clone()))
+                                    }
                                 }
-                                Err(unify_error) => {
-                                    return Err(unify_error.into_compile_error(program.clone()))
-                                }
-                            }
-                        }
-
-                        // Insert the matching type symbol into the current environment
-                        if let Some(type_symbol) = matching_symbols.type_symbol {
-                            panic!("Not implemented yet")
-                            // environment.insert_type_symbol(&name, type_symbol, false)?;
-                        }
-
-                        // TODO: Insert matching function symbols into the current environment
-
-                        // TODO: Insert matching constructor symbols into the current environment
+                            })
+                            .collect::<Result<Vec<Vec<TypecheckedStatement>>, CompileError>>()?;
 
                         Ok(statements)
                     }
                 })
-                .collect::<Result<Vec<Vec<TypecheckedStatement>>, CompileError>>()?;
-            Ok(result
+                .collect::<Result<Vec<Vec<Vec<TypecheckedStatement>>>, CompileError>>()?;
+
+            // After importing, we need to increment the `current_uid` of the currrent environment
+            // to the biggest `current_uid` of the imported environment
+            // so that UID uniqueness can be maintained across different modules
+            // this uniquenss is important for transpilation, so that the generated code
+            // will not contain both variables with the same name
+            environment.set_current_uid(imported.environment.get_current_uid());
+
+            Ok(imported
                 .statements
                 .into_iter()
-                .chain(statements.into_iter().flatten())
+                .chain(statements.into_iter().flatten().flatten())
                 .collect())
         }
         Err(error) => Err(UnifyError {
@@ -365,8 +388,10 @@ pub fn infer_enum_statement(
     }: EnumStatement,
 ) -> Result<(), UnifyError> {
     // 1. Add this enum into environment first, to allow recursive definition
+    let enum_uid = environment.get_next_symbol_uid();
     let enum_name = name.representation.clone();
     let enum_type = Type::Named {
+        symbol_uid: enum_uid,
         name: enum_name.clone(),
         type_arguments: type_variables
             .clone()
@@ -387,31 +412,41 @@ pub fn infer_enum_statement(
         .map(|type_variable| type_variable.representation)
         .collect::<Vec<String>>();
 
-    environment.insert_type_symbol(
-        &name,
-        TypeSymbol {
-            type_scheme: TypeScheme {
-                type_variables: type_variable_names.clone(),
-                type_value: enum_type,
+    environment.insert_symbol(
+        Some(enum_uid),
+        Symbol {
+            meta: SymbolMeta {
+                name,
+                exported: keyword_export.is_some(),
             },
+            kind: SymbolKind::Type(TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: type_variable_names.clone(),
+                    type_value: enum_type,
+                },
+            }),
         },
-        keyword_export.is_some(),
     )?;
 
     // 2. Populate type variables into current environment
     environment.step_into_new_child_scope();
     for type_variable in type_variables.clone() {
-        environment.insert_type_symbol(
-            &type_variable,
-            TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_value: Type::ImplicitTypeVariable {
-                        name: type_variable.clone().representation,
-                    },
-                    type_variables: vec![],
+        environment.insert_symbol(
+            None,
+            Symbol {
+                meta: SymbolMeta {
+                    name: type_variable.clone(),
+                    exported: false,
                 },
+                kind: SymbolKind::Type(TypeSymbol {
+                    type_scheme: TypeScheme {
+                        type_value: Type::ImplicitTypeVariable {
+                            name: type_variable.clone().representation,
+                        },
+                        type_variables: vec![],
+                    },
+                }),
             },
-            false,
         )?;
     }
 
@@ -419,40 +454,36 @@ pub fn infer_enum_statement(
     let constructor_symbols = constructors
         .iter()
         .map(|constructor| {
-            Ok(ConstructorSymbol {
-                enum_name: enum_name.clone(),
-                constructor_name: constructor.name.representation.clone(),
-                type_variables: type_variable_names.clone(),
-                payload: match &constructor.payload {
-                    None => None,
-                    Some(payload) => {
-                        // validate type annotation
-                        let payload_type_value =
-                            type_annotation_to_type(environment, payload.as_ref())?;
-                        Some(payload_type_value)
-                    }
-                },
+            Ok(Symbol {
                 meta: SymbolMeta {
-                    uid: environment.get_next_symbol_uid(),
-                    name: constructor.name.representation.clone(),
-                    scope_name: environment.current_scope_name(),
+                    name: constructor.name.clone(),
                     exported: keyword_export.is_some(),
-                    declaration: Declaration::UserDefined {
-                        source: environment.source(),
-                        token: constructor.name.clone(),
-                        scope_name: environment.current_scope_name(),
-                    },
-                    usage_references: Default::default(),
                 },
+                kind: SymbolKind::EnumConstructor(EnumConstructorSymbol {
+                    enum_uid,
+                    enum_name: enum_name.clone(),
+                    constructor_name: constructor.name.representation.clone(),
+                    type_variables: type_variable_names.clone(),
+                    payload: match &constructor.payload {
+                        None => None,
+                        Some(payload) => {
+                            // validate type annotation
+                            let payload_type_value =
+                                type_annotation_to_type(environment, payload.as_ref())?;
+                            Some(payload_type_value)
+                        }
+                    },
+                }),
             })
         })
-        .collect::<Result<Vec<ConstructorSymbol>, UnifyError>>()?;
+        .collect::<Result<Vec<Symbol>, UnifyError>>()?;
 
     environment.step_out_to_parent_scope();
 
     constructor_symbols
         .into_iter()
-        .for_each(|constructor_symbol| environment.insert_constructor_symbol(constructor_symbol));
+        .map(|constructor_symbol| environment.insert_symbol(None, constructor_symbol))
+        .collect::<Result<Vec<_>, UnifyError>>()?;
 
     Ok(())
 }
@@ -471,37 +502,47 @@ pub fn infer_type_statement(
     // 1. Populate type variables into current environment
     environment.step_into_new_child_scope();
     for type_variable in type_variables.clone() {
-        environment.insert_type_symbol(
-            &type_variable,
-            TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_value: Type::ImplicitTypeVariable {
-                        name: type_variable.clone().representation,
-                    },
-                    type_variables: vec![],
+        environment.insert_symbol(
+            None,
+            Symbol {
+                meta: SymbolMeta {
+                    name: type_variable.clone(),
+                    exported: false,
                 },
+                kind: SymbolKind::Type(TypeSymbol {
+                    type_scheme: TypeScheme {
+                        type_value: Type::ImplicitTypeVariable {
+                            name: type_variable.clone().representation,
+                        },
+                        type_variables: vec![],
+                    },
+                }),
             },
-            false,
         )?;
     }
 
     // 2. verify type declaration
     let type_value = type_annotation_to_type(environment, &right)?;
 
-    // 3. Add this symbol into environment
+    // 3. Add this type symbol into this environment
     environment.step_out_to_parent_scope();
-    environment.insert_type_symbol(
-        &left,
-        TypeSymbol {
-            type_scheme: TypeScheme {
-                type_variables: type_variables
-                    .into_iter()
-                    .map(|type_variable| type_variable.representation)
-                    .collect(),
-                type_value,
+    environment.insert_symbol(
+        None,
+        Symbol {
+            meta: SymbolMeta {
+                name: left,
+                exported: keyword_export.is_some(),
             },
+            kind: SymbolKind::Type(TypeSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: type_variables
+                        .into_iter()
+                        .map(|type_variable| type_variable.representation)
+                        .collect(),
+                    type_value,
+                },
+            }),
         },
-        keyword_export.is_some(),
     )?;
 
     Ok(())
@@ -558,8 +599,18 @@ pub fn infer_let_statement(
     // 5. Add this variable into environment
     //    Note that we have to use back the same uid if this is a recursive function
     environment.step_out_to_parent_scope();
-    let uid =
-        environment.insert_value_symbol(&left, right_type_scheme, uid, keyword_export.is_some())?;
+    let uid = environment.insert_symbol(
+        uid,
+        Symbol {
+            meta: SymbolMeta {
+                name: left.clone(),
+                exported: keyword_export.is_some(),
+            },
+            kind: SymbolKind::Value(ValueSymbol {
+                type_scheme: right_type_scheme,
+            }),
+        },
+    )?;
 
     Ok(TypecheckedStatement::Let {
         left: Variable {
@@ -627,9 +678,11 @@ pub fn rewrite_explicit_type_variables_as_implicit(
         }
         Type::Named {
             name,
+            symbol_uid,
             type_arguments,
         } => Type::Named {
             name,
+            symbol_uid,
             type_arguments: type_arguments
                 .into_iter()
                 .map(|(name, type_value)| {
@@ -915,10 +968,12 @@ pub fn unify_type_(
         }
         (
             Type::Named {
+                symbol_uid: expected_uid,
                 name: expected_name,
                 type_arguments: expected_arguments,
             },
             Type::Named {
+                symbol_uid: actual_uid,
                 name: actual_name,
                 type_arguments: actual_arguments,
             },
@@ -929,10 +984,12 @@ pub fn unify_type_(
                     kind: UnifyErrorKind::TypeMismatch {
                         expected_type: Type::Named {
                             name: expected_name,
+                            symbol_uid: expected_uid,
                             type_arguments: expected_arguments,
                         },
                         actual_type: Type::Named {
                             name: actual_name,
+                            symbol_uid: actual_uid,
                             type_arguments: actual_arguments,
                         },
                     },
@@ -955,6 +1012,7 @@ pub fn unify_type_(
                 match unify_type_arguments_result {
                     Ok(_) => Ok(Type::Named {
                         name: expected_name,
+                        symbol_uid: expected_uid,
                         type_arguments: expected_arguments,
                     }),
                     Err(UnifyError {
@@ -965,10 +1023,12 @@ pub fn unify_type_(
                         kind: UnifyErrorKind::TypeMismatch {
                             expected_type: Type::Named {
                                 name: expected_name,
+                                symbol_uid: expected_uid,
                                 type_arguments: expected_arguments,
                             },
                             actual_type: Type::Named {
                                 name: actual_name,
+                                symbol_uid: actual_uid,
                                 type_arguments: actual_arguments,
                             },
                         },
@@ -1183,9 +1243,11 @@ pub fn rewrite_type_variable_in_type(
         }
         Type::Named {
             name,
+            symbol_uid,
             type_arguments,
         } => Type::Named {
             name,
+            symbol_uid,
             type_arguments: type_arguments
                 .into_iter()
                 .map(|(key, type_value)| {
@@ -1237,26 +1299,26 @@ pub fn get_enum_type(
     expected_type: Option<Type>,
     token: &Token,
 ) -> Result<GetEnumTypeResult, UnifyError> {
-    let expected_enum_name = match &expected_type {
-        Some(Type::Named { name, .. }) => Some(name.clone()),
+    let expected_enum_uid = match &expected_type {
+        Some(Type::Named { symbol_uid, .. }) => Some(*symbol_uid),
         _ => None,
     };
     // Look up constructor
-    let constructor = environment.get_constructor_symbol(expected_enum_name, &token)?;
+    let constructor = environment.get_constructor_symbol(expected_enum_uid, &token)?;
 
     let enum_type = environment
-        .get_type_symbol(&Token::dummy_identifier(constructor.enum_name.clone()))
+        .get_type_symbol_by_uid(constructor.enum_uid)
         .unwrap_or_else(|| panic!("Compiler error, cannot find enum type of a constructor"));
 
     // initiate type variables
     let instantiated_type_variables = {
         match expected_type {
             Some(Type::Named {
-                name,
                 type_arguments,
-            }) if name == enum_type.meta.name => type_arguments,
+                symbol_uid,
+                ..
+            }) if symbol_uid == constructor.enum_uid => type_arguments,
             _ => enum_type
-                .value
                 .type_scheme
                 .type_variables
                 .iter()
@@ -1274,7 +1336,7 @@ pub fn get_enum_type(
 
     let expected_enum_type = rewrite_type_variables_in_type(
         instantiated_type_variables.clone(),
-        enum_type.value.type_scheme.type_value,
+        enum_type.type_scheme.type_value,
     );
 
     let expected_payload_type = match &constructor.payload {
@@ -2358,7 +2420,7 @@ fn infer_function_branch(
     };
 
     // Check for unused variables
-    environment.check_for_unused_value_symbols(environment.current_scope_name())?;
+    environment.check_for_unused_symbols(environment.current_scope_name())?;
 
     environment.step_out_to_parent_scope();
 
@@ -2446,7 +2508,7 @@ pub fn type_annotation_to_type(
             name,
             type_arguments,
         } => {
-            if let Some(symbol) = environment.get_type_symbol(&name) {
+            if let Some(type_symbol) = environment.get_type_symbol_by_name(&name) {
                 let type_arguments = match type_arguments {
                     None => Ok(vec![]),
                     Some(TypeArguments {
@@ -2454,7 +2516,7 @@ pub fn type_annotation_to_type(
                         left_angular_bracket,
                         right_angular_bracket,
                     }) => {
-                        if symbol.value.type_scheme.type_variables.len() != substitutions.len() {
+                        if type_symbol.type_scheme.type_variables.len() != substitutions.len() {
                             Err(UnifyError {
                                 position: join_position(
                                     left_angular_bracket.position,
@@ -2462,8 +2524,7 @@ pub fn type_annotation_to_type(
                                 ),
                                 kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
                                     actual_length: substitutions.len(),
-                                    expected_type_parameter_names: symbol
-                                        .value
+                                    expected_type_parameter_names: type_symbol
                                         .type_scheme
                                         .type_variables
                                         .clone(),
@@ -2483,14 +2544,13 @@ pub fn type_annotation_to_type(
                     }
                 }?;
 
-                symbol
-                    .value
+                type_symbol
                         .type_scheme
                         .type_variables
                         .iter()
                         .zip(type_arguments.into_iter())
                         .fold(
-                            Ok(symbol.value.type_scheme.type_value),
+                            Ok(type_symbol.type_scheme.type_value),
                             |result,
                              (
                                 expected_type_variable_name,
@@ -2875,9 +2935,11 @@ fn substitute_type_variable_in_type(
         Type::Underscore => Type::Underscore,
         Type::Named {
             name,
+            symbol_uid,
             type_arguments: arguments,
         } => Type::Named {
             name: name.to_string(),
+            symbol_uid: *symbol_uid,
             type_arguments: arguments
                 .iter()
                 .map(|(key, type_value)| {

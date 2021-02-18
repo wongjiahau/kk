@@ -20,7 +20,7 @@ pub fn compile(program: Program) {
         Err(tokenize_error) => print_tokenize_error(program, tokenize_error),
         Ok(tokens) => match Parser::parse(tokens) {
             Err(parse_error) => print_parse_error(program, parse_error),
-            Ok(statements) => match unify_statements(program, statements) {
+            Ok(statements) => match unify_statements(program, statements, 0) {
                 Err(compile_error) => print_compile_error(compile_error),
                 Ok(result) => {
                     use std::process::Command;

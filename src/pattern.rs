@@ -218,10 +218,11 @@ pub fn expand_pattern(environment: &Environment, type_value: &Type) -> Vec<Expan
                 .collect(),
         }],
         Type::Named {
-            name,
+            symbol_uid,
             type_arguments,
+            ..
         } => environment
-            .get_enum_constructors(name)
+            .get_enum_constructors(*symbol_uid)
             .into_iter()
             .map(|constructor_symbol| {
                 let constructor_name = constructor_symbol.constructor_name.clone();

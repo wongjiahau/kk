@@ -262,10 +262,6 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Record Update",
             examples: vec!["a.{ x 2 }", "a.{ x.add(1) }", "a.{ x 2 y.square() }"],
         },
-        ParseContext::ExpressionArray => ParseContextDescription {
-            name: "Array",
-            examples: vec!["[]", "[1, 2, 3]"],
-        },
         ParseContext::ExpressionEnumConstructor => ParseContextDescription {
             name: "Enum Constructor",
             examples: vec!["None()", "Some(0)"],
@@ -826,6 +822,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Named {
             name,
             type_arguments: arguments,
+            ..
         } => {
             if arguments.is_empty() {
                 name

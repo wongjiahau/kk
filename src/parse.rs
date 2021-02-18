@@ -30,7 +30,6 @@ pub enum ParseContext {
     ExpressionFunctionCall,
     ExpressionRecord,
     ExpressionRecordUpdate,
-    ExpressionArray,
     ExpressionEnumConstructor,
 
     // Statement
@@ -221,12 +220,37 @@ impl<'a> Parser<'a> {
     fn parse_import_statement(&mut self, keyword_import: Token) -> Result<Statement, ParseError> {
         let context = ParseContext::StatementImport;
         let url = self.eat_token(TokenType::String, context)?;
-        let first_name = self.parse_imported_name(context)?;
+        let first_name = {
+            let name = self.eat_token(TokenType::Identifier, context)?;
+            if self.try_eat_token(TokenType::Equals).is_some() {
+                let alias_as = self.eat_token(TokenType::Identifier, context)?;
+                ImportedName {
+                    name,
+                    alias_as: Some(alias_as),
+                }
+            } else {
+                ImportedName {
+                    name,
+                    alias_as: None,
+                }
+            }
+        };
         let other_names = {
             let mut other_names = Vec::new();
             loop {
-                if self.try_eat_token(TokenType::Comma).is_some() {
-                    other_names.push(self.parse_imported_name(context)?)
+                if let Some(name) = self.try_eat_token(TokenType::Identifier) {
+                    if self.try_eat_token(TokenType::Equals).is_some() {
+                        let alias_as = self.eat_token(TokenType::Identifier, context)?;
+                        other_names.push(ImportedName {
+                            name,
+                            alias_as: Some(alias_as),
+                        })
+                    } else {
+                        other_names.push(ImportedName {
+                            name,
+                            alias_as: None,
+                        })
+                    }
                 } else {
                     break other_names;
                 }
@@ -240,27 +264,6 @@ impl<'a> Parser<'a> {
                 tail: other_names,
             },
         }))
-    }
-
-    fn parse_imported_name(&mut self, context: ParseContext) -> Result<ImportedName, ParseError> {
-        let name = self.eat_token(TokenType::Identifier, context)?;
-        match self.tokens.peek() {
-            Some(Token {
-                token_type: TokenType::Equals,
-                ..
-            }) => {
-                self.eat_token(TokenType::Equals, context)?;
-                let alias_as = self.eat_token(TokenType::Identifier, context)?;
-                Ok(ImportedName {
-                    name,
-                    alias_as: Some(alias_as),
-                })
-            }
-            _ => Ok(ImportedName {
-                name,
-                alias_as: None,
-            }),
-        }
     }
 
     fn eat_token(

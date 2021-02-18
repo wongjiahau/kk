@@ -2,7 +2,7 @@ use crate::non_empty::NonEmpty;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
 use crate::{ast::*, unify::Program};
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::collections::HashMap;
 
 type Substitution = HashMap<String, SubstitutionItem>;
@@ -104,193 +104,43 @@ pub struct SymbolId {
     name: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct SymbolEntry {
+    /// This is needed for single dispatch disambiguation during transpilation  
+    /// Also needed for importing symbols
+    /// This value should be unique across different modules
+    pub uid: usize,
+
+    /// Represents in which scope this symbol is declared.
+    /// Needed to allow variable shadowing.
+    pub scope_name: usize,
+
+    pub symbol: Symbol,
+}
+
 /// This represents the meta data of a symbol
 #[derive(Debug, Clone)]
 pub struct SymbolMeta {
-    /// This is needed for single dispatch disambiguation during transpilation
-    pub uid: usize,
-    pub name: String,
-    pub scope_name: usize,
+    pub name: Token,
     pub exported: bool,
-    pub declaration: Declaration,
-    pub usage_references: RefCell<Vec<UsageReference>>,
 }
 
-#[derive(Debug, Clone)]
-pub struct SymbolEntry<Symbol: Clone> {
-    pub meta: SymbolMeta,
-    pub value: Symbol,
-}
-
-#[derive(Debug, Clone)]
-pub struct SymbolTable<Symbol: Clone> {
-    symbols: HashMap<SymbolId, SymbolEntry<Symbol>>,
-}
-
-impl<Symbol: Clone> SymbolTable<Symbol> {
-    pub fn new() -> SymbolTable<Symbol> {
-        SymbolTable {
-            symbols: Default::default(),
-        }
-    }
-
-    /// This function will return error if the symbol to be inserted clashes with existing names
-    pub fn insert_symbol(
-        &mut self,
-        current_scope_name: usize,
-        token: Token,
-        source: &Source,
-        new_symbol: SymbolEntry<Symbol>,
-    ) -> Result<(), UnifyError> {
-        let name = token.representation.clone();
-        let symbol_id = SymbolId {
-            name: name.clone(),
-            scope_name: current_scope_name,
-        };
-        match self.symbols.get(&symbol_id) {
-            Some(symbol) => Err(UnifyError {
-                position: token.position,
-                kind: UnifyErrorKind::DuplicatedIdentifier {
-                    name,
-                    first_declared_at: symbol.meta.declaration.clone(),
-                    then_declared_at: Declaration::UserDefined {
-                        source: source.clone(),
-                        token,
-                        scope_name: current_scope_name,
-                    },
-                },
-            }),
-            None => {
-                self.symbols.insert(symbol_id, new_symbol);
-                Ok(())
-            }
-        }
-    }
-
-    /// Unlike `get_symbol`, this method will not mutate anything
-    pub fn get_symbol_from_current_scope(
-        &self,
-        symbol_name: &Token,
-        scope_name: usize,
-    ) -> Option<&SymbolEntry<Symbol>> {
-        let name = symbol_name.representation.clone();
-        self.symbols.get(&SymbolId { name, scope_name })
-    }
-
-    /// NOTE: This method is not pure.
-    /// When using this method to lookup say variable A,
-    /// then the usage references of A will be updated.
-    ///
-    /// `source` - for updating usage references
-    pub fn get_symbol(
-        &self,
-        scope: &Scope,
-        source: &Source,
-        symbol_name: &Token,
-        scope_name: usize,
-    ) -> Option<SymbolEntry<Symbol>> {
-        let name = symbol_name.representation.clone();
-        match self.symbols.get(&SymbolId { name, scope_name }) {
-            Some(symbol) => {
-                symbol
-                    .meta
-                    .usage_references
-                    .borrow_mut()
-                    .push(UsageReference {
-                        position: symbol_name.position,
-                        source: source.clone(),
-                    });
-                Some(symbol.clone())
-            }
-            None => match scope.get_parent_scope_name(scope_name) {
-                None => None,
-                Some(parent_scope_name) => {
-                    self.get_symbol(scope, source, symbol_name, parent_scope_name)
-                }
-            },
-        }
-    }
-
-    pub fn check_for_unused_value_symbols(
-        &self,
-        scope: &Scope,
-        current_scope_name: usize,
-    ) -> Result<(), UnifyError> {
-        match self
-            .symbols
-            .iter()
-            .filter_map(|(_, symbol)| {
-                if symbol.meta.usage_references.borrow().is_empty() {
-                    match &symbol.meta.declaration {
-                        Declaration::UserDefined {
-                            token, scope_name, ..
-                        } => {
-                            if *scope_name == current_scope_name {
-                                Some(token.clone())
-                            } else {
-                                None
-                            }
-                        }
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Token>>()
-            .first()
-        {
-            None => {
-                // Check for unused variables in children scopes
-                let children_scope_names = scope.get_children_scope_names(current_scope_name);
-                for child_scope_name in &children_scope_names {
-                    self.check_for_unused_value_symbols(scope, *child_scope_name)?;
-                }
-                Ok(())
-            }
-            Some(token) => Err(UnifyError {
-                position: token.position,
-                kind: UnifyErrorKind::UnusedVariale,
-            }),
-        }
-    }
-}
-
-pub struct GetAllMatchingSymbolsResult {
-    pub value_symbol: Option<SymbolEntry<ValueSymbol>>,
-    pub type_symbol: Option<SymbolEntry<TypeSymbol>>,
-    pub function_symbols: Vec<FunctionSymbol>,
-    pub constructor_symbols: Vec<ConstructorSymbol>,
-}
-
-impl GetAllMatchingSymbolsResult {
-    pub fn is_empty(&self) -> bool {
-        self.value_symbol.is_none()
-            && self.type_symbol.is_none()
-            && self.function_symbols.is_empty()
-            && self.constructor_symbols.is_empty()
-    }
-}
+/// Environment is also known as module, which also means a single file.
 #[derive(Debug, Clone)]
 pub struct Environment {
-    /// Non-function symbols
-    value_symbols: SymbolTable<ValueSymbol>,
+    /// Every symbol in an environment will be assigned a unique ID, regardless of the scope
+    current_uid: Cell<usize>,
 
-    /// Function symbols are stored in Vector instead of HashMap.
-    /// This is because to implement multi-dispatch, a simple name-lookup is not enough,
-    /// we need to iterate through the list to find the best fit.
-    function_symbols: Vec<FunctionSymbol>,
-    type_symbols: SymbolTable<TypeSymbol>,
+    /// This represents the current scope. Needed for implementing variable shadowing.
+    scope: Scope,
 
-    /// Constructor symbols are also stored in Vector instead of HashMap.
-    /// This is because to constructor name to be overloaded, a simple name-lookup is not enough,
-    /// we need to iterate through the list to find the best fit.
-    constructor_symbols: Vec<ConstructorSymbol>,
+    /// List of symbols in this environment
+    symbol_entries: Vec<SymbolEntry>,
+
+    /// This is used for Hindley-Milner type inference algorithm
     type_variable_substitutions: Substitution,
     type_variable_index: Cell<usize>,
 
-    /// Every symbol in an environment will be assigned a unique ID, regardless of the scope
-    current_uid: Cell<usize>,
-    scope: Scope,
     pub program: Program,
 }
 
@@ -302,44 +152,31 @@ enum SubstitutionItem {
 }
 
 impl Environment {
-    pub fn new(program: Program) -> Environment {
+    pub fn new(program: Program, starting_symbol_uid: usize) -> Environment {
         let mut result = Environment {
-            value_symbols: SymbolTable::new(),
-            function_symbols: vec![],
-            type_symbols: SymbolTable::new(),
-            constructor_symbols: vec![],
+            symbol_entries: Vec::new(),
             type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
             scope: Scope::new(),
-            current_uid: Cell::new(1000), // start from 1000 to reserve from built in function
+            current_uid: Cell::new(starting_symbol_uid),
             program,
         };
 
-        built_in_type_symbols()
+        built_in_symbols()
             .into_iter()
-            .for_each(|(name, type_symbol)| result.insert_built_in_type_symbol(name, type_symbol));
-
-        built_in_value_symbols()
-            .into_iter()
-            .map(|(name, uid, value_symbol)| {
-                let token = Token {
-                    token_type: TokenType::Identifier,
-                    position: Position {
-                        column_end: 0,
-                        column_start: 0,
-                        line_end: 0,
-                        line_start: 0,
-                        character_index_end: 0,
-                        character_index_start: 0,
-                    },
-                    representation: name,
-                };
-                result.insert_value_symbol(&token, value_symbol, Some(uid), true)
-            })
+            .map(|symbol| result.insert_symbol(None, symbol))
             .collect::<Result<Vec<usize>, UnifyError>>()
-            .expect("Compiler error");
+            .expect("Compiler error: built-in symbols should not have conflict");
 
         result
+    }
+
+    pub fn get_current_uid(&self) -> usize {
+        self.current_uid.get()
+    }
+
+    pub fn set_current_uid(&mut self, new_uid: usize) {
+        self.current_uid.set(new_uid)
     }
 
     pub fn source(&self) -> Source {
@@ -363,22 +200,28 @@ impl Environment {
 
     pub fn insert_explicit_type_variable(
         &mut self,
-        type_variable: &Token,
-    ) -> Result<(), UnifyError> {
-        self.insert_type_symbol(
-            type_variable,
-            TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: vec![],
-                    type_value: Type::ExplicitTypeVariable {
-                        name: type_variable.representation.clone(),
-                    },
+        type_variable_name: &Token,
+    ) -> Result<usize, UnifyError> {
+        self.insert_symbol(
+            None,
+            Symbol {
+                meta: SymbolMeta {
+                    name: type_variable_name.clone(),
+                    exported: false,
                 },
+                kind: SymbolKind::Type(TypeSymbol {
+                    type_scheme: TypeScheme {
+                        type_variables: vec![],
+                        type_value: Type::ExplicitTypeVariable {
+                            name: type_variable_name.representation.clone(),
+                        },
+                    },
+                }),
             },
-            false,
         )
     }
 
+    /// Get the next symbol UID
     pub fn get_next_symbol_uid(&mut self) -> usize {
         let result = self.current_uid.get();
         self.current_uid.set(result + 1);
@@ -395,14 +238,20 @@ impl Environment {
         };
 
         if let Some(variable_name) = variable_name {
-            self.insert_value_symbol(
-                variable_name,
-                TypeScheme {
-                    type_variables: vec![],
-                    type_value: type_value.clone(),
-                },
+            self.insert_symbol(
                 None,
-                false,
+                Symbol {
+                    meta: SymbolMeta {
+                        name: variable_name.clone(),
+                        exported: false,
+                    },
+                    kind: SymbolKind::Value(ValueSymbol {
+                        type_scheme: TypeScheme {
+                            type_variables: vec![],
+                            type_value: type_value.clone(),
+                        },
+                    }),
+                },
             )?;
         }
 
@@ -495,9 +344,11 @@ impl Environment {
             },
             Type::Underscore => Type::Underscore,
             Type::Named {
+                symbol_uid,
                 name,
                 type_arguments,
             } => Type::Named {
+                symbol_uid: *symbol_uid,
                 name: name.clone(),
                 type_arguments: type_arguments
                     .iter()
@@ -580,114 +431,6 @@ impl Environment {
         self.scope.step_out_to_parent_scope()
     }
 
-    /// This function returns the uid for this symbol upon successful insertion
-    pub fn insert_value_symbol(
-        &mut self,
-        symbol_name: &Token,
-        type_scheme: TypeScheme,
-        uid: Option<usize>,
-        exported: bool,
-    ) -> Result<usize, UnifyError> {
-        let uid = match uid {
-            Some(uid) => uid,
-            None => self.get_next_symbol_uid(),
-        };
-        let meta = SymbolMeta {
-            uid,
-            name: symbol_name.representation.clone(),
-            scope_name: self.current_scope_name(),
-            declaration: Declaration::UserDefined {
-                source: self.source(),
-                scope_name: self.current_scope_name(),
-                token: symbol_name.clone(),
-            },
-            usage_references: Default::default(),
-            exported,
-        };
-        match type_scheme.type_value {
-            Type::Function(function_type) => {
-                let value_symbol = self
-                    .value_symbols
-                    .get_symbol_from_current_scope(symbol_name, self.current_scope_name());
-                match value_symbol {
-                    None => {
-                        // Check that there's no clashing function signature
-                        let function_signature = FunctionSignature {
-                            type_variables: type_scheme.type_variables,
-                            function_type: function_type.clone(),
-                        };
-                        let matching_function_symbol =
-                            self.function_symbols.iter().find(|symbol| {
-                                symbol.meta.name == symbol_name.representation
-                                    && symbol.meta.scope_name == self.current_scope_name()
-                                    && overlap(
-                                        symbol
-                                            .function_signature
-                                            .function_type
-                                            .parameters_types
-                                            .first(),
-                                        function_type.parameters_types.first(),
-                                    )
-                            });
-
-                        match matching_function_symbol {
-                            Some(function_symbol) => Err(UnifyError {
-                                position: symbol_name.position,
-                                kind: UnifyErrorKind::ConflictingFunctionDefinition {
-                                    function_name: symbol_name.representation.clone(),
-                                    new_first_parameter_type: function_type
-                                        .parameters_types
-                                        .first()
-                                        .clone(),
-                                    existing_first_parameter_type: function_symbol
-                                        .function_signature
-                                        .function_type
-                                        .parameters_types
-                                        .first()
-                                        .clone(),
-                                    first_declared_at: function_symbol.meta.declaration.clone(),
-                                },
-                            }),
-                            None => {
-                                self.function_symbols.push(FunctionSymbol {
-                                    meta,
-                                    function_signature,
-                                });
-                                Ok(uid)
-                            }
-                        }
-                    }
-                    Some(symbol) => Err(UnifyError {
-                        position: symbol_name.position,
-                        kind: UnifyErrorKind::DuplicatedIdentifier {
-                            name: symbol_name.representation.clone(),
-                            first_declared_at: symbol.meta.declaration.clone(),
-                            then_declared_at: Declaration::UserDefined {
-                                source: self.source(),
-                                token: symbol_name.clone(),
-                                scope_name: self.current_scope_name(),
-                            },
-                        },
-                    }),
-                }
-            }
-
-            // Not function
-            _ => {
-                self.value_symbols.insert_symbol(
-                    self.current_scope_name(),
-                    symbol_name.clone(),
-                    &self.source(),
-                    SymbolEntry {
-                        meta,
-                        value: ValueSymbol { type_scheme },
-                    },
-                )?;
-                Ok(uid)
-            }
-        }
-    }
-
     /// Insert a value symbol with a specific type
     /// If the type is None, then this variable will be
     /// instantiated to have a type of a new type variable
@@ -702,153 +445,244 @@ impl Environment {
             },
             Some(type_value) => type_value,
         };
-        let uid = self.insert_value_symbol(
-            variable_name,
-            TypeScheme {
-                type_variables: vec![],
-                type_value: type_value.clone(),
-            },
+        let uid = self.insert_symbol(
             None,
-            false,
+            Symbol {
+                meta: SymbolMeta {
+                    name: variable_name.clone(),
+                    exported: false,
+                },
+                kind: SymbolKind::Value(ValueSymbol {
+                    type_scheme: TypeScheme {
+                        type_variables: vec![],
+                        type_value: type_value.clone(),
+                    },
+                }),
+            },
         )?;
         Ok((uid, type_value))
     }
 
-    pub fn check_for_unused_value_symbols(
-        &self,
-        current_scope_name: usize,
-    ) -> Result<(), UnifyError> {
-        self.value_symbols
-            .check_for_unused_value_symbols(&self.scope, current_scope_name)
+    pub fn check_for_unused_symbols(&self, current_scope_name: usize) -> Result<(), UnifyError> {
+        // panic!("Not implemented yet")
+        Ok(())
     }
 
-    fn insert_built_in_type_symbol(&mut self, name: String, type_symbol: TypeSymbol) {
-        self.insert_type_symbol(
-            &Token {
-                position: Position {
-                    line_start: 0,
-                    line_end: 0,
-                    character_index_start: 0,
-                    character_index_end: 0,
-                    column_start: 0,
-                    column_end: 0,
-                },
-                token_type: TokenType::Identifier,
-                representation: name,
-            },
-            type_symbol,
-            true,
-        )
-        .expect("Compiler error, built in type symbol should not clash with each other")
-    }
-
-    pub fn insert_type_symbol(
+    /// Inserts a new symbol into this environment.  
+    /// `uid` should be `None` under normal circumstances.
+    ///     It should only be defined when for example we want to allow recursive definition.
+    ///
+    /// Returns the UID of the new_symbol upon successful insertion.
+    pub fn insert_symbol(
         &mut self,
-        symbol_name: &Token,
-        type_symbol: TypeSymbol,
-        exported: bool,
-    ) -> Result<(), UnifyError> {
-        let uid = self.get_next_symbol_uid();
-        self.type_symbols.insert_symbol(
-            self.current_scope_name(),
-            symbol_name.clone(),
-            &self.source(),
-            SymbolEntry {
-                meta: SymbolMeta {
-                    uid,
-                    name: symbol_name.representation.clone(),
-                    scope_name: self.current_scope_name(),
-                    declaration: Declaration::UserDefined {
-                        source: self.source(),
-                        token: symbol_name.clone(),
-                        scope_name: self.current_scope_name(),
-                    },
-                    exported,
-                    usage_references: Default::default(),
-                },
-                value: type_symbol,
+        uid: Option<usize>,
+        new_symbol: Symbol,
+    ) -> Result<usize, UnifyError> {
+        let name = new_symbol.meta.name.representation.clone();
+        let scope_name = self.current_scope_name();
+        match &new_symbol.kind {
+            SymbolKind::Type(_) => {
+                if let Some(conflicting_entry) = self.symbol_entries.iter().find(|entry| {
+                    entry.scope_name == scope_name
+                        && entry.symbol.meta.name.representation == name
+                        && matches!(entry.symbol.kind, SymbolKind::Type { .. })
+                }) {
+                    return Err(UnifyError {
+                        position: new_symbol.meta.name.position,
+                        kind: UnifyErrorKind::DuplicatedIdentifier {
+                            name: conflicting_entry.symbol.meta.name.representation.clone(),
+                            first_declared_at: conflicting_entry.symbol.meta.name.position,
+                            then_declared_at: new_symbol.meta.name.position,
+                        },
+                    });
+                }
+            }
+            SymbolKind::EnumConstructor(new_enum_constructor_symbol) => {
+                if let Some(conflicting_entry) =
+                    self.symbol_entries
+                        .iter()
+                        .find(|entry| match &entry.symbol.kind {
+                            SymbolKind::EnumConstructor(EnumConstructorSymbol {
+                                enum_name,
+                                constructor_name,
+                                ..
+                            }) => {
+                                *enum_name == new_enum_constructor_symbol.enum_name
+                                    && *constructor_name
+                                        == new_enum_constructor_symbol.constructor_name
+                            }
+                            _ => false,
+                        })
+                {
+                    return Err(UnifyError {
+                        position: new_symbol.meta.name.position,
+                        kind: UnifyErrorKind::DuplicatedIdentifier {
+                            name: conflicting_entry.symbol.meta.name.representation.clone(),
+                            first_declared_at: conflicting_entry.symbol.meta.name.position,
+                            then_declared_at: new_symbol.meta.name.position,
+                        },
+                    });
+                }
+            }
+            SymbolKind::Value(new_value_symbol) => {
+                self.symbol_entries
+                    .iter()
+                    .map(|entry| {
+                        if entry.scope_name == scope_name
+                            && entry.symbol.meta.name.representation == name
+                        {
+                            match &entry.symbol.kind {
+                                SymbolKind::Value(value_symbol) => {
+                                    let error = Err(UnifyError {
+                                        position: new_symbol.meta.name.position,
+                                        kind: UnifyErrorKind::DuplicatedIdentifier {
+                                            name: entry.symbol.meta.name.representation.clone(),
+                                            first_declared_at: entry.symbol.meta.name.position,
+                                            then_declared_at: new_symbol.meta.name.position,
+                                        },
+                                    });
+                                    match &value_symbol.type_scheme.type_value {
+                                        Type::Function(function_type) => {
+                                            match &new_value_symbol.type_scheme.type_value {
+                                                Type::Function(new_function_type) => {
+                                                    if overlap(
+                                                        function_type.parameters_types.first(),
+                                                        new_function_type.parameters_types.first(),
+                                                    ) {
+                                                        Err(UnifyError {
+                                                            position: new_symbol.meta.name.position,
+                                                            kind: UnifyErrorKind::ConflictingFunctionDefinition {
+                                                                function_name: new_symbol.meta.name.representation.clone(),
+                                                                existing_first_parameter_type: function_type.parameters_types.first().clone(),
+                                                                new_first_parameter_type: new_function_type.parameters_types.first().clone(),
+                                                                first_declared_at: entry.symbol.meta.name.position,
+                                                            }
+                                                        })
+                                                    }
+                                                    else {
+                                                        Ok(())
+                                                    }
+                                                }
+
+                                                // if the new value symbol to be inserted is not type of function
+                                                _ => error,
+                                            }
+                                        }
+
+                                        // If current entry is not type of function
+                                        _ => error,
+                                    }
+                                }
+                                _ => Ok(()),
+                            }
+                        } else {
+                            Ok(())
+                        }
+                    })
+                    .collect::<Result<Vec<()>, UnifyError>>()?;
+            }
+        };
+
+        let uid = uid.unwrap_or_else(|| self.get_next_symbol_uid());
+        self.symbol_entries.push(SymbolEntry {
+            uid,
+            scope_name: self.current_scope_name(),
+            symbol: new_symbol,
+        });
+        Ok(uid)
+    }
+
+    pub fn get_all_matching_symbols(&self, symbol_name: &Token) -> Vec<SymbolEntry> {
+        self.symbol_entries
+            .iter()
+            .flat_map(|entry| {
+                if entry.symbol.meta.name.representation == symbol_name.representation {
+                    match &entry.symbol.kind {
+                        // Enum constructor cannot be imported,
+                        // as they will be brought into scope by their enum name
+                        SymbolKind::EnumConstructor(_) => vec![],
+                        SymbolKind::Type(type_symbol) => {
+                            match type_symbol.type_scheme.type_value {
+                                // When importing enum type
+                                // it's constructor will be brought into scope as well
+                                Type::Named { symbol_uid, .. } => vec![entry.clone()]
+                                    .into_iter()
+                                    .chain(self.symbol_entries.iter().filter_map(|entry| {
+                                        match &entry.symbol.kind {
+                                            SymbolKind::EnumConstructor(
+                                                enum_constructor_symbol,
+                                            ) if enum_constructor_symbol.enum_uid == symbol_uid => {
+                                                Some(entry.clone())
+                                            }
+                                            _ => None,
+                                        }
+                                    }))
+                                    .collect(),
+                                _ => vec![entry.clone()],
+                            }
+                        }
+                        _ => vec![entry.clone()],
+                    }
+                } else {
+                    vec![]
+                }
+            })
+            .collect()
+    }
+
+    pub fn get_enum_constructors(&self, enum_uid: usize) -> Vec<EnumConstructorSymbol> {
+        self.symbol_entries
+            .iter()
+            .filter_map(|entry| match &entry.symbol.kind {
+                SymbolKind::EnumConstructor(enum_constructor)
+                    if enum_constructor.enum_uid == enum_uid =>
+                {
+                    Some(enum_constructor.clone())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn get_symbol_entry(&self, symbol_name: &Token, scope_name: usize) -> Option<SymbolEntry> {
+        match self.symbol_entries.iter().find(|entry| {
+            entry.symbol.meta.name.representation == symbol_name.representation
+                && entry.scope_name == scope_name
+        }) {
+            Some(entry) => Some(entry.clone()),
+            None => match self.scope.get_parent_scope_name(scope_name) {
+                None => None,
+                Some(scope_name) => self.get_symbol_entry(symbol_name, scope_name),
             },
-        )
-    }
-
-    pub fn insert_constructor_symbol(&mut self, constructor_symbol: ConstructorSymbol) {
-        self.constructor_symbols.push(constructor_symbol);
-    }
-
-    pub fn get_all_matching_symbols(
-        &self,
-        reference_source: &Source,
-        symbol_name: &Token,
-    ) -> GetAllMatchingSymbolsResult {
-        // get matching value symbol
-        let value_symbol = self.value_symbols.get_symbol(
-            &self.scope,
-            reference_source,
-            symbol_name,
-            self.current_scope_name(),
-        );
-
-        // get matching function symbols
-        let function_symbols: Vec<FunctionSymbol> = self
-            .function_symbols
-            .iter()
-            .filter_map(|function_symbol| {
-                if function_symbol.meta.name == symbol_name.representation {
-                    Some(function_symbol.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // get matching type symbol
-        let type_symbol = self.type_symbols.get_symbol(
-            &self.scope,
-            &reference_source,
-            symbol_name,
-            self.current_scope_name(),
-        );
-
-        // get matching constructor symbols
-        let constructor_symbols: Vec<ConstructorSymbol> = self
-            .constructor_symbols
-            .iter()
-            .filter_map(|constructor_symbol| {
-                if constructor_symbol.constructor_name == symbol_name.representation {
-                    Some(constructor_symbol.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        GetAllMatchingSymbolsResult {
-            value_symbol,
-            function_symbols,
-            type_symbol,
-            constructor_symbols,
         }
     }
 
-    pub fn get_enum_constructors(&self, enum_name: &str) -> Vec<ConstructorSymbol> {
-        self.constructor_symbols
+    pub fn get_type_symbol_by_name(&self, symbol_name: &Token) -> Option<TypeSymbol> {
+        match self.get_symbol_entry(symbol_name, self.current_scope_name()) {
+            None => None,
+            Some(entry) => match entry.symbol.kind {
+                SymbolKind::Type(type_symbol) => Some(type_symbol),
+                _ => None,
+            },
+        }
+    }
+
+    pub fn get_type_symbol_by_uid(&self, symbol_uid: usize) -> Option<TypeSymbol> {
+        self.symbol_entries
             .iter()
-            .filter_map(|constructor_symbol| {
-                if constructor_symbol.enum_name == enum_name {
-                    Some(constructor_symbol.clone())
+            .filter_map(|entry| {
+                if entry.uid == symbol_uid {
+                    match &entry.symbol.kind {
+                        SymbolKind::Type(type_symbol) => Some(type_symbol.clone()),
+                        _ => panic!("Compiler error"),
+                    }
                 } else {
                     None
                 }
             })
-            .collect::<Vec<ConstructorSymbol>>()
-    }
-
-    pub fn get_type_symbol(&self, symbol_name: &Token) -> Option<SymbolEntry<TypeSymbol>> {
-        self.type_symbols.get_symbol(
-            &self.scope,
-            &self.source(),
-            &symbol_name,
-            self.current_scope_name(),
-        )
+            .collect::<Vec<TypeSymbol>>()
+            .first()
+            .cloned()
     }
 
     /// `expected_type` is required for single dispatch disambiguation
@@ -858,142 +692,121 @@ impl Environment {
         expected_type: &Option<Type>,
         scope_name: usize,
     ) -> Result<GetValueSymbolResult, UnifyError> {
-        let symbol =
-            self.value_symbols
-                .get_symbol(&self.scope, &self.source(), &symbol_name, scope_name);
-        match symbol {
-            Some(symbol) => Ok(GetValueSymbolResult {
-                symbol_uid: symbol.meta.uid,
-                type_scheme: symbol.value.type_scheme,
-            }),
-            None => {
-                if self.function_symbols.is_empty() {
-                    return Err(UnifyError {
-                        position: symbol_name.position,
-                        kind: UnifyErrorKind::UnknownValueSymbol,
-                    });
+        let matching_value_symbols = self
+            .symbol_entries
+            .iter()
+            .filter_map(|entry| match &entry.symbol.kind {
+                SymbolKind::Value(value_symbol)
+                    if entry.scope_name == scope_name
+                        && entry.symbol.meta.name.representation == symbol_name.representation =>
+                {
+                    Some((entry.uid, value_symbol.clone()))
                 }
-
-                let matching_function_symbols = self
-                    .function_symbols
-                    .iter()
-                    .filter(|symbol| {
-                        symbol.meta.name == symbol_name.representation
-                            && symbol.meta.scope_name == scope_name
+                _ => None,
+            })
+            .collect::<Vec<(usize, ValueSymbol)>>();
+        match matching_value_symbols.split_first() {
+            None => match self.scope.get_parent_scope_name(scope_name) {
+                None => Err(UnifyError {
+                    position: symbol_name.position,
+                    kind: UnifyErrorKind::UnknownValueSymbol,
+                }),
+                Some(scope_name) => self.get_value_symbol(symbol_name, expected_type, scope_name),
+            },
+            Some((head, tail)) => {
+                if tail.is_empty() {
+                    Ok(GetValueSymbolResult {
+                        symbol_uid: head.0,
+                        type_scheme: head.1.type_scheme.clone(),
                     })
-                    .collect::<Vec<&FunctionSymbol>>();
+                } else {
+                    let matching_function_signatures = matching_value_symbols
+                        .iter()
+                        .filter_map(
+                            |(symbol_uid, symbol)| match &symbol.type_scheme.type_value {
+                                Type::Function(function_type) => Some(FunctionSignature {
+                                    symbol_uid: *symbol_uid,
+                                    type_variables: symbol.type_scheme.type_variables.clone(),
+                                    function_type: function_type.clone(),
+                                }),
+                                _ => None,
+                            },
+                        )
+                        .collect::<Vec<FunctionSignature>>();
 
-                match matching_function_symbols.get(0) {
-                    Some(function_symbol) => {
-                        if matching_function_symbols.len() == 1 {
-                            Ok(GetValueSymbolResult {
-                                symbol_uid: function_symbol.meta.uid,
-                                type_scheme: function_symbol.function_signature.as_type_scheme(),
-                            })
-                        } else {
-                            match expected_type {
-                                Some(Type::Function(function_type)) => {
-                                    // check if the actual first parameter type is not implicit type variable
-                                    if let Type::ImplicitTypeVariable { .. } = self
-                                        .apply_subtitution_to_type(
-                                            function_type.parameters_types.first(),
-                                        )
-                                    {
-                                        return Err(UnifyError {
+                    match expected_type {
+                        Some(Type::Function(expected_function_type)) => {
+                            // check if the actual first parameter type is not implicit type variable
+                            if let Type::ImplicitTypeVariable { .. } = self
+                                .apply_subtitution_to_type(
+                                    expected_function_type.parameters_types.first(),
+                                )
+                            {
+                                return Err(UnifyError {
+                                    position: symbol_name.position,
+                                    kind: UnifyErrorKind::AmbiguousFunction {
+                                        available_function_signatures: matching_function_signatures,
+                                    },
+                                });
+                            }
+
+                            // find matching function signatures based on concrete type
+                            let matching_function_signature =
+                                matching_function_signatures.iter().find(|signature| {
+                                    overlap(
+                                        signature.function_type.parameters_types.first(),
+                                        expected_function_type.parameters_types.first(),
+                                    )
+                                });
+
+                            match matching_function_signature {
+                                // If no matching function signature found, search in parent scope
+                                None => {
+                                    let parent_scope_name =
+                                        self.scope.get_parent_scope_name(scope_name);
+                                    match parent_scope_name {
+                                        None => Err(UnifyError {
                                             position: symbol_name.position,
-                                            kind: UnifyErrorKind::AmbiguousFunction {
-                                                available_function_signatures:
-                                                    matching_function_symbols
-                                                        .iter()
-                                                        .map(|symbol| {
-                                                            symbol.function_signature.clone()
+                                            kind: UnifyErrorKind::NoMatchingFunction {
+                                                actual_first_argument_type: expected_function_type
+                                                    .parameters_types
+                                                    .first()
+                                                    .clone(),
+                                                expected_first_argument_types:
+                                                    matching_function_signatures
+                                                        .into_iter()
+                                                        .map(|signature| {
+                                                            signature
+                                                                .function_type
+                                                                .parameters_types
+                                                                .first()
+                                                                .clone()
                                                         })
                                                         .collect(),
                                             },
-                                        });
-                                    }
-
-                                    // find matching function signatures based on concrete type
-                                    let matching_function_signature =
-                                        matching_function_symbols.iter().find(|signature| {
-                                            overlap(
-                                                signature
-                                                    .function_signature
-                                                    .function_type
-                                                    .parameters_types
-                                                    .first(),
-                                                function_type.parameters_types.first(),
-                                            )
-                                        });
-
-                                    match matching_function_signature {
-                                        // If no matching function signature found, search in parent scope
-                                        None => {
-                                            let parent_scope_name =
-                                                self.scope.get_parent_scope_name(scope_name);
-                                            match parent_scope_name {
-                                                None => Err(UnifyError {
-                                                    position: symbol_name.position,
-                                                    kind: UnifyErrorKind::NoMatchingFunction {
-                                                        actual_first_argument_type: function_type
-                                                            .parameters_types
-                                                            .first()
-                                                            .clone(),
-                                                        expected_first_argument_types:
-                                                            matching_function_symbols
-                                                                .into_iter()
-                                                                .map(|signature| {
-                                                                    signature
-                                                                        .function_signature
-                                                                        .function_type
-                                                                        .parameters_types
-                                                                        .first()
-                                                                        .clone()
-                                                                })
-                                                                .collect(),
-                                                    },
-                                                }),
-                                                Some(parent_scope_name) => self.get_value_symbol(
-                                                    symbol_name,
-                                                    &Some(Type::Function(function_type.clone())),
-                                                    parent_scope_name,
-                                                ),
-                                            }
-                                        }
-
-                                        // If found one matching function signature, return Ok
-                                        Some(function_symbol) => Ok(GetValueSymbolResult {
-                                            symbol_uid: function_symbol.meta.uid,
-                                            type_scheme: function_symbol
-                                                .function_signature
-                                                .as_type_scheme(),
                                         }),
+                                        Some(parent_scope_name) => self.get_value_symbol(
+                                            symbol_name,
+                                            &Some(Type::Function(expected_function_type.clone())),
+                                            parent_scope_name,
+                                        ),
                                     }
                                 }
-                                _ => Err(UnifyError {
-                                    position: symbol_name.position,
-                                    kind: UnifyErrorKind::AmbiguousFunction {
-                                        available_function_signatures: matching_function_symbols
-                                            .iter()
-                                            .map(|symbol| symbol.function_signature.clone())
-                                            .collect(),
-                                    },
+
+                                // If found one matching function signature, return Ok
+                                Some(signature) => Ok(GetValueSymbolResult {
+                                    symbol_uid: signature.symbol_uid,
+                                    type_scheme: signature.as_type_scheme(),
                                 }),
                             }
                         }
-                    }
-
-                    // If no matching function signatures found in this scope
-                    // Look into parent scope
-                    None => match self.scope.get_parent_scope_name(scope_name) {
-                        None => Err(UnifyError {
+                        _ => Err(UnifyError {
                             position: symbol_name.position,
-                            kind: UnifyErrorKind::UnknownValueSymbol,
+                            kind: UnifyErrorKind::AmbiguousFunction {
+                                available_function_signatures: matching_function_signatures,
+                            },
                         }),
-                        Some(scope_name) => {
-                            self.get_value_symbol(symbol_name, expected_type, scope_name)
-                        }
-                    },
+                    }
                 }
             }
         }
@@ -1003,14 +816,21 @@ impl Environment {
     ///     This is for disambiguating constructors with the same name that belongs to different enums
     pub fn get_constructor_symbol(
         &self,
-        expected_enum_name: Option<String>,
+        expected_enum_uid: Option<usize>,
         constructor_name: &Token,
-    ) -> Result<ConstructorSymbol, UnifyError> {
+    ) -> Result<EnumConstructorSymbol, UnifyError> {
         let matching_constructors = self
-            .constructor_symbols
+            .symbol_entries
             .iter()
-            .filter(|constructor| constructor.constructor_name == constructor_name.representation)
-            .collect::<Vec<&ConstructorSymbol>>();
+            .filter_map(|constructor| match &constructor.symbol.kind {
+                SymbolKind::EnumConstructor(constructor_symbol)
+                    if constructor_symbol.constructor_name == constructor_name.representation =>
+                {
+                    Some(constructor_symbol.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<EnumConstructorSymbol>>();
 
         match matching_constructors.split_first() {
             None => Err(UnifyError {
@@ -1019,7 +839,7 @@ impl Environment {
             }),
             Some((constructor, tail)) => {
                 if tail.is_empty() {
-                    Ok(ConstructorSymbol::clone(constructor))
+                    Ok(EnumConstructorSymbol::clone(constructor))
                 } else {
                     // If more than one matching constructors found
                     // Need to disambiguate using expected_enum_name
@@ -1036,13 +856,13 @@ impl Environment {
                             },
                         },
                     });
-                    match expected_enum_name {
+                    match expected_enum_uid {
                         None => error,
-                        Some(expected_enum_name) => match matching_constructors
+                        Some(expected_enum_uid) => match matching_constructors
                             .into_iter()
-                            .find(|constructor| constructor.enum_name == expected_enum_name)
+                            .find(|constructor| constructor.enum_uid == expected_enum_uid)
                         {
-                            Some(constructor_symbol) => Ok(constructor_symbol.clone()),
+                            Some(constructor_symbol) => Ok(constructor_symbol),
                             None => error,
                         },
                     }
@@ -1053,12 +873,16 @@ impl Environment {
 }
 
 #[derive(Debug, Clone)]
-pub enum Declaration {
-    UserDefined {
-        source: Source,
-        token: Token,
-        scope_name: usize,
-    },
+pub struct Symbol {
+    pub meta: SymbolMeta,
+    pub kind: SymbolKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum SymbolKind {
+    Value(ValueSymbol),
+    Type(TypeSymbol),
+    EnumConstructor(EnumConstructorSymbol),
 }
 
 #[derive(Debug, Clone)]
@@ -1079,6 +903,7 @@ pub struct FunctionSymbol {
 
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
+    pub symbol_uid: usize,
     pub type_variables: Vec<String>,
     pub function_type: FunctionType,
 }
@@ -1132,15 +957,17 @@ fn overlap(a: &Type, b: &Type) -> bool {
         (Type::Array(a), Type::Array(b)) => overlap(a.as_ref(), b.as_ref()),
         (
             Type::Named {
-                name: name_a,
+                symbol_uid: symbol_uid_a,
                 type_arguments: type_arguments_a,
+                ..
             },
             Type::Named {
-                name: name_b,
+                symbol_uid: symbol_uid_b,
                 type_arguments: type_arguments_b,
+                ..
             },
         ) => {
-            *name_a == *name_b
+            *symbol_uid_a == *symbol_uid_b
                 && type_arguments_a
                     .iter()
                     .zip(type_arguments_b.iter())
@@ -1153,13 +980,13 @@ fn overlap(a: &Type, b: &Type) -> bool {
 }
 
 #[derive(Debug, Clone)]
-pub struct ConstructorSymbol {
-    /// Refers to the name of the enum that contains this constructor
+pub struct EnumConstructorSymbol {
+    /// Refers to the UID of the enum that contains this constructor
+    pub enum_uid: usize,
     pub enum_name: String,
     pub constructor_name: String,
     pub type_variables: Vec<String>,
     pub payload: Option<Type>,
-    pub meta: SymbolMeta,
 }
 
 #[derive(Debug, Clone)]
@@ -1168,103 +995,91 @@ pub struct UsageReference {
     source: Source,
 }
 
-fn built_in_value_symbols() -> Vec<(String, usize, TypeScheme)> {
+fn built_in_symbols() -> Vec<Symbol> {
+    fn meta(name: String) -> SymbolMeta {
+        SymbolMeta {
+            exported: false,
+            name: Token {
+                position: Position::dummy(),
+                representation: name,
+                token_type: TokenType::Identifier,
+            },
+        }
+    };
     let type_variable_name = "T".to_string();
     vec![
-        (
-            "print".to_string(),
-            0, // uid
-            TypeScheme {
-                type_variables: vec![type_variable_name.clone()],
-                type_value: Type::Function(FunctionType {
-                    parameters_types: Box::new(NonEmpty {
-                        head: Type::ImplicitTypeVariable {
-                            name: type_variable_name,
-                        },
-                        tail: vec![],
+        // build-in values
+        Symbol {
+            meta: meta("print".to_string()),
+            kind: SymbolKind::Value(ValueSymbol {
+                type_scheme: TypeScheme {
+                    type_variables: vec![type_variable_name.clone()],
+                    type_value: Type::Function(FunctionType {
+                        parameters_types: Box::new(NonEmpty {
+                            head: Type::ImplicitTypeVariable {
+                                name: type_variable_name,
+                            },
+                            tail: vec![],
+                        }),
+                        return_type: Box::new(Type::Null),
                     }),
-                    return_type: Box::new(Type::Null),
-                }),
-            },
-        ),
-        (
-            "read_file".to_string(),
-            1, // uid
-            TypeScheme {
-                type_variables: vec![],
-                type_value: Type::Function(FunctionType {
-                    parameters_types: Box::new(NonEmpty {
-                        head: Type::String,
-                        tail: vec![],
-                    }),
-                    return_type: Box::new(Type::Named {
-                        name: "Result".to_string(),
-                        type_arguments: vec![
-                            ("Ok".into(), Type::String),
-                            ("Error".into(), Type::String),
-                        ],
-                    }),
-                }),
-            },
-        ),
-    ]
-}
-
-fn built_in_type_symbols() -> Vec<(String, TypeSymbol)> {
-    vec![
-        (
-            "String".to_string(),
-            TypeSymbol {
+                },
+            }),
+        },
+        // built-in types
+        Symbol {
+            meta: meta("String".to_string()),
+            kind: SymbolKind::Type(TypeSymbol {
                 type_scheme: TypeScheme {
                     type_variables: vec![],
                     type_value: Type::String,
                 },
-            },
-        ),
-        (
-            "Character".to_string(),
-            TypeSymbol {
+            }),
+        },
+        Symbol {
+            meta: meta("Character".to_string()),
+            kind: SymbolKind::Type(TypeSymbol {
                 type_scheme: TypeScheme {
                     type_variables: vec![],
                     type_value: Type::Character,
                 },
-            },
-        ),
-        (
-            "Integer".to_string(),
-            TypeSymbol {
+            }),
+        },
+        Symbol {
+            meta: meta("Integer".to_string()),
+            kind: SymbolKind::Type(TypeSymbol {
                 type_scheme: TypeScheme {
                     type_variables: vec![],
                     type_value: Type::Integer,
                 },
-            },
-        ),
-        (
-            "Float".to_string(),
-            TypeSymbol {
+            }),
+        },
+        Symbol {
+            meta: meta("Float".to_string()),
+            kind: SymbolKind::Type(TypeSymbol {
                 type_scheme: TypeScheme {
                     type_variables: vec![],
                     type_value: Type::Float,
                 },
-            },
-        ),
-        (
-            "Null".to_string(),
-            TypeSymbol {
+            }),
+        },
+        Symbol {
+            meta: meta("Null".to_string()),
+            kind: SymbolKind::Type(TypeSymbol {
                 type_scheme: TypeScheme {
                     type_variables: vec![],
                     type_value: Type::Null,
                 },
-            },
-        ),
-        (
-            "Boolean".to_string(),
-            TypeSymbol {
+            }),
+        },
+        Symbol {
+            meta: meta("Boolean".to_string()),
+            kind: SymbolKind::Type(TypeSymbol {
                 type_scheme: TypeScheme {
                     type_variables: vec![],
                     type_value: Type::Boolean,
                 },
-            },
-        ),
+            }),
+        },
     ]
 }
