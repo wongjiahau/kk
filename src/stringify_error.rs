@@ -596,9 +596,13 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Type argument name mismatch".to_string(),
             body: format!("The expected name here is `{}`.", expected_name)
         },
-        UnifyErrorKind::WrongTypeAnnotation {expected_type} => StringifiedError {
-            summary: "Wrong type annotation".to_string(),
-            body: format!("The expected type annotation is:\n\n{}", stringify_type(expected_type, 1))
+        UnifyErrorKind::UnnecessaryTypeAnnotation {expected_type} => StringifiedError {
+            summary: "Unnecessary type annotation".to_string(),
+            body: format!("{}{}\n\n{}",
+                "Based on higher level type annotations, we already know that the expected type is:\n\n", 
+                stringify_type(expected_type, 1),
+                "Remove this type annotation to fix this error."
+            )
         },
         UnifyErrorKind::RecordExtraneousKey {
             mut expected_keys

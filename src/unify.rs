@@ -103,7 +103,7 @@ pub enum UnifyErrorKind {
         constructor_name: String,
         possible_enum_names: NonEmpty<String>,
     },
-    WrongTypeAnnotation {
+    UnnecessaryTypeAnnotation {
         expected_type: Type,
     },
     DuplicatedRecordKey,
@@ -2452,34 +2452,18 @@ pub fn get_expected_type(
     expected_type: Option<Type>,
     expected_type_annotation: Option<TypeAnnotation>,
 ) -> Result<Option<Type>, UnifyError> {
-    let expected_type = match (expected_type, expected_type_annotation) {
-        (None, None) => None,
-        (Some(expected_type), None) => Some(expected_type),
-        (None, Some(type_annotation)) => {
-            Some(type_annotation_to_type(environment, &type_annotation)?)
-        }
-        (Some(expected_type), Some(type_annotation)) => {
-            let type_annotation_type = type_annotation_to_type(environment, &type_annotation)?;
-            match unify_type(
-                environment,
-                &expected_type,
-                &type_annotation_type,
-                get_type_annotation_position(&type_annotation),
-            ) {
-                Ok(_) => Ok(()),
-                Err(UnifyError {
-                    position,
-                    kind: UnifyErrorKind::TypeMismatch { expected_type, .. },
-                }) => Err(UnifyError {
-                    position,
-                    kind: UnifyErrorKind::WrongTypeAnnotation { expected_type },
-                }),
-                Err(other_error) => Err(other_error),
-            }?;
-            Some(expected_type)
-        }
-    };
-    Ok(expected_type)
+    match (expected_type, expected_type_annotation) {
+        (None, None) => Ok(None),
+        (Some(expected_type), None) => Ok(Some(expected_type)),
+        (None, Some(type_annotation)) => Ok(Some(type_annotation_to_type(
+            environment,
+            &type_annotation,
+        )?)),
+        (Some(expected_type), Some(type_annotation)) => Err(UnifyError {
+            position: get_type_annotation_position(&type_annotation),
+            kind: UnifyErrorKind::UnnecessaryTypeAnnotation { expected_type },
+        }),
+    }
 }
 
 fn infer_function_parameter(
