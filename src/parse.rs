@@ -690,6 +690,12 @@ impl<'a> Parser<'a> {
                     })),
                     property_name,
                 })
+            } else if self.try_eat_token(TokenType::Comma).is_some() {
+                // this is a value update with punning
+                record_updates.push(RecordUpdate::ValueUpdate {
+                    property_name: property_name.clone(),
+                    new_value: Expression::Variable(property_name),
+                })
             } else {
                 // this is a value update
                 let new_value = self.parse_expression()?;
