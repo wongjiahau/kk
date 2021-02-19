@@ -27,7 +27,7 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_6.kk:7:44
+  ┌─ tests/compiler/typecheck/contextual_unification_6.kk:7:44
   │
 7 │ let result = [{foo 2 bar "hi"}].arrayMap(|.zap)
   │                                            ^^^ No such property

@@ -5,11 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let bar = | props: {
-  f: | { x: Integer } -> Integer
-} =>
-  let { f, } = props
-  {x "hi"}.f()
+let o: [{x: Integer}] = [{x null}]
 
 ============
 EXIT CODE
@@ -25,13 +21,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_9.kk:5:6
+  ┌─ tests/compiler/typecheck/contextual_unification_4.kk:1:29
   │
-5 │   {x "hi"}.f()
-  │      ^^^^ Type mismatch
+1 │ let o: [{x: Integer}] = [{x null}]
+  │                             ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Integer     | + String    |
+    | - Integer     | + Null      |
     +---------------+-------------+

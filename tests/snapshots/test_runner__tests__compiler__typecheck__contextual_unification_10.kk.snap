@@ -23,7 +23,7 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_10.kk:3:3
+  ┌─ tests/compiler/typecheck/contextual_unification_10.kk:3:3
   │
 3 │   x
   │   ^ Type mismatch

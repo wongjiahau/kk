@@ -5,9 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f
-  : | {foo: Float} -> Float
-  = | o => o.bar
+let f = | { x { z, } }: { x: { y: Integer } } => 2
 
 ============
 EXIT CODE
@@ -23,10 +21,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_1.kk:3:14
+  ┌─ tests/compiler/typecheck/contextual_unification_5.kk:1:17
   │
-3 │   = | o => o.bar
-  │              ^^^ No such property
+1 │ let f = | { x { z, } }: { x: { y: Integer } } => 2
+  │                 ^ No such property
   │
   = Available properties:
-      foo
+      y

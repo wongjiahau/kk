@@ -32,7 +32,7 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/progressive_unification_7.kk:12:24
+   ┌─ tests/compiler/typecheck/contextual_unification_7.kk:12:24
    │
 12 │ let result: [String] = [{x 2}].array_map(| o => o.x)
    │                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch

@@ -23,7 +23,7 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/progressive_unification_3.kk:3:12
+  ┌─ tests/compiler/typecheck/contextual_unification_3.kk:3:12
   │
 3 │   = | x -> Integer => 2
   │            ^^^^^^^ Unnecessary type annotation
