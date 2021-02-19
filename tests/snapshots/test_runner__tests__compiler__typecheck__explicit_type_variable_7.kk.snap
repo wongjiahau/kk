@@ -23,9 +23,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/explicit_type_variable_7.kk:3:18
+  ┌─ tests/compiler/typecheck/explicit_type_variable_7.kk:3:17
   │
 3 │ type Foo = Tuple<Foo Integer>
-  │                  ^^^ Type argument name mismatch
+  │                 ^^^^^^^^^^^^^ Type arguments length mismatch
   │
-  = The expected name here is `Left`.
+  = 2 type arguments are given, but expected 1:
+      Left

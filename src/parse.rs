@@ -311,15 +311,13 @@ impl<'a> Parser<'a> {
     fn try_parse_type_arguments(&mut self) -> Result<Option<TypeArguments>, ParseError> {
         let context = ParseContext::TypeArguments;
         if let Some(left_angular_bracket) = self.try_eat_token(TokenType::LessThan) {
-            let mut substitutions = Vec::new();
+            let mut arguments = Vec::new();
             loop {
-                let parameter_name = self.eat_token(TokenType::Identifier, context)?;
-                let type_annotation = self.parse_type_annotation(context)?;
-                substitutions.push((parameter_name, type_annotation));
+                arguments.push(self.parse_type_annotation(context)?);
                 if let Some(right_angular_bracket) = self.try_eat_token(TokenType::MoreThan) {
                     return Ok(Some(TypeArguments {
                         left_angular_bracket,
-                        substitutions,
+                        arguments,
                         right_angular_bracket,
                     }));
                 }

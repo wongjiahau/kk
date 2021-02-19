@@ -107,9 +107,6 @@ pub enum UnifyErrorKind {
         expected_type: Type,
     },
     DuplicatedRecordKey,
-    TypeArgumentNameMismatch {
-        expected_name: String,
-    },
     InfiniteTypeDetected {
         type_variable_name: String,
         in_type: Type,
@@ -2508,18 +2505,18 @@ pub fn type_annotation_to_type(
                 let type_arguments = match type_arguments {
                     None => Ok(vec![]),
                     Some(TypeArguments {
-                        substitutions,
+                        arguments,
                         left_angular_bracket,
                         right_angular_bracket,
                     }) => {
-                        if type_symbol.type_scheme.type_variables.len() != substitutions.len() {
+                        if type_symbol.type_scheme.type_variables.len() != arguments.len() {
                             Err(UnifyError {
                                 position: join_position(
                                     left_angular_bracket.position,
                                     right_angular_bracket.position,
                                 ),
                                 kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
-                                    actual_length: substitutions.len(),
+                                    actual_length: arguments.len(),
                                     expected_type_parameter_names: type_symbol
                                         .type_scheme
                                         .type_variables
@@ -2527,55 +2524,30 @@ pub fn type_annotation_to_type(
                                 },
                             })
                         } else {
-                            substitutions
+                            arguments
                                 .iter()
-                                .map(|(name, type_value)| {
-                                    Ok((
-                                        name.clone(),
-                                        type_annotation_to_type(environment, type_value)?,
-                                    ))
-                                })
-                                .collect::<Result<Vec<(Token, Type)>, UnifyError>>()
+                                .map(|type_value| type_annotation_to_type(environment, type_value))
+                                .collect::<Result<Vec<Type>, UnifyError>>()
                         }
                     }
                 }?;
 
                 type_symbol
-                        .type_scheme
-                        .type_variables
-                        .iter()
-                        .zip(type_arguments.into_iter())
-                        .fold(
-                            Ok(type_symbol.type_scheme.type_value),
-                            |result,
-                             (
+                    .type_scheme
+                    .type_variables
+                    .iter()
+                    .zip(type_arguments.into_iter())
+                    .fold(
+                        Ok(type_symbol.type_scheme.type_value),
+                        |result, (expected_type_variable_name, type_value)| match result {
+                            Err(error) => Err(error),
+                            Ok(result) => Ok(rewrite_type_variable_in_type(
                                 expected_type_variable_name,
-                                (actual_type_variable_name, type_value),
-                            )| {
-                                match result {
-                                    Err(error) => Err(error),
-                                    Ok(result) => {
-                                        if *expected_type_variable_name
-                                            != actual_type_variable_name.representation
-                                        {
-                                            Err(UnifyError {
-                                                position: actual_type_variable_name.position,
-                                                kind: UnifyErrorKind::TypeArgumentNameMismatch {
-                                                    expected_name: expected_type_variable_name
-                                                        .clone(),
-                                                },
-                                            })
-                                        } else {
-                                            Ok(rewrite_type_variable_in_type(
-                                                expected_type_variable_name,
-                                                &type_value,
-                                                result,
-                                            ))
-                                        }
-                                    }
-                                }
-                            },
-                        )
+                                &type_value,
+                                result,
+                            )),
+                        },
+                    )
             } else {
                 Err(UnifyError {
                     position: name.position,

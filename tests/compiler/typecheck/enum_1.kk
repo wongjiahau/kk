@@ -2,7 +2,7 @@ enum List<Element> =
   Nil
   Cons({
     current: Element
-    next: List<Element Element>
+    next: List<Element>
   })
 
 let xs = Cons({

@@ -592,10 +592,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 indent_string(expected_type_parameter_names.join("\n"), 2 )
             )
         },
-        UnifyErrorKind::TypeArgumentNameMismatch {expected_name} => StringifiedError {
-            summary: "Type argument name mismatch".to_string(),
-            body: format!("The expected name here is `{}`.", expected_name)
-        },
         UnifyErrorKind::UnnecessaryTypeAnnotation {expected_type} => StringifiedError {
             summary: "Unnecessary type annotation".to_string(),
             body: format!("{}{}\n\n{}",

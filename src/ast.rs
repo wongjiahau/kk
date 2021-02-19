@@ -323,7 +323,7 @@ pub struct FunctionCall {
 #[derive(Debug, Clone)]
 pub struct TypeArguments {
     pub left_angular_bracket: Token,
-    pub substitutions: Vec<(/*type_variable_name*/ Token, TypeAnnotation)>,
+    pub arguments: Vec<TypeAnnotation>,
     pub right_angular_bracket: Token,
 }
 

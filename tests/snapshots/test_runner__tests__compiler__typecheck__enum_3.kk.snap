@@ -8,7 +8,7 @@ INPUT
 enum Option<T> = Some(T) None
 
 let a = Some(None)
-let x: Option<T String> = a
+let x: Option<String> = a
 
 ============
 EXIT CODE
@@ -24,10 +24,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/enum_3.kk:4:27
+  ┌─ tests/compiler/typecheck/enum_3.kk:4:25
   │
-4 │ let x: Option<T String> = a
-  │                           ^ Type mismatch
+4 │ let x: Option<String> = a
+  │                         ^ Type mismatch
   │
   = +---------------+-------------------+
     | EXPECTED TYPE |    ACTUAL TYPE    |
