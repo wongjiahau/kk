@@ -1,0 +1,22 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+export let foo = 1
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============

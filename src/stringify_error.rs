@@ -279,7 +279,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Import Statement",
             examples: vec![
                 "import \"./foo.kk\" bar",
-                "import \"./foo.kk\" bar = spam, baz",
+                "import \"./foo.kk\" bar=spam baz",
             ],
         },
         ParseContext::StatementLet => ParseContextDescription {

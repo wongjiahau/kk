@@ -1,0 +1,24 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+import "./diamond_dependency_1.kk" foo
+
+export let spam = 3
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
