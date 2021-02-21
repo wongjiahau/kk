@@ -10,13 +10,16 @@ use crate::environment::*;
 use crate::pattern::*;
 use crate::typechecked_ast::*;
 use relative_path::RelativePath;
-use std::fs;
 use std::iter;
+use std::{collections::HashMap, fs};
 use std::{collections::HashSet, path::Path};
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub source: Source,
+    /// A unique identifier that can be used to uniquely identify this environment.
+    pub uid: EnvironmentUid,
+
+    /// Represents the literal code of this program.
     pub code: String,
 
     /// This is used for checking circular references
@@ -32,6 +35,19 @@ pub struct ImportRelation {
 pub struct UnifyProgramResult {
     pub statements: Vec<TypecheckedStatement>,
     pub environment: Environment,
+
+    // This is for memoization.
+    // By doing this we can prevent duplicated efforts to typecheck the same module again.
+    // For example (suppose the entry point is D):
+    //
+    //      D imports B
+    //      D imports C
+    //      B imports A
+    //      C imports A
+    //
+    // From above, we can see that A is being imported twice,
+    //  without memoization we will need to compile A twice, which is bad for performance.
+    pub imported_environments: HashMap<EnvironmentUid, Environment>,
 }
 
 /// `starting_symbol_uid` is needed to make sure each symbol has a UID that is unique across different modules
@@ -39,21 +55,32 @@ pub fn unify_statements(
     program: Program,
     statements: Vec<Statement>,
     starting_symbol_uid: usize,
+    imported_environments: &HashMap<EnvironmentUid, Environment>,
 ) -> Result<UnifyProgramResult, CompileError> {
-    // 1. TODO: Populate environment with imported symbols
     let mut environment: Environment = Environment::new(program, starting_symbol_uid);
 
-    // 2. Type check this program
-    let statements = statements
-        .into_iter()
-        .map(|statement| infer_statement(&mut environment, statement))
-        .collect::<Result<Vec<Vec<TypecheckedStatement>>, CompileError>>()?
-        .into_iter()
-        .flatten()
-        .collect();
+    let init: (Vec<TypecheckedStatement>, _) = (vec![], imported_environments.clone());
+
+    let (statements, imported_environments) =
+        statements
+            .into_iter()
+            .fold(Ok(init), |result, statement| match result {
+                Err(error) => Err(error),
+                Ok((mut statements, mut imported_environments)) => {
+                    let current =
+                        infer_statement(&mut environment, &imported_environments, statement)?;
+
+                    statements.extend(current.statements.into_iter());
+
+                    imported_environments.extend(current.imported_environments);
+
+                    Ok((statements, imported_environments))
+                }
+            })?;
     Ok(UnifyProgramResult {
         statements,
         environment,
+        imported_environments,
     })
 }
 
@@ -160,22 +187,37 @@ pub enum UnifyErrorKind {
     },
 }
 
+pub struct InferStatementResult {
+    pub statements: Vec<TypecheckedStatement>,
+    pub imported_environments: HashMap<EnvironmentUid, Environment>,
+}
+
 pub fn infer_statement(
     environment: &mut Environment,
+    imported_environments: &HashMap<EnvironmentUid, Environment>,
     statement: Statement,
-) -> Result<Vec<TypecheckedStatement>, CompileError> {
+) -> Result<InferStatementResult, CompileError> {
     match statement {
         Statement::Do(do_statement) => match infer_do_statement(environment, do_statement) {
-            Ok(statement) => Ok(vec![statement]),
+            Ok(statement) => Ok(InferStatementResult {
+                statements: vec![statement],
+                imported_environments: HashMap::new(),
+            }),
             Err(unify_error) => Err(unify_error.into_compile_error(environment.program.clone())),
         },
         Statement::Let(let_statement) => match infer_let_statement(environment, let_statement) {
-            Ok(statement) => Ok(vec![statement]),
+            Ok(statement) => Ok(InferStatementResult {
+                statements: vec![statement],
+                imported_environments: HashMap::new(),
+            }),
             Err(unify_error) => Err(unify_error.into_compile_error(environment.program.clone())),
         },
         Statement::Type(type_statement) => {
             match infer_type_statement(environment, type_statement) {
-                Ok(()) => Ok(vec![]),
+                Ok(()) => Ok(InferStatementResult {
+                    statements: vec![],
+                    imported_environments: HashMap::new(),
+                }),
                 Err(unify_error) => {
                     Err(unify_error.into_compile_error(environment.program.clone()))
                 }
@@ -183,29 +225,33 @@ pub fn infer_statement(
         }
         Statement::Enum(enum_statement) => {
             match infer_enum_statement(environment, enum_statement) {
-                Ok(()) => Ok(vec![]),
+                Ok(()) => Ok(InferStatementResult {
+                    statements: vec![],
+                    imported_environments: HashMap::new(),
+                }),
                 Err(unify_error) => {
                     Err(unify_error.into_compile_error(environment.program.clone()))
                 }
             }
         }
         Statement::Import(import_statement) => {
-            infer_import_statement(environment, import_statement)
+            infer_import_statement(environment, imported_environments, import_statement)
         }
     }
 }
 
 pub fn infer_import_statement(
     environment: &mut Environment,
+    imported_environments: &HashMap<EnvironmentUid, Environment>,
     ImportStatement {
         url,
         imported_names,
         ..
     }: ImportStatement,
-) -> Result<Vec<TypecheckedStatement>, CompileError> {
-    let current_path = environment.source().path();
+) -> Result<InferStatementResult, CompileError> {
+    let importer_path = environment.uid().string_value();
     let import_path = url.representation.trim_matches('"');
-    let path = RelativePath::new(&current_path)
+    let path = RelativePath::new(&importer_path)
         .parent()
         .expect("Should always have parent")
         .join(RelativePath::new(import_path))
@@ -223,7 +269,7 @@ pub fn infer_import_statement(
                 import_relations: {
                     let mut relations = environment.program.import_relations.clone();
                     relations.push(ImportRelation {
-                        importer_path: environment.source().path(),
+                        importer_path,
                         importee_path: path_string,
                     });
                     relations
@@ -232,145 +278,176 @@ pub fn infer_import_statement(
         }
         .into_compile_error(environment.program.clone()));
     }
-    match fs::read_to_string(path.to_path(Path::new("."))) {
-        Ok(code) => {
-            // Compile the imported file
-            let source = Source::File {
-                path: path_string.clone(),
-            };
-            let program = Program {
-                source,
-                code: code.clone(),
-                import_relations: {
-                    let mut importer_paths = environment.program.import_relations.clone();
-                    importer_paths.push(ImportRelation {
-                        importer_path: environment.program.source.path(),
-                        importee_path: path_string,
-                    });
-                    importer_paths
-                },
-            };
-            let tokens = match tokenize(code) {
-                Ok(tokens) => Ok(tokens),
-                Err(tokenize_error) => Err(CompileError {
-                    program: program.clone(),
-                    kind: CompileErrorKind::TokenizeError(tokenize_error),
-                }),
-            }?;
-            let statements = match Parser::parse(tokens) {
-                Ok(statements) => Ok(statements),
-                Err(parse_error) => Err(CompileError {
-                    program: program.clone(),
-                    kind: CompileErrorKind::ParseError(Box::new(parse_error)),
-                }),
-            }?;
+    let relative_path = path.to_path(Path::new("."));
+    let uid = EnvironmentUid::Local {
+        relative_path: path.to_string(),
+    };
 
-            // Check whether each imported name exists and is exported in this program
-            let imported =
-                unify_statements(program, statements, environment.get_next_symbol_uid())?;
-            let statements = imported_names
-                .into_vector()
-                .into_iter()
-                .map(|imported_name| {
-                    let matching_symbol_entries = imported
-                        .environment
-                        .get_all_matching_symbols(&imported_name.name);
+    // Look up for memoize imported environments
+    let imported = match imported_environments.get(&uid) {
+        Some(environment) => {
+            println!("Compile cache hit: {}", uid.string_value());
+            UnifyProgramResult {
+                environment: environment.clone(),
+                statements: vec![],
+                imported_environments: HashMap::new(),
+            }
+        }
+        None => {
+            match fs::read_to_string(relative_path) {
+                Ok(code) => {
+                    let program = Program {
+                        uid: uid.clone(),
+                        code: code.clone(),
+                        import_relations: {
+                            let mut importer_paths = environment.program.import_relations.clone();
+                            importer_paths.push(ImportRelation {
+                                importer_path: environment.program.uid.string_value(),
+                                importee_path: path_string,
+                            });
+                            importer_paths
+                        },
+                    };
 
-                    if matching_symbol_entries.is_empty() {
-                        Err(UnifyError {
-                            position: imported_name.name.position,
-                            kind: UnifyErrorKind::UnknownImportedName,
-                        }
-                        .into_compile_error(environment.program.clone()))
-                    } else {
-                        let name = match &imported_name.alias_as {
-                            Some(name) => name,
-                            None => &imported_name.name,
-                        };
+                    // Tokenize the imported module
+                    let tokens = match tokenize(code) {
+                        Ok(tokens) => Ok(tokens),
+                        Err(tokenize_error) => Err(CompileError {
+                            program: program.clone(),
+                            kind: CompileErrorKind::TokenizeError(tokenize_error),
+                        }),
+                    }?;
 
-                        // Insert the matching value symbol into the current environment
-                        let statements = matching_symbol_entries
-                            .iter()
-                            .map(|entry| {
-                                if !entry.symbol.meta.exported {
-                                    return Err(UnifyError {
-                                        position: imported_name.name.position,
-                                        kind: UnifyErrorKind::CannotImportPrivateSymbol,
-                                    }
-                                    .into_compile_error(environment.program.clone()));
-                                }
-                                match environment.insert_symbol(
-                                    Some(entry.uid),
-                                    Symbol {
-                                        meta: SymbolMeta {
-                                            name: name.clone(),
-                                            ..entry.symbol.meta
-                                        },
-                                        kind: entry.symbol.kind.clone(),
-                                    },
-                                ) {
-                                    Ok(uid) => {
-                                        // only insert new typechecked statement if import alias is defined
-                                        match imported_name.clone().alias_as {
-                                            Some(alias_as) => match entry.symbol.kind {
-                                                SymbolKind::Value(_) => {
-                                                    Ok(vec![TypecheckedStatement::Let {
-                                                        left: Variable {
-                                                            uid,
-                                                            representation: alias_as.representation,
-                                                        },
-                                                        right: TypecheckedExpression::Variable(
-                                                            Variable {
-                                                                uid: entry.uid,
-                                                                representation: entry
-                                                                    .symbol
-                                                                    .meta
-                                                                    .name
-                                                                    .representation
-                                                                    .clone(),
-                                                            },
-                                                        ),
-                                                    }])
-                                                }
-                                                _ => Ok(vec![]),
-                                            },
-                                            None => Ok(vec![]),
-                                        }
-                                    }
-                                    Err(unify_error) => {
-                                        Err(unify_error
-                                            .into_compile_error(environment.program.clone()))
-                                    }
-                                }
-                            })
-                            .collect::<Result<Vec<Vec<TypecheckedStatement>>, CompileError>>()?;
+                    // Parse the imported module
+                    let statements = match Parser::parse(tokens) {
+                        Ok(statements) => Ok(statements),
+                        Err(parse_error) => Err(CompileError {
+                            program: program.clone(),
+                            kind: CompileErrorKind::ParseError(Box::new(parse_error)),
+                        }),
+                    }?;
 
-                        Ok(statements)
+                    // Typecheck the imported module
+                    unify_statements(
+                        program,
+                        statements,
+                        environment.get_next_symbol_uid(),
+                        imported_environments,
+                    )?
+                }
+                Err(error) => {
+                    return Err(UnifyError {
+                        position: url.position,
+                        kind: UnifyErrorKind::ErrorneousImportPath {
+                            extra_information: format!("{}", error),
+                        },
                     }
-                })
-                .collect::<Result<Vec<Vec<Vec<TypecheckedStatement>>>, CompileError>>()?;
-
-            // After importing, we need to increment the `current_uid` of the currrent environment
-            // to the biggest `current_uid` of the imported environment
-            // so that UID uniqueness can be maintained across different modules
-            // this uniquenss is important for transpilation, so that the generated code
-            // will not contain both variables with the same name
-            environment.set_current_uid(imported.environment.get_current_uid());
-
-            Ok(imported
-                .statements
-                .into_iter()
-                .chain(statements.into_iter().flatten().flatten())
-                .collect())
+                    .into_compile_error(environment.program.clone()))
+                }
+            }
         }
-        Err(error) => Err(UnifyError {
-            position: url.position,
-            kind: UnifyErrorKind::ErrorneousImportPath {
-                extra_information: format!("{}", error),
-            },
-        }
-        .into_compile_error(environment.program.clone())),
-    }
+    };
+
+    // Check whether each imported name exists and is exported in this program
+    let statements = imported_names
+        .into_vector()
+        .into_iter()
+        .map(|imported_name| {
+            let matching_symbol_entries = imported
+                .environment
+                .get_all_matching_symbols(&imported_name.name);
+
+            if matching_symbol_entries.is_empty() {
+                Err(UnifyError {
+                    position: imported_name.name.position,
+                    kind: UnifyErrorKind::UnknownImportedName,
+                }
+                .into_compile_error(environment.program.clone()))
+            } else {
+                let name = match &imported_name.alias_as {
+                    Some(name) => name,
+                    None => &imported_name.name,
+                };
+
+                // Insert the matching value symbol into the current environment
+                let statements = matching_symbol_entries
+                    .iter()
+                    .map(|entry| {
+                        if !entry.symbol.meta.exported {
+                            return Err(UnifyError {
+                                position: imported_name.name.position,
+                                kind: UnifyErrorKind::CannotImportPrivateSymbol,
+                            }
+                            .into_compile_error(environment.program.clone()));
+                        }
+                        match environment.insert_symbol(
+                            Some(entry.uid),
+                            Symbol {
+                                meta: SymbolMeta {
+                                    name: name.clone(),
+                                    ..entry.symbol.meta
+                                },
+                                kind: entry.symbol.kind.clone(),
+                            },
+                        ) {
+                            Ok(uid) => {
+                                // only insert new typechecked statement if import alias is defined
+                                match imported_name.clone().alias_as {
+                                    Some(alias_as) => match entry.symbol.kind {
+                                        SymbolKind::Value(_) => {
+                                            Ok(vec![TypecheckedStatement::Let {
+                                                left: Variable {
+                                                    uid,
+                                                    representation: alias_as.representation,
+                                                },
+                                                right: TypecheckedExpression::Variable(Variable {
+                                                    uid: entry.uid,
+                                                    representation: entry
+                                                        .symbol
+                                                        .meta
+                                                        .name
+                                                        .representation
+                                                        .clone(),
+                                                }),
+                                            }])
+                                        }
+                                        _ => Ok(vec![]),
+                                    },
+                                    None => Ok(vec![]),
+                                }
+                            }
+                            Err(unify_error) => {
+                                Err(unify_error.into_compile_error(environment.program.clone()))
+                            }
+                        }
+                    })
+                    .collect::<Result<Vec<Vec<TypecheckedStatement>>, CompileError>>()?;
+
+                Ok(statements)
+            }
+        })
+        .collect::<Result<Vec<Vec<Vec<TypecheckedStatement>>>, CompileError>>()?;
+
+    // After importing, we need to increment the `current_uid` of the currrent environment
+    // to the biggest `current_uid` of the imported environment
+    // so that UID uniqueness can be maintained across different modules
+    // this uniquenss is important for transpilation, so that the generated code
+    // will not contain both variables with the same name
+    environment.set_current_uid(imported.environment.get_current_uid());
+
+    Ok(InferStatementResult {
+        statements: imported
+            .statements
+            .into_iter()
+            .chain(statements.into_iter().flatten().flatten())
+            .collect(),
+        imported_environments: {
+            let mut imported_environments = imported.imported_environments;
+            let uid = imported.environment.uid();
+            imported_environments.insert(uid, imported.environment);
+            imported_environments
+        },
+    })
 }
 
 pub fn infer_enum_statement(

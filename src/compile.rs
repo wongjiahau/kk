@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::stringify_error::{print_parse_error, print_tokenize_error};
 use crate::tokenize::tokenize;
 use crate::transpile_cps::transpile_statements;
@@ -20,7 +22,7 @@ pub fn compile(program: Program) {
         Err(tokenize_error) => print_tokenize_error(program, tokenize_error),
         Ok(tokens) => match Parser::parse(tokens) {
             Err(parse_error) => print_parse_error(program, parse_error),
-            Ok(statements) => match unify_statements(program, statements, 0) {
+            Ok(statements) => match unify_statements(program, statements, 0, &HashMap::new()) {
                 Err(compile_error) => print_compile_error(compile_error),
                 Ok(result) => {
                     use std::process::Command;

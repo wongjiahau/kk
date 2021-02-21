@@ -417,11 +417,7 @@ struct ErrorRange {
 }
 
 fn print_error(program: Program, range: ErrorRange, error: StringifiedError) {
-    let origin = match program.source {
-        Source::File { path } => path,
-        Source::NonFile { env_name, .. } => env_name,
-    };
-
+    let origin = program.uid.string_value();
     let range = {
         let start = range.character_index_start;
         let end = range.character_index_end;

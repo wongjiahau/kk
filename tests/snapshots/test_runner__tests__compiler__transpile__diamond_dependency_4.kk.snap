@@ -18,6 +18,7 @@ EXIT CODE
 ============
 STDOUT
 ============
+Compile cache hit: tests/compiler/transpile/diamond_dependency_1.kk
 [ 2, 3 ]
 
 ============

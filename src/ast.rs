@@ -448,21 +448,6 @@ pub enum TokenType {
     Documentation,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Source {
-    File { path: String },
-    NonFile { env_name: String, path: String },
-}
-
-impl Source {
-    pub fn path(&self) -> String {
-        match self {
-            Source::File { path } => path.clone(),
-            Source::NonFile { path, .. } => path.clone(),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Position {
     pub line_start: usize,

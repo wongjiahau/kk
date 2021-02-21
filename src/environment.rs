@@ -125,10 +125,31 @@ pub struct SymbolMeta {
     pub exported: bool,
 }
 
+/// Represent the unique identifier for an environment
+#[derive(Hash, Debug, Clone, PartialEq, Eq)]
+pub enum EnvironmentUid {
+    /// For example, `https://raw.githubusercontent.com/foo/bar/v0.0.1/spam.kk`
+    Remote { url: String },
+
+    /// Must be relative path, cannot be absolute.  
+    /// For example, `./foo/bar/spam.kk`
+    Local { relative_path: String },
+}
+
+impl EnvironmentUid {
+    pub fn string_value(&self) -> String {
+        match self {
+            EnvironmentUid::Remote { url: s } | EnvironmentUid::Local { relative_path: s } => {
+                s.clone()
+            }
+        }
+    }
+}
+
 /// Environment is also known as module, which also means a single file.
 #[derive(Debug, Clone)]
 pub struct Environment {
-    /// Every symbol in an environment will be assigned a unique ID, regardless of the scope
+    /// Every symbol in an environment will be assigned a unique ID, regardless of the scope.
     current_uid: Cell<usize>,
 
     /// This represents the current scope. Needed for implementing variable shadowing.
@@ -141,6 +162,7 @@ pub struct Environment {
     type_variable_substitutions: Substitution,
     type_variable_index: Cell<usize>,
 
+    /// Represents the metadata of this environment
     pub program: Program,
 }
 
@@ -179,8 +201,8 @@ impl Environment {
         self.current_uid.set(new_uid)
     }
 
-    pub fn source(&self) -> Source {
-        self.program.source.clone()
+    pub fn uid(&self) -> EnvironmentUid {
+        self.program.uid.clone()
     }
 
     pub fn current_scope_name(&self) -> usize {
@@ -1007,7 +1029,6 @@ pub struct EnumConstructorSymbol {
 #[derive(Debug, Clone)]
 pub struct UsageReference {
     position: Position,
-    source: Source,
 }
 
 fn built_in_symbols() -> Vec<Symbol> {

@@ -1,5 +1,6 @@
 use crate::compile::compile;
-use crate::{ast::Source, unify::Program};
+use crate::environment::EnvironmentUid;
+use crate::unify::Program;
 use clap::Clap;
 use std::fs;
 
@@ -31,7 +32,9 @@ pub fn cli() {
                     eprintln!("Unable to find file '{}'", run.filename);
                 }
                 Ok(code) => compile(Program {
-                    source: Source::File { path: run.filename },
+                    uid: EnvironmentUid::Local {
+                        relative_path: run.filename,
+                    },
                     code,
                     import_relations: vec![], // empty, because this is the root
                 }),
