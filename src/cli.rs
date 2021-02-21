@@ -1,6 +1,5 @@
 use crate::compile::compile;
-use crate::environment::EnvironmentUid;
-use crate::unify::Program;
+use crate::module::{ModuleMeta, ModuleUid};
 use clap::Clap;
 use std::fs;
 
@@ -31,8 +30,8 @@ pub fn cli() {
                 Err(_) => {
                     eprintln!("Unable to find file '{}'", run.filename);
                 }
-                Ok(code) => compile(Program {
-                    uid: EnvironmentUid::Local {
+                Ok(code) => compile(ModuleMeta {
+                    uid: ModuleUid::Local {
                         relative_path: run.filename,
                     },
                     code,

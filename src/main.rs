@@ -1,7 +1,7 @@
 pub mod ast;
 mod typechecked_ast;
 
-mod environment;
+mod module;
 
 mod unify;
 

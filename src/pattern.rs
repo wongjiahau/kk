@@ -1,6 +1,6 @@
 use crate::unify::rewrite_type_variables_in_type;
 use crate::{ast::*, unify::get_enum_type};
-use crate::{environment::*, unify::unify_type};
+use crate::{module::*, unify::unify_type};
 use std::collections::HashSet;
 
 #[derive(Debug)]
@@ -30,10 +30,7 @@ struct PatternPair {
     actual_pattern: DestructurePattern,
 }
 
-fn match_pattern_matrix(
-    environment: &Environment,
-    pattern_matrix: PatternMatrix,
-) -> MatchPatternResult {
+fn match_pattern_matrix(module: &Module, pattern_matrix: PatternMatrix) -> MatchPatternResult {
     enum WrapResultAs {
         Tuple,
         Record,
@@ -47,7 +44,7 @@ fn match_pattern_matrix(
     }
 
     fn match_raw_pattern_matrix(
-        environment: &Environment,
+        module: &Module,
         pattern_matrices: Vec<RawPatternMatrix>,
         wrap_result_as: WrapResultAs,
     ) -> MatchPatternResult {
@@ -61,7 +58,7 @@ fn match_pattern_matrix(
                  }| {
                     (
                         (key.clone(), expected_pattern.clone()),
-                        match_pattern(environment, actual_pattern, expected_pattern),
+                        match_pattern(module, actual_pattern, expected_pattern),
                     )
                 },
             )
@@ -139,7 +136,7 @@ fn match_pattern_matrix(
                     },
                 )
                 .collect();
-            match_raw_pattern_matrix(environment, pattern_matrices, WrapResultAs::Tuple)
+            match_raw_pattern_matrix(module, pattern_matrices, WrapResultAs::Tuple)
         }
         PatternMatrix::Record { key_pattern_pairs } => {
             let pattern_matrices = key_pattern_pairs
@@ -160,7 +157,7 @@ fn match_pattern_matrix(
                     },
                 )
                 .collect();
-            match_raw_pattern_matrix(environment, pattern_matrices, WrapResultAs::Record)
+            match_raw_pattern_matrix(module, pattern_matrices, WrapResultAs::Record)
         }
         PatternMatrix::Array { left, right } => {
             let pattern_matrices = vec![
@@ -175,12 +172,12 @@ fn match_pattern_matrix(
                     expected_pattern: right.expected_pattern,
                 },
             ];
-            match_raw_pattern_matrix(environment, pattern_matrices, WrapResultAs::Array)
+            match_raw_pattern_matrix(module, pattern_matrices, WrapResultAs::Array)
         }
     }
 }
 
-pub fn expand_pattern(environment: &Environment, type_value: &Type) -> Vec<ExpandablePattern> {
+pub fn expand_pattern(module: &Module, type_value: &Type) -> Vec<ExpandablePattern> {
     match type_value {
         Type::Boolean => vec![
             ExpandablePattern::Boolean(true),
@@ -221,7 +218,7 @@ pub fn expand_pattern(environment: &Environment, type_value: &Type) -> Vec<Expan
             symbol_uid,
             type_arguments,
             ..
-        } => environment
+        } => module
             .get_enum_constructors(*symbol_uid)
             .into_iter()
             .map(|constructor_symbol| {
@@ -245,8 +242,8 @@ pub fn expand_pattern(environment: &Environment, type_value: &Type) -> Vec<Expan
             })
             .collect(),
         Type::ImplicitTypeVariable { name } => {
-            match environment.get_type_variable_terminal_type(name.clone()) {
-                Some(type_value) => expand_pattern(environment, &type_value),
+            match module.get_type_variable_terminal_type(name.clone()) {
+                Some(type_value) => expand_pattern(module, &type_value),
                 None => vec![],
             }
         }
@@ -326,22 +323,20 @@ pub enum ExpandablePattern {
 }
 
 impl ExpandablePattern {
-    pub fn to_type(&self, environment: &mut Environment) -> Type {
+    pub fn to_type(&self, module: &mut Module) -> Type {
         match &self {
             ExpandablePattern::Any { type_value } => type_value.clone(),
             ExpandablePattern::EnumConstructor { name, payload, .. } => {
-                let enum_type =
-                    get_enum_type(environment, None, &Token::dummy_identifier(name.clone()))
-                        .expect("Compile error, should be able to get enum_type without error");
+                let enum_type = get_enum_type(module, None, &Token::dummy_identifier(name.clone()))
+                    .expect("Compile error, should be able to get enum_type without error");
 
                 let expected_payload_type = enum_type.expected_payload_type;
-                let actual_payload_type =
-                    payload.clone().map(|payload| payload.to_type(environment));
+                let actual_payload_type = payload.clone().map(|payload| payload.to_type(module));
                 match (&expected_payload_type, &actual_payload_type) {
                     (None, None) => enum_type.expected_enum_type,
                     (Some(expected_payload_type), Some(actual_payload_type)) => {
                         unify_type(
-                            environment,
+                            module,
                             expected_payload_type,
                             actual_payload_type,
                             Position::dummy(),
@@ -358,14 +353,14 @@ impl ExpandablePattern {
             ExpandablePattern::Record { key_pattern_pairs } => Type::Record {
                 key_type_pairs: key_pattern_pairs
                     .iter()
-                    .map(|(key, pattern)| (key.clone(), pattern.to_type(environment)))
+                    .map(|(key, pattern)| (key.clone(), pattern.to_type(module)))
                     .collect(),
             },
             ExpandablePattern::EmptyArray => Type::Array(Box::new(Type::ImplicitTypeVariable {
-                name: environment.get_next_type_variable_name(),
+                name: module.get_next_type_variable_name(),
             })),
             ExpandablePattern::NonEmptyArray { first_element, .. } => {
-                Type::Array(Box::new(first_element.to_type(environment)))
+                Type::Array(Box::new(first_element.to_type(module)))
             }
             ExpandablePattern::Boolean(_) => Type::Boolean,
             ExpandablePattern::Infinite { kind, .. } => match kind {
@@ -378,18 +373,18 @@ impl ExpandablePattern {
 }
 
 pub fn match_patterns(
-    environment: &Environment,
+    module: &Module,
     actual_pattern: &DestructurePattern,
     expected_patterns: Vec<ExpandablePattern>,
 ) -> Vec<ExpandablePattern> {
     expected_patterns
         .into_iter()
         .flat_map(|expected_pattern| {
-            match match_pattern(environment, &actual_pattern, &expected_pattern) {
+            match match_pattern(module, &actual_pattern, &expected_pattern) {
                 MatchPatternResult::Matched => vec![],
                 MatchPatternResult::NotMatched => vec![expected_pattern],
                 MatchPatternResult::PartiallyMatched { expanded_patterns } => {
-                    match_patterns(environment, actual_pattern, expanded_patterns)
+                    match_patterns(module, actual_pattern, expanded_patterns)
                 }
             }
         })
@@ -397,7 +392,7 @@ pub fn match_patterns(
 }
 
 pub fn match_pattern(
-    environment: &Environment,
+    module: &Module,
     actual_pattern: &DestructurePattern,
     expected_pattern: &ExpandablePattern,
 ) -> MatchPatternResult {
@@ -405,9 +400,9 @@ pub fn match_pattern(
         (DestructurePattern::Underscore(_), _) => MatchPatternResult::Matched,
         (DestructurePattern::Identifier(identifier), _) => {
             // check if identifier matches any enum constructor
-            if environment.matches_some_enum_constructor(&identifier.representation) {
+            if module.matches_some_enum_constructor(&identifier.representation) {
                 match_pattern(
-                    environment,
+                    module,
                     &DestructurePattern::EnumConstructor {
                         name: identifier.clone(),
                         payload: None,
@@ -479,7 +474,7 @@ pub fn match_pattern(
             if actual_name.representation != *expected_name {
                 MatchPatternResult::NotMatched
             } else {
-                match match_pattern(environment, &actual_payload.pattern, expected_payload) {
+                match match_pattern(module, &actual_payload.pattern, expected_payload) {
                     MatchPatternResult::Matched => MatchPatternResult::Matched,
                     MatchPatternResult::NotMatched => MatchPatternResult::NotMatched,
                     MatchPatternResult::PartiallyMatched { expanded_patterns } => {
@@ -511,7 +506,7 @@ pub fn match_pattern(
                     })
                     .collect::<Vec<PatternPair>>();
 
-                match_pattern_matrix(environment, PatternMatrix::Tuple { pattern_pairs })
+                match_pattern_matrix(module, PatternMatrix::Tuple { pattern_pairs })
             }
         }
         (
@@ -562,7 +557,7 @@ pub fn match_pattern(
                 )
                 .collect::<Vec<(String, PatternPair)>>();
 
-            match_pattern_matrix(environment, PatternMatrix::Record { key_pattern_pairs })
+            match_pattern_matrix(module, PatternMatrix::Record { key_pattern_pairs })
         }
         (
             DestructurePattern::Array { .. },
@@ -595,7 +590,7 @@ pub fn match_pattern(
                 rest_elements,
             },
         ) => match_pattern_matrix(
-            environment,
+            module,
             PatternMatrix::Array {
                 left: Box::new(PatternPair {
                     expected_pattern: *first_element.clone(),
@@ -645,7 +640,7 @@ pub fn match_pattern(
         //     MatchPatternResult::NotMatched
         // }
         (_, ExpandablePattern::Any { type_value }) => MatchPatternResult::PartiallyMatched {
-            expanded_patterns: expand_pattern(environment, type_value),
+            expanded_patterns: expand_pattern(module, type_value),
         },
         _ => MatchPatternResult::NotMatched,
     }

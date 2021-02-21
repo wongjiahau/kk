@@ -1,9 +1,28 @@
+use crate::ast::*;
 use crate::non_empty::NonEmpty;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
-use crate::{ast::*, unify::Program};
 use std::cell::Cell;
 use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct ImportRelation {
+    pub importer_path: String,
+    pub importee_path: String,
+}
+
+/// Represents the meta data of this module.
+#[derive(Debug, Clone)]
+pub struct ModuleMeta {
+    /// A unique identifier that can be used to uniquely identify this module.
+    pub uid: ModuleUid,
+
+    /// Represents the literal code of this module.
+    pub code: String,
+
+    /// This is used for checking circular references
+    pub import_relations: Vec<ImportRelation>,
+}
 
 type Substitution = HashMap<String, SubstitutionItem>;
 
@@ -125,9 +144,9 @@ pub struct SymbolMeta {
     pub exported: bool,
 }
 
-/// Represent the unique identifier for an environment
+/// Represent the unique identifier for a module
 #[derive(Hash, Debug, Clone, PartialEq, Eq)]
-pub enum EnvironmentUid {
+pub enum ModuleUid {
     /// For example, `https://raw.githubusercontent.com/foo/bar/v0.0.1/spam.kk`
     Remote { url: String },
 
@@ -136,34 +155,32 @@ pub enum EnvironmentUid {
     Local { relative_path: String },
 }
 
-impl EnvironmentUid {
+impl ModuleUid {
     pub fn string_value(&self) -> String {
         match self {
-            EnvironmentUid::Remote { url: s } | EnvironmentUid::Local { relative_path: s } => {
-                s.clone()
-            }
+            ModuleUid::Remote { url: s } | ModuleUid::Local { relative_path: s } => s.clone(),
         }
     }
 }
 
-/// Environment is also known as module, which also means a single file.
+/// Module also means a single source file.
 #[derive(Debug, Clone)]
-pub struct Environment {
-    /// Every symbol in an environment will be assigned a unique ID, regardless of the scope.
+pub struct Module {
+    /// Every symbol in a module will be assigned a unique ID, regardless of the scope.
     current_uid: Cell<usize>,
 
     /// This represents the current scope. Needed for implementing variable shadowing.
     scope: Scope,
 
-    /// List of symbols in this environment
+    /// List of symbols in this module
     symbol_entries: Vec<SymbolEntry>,
 
     /// This is used for Hindley-Milner type inference algorithm
     type_variable_substitutions: Substitution,
     type_variable_index: Cell<usize>,
 
-    /// Represents the metadata of this environment
-    pub program: Program,
+    /// Represents the metadata of this module
+    pub meta: ModuleMeta,
 }
 
 #[derive(Debug, Clone)]
@@ -173,15 +190,15 @@ enum SubstitutionItem {
     NotSubstituted,
 }
 
-impl Environment {
-    pub fn new(program: Program, starting_symbol_uid: usize) -> Environment {
-        let mut result = Environment {
+impl Module {
+    pub fn new(module_meta: ModuleMeta, starting_symbol_uid: usize) -> Module {
+        let mut result = Module {
             symbol_entries: Vec::new(),
             type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
             scope: Scope::new(),
             current_uid: Cell::new(starting_symbol_uid),
-            program,
+            meta: module_meta,
         };
 
         built_in_symbols()
@@ -201,8 +218,8 @@ impl Environment {
         self.current_uid.set(new_uid)
     }
 
-    pub fn uid(&self) -> EnvironmentUid {
-        self.program.uid.clone()
+    pub fn uid(&self) -> ModuleUid {
+        self.meta.uid.clone()
     }
 
     pub fn current_scope_name(&self) -> usize {
@@ -490,7 +507,7 @@ impl Environment {
         Ok(())
     }
 
-    /// Inserts a new symbol into this environment.  
+    /// Inserts a new symbol into this module.  
     /// `uid` should be `None` under normal circumstances.
     ///     It should only be defined when for example we want to allow recursive definition.
     ///

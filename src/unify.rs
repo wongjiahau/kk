@@ -6,7 +6,7 @@ use crate::{
 };
 
 use crate::ast::*;
-use crate::environment::*;
+use crate::module::*;
 use crate::pattern::*;
 use crate::typechecked_ast::*;
 use relative_path::RelativePath;
@@ -14,27 +14,9 @@ use std::iter;
 use std::{collections::HashMap, fs};
 use std::{collections::HashSet, path::Path};
 
-#[derive(Debug, Clone)]
-pub struct Program {
-    /// A unique identifier that can be used to uniquely identify this environment.
-    pub uid: EnvironmentUid,
-
-    /// Represents the literal code of this program.
-    pub code: String,
-
-    /// This is used for checking circular references
-    pub import_relations: Vec<ImportRelation>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ImportRelation {
-    pub importer_path: String,
-    pub importee_path: String,
-}
-
 pub struct UnifyProgramResult {
     pub statements: Vec<TypecheckedStatement>,
-    pub environment: Environment,
+    pub module: Module,
 
     // This is for memoization.
     // By doing this we can prevent duplicated efforts to typecheck the same module again.
@@ -47,40 +29,39 @@ pub struct UnifyProgramResult {
     //
     // From above, we can see that A is being imported twice,
     //  without memoization we will need to compile A twice, which is bad for performance.
-    pub imported_environments: HashMap<EnvironmentUid, Environment>,
+    pub imported_modules: ImportedModules,
 }
 
 /// `starting_symbol_uid` is needed to make sure each symbol has a UID that is unique across different modules
 pub fn unify_statements(
-    program: Program,
+    module_meta: ModuleMeta,
     statements: Vec<Statement>,
     starting_symbol_uid: usize,
-    imported_environments: &HashMap<EnvironmentUid, Environment>,
+    imported_modules: &ImportedModules,
 ) -> Result<UnifyProgramResult, CompileError> {
-    let mut environment: Environment = Environment::new(program, starting_symbol_uid);
+    let mut module: Module = Module::new(module_meta, starting_symbol_uid);
 
-    let init: (Vec<TypecheckedStatement>, _) = (vec![], imported_environments.clone());
+    let init: (Vec<TypecheckedStatement>, _) = (vec![], imported_modules.clone());
 
-    let (statements, imported_environments) =
+    let (statements, imported_modules) =
         statements
             .into_iter()
             .fold(Ok(init), |result, statement| match result {
                 Err(error) => Err(error),
-                Ok((mut statements, mut imported_environments)) => {
-                    let current =
-                        infer_statement(&mut environment, &imported_environments, statement)?;
+                Ok((mut statements, mut imported_modules)) => {
+                    let current = infer_statement(&mut module, &imported_modules, statement)?;
 
                     statements.extend(current.statements.into_iter());
 
-                    imported_environments.extend(current.imported_environments);
+                    imported_modules.extend(current.imported_modules);
 
-                    Ok((statements, imported_environments))
+                    Ok((statements, imported_modules))
                 }
             })?;
     Ok(UnifyProgramResult {
         statements,
-        environment,
-        imported_environments,
+        module,
+        imported_modules,
     })
 }
 
@@ -91,9 +72,9 @@ pub struct UnifyError {
 }
 
 impl UnifyError {
-    pub fn into_compile_error(self, program: Program) -> CompileError {
+    pub fn into_compile_error(self, module_meta: ModuleMeta) -> CompileError {
         CompileError {
-            program,
+            module_meta,
             kind: CompileErrorKind::UnifyError(Box::new(self)),
         }
     }
@@ -187,69 +168,62 @@ pub enum UnifyErrorKind {
     },
 }
 
+type ImportedModules = HashMap<ModuleUid, Module>;
 pub struct InferStatementResult {
     pub statements: Vec<TypecheckedStatement>,
-    pub imported_environments: HashMap<EnvironmentUid, Environment>,
+    pub imported_modules: ImportedModules,
 }
 
 pub fn infer_statement(
-    environment: &mut Environment,
-    imported_environments: &HashMap<EnvironmentUid, Environment>,
+    module: &mut Module,
+    imported_modules: &ImportedModules,
     statement: Statement,
 ) -> Result<InferStatementResult, CompileError> {
     match statement {
-        Statement::Do(do_statement) => match infer_do_statement(environment, do_statement) {
+        Statement::Do(do_statement) => match infer_do_statement(module, do_statement) {
             Ok(statement) => Ok(InferStatementResult {
                 statements: vec![statement],
-                imported_environments: HashMap::new(),
+                imported_modules: HashMap::new(),
             }),
-            Err(unify_error) => Err(unify_error.into_compile_error(environment.program.clone())),
+            Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
         },
-        Statement::Let(let_statement) => match infer_let_statement(environment, let_statement) {
+        Statement::Let(let_statement) => match infer_let_statement(module, let_statement) {
             Ok(statement) => Ok(InferStatementResult {
                 statements: vec![statement],
-                imported_environments: HashMap::new(),
+                imported_modules: HashMap::new(),
             }),
-            Err(unify_error) => Err(unify_error.into_compile_error(environment.program.clone())),
+            Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
         },
-        Statement::Type(type_statement) => {
-            match infer_type_statement(environment, type_statement) {
-                Ok(()) => Ok(InferStatementResult {
-                    statements: vec![],
-                    imported_environments: HashMap::new(),
-                }),
-                Err(unify_error) => {
-                    Err(unify_error.into_compile_error(environment.program.clone()))
-                }
-            }
-        }
-        Statement::Enum(enum_statement) => {
-            match infer_enum_statement(environment, enum_statement) {
-                Ok(()) => Ok(InferStatementResult {
-                    statements: vec![],
-                    imported_environments: HashMap::new(),
-                }),
-                Err(unify_error) => {
-                    Err(unify_error.into_compile_error(environment.program.clone()))
-                }
-            }
-        }
+        Statement::Type(type_statement) => match infer_type_statement(module, type_statement) {
+            Ok(()) => Ok(InferStatementResult {
+                statements: vec![],
+                imported_modules: HashMap::new(),
+            }),
+            Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
+        },
+        Statement::Enum(enum_statement) => match infer_enum_statement(module, enum_statement) {
+            Ok(()) => Ok(InferStatementResult {
+                statements: vec![],
+                imported_modules: HashMap::new(),
+            }),
+            Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
+        },
         Statement::Import(import_statement) => {
-            infer_import_statement(environment, imported_environments, import_statement)
+            infer_import_statement(module, imported_modules, import_statement)
         }
     }
 }
 
 pub fn infer_import_statement(
-    environment: &mut Environment,
-    imported_environments: &HashMap<EnvironmentUid, Environment>,
+    module: &mut Module,
+    imported_modules: &ImportedModules,
     ImportStatement {
         url,
         imported_names,
         ..
     }: ImportStatement,
 ) -> Result<InferStatementResult, CompileError> {
-    let importer_path = environment.uid().string_value();
+    let importer_path = module.uid().string_value();
     let import_path = url.representation.trim_matches('"');
     let path = RelativePath::new(&importer_path)
         .parent()
@@ -257,8 +231,8 @@ pub fn infer_import_statement(
         .join(RelativePath::new(import_path))
         .normalize();
     let path_string = path.to_string();
-    if environment
-        .program
+    if module
+        .meta
         .import_relations
         .iter()
         .any(|relation| path_string == relation.importer_path)
@@ -267,7 +241,7 @@ pub fn infer_import_statement(
             position: url.position,
             kind: UnifyErrorKind::CyclicDependency {
                 import_relations: {
-                    let mut relations = environment.program.import_relations.clone();
+                    let mut relations = module.meta.import_relations.clone();
                     relations.push(ImportRelation {
                         importer_path,
                         importee_path: path_string,
@@ -276,33 +250,33 @@ pub fn infer_import_statement(
                 },
             },
         }
-        .into_compile_error(environment.program.clone()));
+        .into_compile_error(module.meta.clone()));
     }
     let relative_path = path.to_path(Path::new("."));
-    let uid = EnvironmentUid::Local {
+    let uid = ModuleUid::Local {
         relative_path: path.to_string(),
     };
 
-    // Look up for memoize imported environments
-    let imported = match imported_environments.get(&uid) {
-        Some(environment) => {
+    // Look up for memoize imported modules
+    let imported = match imported_modules.get(&uid) {
+        Some(module) => {
             println!("Compile cache hit: {}", uid.string_value());
             UnifyProgramResult {
-                environment: environment.clone(),
+                module: module.clone(),
                 statements: vec![],
-                imported_environments: HashMap::new(),
+                imported_modules: HashMap::new(),
             }
         }
         None => {
             match fs::read_to_string(relative_path) {
                 Ok(code) => {
-                    let program = Program {
+                    let module_meta = ModuleMeta {
                         uid: uid.clone(),
                         code: code.clone(),
                         import_relations: {
-                            let mut importer_paths = environment.program.import_relations.clone();
+                            let mut importer_paths = module.meta.import_relations.clone();
                             importer_paths.push(ImportRelation {
-                                importer_path: environment.program.uid.string_value(),
+                                importer_path: module.meta.uid.string_value(),
                                 importee_path: path_string,
                             });
                             importer_paths
@@ -313,7 +287,7 @@ pub fn infer_import_statement(
                     let tokens = match tokenize(code) {
                         Ok(tokens) => Ok(tokens),
                         Err(tokenize_error) => Err(CompileError {
-                            program: program.clone(),
+                            module_meta: module_meta.clone(),
                             kind: CompileErrorKind::TokenizeError(tokenize_error),
                         }),
                     }?;
@@ -322,17 +296,17 @@ pub fn infer_import_statement(
                     let statements = match Parser::parse(tokens) {
                         Ok(statements) => Ok(statements),
                         Err(parse_error) => Err(CompileError {
-                            program: program.clone(),
+                            module_meta: module_meta.clone(),
                             kind: CompileErrorKind::ParseError(Box::new(parse_error)),
                         }),
                     }?;
 
                     // Typecheck the imported module
                     unify_statements(
-                        program,
+                        module_meta,
                         statements,
-                        environment.get_next_symbol_uid(),
-                        imported_environments,
+                        module.get_next_symbol_uid(),
+                        imported_modules,
                     )?
                 }
                 Err(error) => {
@@ -342,7 +316,7 @@ pub fn infer_import_statement(
                             extra_information: format!("{}", error),
                         },
                     }
-                    .into_compile_error(environment.program.clone()))
+                    .into_compile_error(module.meta.clone()))
                 }
             }
         }
@@ -354,7 +328,7 @@ pub fn infer_import_statement(
         .into_iter()
         .map(|imported_name| {
             let matching_symbol_entries = imported
-                .environment
+                .module
                 .get_all_matching_symbols(&imported_name.name);
 
             if matching_symbol_entries.is_empty() {
@@ -362,14 +336,14 @@ pub fn infer_import_statement(
                     position: imported_name.name.position,
                     kind: UnifyErrorKind::UnknownImportedName,
                 }
-                .into_compile_error(environment.program.clone()))
+                .into_compile_error(module.meta.clone()))
             } else {
                 let name = match &imported_name.alias_as {
                     Some(name) => name,
                     None => &imported_name.name,
                 };
 
-                // Insert the matching value symbol into the current environment
+                // Insert the matching value symbol into the current module
                 let statements = matching_symbol_entries
                     .iter()
                     .map(|entry| {
@@ -378,9 +352,9 @@ pub fn infer_import_statement(
                                 position: imported_name.name.position,
                                 kind: UnifyErrorKind::CannotImportPrivateSymbol,
                             }
-                            .into_compile_error(environment.program.clone()));
+                            .into_compile_error(module.meta.clone()));
                         }
-                        match environment.insert_symbol(
+                        match module.insert_symbol(
                             Some(entry.uid),
                             Symbol {
                                 meta: SymbolMeta {
@@ -417,7 +391,7 @@ pub fn infer_import_statement(
                                 }
                             }
                             Err(unify_error) => {
-                                Err(unify_error.into_compile_error(environment.program.clone()))
+                                Err(unify_error.into_compile_error(module.meta.clone()))
                             }
                         }
                     })
@@ -428,12 +402,12 @@ pub fn infer_import_statement(
         })
         .collect::<Result<Vec<Vec<Vec<TypecheckedStatement>>>, CompileError>>()?;
 
-    // After importing, we need to increment the `current_uid` of the currrent environment
-    // to the biggest `current_uid` of the imported environment
+    // After importing, we need to increment the `current_uid` of the currrent module
+    // to the biggest `current_uid` of the imported module
     // so that UID uniqueness can be maintained across different modules
     // this uniquenss is important for transpilation, so that the generated code
     // will not contain both variables with the same name
-    environment.set_current_uid(imported.environment.get_current_uid());
+    module.set_current_uid(imported.module.get_current_uid());
 
     Ok(InferStatementResult {
         statements: imported
@@ -441,17 +415,17 @@ pub fn infer_import_statement(
             .into_iter()
             .chain(statements.into_iter().flatten().flatten())
             .collect(),
-        imported_environments: {
-            let mut imported_environments = imported.imported_environments;
-            let uid = imported.environment.uid();
-            imported_environments.insert(uid, imported.environment);
-            imported_environments
+        imported_modules: {
+            let mut imported_modules = imported.imported_modules;
+            let uid = imported.module.uid();
+            imported_modules.insert(uid, imported.module);
+            imported_modules
         },
     })
 }
 
 pub fn infer_enum_statement(
-    environment: &mut Environment,
+    module: &mut Module,
     EnumStatement {
         name,
         constructors,
@@ -460,8 +434,8 @@ pub fn infer_enum_statement(
         ..
     }: EnumStatement,
 ) -> Result<(), UnifyError> {
-    // 1. Add this enum into environment first, to allow recursive definition
-    let enum_uid = environment.get_next_symbol_uid();
+    // 1. Add this enum into module first, to allow recursive definition
+    let enum_uid = module.get_next_symbol_uid();
     let enum_name = name.representation.clone();
     let enum_type = Type::Named {
         symbol_uid: enum_uid,
@@ -485,7 +459,7 @@ pub fn infer_enum_statement(
         .map(|type_variable| type_variable.representation)
         .collect::<Vec<String>>();
 
-    environment.insert_symbol(
+    module.insert_symbol(
         Some(enum_uid),
         Symbol {
             meta: SymbolMeta {
@@ -501,10 +475,10 @@ pub fn infer_enum_statement(
         },
     )?;
 
-    // 2. Populate type variables into current environment
-    environment.step_into_new_child_scope();
+    // 2. Populate type variables into current module
+    module.step_into_new_child_scope();
     for type_variable in type_variables.clone() {
-        environment.insert_symbol(
+        module.insert_symbol(
             None,
             Symbol {
                 meta: SymbolMeta {
@@ -542,7 +516,7 @@ pub fn infer_enum_statement(
                         Some(payload) => {
                             // validate type annotation
                             let payload_type_value =
-                                type_annotation_to_type(environment, &payload.type_annotation)?;
+                                type_annotation_to_type(module, &payload.type_annotation)?;
                             Some(payload_type_value)
                         }
                     },
@@ -551,18 +525,18 @@ pub fn infer_enum_statement(
         })
         .collect::<Result<Vec<Symbol>, UnifyError>>()?;
 
-    environment.step_out_to_parent_scope();
+    module.step_out_to_parent_scope();
 
     constructor_symbols
         .into_iter()
-        .map(|constructor_symbol| environment.insert_symbol(None, constructor_symbol))
+        .map(|constructor_symbol| module.insert_symbol(None, constructor_symbol))
         .collect::<Result<Vec<_>, UnifyError>>()?;
 
     Ok(())
 }
 
 pub fn infer_type_statement(
-    environment: &mut Environment,
+    module: &mut Module,
     TypeStatement {
         keyword_export,
         left,
@@ -571,11 +545,11 @@ pub fn infer_type_statement(
         ..
     }: TypeStatement,
 ) -> Result<(), UnifyError> {
-    environment.step_into_new_child_scope();
-    // 1. Populate type variables into current environment
-    environment.step_into_new_child_scope();
+    module.step_into_new_child_scope();
+    // 1. Populate type variables into current module
+    module.step_into_new_child_scope();
     for type_variable in type_variables.clone() {
-        environment.insert_symbol(
+        module.insert_symbol(
             None,
             Symbol {
                 meta: SymbolMeta {
@@ -595,11 +569,11 @@ pub fn infer_type_statement(
     }
 
     // 2. verify type declaration
-    let type_value = type_annotation_to_type(environment, &right)?;
+    let type_value = type_annotation_to_type(module, &right)?;
 
-    // 3. Add this type symbol into this environment
-    environment.step_out_to_parent_scope();
-    environment.insert_symbol(
+    // 3. Add this type symbol into this module
+    module.step_out_to_parent_scope();
+    module.insert_symbol(
         None,
         Symbol {
             meta: SymbolMeta {
@@ -622,7 +596,7 @@ pub fn infer_type_statement(
 }
 
 pub fn infer_let_statement(
-    environment: &mut Environment,
+    module: &mut Module,
     LetStatement {
         keyword_export,
         left,
@@ -633,27 +607,27 @@ pub fn infer_let_statement(
     }: LetStatement,
 ) -> Result<TypecheckedStatement, UnifyError> {
     // 0. Populate type variables
-    environment.step_into_new_child_scope();
+    module.step_into_new_child_scope();
     type_variables
         .iter()
-        .map(|type_variable| environment.insert_explicit_type_variable(type_variable))
+        .map(|type_variable| module.insert_explicit_type_variable(type_variable))
         .collect::<Result<Vec<_>, UnifyError>>()?;
 
     // 1. Add itself into current scope to enable recursive definition if type annotation
     //    is present, and is type of function
-    let type_annotation_type = optional_type_annotation_to_type(environment, &type_annotation)?;
+    let type_annotation_type = optional_type_annotation_to_type(module, &type_annotation)?;
 
     let uid = match type_annotation_type.clone() {
         Some(Type::Function(function_type)) => {
-            let (uid, _) = environment
-                .insert_value_symbol_with_type(&left, Some(Type::Function(function_type)))?;
+            let (uid, _) =
+                module.insert_value_symbol_with_type(&left, Some(Type::Function(function_type)))?;
             Ok(Some(uid))
         }
         _ => Ok(None),
     }?;
 
     // 2. Check if right matches type annotation
-    let right = infer_expression_type(environment, type_annotation_type, &right)?;
+    let right = infer_expression_type(module, type_annotation_type, &right)?;
 
     // 3. Rewrite explicit type variable as implicit type variables
     let explicit_type_variable_names = type_variables
@@ -669,10 +643,10 @@ pub fn infer_let_statement(
     // 4. Generalize if possible
     let right_type_scheme = generalize_type(right_type);
 
-    // 5. Add this variable into environment
+    // 5. Add this variable into module
     //    Note that we have to use back the same uid if this is a recursive function
-    environment.step_out_to_parent_scope();
-    let uid = environment.insert_symbol(
+    module.step_out_to_parent_scope();
+    let uid = module.insert_symbol(
         uid,
         Symbol {
             meta: SymbolMeta {
@@ -695,11 +669,11 @@ pub fn infer_let_statement(
 }
 
 pub fn infer_do_statement(
-    environment: &mut Environment,
+    module: &mut Module,
     do_statement: DoStatement,
 ) -> Result<TypecheckedStatement, UnifyError> {
     match infer_expression_type(
-        environment,
+        module,
         // NOTE: we could have pass in Some(Type::Null) instead of None here.
         //       The reason is because we want to provide better error message with context.
         //       So instead of saying expected type is null, we tell the user
@@ -945,24 +919,24 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
 }
 
 pub fn try_unify_type(
-    environment: &mut Environment,
+    module: &mut Module,
     expected: Option<Type>,
     actual: &Type,
     position: Position,
 ) -> Result<Type, UnifyError> {
     match expected {
         None => Ok(actual.clone()),
-        Some(expected) => unify_type(environment, &expected, actual, position),
+        Some(expected) => unify_type(module, &expected, actual, position),
     }
 }
 
 pub fn unify_type(
-    environment: &mut Environment,
+    module: &mut Module,
     expected: &Type,
     actual: &Type,
     position: Position,
 ) -> Result<Type, UnifyError> {
-    match unify_type_(environment, expected, actual, position) {
+    match unify_type_(module, expected, actual, position) {
         Err(UnifyError {
             position,
             kind:
@@ -973,8 +947,8 @@ pub fn unify_type(
         }) => Err(UnifyError {
             position,
             kind: UnifyErrorKind::TypeMismatch {
-                expected_type: environment.apply_subtitution_to_type(&expected_type),
-                actual_type: environment.apply_subtitution_to_type(&actual_type),
+                expected_type: module.apply_subtitution_to_type(&expected_type),
+                actual_type: module.apply_subtitution_to_type(&actual_type),
             },
         }),
         other => other,
@@ -982,7 +956,7 @@ pub fn unify_type(
 }
 
 pub fn unify_type_(
-    environment: &mut Environment,
+    module: &mut Module,
     expected: &Type,
     actual: &Type,
     position: Position,
@@ -1018,7 +992,7 @@ pub fn unify_type_(
         }
         (Type::Array(expected_element_type), Type::Array(actual_element_type)) => {
             match unify_type(
-                environment,
+                module,
                 expected_element_type.as_ref(),
                 actual_element_type.as_ref(),
                 position,
@@ -1075,7 +1049,7 @@ pub fn unify_type_(
                     .map(
                         |((expected_key, expected_type), (actual_key, actual_type))| {
                             assert_eq!(expected_key, actual_key);
-                            unify_type(environment, &expected_type, &actual_type, position)
+                            unify_type(module, &expected_type, &actual_type, position)
                         },
                     )
                     .collect::<Result<Vec<Type>, UnifyError>>();
@@ -1118,14 +1092,14 @@ pub fn unify_type_(
             },
         ) => {
             if expected_type_variable_name != actual_type_variable_name {
-                let expected_type = environment
-                    .get_type_variable_terminal_type(expected_type_variable_name.clone());
+                let expected_type =
+                    module.get_type_variable_terminal_type(expected_type_variable_name.clone());
                 let actual_type =
-                    environment.get_type_variable_terminal_type(actual_type_variable_name.clone());
+                    module.get_type_variable_terminal_type(actual_type_variable_name.clone());
 
                 match (expected_type, actual_type) {
                     (None, Some(actual_type)) => {
-                        environment.update_substitution(
+                        module.update_substitution(
                             expected_type_variable_name,
                             actual_type.clone(),
                             position,
@@ -1133,7 +1107,7 @@ pub fn unify_type_(
                         Ok(actual_type)
                     }
                     (Some(expected_type), None) => {
-                        environment.update_substitution(
+                        module.update_substitution(
                             actual_type_variable_name,
                             expected_type.clone(),
                             position,
@@ -1141,10 +1115,10 @@ pub fn unify_type_(
                         Ok(expected_type)
                     }
                     (Some(expected_type), Some(actual_type)) => {
-                        unify_type(environment, &expected_type, &actual_type, position)
+                        unify_type(module, &expected_type, &actual_type, position)
                     }
                     (None, None) => {
-                        environment.update_substitution(
+                        module.update_substitution(
                             expected_type_variable_name.clone(),
                             Type::ImplicitTypeVariable {
                                 name: actual_type_variable_name,
@@ -1172,13 +1146,13 @@ pub fn unify_type_(
                 })
             } else {
                 // This is the magical part that makes type inference works
-                environment.update_substitution(name, other_type.clone(), position)?;
+                module.update_substitution(name, other_type.clone(), position)?;
                 Ok(other_type)
             }
         }
         (Type::Function(expected_function), Type::Function(actual_function)) => {
             let function_type =
-                unify_function_type(environment, &expected_function, &actual_function, position)?;
+                unify_function_type(module, &expected_function, &actual_function, position)?;
             Ok(Type::Function(function_type))
         }
         (
@@ -1244,7 +1218,7 @@ pub fn unify_type_(
 
             let key_type_pairs = zipped
                 .map(|((key, expected_type), (_, actual_type))| {
-                    match unify_type(environment, &expected_type, &actual_type, position) {
+                    match unify_type(module, &expected_type, &actual_type, position) {
                         Ok(_) => Ok((key, expected_type)),
                         Err(UnifyError {
                             position: _,
@@ -1366,7 +1340,7 @@ pub struct GetEnumTypeResult {
 }
 
 pub fn get_enum_type(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_type: Option<Type>,
     token: &Token,
 ) -> Result<GetEnumTypeResult, UnifyError> {
@@ -1375,9 +1349,9 @@ pub fn get_enum_type(
         _ => None,
     };
     // Look up constructor
-    let constructor = environment.get_constructor_symbol(expected_enum_uid, &token)?;
+    let constructor = module.get_constructor_symbol(expected_enum_uid, &token)?;
 
-    let enum_type = environment
+    let enum_type = module
         .get_type_symbol_by_uid(constructor.enum_uid)
         .unwrap_or_else(|| panic!("Compiler error, cannot find enum type of a constructor"));
 
@@ -1397,7 +1371,7 @@ pub fn get_enum_type(
                     (
                         type_variable_name.clone(),
                         Type::ImplicitTypeVariable {
-                            name: environment.get_next_type_variable_name(),
+                            name: module.get_next_type_variable_name(),
                         },
                     )
                 })
@@ -1436,17 +1410,17 @@ struct InferExpressionResult {
 }
 
 fn infer_expression_type(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_type: Option<Type>,
     expression: &Expression,
 ) -> Result<InferExpressionResult, UnifyError> {
     // NOTE: this part might be a little inefficient,
     // because we might unify the same expression more than once
     // We do this so that the programming part for this algorithm won't be repititive and tedious
-    let result = infer_expression_type_(environment, expected_type.clone(), expression)?;
+    let result = infer_expression_type_(module, expected_type.clone(), expression)?;
 
     let type_value = try_unify_type(
-        environment,
+        module,
         expected_type,
         &result.type_value,
         get_expression_position(expression),
@@ -1459,7 +1433,7 @@ fn infer_expression_type(
 }
 
 fn infer_expression_type_(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_type: Option<Type>,
     expression: &Expression,
 ) -> Result<InferExpressionResult, UnifyError> {
@@ -1497,7 +1471,7 @@ fn infer_expression_type_(
             expression: TypecheckedExpression::Boolean(*value),
         }),
         Expression::EnumConstructor { name, payload, .. } => {
-            let result = get_enum_type(environment, expected_type, name)?;
+            let result = get_enum_type(module, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(InferExpressionResult {
                     type_value: result.expected_enum_type,
@@ -1518,7 +1492,7 @@ fn infer_expression_type_(
                 }),
                 (Some(expected_payload_type), Some(payload)) => {
                     let typechecked_payload = infer_expression_type(
-                        environment,
+                        module,
                         Some(expected_payload_type),
                         &payload.expression,
                     )?;
@@ -1534,9 +1508,9 @@ fn infer_expression_type_(
         }
         Expression::Variable(variable) => {
             // check if the variable name matches any constructor
-            if environment.matches_some_enum_constructor(&variable.representation) {
+            if module.matches_some_enum_constructor(&variable.representation) {
                 infer_expression_type_(
-                    environment,
+                    module,
                     expected_type,
                     &Expression::EnumConstructor {
                         name: variable.clone(),
@@ -1544,13 +1518,13 @@ fn infer_expression_type_(
                     },
                 )
             } else {
-                let result = environment.get_value_symbol(
+                let result = module.get_value_symbol(
                     &variable,
                     &expected_type,
-                    environment.current_scope_name(),
+                    module.current_scope_name(),
                 )?;
                 Ok(InferExpressionResult {
-                    type_value: instantiate_type_scheme(environment, result.type_scheme),
+                    type_value: instantiate_type_scheme(module, result.type_scheme),
                     expression: TypecheckedExpression::Variable(Variable {
                         uid: result.symbol_uid,
                         representation: variable.representation.clone(),
@@ -1562,7 +1536,7 @@ fn infer_expression_type_(
             expression,
             property_name,
         } => {
-            let expression = infer_expression_type(environment, None, expression)?;
+            let expression = infer_expression_type(module, None, expression)?;
             match expression.type_value {
                 Type::Record { key_type_pairs } => {
                     match key_type_pairs
@@ -1599,8 +1573,7 @@ fn infer_expression_type_(
             updates,
             ..
         } => {
-            let typechecked_expression =
-                infer_expression_type(environment, expected_type, expression)?;
+            let typechecked_expression = infer_expression_type(module, expected_type, expression)?;
 
             match &typechecked_expression.type_value {
                 Type::Record { key_type_pairs } => {
@@ -1634,7 +1607,7 @@ fn infer_expression_type_(
                                         ..
                                     } => {
                                         let typechecked_value = infer_expression_type(
-                                            environment,
+                                            module,
                                             Some(expected_type.clone()),
                                             new_value,
                                         )?;
@@ -1656,7 +1629,7 @@ fn infer_expression_type_(
                                             return_type: Box::new(expected_type.clone()),
                                         });
                                         let typechecked_function = infer_expression_type(
-                                            environment,
+                                            module,
                                             Some(expected_type),
                                             function,
                                         )?;
@@ -1697,28 +1670,26 @@ fn infer_expression_type_(
             keyword_let,
             ..
         } => {
-            environment.step_into_new_child_scope();
-            let type_annotation_type =
-                optional_type_annotation_to_type(environment, type_annotation)?;
-            let typechecked_right =
-                infer_expression_type(environment, type_annotation_type, right)?;
+            module.step_into_new_child_scope();
+            let type_annotation_type = optional_type_annotation_to_type(module, type_annotation)?;
+            let typechecked_right = infer_expression_type(module, type_annotation_type, right)?;
 
             let result = match false_branch {
                 None => {
                     let expected_left_type = get_expected_type(
-                        environment,
+                        module,
                         Some(typechecked_right.type_value),
                         type_annotation.clone(),
                     )?;
 
                     let typechecked_left =
-                        infer_destructure_pattern(environment, expected_left_type, left)?;
+                        infer_destructure_pattern(module, expected_left_type, left)?;
 
                     let typechecked_true_branch =
-                        infer_expression_type(environment, expected_type, true_branch)?;
+                        infer_expression_type(module, expected_type, true_branch)?;
 
                     let result_type = match check_exhaustiveness(
-                        environment,
+                        module,
                         typechecked_left.type_value.clone(),
                         NonEmpty {
                             head: *left.clone(),
@@ -1747,20 +1718,18 @@ fn infer_expression_type_(
                             // This is required such that the ending type can be Result<X, U>, where X can be not Integer
                             let expected_type = {
                                 let type_value = Type::ImplicitTypeVariable {
-                                    name: environment.get_next_type_variable_name(),
+                                    name: module.get_next_type_variable_name(),
                                 };
                                 let types = remaining_patterns
                                     .into_iter()
-                                    .map(|expandable_pattern| {
-                                        expandable_pattern.to_type(environment)
-                                    })
+                                    .map(|expandable_pattern| expandable_pattern.to_type(module))
                                     .collect::<Vec<Type>>();
                                 types
                                     .into_iter()
                                     .fold(Ok(type_value), |result, type_value| match result {
                                         Err(error) => Err(error),
                                         Ok(expected_type) => unify_type(
-                                            environment,
+                                            module,
                                             &expected_type,
                                             &type_value,
                                             Position::dummy(),
@@ -1769,7 +1738,7 @@ fn infer_expression_type_(
                             };
 
                             let type_value = unify_type(
-                                environment,
+                                module,
                                 &expected_type,
                                 &typechecked_true_branch.type_value,
                                 get_expression_position(true_branch),
@@ -1839,13 +1808,10 @@ fn infer_expression_type_(
                             head: typechecked_right.type_value,
                             tail: vec![],
                         }),
-                        return_type: Box::new(environment.introduce_implicit_type_variable(None)?),
+                        return_type: Box::new(module.introduce_implicit_type_variable(None)?),
                     };
-                    let typechecked_function = infer_function(
-                        environment,
-                        Some(expected_function_type),
-                        &Box::new(function),
-                    )?;
+                    let typechecked_function =
+                        infer_function(module, Some(expected_function_type), &Box::new(function))?;
 
                     Ok(InferExpressionResult {
                         type_value: *typechecked_function.function_type.return_type,
@@ -1861,7 +1827,7 @@ fn infer_expression_type_(
                     })
                 }
             }?;
-            environment.step_out_to_parent_scope();
+            module.step_out_to_parent_scope();
             Ok(result)
         }
         Expression::Function(function) => {
@@ -1869,8 +1835,7 @@ fn infer_expression_type_(
                 Some(Type::Function(function_type)) => Some(function_type),
                 _ => None,
             };
-            let typechecked_function =
-                infer_function(environment, expected_function_type, function)?;
+            let typechecked_function = infer_function(module, expected_function_type, function)?;
             Ok(InferExpressionResult {
                 type_value: Type::Function(typechecked_function.function_type),
                 expression: TypecheckedExpression::Function(Box::new(
@@ -1883,20 +1848,17 @@ fn infer_expression_type_(
             let expected_function_type = {
                 // Note that we only infer the type of the first argument
                 // The rest arguments is just instantiated with type variables
-                let typechecked_first_argument = infer_expression_type(
-                    environment,
-                    None,
-                    function_call.first_argument.as_ref(),
-                )?;
+                let typechecked_first_argument =
+                    infer_expression_type(module, None, function_call.first_argument.as_ref())?;
                 let expected_rest_arguments_types = match &function_call.rest_arguments {
                     None => Ok(vec![]),
                     Some(rest_arguments) => rest_arguments
                         .arguments
                         .iter()
-                        .map(|_| environment.introduce_implicit_type_variable(None))
+                        .map(|_| module.introduce_implicit_type_variable(None))
                         .collect::<Result<Vec<Type>, UnifyError>>(),
                 }?;
-                let expected_return_type = environment.introduce_implicit_type_variable(None)?;
+                let expected_return_type = module.introduce_implicit_type_variable(None)?;
                 Type::Function(FunctionType {
                     parameters_types: Box::new(NonEmpty {
                         head: typechecked_first_argument.type_value,
@@ -1910,7 +1872,7 @@ fn infer_expression_type_(
             // note that we use infer_expression_type_ instead of infer_expression_type
             // This is so that we can throw the error of `cannot invoke non-function`
             let typechecked_function = infer_expression_type_(
-                environment,
+                module,
                 Some(expected_function_type),
                 &Expression::Variable(function_call.function_name.clone()),
             )?;
@@ -1941,7 +1903,7 @@ fn infer_expression_type_(
 
                     // Unify first argument
                     let typechecked_first_argument = infer_expression_type(
-                        environment,
+                        module,
                         Some(expected_function_type.parameters_types.first().clone()),
                         function_call.first_argument.as_ref(),
                     )?;
@@ -1958,9 +1920,9 @@ fn infer_expression_type_(
                         .zip(actual_rest_arguments.iter())
                         .map(|(expected_argument_type, actual_argument)| {
                             let expected_argument_type =
-                                environment.apply_subtitution_to_type(expected_argument_type);
+                                module.apply_subtitution_to_type(expected_argument_type);
                             infer_expression_type(
-                                environment,
+                                module,
                                 Some(expected_argument_type),
                                 &actual_argument,
                             )
@@ -1968,7 +1930,7 @@ fn infer_expression_type_(
                         .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?;
 
                     Ok(InferExpressionResult {
-                        type_value: environment
+                        type_value: module
                             .apply_subtitution_to_type(expected_function_type.return_type.as_ref()),
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
@@ -1984,35 +1946,32 @@ fn infer_expression_type_(
                 }
                 Type::ImplicitTypeVariable { name } => {
                     let expected_function_type = Type::ImplicitTypeVariable {
-                        name: environment.get_next_type_variable_name(),
+                        name: module.get_next_type_variable_name(),
                     };
 
                     let position =
                         get_expression_position(&Expression::FunctionCall(function_call.clone()));
 
                     unify_type(
-                        environment,
+                        module,
                         &Type::ImplicitTypeVariable { name },
                         &expected_function_type,
                         position,
                     )?;
 
                     let return_type = Type::ImplicitTypeVariable {
-                        name: environment.get_next_type_variable_name(),
+                        name: module.get_next_type_variable_name(),
                     };
 
-                    let typechecked_first_argument = infer_expression_type(
-                        environment,
-                        None,
-                        function_call.first_argument.as_ref(),
-                    )?;
+                    let typechecked_first_argument =
+                        infer_expression_type(module, None, function_call.first_argument.as_ref())?;
 
                     let typechecked_rest_arguments = match &function_call.rest_arguments {
                         None => Vec::new(),
                         Some(FunctionCallRestArguments { arguments, .. }) => arguments
                             .clone()
                             .into_iter()
-                            .map(|argument| infer_expression_type(environment, None, &argument))
+                            .map(|argument| infer_expression_type(module, None, &argument))
                             .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?,
                     };
                     let actual_function_type = Type::Function(FunctionType {
@@ -2027,14 +1986,14 @@ fn infer_expression_type_(
                     });
 
                     unify_type(
-                        environment,
+                        module,
                         &actual_function_type,
                         &expected_function_type,
                         position,
                     )?;
 
                     Ok(InferExpressionResult {
-                        type_value: environment.apply_subtitution_to_type(&return_type),
+                        type_value: module.apply_subtitution_to_type(&return_type),
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
                                 function: Box::new(typechecked_function.expression),
@@ -2079,31 +2038,27 @@ fn infer_expression_type_(
                 join_position(left_curly_bracket.position, right_curly_bracket.position);
             match expected_type {
                 Some(Type::Record { key_type_pairs }) => infer_record_type(
-                    environment,
+                    module,
                     Some(key_type_pairs),
                     key_value_pairs.clone(),
                     record_position,
                 ),
-                _ => infer_record_type(environment, None, key_value_pairs.clone(), record_position),
+                _ => infer_record_type(module, None, key_value_pairs.clone(), record_position),
             }
         }
         Expression::Array { elements, .. } => {
             let element_type = match expected_type {
                 Some(Type::Array(expected_element_type)) => Ok(*expected_element_type),
                 _ => Ok(Type::ImplicitTypeVariable {
-                    name: environment.get_next_type_variable_name(),
+                    name: module.get_next_type_variable_name(),
                 }),
             }?;
             let typechecked_elements = elements
                 .iter()
-                .map(|element| {
-                    infer_expression_type(environment, Some(element_type.clone()), element)
-                })
+                .map(|element| infer_expression_type(module, Some(element_type.clone()), element))
                 .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?;
             Ok(InferExpressionResult {
-                type_value: Type::Array(Box::new(
-                    environment.apply_subtitution_to_type(&element_type),
-                )),
+                type_value: Type::Array(Box::new(module.apply_subtitution_to_type(&element_type))),
                 expression: TypecheckedExpression::Array {
                     elements: typechecked_elements
                         .iter()
@@ -2114,13 +2069,13 @@ fn infer_expression_type_(
         }
     }?;
     Ok(InferExpressionResult {
-        type_value: environment.apply_subtitution_to_type(&result.type_value),
+        type_value: module.apply_subtitution_to_type(&result.type_value),
         expression: result.expression,
     })
 }
 
 fn infer_record_type(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_key_type_pairs: Option<Vec<(String, Type)>>,
     mut actual_key_value_pairs: Vec<RecordKeyValue>,
     record_position: Position,
@@ -2205,13 +2160,13 @@ fn infer_record_type(
                 },
             )| {
                 let expected_type = get_expected_type(
-                    environment,
+                    module,
                     expected_key_type_pair
                         .clone()
                         .map(|(_, type_value)| type_value),
                     type_annotation.clone(),
                 )?;
-                let value_type = infer_expression_type(environment, expected_type, &value)?;
+                let value_type = infer_expression_type(module, expected_type, &value)?;
                 Ok((key.representation.clone(), value_type))
             },
         )
@@ -2238,15 +2193,12 @@ struct InferFunctionResult {
     function: TypecheckedFunction,
 }
 fn infer_function(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_function_type: Option<FunctionType>,
     function: &Function,
 ) -> Result<InferFunctionResult, UnifyError> {
-    let typechecked_first_branch = infer_function_branch(
-        environment,
-        expected_function_type,
-        &function.branches.first(),
-    )?;
+    let typechecked_first_branch =
+        infer_function_branch(module, expected_function_type, &function.branches.first())?;
 
     let typechecked_rest_branches = function
         .branches
@@ -2254,7 +2206,7 @@ fn infer_function(
         .iter()
         .map(|function_branch| {
             infer_function_branch(
-                environment,
+                module,
                 Some(typechecked_first_branch.function_type.clone()),
                 &function_branch,
             )
@@ -2262,7 +2214,7 @@ fn infer_function(
         .collect::<Result<Vec<InferFunctionBranchResult>, UnifyError>>()?;
 
     let function_type =
-        environment.apply_subtitution_to_function_type(&typechecked_first_branch.function_type);
+        module.apply_subtitution_to_function_type(&typechecked_first_branch.function_type);
 
     // Check for case exhaustiveness
     let expected_type = Type::Tuple(function_type.clone().parameters_types);
@@ -2272,7 +2224,7 @@ fn infer_function(
         .map(|branch| DestructurePattern::Tuple(function_branch_parameters_to_tuple(&branch)));
 
     check_exhaustiveness(
-        environment,
+        module,
         expected_type,
         actual_patterns,
         get_expression_position(&Expression::Function(Box::new(function.clone()))),
@@ -2307,13 +2259,13 @@ pub fn function_branch_parameters_to_tuple(
 }
 
 pub fn check_exhaustiveness(
-    environment: &Environment,
+    module: &Module,
     expected_type: Type,
     actual_patterns: NonEmpty<DestructurePattern>,
     position: Position,
 ) -> Result<(), UnifyError> {
     check_exhaustiveness_(
-        environment,
+        module,
         vec![ExpandablePattern::Any {
             type_value: expected_type,
         }],
@@ -2323,7 +2275,7 @@ pub fn check_exhaustiveness(
 }
 
 pub fn check_exhaustiveness_(
-    environment: &Environment,
+    module: &Module,
     expected_patterns: Vec<ExpandablePattern>,
     actual_patterns: NonEmpty<DestructurePattern>,
     position: Position,
@@ -2346,7 +2298,7 @@ pub fn check_exhaustiveness_(
                     })
                 } else {
                     let new_patterns =
-                        match_patterns(environment, &actual_pattern, expected_patterns.clone());
+                        match_patterns(module, &actual_pattern, expected_patterns.clone());
 
                     if new_patterns.eq(&expected_patterns) {
                         // If new_patterns equals to the current expected_patterns
@@ -2375,7 +2327,7 @@ pub fn check_exhaustiveness_(
 }
 
 pub fn unify_function_type(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_function_type: &FunctionType,
     actual_function_type: &FunctionType,
     position: Position,
@@ -2399,14 +2351,14 @@ pub fn unify_function_type(
         .zip(*actual_function_type.parameters_types.clone());
 
     let unify_rest_argument_type_result = zipped.fold_result(|(expected_type, actual_type)| {
-        unify_type(environment, &expected_type, &actual_type, position)
+        unify_type(module, &expected_type, &actual_type, position)
     });
 
     match unify_rest_argument_type_result {
         Ok(parameters_types) => {
             // unify return type
             match unify_type(
-                environment,
+                module,
                 expected_function_type.return_type.as_ref(),
                 actual_function_type.return_type.as_ref(),
                 position,
@@ -2419,10 +2371,10 @@ pub fn unify_function_type(
                     position,
                     kind: UnifyErrorKind::TypeMismatch {
                         expected_type: Type::Function(
-                            environment.apply_subtitution_to_function_type(&expected_function_type),
+                            module.apply_subtitution_to_function_type(&expected_function_type),
                         ),
                         actual_type: Type::Function(
-                            environment.apply_subtitution_to_function_type(&actual_function_type),
+                            module.apply_subtitution_to_function_type(&actual_function_type),
                         ),
                     },
                 }),
@@ -2448,17 +2400,17 @@ struct InferFunctionBranchResult {
     function_type: FunctionType,
 }
 fn infer_function_branch(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_function_type: Option<FunctionType>,
     function_branch: &FunctionBranch,
 ) -> Result<InferFunctionBranchResult, UnifyError> {
-    environment.step_into_new_child_scope();
+    module.step_into_new_child_scope();
 
     let typechecked_parameters = {
         match &expected_function_type {
-            None => function_branch.parameters().fold_result(|parameter| {
-                Ok(infer_function_parameter(environment, None, &parameter)?)
-            }),
+            None => function_branch
+                .parameters()
+                .fold_result(|parameter| Ok(infer_function_parameter(module, None, &parameter)?)),
 
             Some(expected_function_type) => {
                 let actual_parameters = function_branch.parameters();
@@ -2477,7 +2429,7 @@ fn infer_function_branch(
                         .zip(actual_parameters)
                         .fold_result(|(expected_parameter_type, actual_parameter)| {
                             infer_function_parameter(
-                                environment,
+                                module,
                                 Some(expected_parameter_type),
                                 &actual_parameter,
                             )
@@ -2488,13 +2440,13 @@ fn infer_function_branch(
     }?;
 
     let expected_return_type = get_expected_type(
-        environment,
+        module,
         expected_function_type.map(|expected_function_type| *expected_function_type.return_type),
         function_branch.return_type_annotation.clone(),
     )?;
 
     let typechecked_body =
-        infer_expression_type(environment, expected_return_type, &function_branch.body)?;
+        infer_expression_type(module, expected_return_type, &function_branch.body)?;
 
     let result_type = FunctionType {
         parameters_types: Box::new(
@@ -2502,16 +2454,16 @@ fn infer_function_branch(
                 .clone()
                 .map(|argument| argument.type_value),
         ),
-        return_type: Box::new(environment.apply_subtitution_to_type(&typechecked_body.type_value)),
+        return_type: Box::new(module.apply_subtitution_to_type(&typechecked_body.type_value)),
     };
 
     // Check for unused variables
-    environment.check_for_unused_symbols(environment.current_scope_name())?;
+    module.check_for_unused_symbols(module.current_scope_name())?;
 
-    environment.step_out_to_parent_scope();
+    module.step_out_to_parent_scope();
 
     Ok(InferFunctionBranchResult {
-        function_type: environment.apply_subtitution_to_function_type(&result_type),
+        function_type: module.apply_subtitution_to_function_type(&result_type),
         function_branch: TypecheckedFunctionBranch {
             parameters: Box::new(
                 typechecked_parameters.map(|argument| argument.destructure_pattern),
@@ -2522,17 +2474,16 @@ fn infer_function_branch(
 }
 
 pub fn get_expected_type(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_type: Option<Type>,
     expected_type_annotation: Option<TypeAnnotation>,
 ) -> Result<Option<Type>, UnifyError> {
     match (expected_type, expected_type_annotation) {
         (None, None) => Ok(None),
         (Some(expected_type), None) => Ok(Some(expected_type)),
-        (None, Some(type_annotation)) => Ok(Some(type_annotation_to_type(
-            environment,
-            &type_annotation,
-        )?)),
+        (None, Some(type_annotation)) => {
+            Ok(Some(type_annotation_to_type(module, &type_annotation)?))
+        }
         (Some(expected_type), Some(type_annotation)) => Err(UnifyError {
             position: get_type_annotation_position(&type_annotation),
             kind: UnifyErrorKind::UnnecessaryTypeAnnotation { expected_type },
@@ -2541,35 +2492,35 @@ pub fn get_expected_type(
 }
 
 fn infer_function_parameter(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_argument_type: Option<Type>,
     function_argument: &FunctionParameter,
 ) -> Result<InferDestructurePatternResult, UnifyError> {
     let expected_type = get_expected_type(
-        environment,
+        module,
         expected_argument_type,
         function_argument.type_annotation.clone(),
     )?;
 
     infer_destructure_pattern(
-        environment,
+        module,
         expected_type,
         &function_argument.destructure_pattern,
     )
 }
 
 pub fn optional_type_annotation_to_type(
-    environment: &mut Environment,
+    module: &mut Module,
     type_annotation: &Option<TypeAnnotation>,
 ) -> Result<Option<Type>, UnifyError> {
     match type_annotation {
-        Some(type_annotation) => Ok(Some(type_annotation_to_type(environment, type_annotation)?)),
+        Some(type_annotation) => Ok(Some(type_annotation_to_type(module, type_annotation)?)),
         None => Ok(None),
     }
 }
 
 pub fn type_annotation_to_type(
-    environment: &mut Environment,
+    module: &mut Module,
     type_annotation: &TypeAnnotation,
 ) -> Result<Type, UnifyError> {
     match &type_annotation {
@@ -2578,7 +2529,7 @@ pub fn type_annotation_to_type(
             name,
             type_arguments,
         } => {
-            if let Some(type_symbol) = environment.get_type_symbol_by_name(&name) {
+            if let Some(type_symbol) = module.get_type_symbol_by_name(&name) {
                 let type_arguments = match type_arguments {
                     None => Ok(vec![]),
                     Some(TypeArguments {
@@ -2603,7 +2554,7 @@ pub fn type_annotation_to_type(
                         } else {
                             arguments
                                 .iter()
-                                .map(|type_value| type_annotation_to_type(environment, type_value))
+                                .map(|type_value| type_annotation_to_type(module, type_value))
                                 .collect::<Result<Vec<Type>, UnifyError>>()
                         }
                     }
@@ -2639,25 +2590,27 @@ pub fn type_annotation_to_type(
             let key_type_pairs = key_type_annotation_pairs
                 .iter()
                 .map(|(key, type_annotation)| {
-                    let type_value = type_annotation_to_type(environment, &type_annotation)?;
+                    let type_value = type_annotation_to_type(module, &type_annotation)?;
                     Ok((key.representation.clone(), type_value))
                 })
                 .collect::<Result<Vec<(String, Type)>, UnifyError>>()?;
             Ok(Type::Record { key_type_pairs })
         }
         TypeAnnotation::Array { element_type, .. } => Ok(Type::Array(Box::new(
-            type_annotation_to_type(environment, element_type)?,
+            type_annotation_to_type(module, element_type)?,
         ))),
         TypeAnnotation::Function {
             parameters_types,
             return_type,
             ..
-        } => Ok(Type::Function(FunctionType {
-            parameters_types: Box::new(parameters_types.clone().fold_result(|parameter_type| {
-                type_annotation_to_type(environment, &parameter_type)
-            })?),
-            return_type: Box::new(type_annotation_to_type(environment, return_type)?),
-        })),
+        } => {
+            Ok(Type::Function(FunctionType {
+                parameters_types: Box::new(parameters_types.clone().fold_result(
+                    |parameter_type| type_annotation_to_type(module, &parameter_type),
+                )?),
+                return_type: Box::new(type_annotation_to_type(module, return_type)?),
+            }))
+        }
     }
 }
 
@@ -2667,16 +2620,15 @@ struct InferDestructurePatternResult {
     type_value: Type,
 }
 fn infer_destructure_pattern(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_type: Option<Type>,
     destructure_pattern: &DestructurePattern,
 ) -> Result<InferDestructurePatternResult, UnifyError> {
     // Same story as infer_expression_type
-    let result =
-        infer_destructure_pattern_(environment, expected_type.clone(), destructure_pattern)?;
+    let result = infer_destructure_pattern_(module, expected_type.clone(), destructure_pattern)?;
 
     let type_value = try_unify_type(
-        environment,
+        module,
         expected_type,
         &result.type_value,
         get_destructure_pattern_position(destructure_pattern),
@@ -2689,7 +2641,7 @@ fn infer_destructure_pattern(
 }
 
 fn infer_destructure_pattern_(
-    environment: &mut Environment,
+    module: &mut Module,
     expected_type: Option<Type>,
     destructure_pattern: &DestructurePattern,
 ) -> Result<InferDestructurePatternResult, UnifyError> {
@@ -2730,15 +2682,15 @@ fn infer_destructure_pattern_(
             destructure_pattern: TypecheckedDestructurePattern::Boolean(*value),
         }),
         DestructurePattern::Underscore(_) => Ok(InferDestructurePatternResult {
-            type_value: environment.introduce_implicit_type_variable(None)?,
+            type_value: module.introduce_implicit_type_variable(None)?,
             destructure_pattern: TypecheckedDestructurePattern::Underscore,
         }),
         DestructurePattern::Identifier(identifier) => {
             // If this identifier matches any enum constructor,
             // then treat it as an enum constructor
-            if environment.matches_some_enum_constructor(&identifier.representation) {
+            if module.matches_some_enum_constructor(&identifier.representation) {
                 infer_destructure_pattern(
-                    environment,
+                    module,
                     expected_type,
                     &DestructurePattern::EnumConstructor {
                         name: identifier.clone(),
@@ -2750,7 +2702,7 @@ fn infer_destructure_pattern_(
             // then treat it as a new variable
             else {
                 let (uid, type_value) =
-                    environment.insert_value_symbol_with_type(identifier, expected_type)?;
+                    module.insert_value_symbol_with_type(identifier, expected_type)?;
                 Ok(InferDestructurePatternResult {
                     type_value,
                     destructure_pattern: TypecheckedDestructurePattern::Variable(Variable {
@@ -2763,7 +2715,7 @@ fn infer_destructure_pattern_(
         DestructurePattern::Tuple(tuple) => {
             let typechecked_values = tuple.values.clone().fold_result(|destructure_pattern| {
                 // TODO: pass in expected_type
-                infer_destructure_pattern(environment, None, &destructure_pattern)
+                infer_destructure_pattern(module, None, &destructure_pattern)
             })?;
             Ok(InferDestructurePatternResult {
                 type_value: Type::Tuple(Box::new(
@@ -2775,7 +2727,7 @@ fn infer_destructure_pattern_(
             })
         }
         DestructurePattern::EnumConstructor { name, payload, .. } => {
-            let result = get_enum_type(environment, expected_type, name)?;
+            let result = get_enum_type(module, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(InferDestructurePatternResult {
                     type_value: result.expected_enum_type,
@@ -2796,7 +2748,7 @@ fn infer_destructure_pattern_(
                 }),
                 (Some(expected_payload_type), Some(payload)) => {
                     let typechecked_payload = infer_destructure_pattern(
-                        environment,
+                        module,
                         Some(expected_payload_type),
                         &payload.pattern,
                     )?;
@@ -2812,7 +2764,7 @@ fn infer_destructure_pattern_(
         }
         DestructurePattern::Array { spread: None, .. } => Ok(InferDestructurePatternResult {
             type_value: Type::Array(Box::new(Type::ImplicitTypeVariable {
-                name: environment.get_next_type_variable_name(),
+                name: module.get_next_type_variable_name(),
             })),
             destructure_pattern: TypecheckedDestructurePattern::Array { spread: None },
         }),
@@ -2823,25 +2775,25 @@ fn infer_destructure_pattern_(
             let expected_element_type = match expected_type {
                 Some(Type::Array(expected_type)) => *expected_type,
                 _ => Type::ImplicitTypeVariable {
-                    name: environment.get_next_type_variable_name(),
+                    name: module.get_next_type_variable_name(),
                 },
             };
 
             let typechecked_first_element = infer_destructure_pattern(
-                environment,
+                module,
                 Some(expected_element_type.clone()),
                 &spread.first_element,
             )?;
 
             let expected_array_type = Type::Array(Box::new(expected_element_type));
             let typechecked_rest_elements = infer_destructure_pattern(
-                environment,
+                module,
                 Some(expected_array_type.clone()),
                 &spread.rest_elements,
             )?;
 
             Ok(InferDestructurePatternResult {
-                type_value: environment.apply_subtitution_to_type(&expected_array_type),
+                type_value: module.apply_subtitution_to_type(&expected_array_type),
                 destructure_pattern: TypecheckedDestructurePattern::Array {
                     spread: Some(TypecheckedDesturcturePatternArraySpread {
                         first_element: Box::new(typechecked_first_element.destructure_pattern),
@@ -2869,7 +2821,7 @@ fn infer_destructure_pattern_(
                         // TODO: optimise this section, as the current algorithm is very slow
                         let actual_key = key.representation.clone();
                         let expected_type = match &expected_key_type_pairs {
-                            None => optional_type_annotation_to_type(environment, type_annotation),
+                            None => optional_type_annotation_to_type(module, type_annotation),
                             Some(expected_key_type_pairs) => {
                                 let matching_key_type_pair = expected_key_type_pairs
                                     .iter()
@@ -2885,7 +2837,7 @@ fn infer_destructure_pattern_(
                                         },
                                     }),
                                     Some((_, expected_type)) => get_expected_type(
-                                        environment,
+                                        module,
                                         Some(expected_type.clone()),
                                         type_annotation.clone(),
                                     ),
@@ -2896,7 +2848,7 @@ fn infer_destructure_pattern_(
                         match as_value {
                             Some(destructure_pattern) => {
                                 let typechecked_destructure_pattern = infer_destructure_pattern(
-                                    environment,
+                                    module,
                                     expected_type,
                                     destructure_pattern,
                                 )?;
@@ -2904,8 +2856,8 @@ fn infer_destructure_pattern_(
                                 Ok((actual_key, typechecked_destructure_pattern))
                             }
                             None => {
-                                let (uid, type_value) = environment
-                                    .insert_value_symbol_with_type(key, expected_type)?;
+                                let (uid, type_value) =
+                                    module.insert_value_symbol_with_type(key, expected_type)?;
                                 Ok((
                                     actual_key.clone(),
                                     InferDestructurePatternResult {
@@ -3087,14 +3039,14 @@ fn type_variable_occurs_in_type(type_variable: &str, typ: &Type) -> bool {
 ///
 /// In this case, we can (for example) substitute A as T1 and B as T2,
 /// and the resulting type will be (\T1 => T2)
-pub fn instantiate_type_scheme(environment: &mut Environment, type_scheme: TypeScheme) -> Type {
+pub fn instantiate_type_scheme(module: &mut Module, type_scheme: TypeScheme) -> Type {
     let type_variable_substitutions: TypeVariableSubstitutions = type_scheme
         .type_variables
         .into_iter()
         .map(|from_type_variable| TypeVariableSubstitution {
             from_type_variable,
             to_type: Type::ImplicitTypeVariable {
-                name: environment.get_next_type_variable_name(),
+                name: module.get_next_type_variable_name(),
             },
         })
         .collect();
