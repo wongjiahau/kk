@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo = | _ => {x 123}
+let foo = | _ => {x: 123}
 
 do null.foo().x.print()
 

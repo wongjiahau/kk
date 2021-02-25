@@ -256,11 +256,11 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::ExpressionRecord => ParseContextDescription {
             name: "Record",
-            examples: vec!["{ x 2 y 3 }", "{ x:Integer 2 }", "{ x, y, }"],
+            examples: vec!["{ x: 2 y: 3 }", "let x = 1\nlet y = 2\n{ x y }"],
         },
         ParseContext::ExpressionRecordUpdate => ParseContextDescription {
             name: "Record Update",
-            examples: vec!["a.{ x 2 }", "a.{ x.add(1) }", "a.{ x 2 y.square() }"],
+            examples: vec!["a.{ x: 2 }", "a.{ x.add(1) }", "a.{ x: 2 y.square() }"],
         },
         ParseContext::ExpressionEnumConstructor => ParseContextDescription {
             name: "Enum Constructor",
@@ -272,7 +272,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
                 "let x = 1",
                 "type People = { name: String }",
                 "do \"hello world\".print()",
-                "enum Color = Red() Green()",
+                "enum Color = Red Green",
             ],
         },
         ParseContext::StatementImport => ParseContextDescription {
@@ -284,7 +284,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::StatementLet => ParseContextDescription {
             name: "Let Statement",
-            examples: vec!["let x = 1", "let identity<T> = | x:T -> T => x"],
+            examples: vec!["let x = 1", "let identity<T> : | T => T = | x => x"],
         },
         ParseContext::StatementType => ParseContextDescription {
             name: "Type Statement",

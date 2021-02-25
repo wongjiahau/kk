@@ -11,7 +11,7 @@ let arrayMap =
   | [] _ => []
   | [head ..._] f => [head.f()]
 
-let result = [{foo 2 bar "hi"}].arrayMap(|.zap)
+let result = [{foo: 2 bar: "hi"}].arrayMap(|.zap)
 
 ============
 EXIT CODE
@@ -27,10 +27,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_6.kk:7:44
+  ┌─ tests/compiler/typecheck/contextual_unification_6.kk:7:46
   │
-7 │ let result = [{foo 2 bar "hi"}].arrayMap(|.zap)
-  │                                            ^^^ No such property
+7 │ let result = [{foo: 2 bar: "hi"}].arrayMap(|.zap)
+  │                                              ^^^ No such property
   │
   = Available properties:
       bar

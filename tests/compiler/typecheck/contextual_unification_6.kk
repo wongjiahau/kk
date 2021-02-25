@@ -4,4 +4,4 @@ let arrayMap =
   | [] _ => []
   | [head ..._] f => [head.f()]
 
-let result = [{foo 2 bar "hi"}].arrayMap(|.zap)
+let result = [{foo: 2 bar: "hi"}].arrayMap(|.zap)

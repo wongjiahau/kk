@@ -13,10 +13,10 @@ enum List<Element> =
   })
 
 let foo = | Cons({
-  current 1
-  next Cons({
-    current true
-    next Nil
+  current: 1
+  next: Cons({
+    current: true
+    next: Nil
   })
 }) => 0
 
@@ -34,10 +34,10 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/enum_2.kk:11:13
+   ┌─ tests/compiler/typecheck/enum_2.kk:11:14
    │
-11 │     current true
-   │             ^^^^ Type mismatch
+11 │     current: true
+   │              ^^^^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |

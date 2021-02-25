@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let a = { x 2 y { z 3} }
-let b = a.{ b 3 } // 'b' is a non-existing property
+let a = { x: 2 y: { z: 3 } }
+let b = a.{ b: 3 } // 'b' is a non-existing property
 
 ============
 EXIT CODE
@@ -24,7 +24,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_update_1.kk:2:13
   │
-2 │ let b = a.{ b 3 } // 'b' is a non-existing property
+2 │ let b = a.{ b: 3 } // 'b' is a non-existing property
   │             ^ No such property
   │
   = Available properties:

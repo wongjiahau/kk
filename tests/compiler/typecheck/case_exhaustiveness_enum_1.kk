@@ -4,4 +4,4 @@ enum List<T> =
 
 let bomb = 
   | Nil => true
-  | Cons({current _ next Nil}) => true
+  | Cons({current: _ next: Nil}) => true

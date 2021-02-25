@@ -8,8 +8,8 @@ INPUT
 let bar = | props: {
   f: | { x: Integer } -> Integer
 } =>
-  let { f, } = props
-  {x "hi"}.f()
+  let { f } = props
+  {x: "hi"}.f()
 
 ============
 EXIT CODE
@@ -25,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_9.kk:5:6
+  ┌─ tests/compiler/typecheck/contextual_unification_9.kk:5:7
   │
-5 │   {x "hi"}.f()
-  │      ^^^^ Type mismatch
+5 │   {x: "hi"}.f()
+  │       ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

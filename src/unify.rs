@@ -2150,26 +2150,13 @@ fn infer_record_type(
     let typechecked_key_value_pairs = expected_key_type_pairs
         .iter()
         .zip(actual_key_value_pairs.iter())
-        .map(
-            |(
-                expected_key_type_pair,
-                RecordKeyValue {
-                    key,
-                    value,
-                    type_annotation,
-                },
-            )| {
-                let expected_type = get_expected_type(
-                    module,
-                    expected_key_type_pair
-                        .clone()
-                        .map(|(_, type_value)| type_value),
-                    type_annotation.clone(),
-                )?;
-                let value_type = infer_expression_type(module, expected_type, &value)?;
-                Ok((key.representation.clone(), value_type))
-            },
-        )
+        .map(|(expected_key_type_pair, RecordKeyValue { key, value })| {
+            let expected_type = expected_key_type_pair
+                .clone()
+                .map(|(_, type_value)| type_value);
+            let value_type = infer_expression_type(module, expected_type, &value)?;
+            Ok((key.representation.clone(), value_type))
+        })
         .collect::<Result<Vec<(String, InferExpressionResult)>, UnifyError>>()?;
 
     Ok(InferExpressionResult {
@@ -2811,68 +2798,59 @@ fn infer_destructure_pattern_(
             };
             let typechecked_key_pattern_pairs = key_value_pairs
                 .iter()
-                .map(
-                    |DestructuredRecordKeyValue {
-                         key,
-                         as_value,
-                         type_annotation,
-                     }| {
-                        // Try to find the expected type for this key
-                        // TODO: optimise this section, as the current algorithm is very slow
-                        let actual_key = key.representation.clone();
-                        let expected_type = match &expected_key_type_pairs {
-                            None => optional_type_annotation_to_type(module, type_annotation),
-                            Some(expected_key_type_pairs) => {
-                                let matching_key_type_pair = expected_key_type_pairs
-                                    .iter()
-                                    .find(|(expected_key, _)| actual_key.eq(expected_key));
-                                match matching_key_type_pair {
-                                    None => Err(UnifyError {
-                                        position: key.position,
-                                        kind: UnifyErrorKind::NoSuchPropertyOnThisRecord {
-                                            expected_keys: expected_key_type_pairs
-                                                .iter()
-                                                .map(|(key, _)| key.clone())
-                                                .collect(),
-                                        },
-                                    }),
-                                    Some((_, expected_type)) => get_expected_type(
-                                        module,
-                                        Some(expected_type.clone()),
-                                        type_annotation.clone(),
-                                    ),
-                                }
-                            }
-                        }?;
-
-                        match as_value {
-                            Some(destructure_pattern) => {
-                                let typechecked_destructure_pattern = infer_destructure_pattern(
-                                    module,
-                                    expected_type,
-                                    destructure_pattern,
-                                )?;
-
-                                Ok((actual_key, typechecked_destructure_pattern))
-                            }
-                            None => {
-                                let (uid, type_value) =
-                                    module.insert_value_symbol_with_type(key, expected_type)?;
-                                Ok((
-                                    actual_key.clone(),
-                                    InferDestructurePatternResult {
-                                        type_value,
-                                        destructure_pattern:
-                                            TypecheckedDestructurePattern::Variable(Variable {
-                                                uid,
-                                                representation: actual_key,
-                                            }),
+                .map(|DestructuredRecordKeyValue { key, as_value }| {
+                    // Try to find the expected type for this key
+                    // TODO: optimise this section, as the current algorithm is very slow
+                    let actual_key = key.representation.clone();
+                    let expected_type = match &expected_key_type_pairs {
+                        None => Ok(None),
+                        Some(expected_key_type_pairs) => {
+                            let matching_key_type_pair = expected_key_type_pairs
+                                .iter()
+                                .find(|(expected_key, _)| actual_key.eq(expected_key));
+                            match matching_key_type_pair {
+                                None => Err(UnifyError {
+                                    position: key.position,
+                                    kind: UnifyErrorKind::NoSuchPropertyOnThisRecord {
+                                        expected_keys: expected_key_type_pairs
+                                            .iter()
+                                            .map(|(key, _)| key.clone())
+                                            .collect(),
                                     },
-                                ))
+                                }),
+                                Some((_, expected_type)) => Ok(Some(expected_type.clone())),
                             }
                         }
-                    },
-                )
+                    }?;
+
+                    match as_value {
+                        Some(destructure_pattern) => {
+                            let typechecked_destructure_pattern = infer_destructure_pattern(
+                                module,
+                                expected_type,
+                                destructure_pattern,
+                            )?;
+
+                            Ok((actual_key, typechecked_destructure_pattern))
+                        }
+                        None => {
+                            let (uid, type_value) =
+                                module.insert_value_symbol_with_type(key, expected_type)?;
+                            Ok((
+                                actual_key.clone(),
+                                InferDestructurePatternResult {
+                                    type_value,
+                                    destructure_pattern: TypecheckedDestructurePattern::Variable(
+                                        Variable {
+                                            uid,
+                                            representation: actual_key,
+                                        },
+                                    ),
+                                },
+                            ))
+                        }
+                    }
+                })
                 .collect::<Result<Vec<(String, InferDestructurePatternResult)>, UnifyError>>()?;
 
             Ok(InferDestructurePatternResult {

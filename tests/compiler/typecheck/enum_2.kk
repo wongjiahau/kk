@@ -6,9 +6,9 @@ enum List<Element> =
   })
 
 let foo = | Cons({
-  current 1
-  next Cons({
-    current true
-    next Nil
+  current: 1
+  next: Cons({
+    current: true
+    next: Nil
   })
 }) => 0

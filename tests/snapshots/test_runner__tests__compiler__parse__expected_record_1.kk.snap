@@ -21,24 +21,24 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/parse/expected_record_1.kk:1:13
+  ┌─ tests/compiler/parse/expected_record_1.kk:1:14
   │
-1 │ let x = {x: 2
-  │             ^ Syntax error: not expecting `2` here
+1 │   let x = {x: 2
+  │ ╭─────────────^
+2 │ │
+  │ ╰^ Syntax error: unexpected EOF (end of file)
   │
-  = Note that `2` is only used to represent integer values.
+  = The expected token here is `abc`.
 
     We found this error when we are trying to parse a Record.
     Examples of Record are:
 
     Example #1:
 
-      { x 2 y 3 }
+      { x: 2 y: 3 }
 
     Example #2:
 
-      { x:Integer 2 }
-
-    Example #3:
-
-      { x, y, }
+      let x = 1
+      let y = 2
+      { x y }

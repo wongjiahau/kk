@@ -231,7 +231,6 @@ pub struct DestructurePatternArraySpread {
 #[derive(Debug, Clone)]
 pub struct DestructuredRecordKeyValue {
     pub key: Token,
-    pub type_annotation: Option<TypeAnnotation>,
     pub as_value: Option<DestructurePattern>,
 }
 
@@ -308,7 +307,6 @@ pub enum RecordUpdate {
 #[derive(Debug, Clone)]
 pub struct RecordKeyValue {
     pub key: Token,
-    pub type_annotation: Option<TypeAnnotation>,
     pub value: Expression,
 }
 

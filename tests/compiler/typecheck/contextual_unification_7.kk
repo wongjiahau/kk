@@ -9,4 +9,4 @@ let array_map<From To> = |
     | [head ..._] => [head.f()]
   )
 
-let result: [String] = [{x 2}].array_map(| o => o.x)
+let result: [String] = [{x: 2}].array_map(| o => o.x)

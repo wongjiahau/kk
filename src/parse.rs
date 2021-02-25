@@ -688,18 +688,18 @@ impl<'a> Parser<'a> {
                     })),
                     property_name,
                 })
-            } else if self.try_eat_token(TokenType::Comma).is_some() {
-                // this is a value update with punning
-                record_updates.push(RecordUpdate::ValueUpdate {
-                    property_name: property_name.clone(),
-                    new_value: Expression::Variable(property_name),
-                })
-            } else {
+            } else if self.try_eat_token(TokenType::Colon).is_some() {
                 // this is a value update
                 let new_value = self.parse_expression()?;
                 record_updates.push(RecordUpdate::ValueUpdate {
                     property_name,
                     new_value,
+                })
+            } else {
+                // this is a value update with punning
+                record_updates.push(RecordUpdate::ValueUpdate {
+                    property_name: property_name.clone(),
+                    new_value: Expression::Variable(property_name),
                 })
             }
             if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket) {
@@ -853,16 +853,14 @@ impl<'a> Parser<'a> {
                 }) => break,
                 _ => {
                     let key = self.eat_token(TokenType::Identifier, context)?;
-                    let type_annotation = self.try_parse_colon_type_annotation(context)?;
-                    let value = if self.try_eat_token(TokenType::Comma).is_some() {
-                        Expression::Variable(key.clone())
-                    } else {
+                    let value = if self.try_eat_token(TokenType::Colon).is_some() {
                         self.parse_expression()?
+                    } else {
+                        Expression::Variable(key.clone())
                     };
 
                     key_value_pairs.push(RecordKeyValue {
                         key: key.clone(),
-                        type_annotation,
                         value,
                     })
                 }
@@ -940,17 +938,12 @@ impl<'a> Parser<'a> {
                             break right_curly_bracket;
                         }
                         let key = self.eat_token(TokenType::Identifier, context)?;
-                        let type_annotation = self.try_parse_colon_type_annotation(context)?;
-                        let as_value = if self.try_eat_token(TokenType::Comma).is_some() {
-                            None
-                        } else {
+                        let as_value = if self.try_eat_token(TokenType::Colon).is_some() {
                             Some(self.parse_destructure_pattern()?)
+                        } else {
+                            None
                         };
-                        key_value_pairs.push(DestructuredRecordKeyValue {
-                            key,
-                            type_annotation,
-                            as_value,
-                        });
+                        key_value_pairs.push(DestructuredRecordKeyValue { key, as_value });
                     };
                     Ok(DestructurePattern::Record {
                         left_curly_bracket: token.clone(),

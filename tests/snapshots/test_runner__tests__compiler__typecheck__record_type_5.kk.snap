@@ -9,7 +9,7 @@ let foo: {
   x: Integer
   y: Integer
 } = {
-  x 1
+  x: 1
 }
 
 ============
@@ -30,7 +30,7 @@ error:
   │
 4 │   } = {
   │ ╭─────^
-5 │ │   x 1
+5 │ │   x: 1
 6 │ │ }
   │ ╰─^ Missing properties
   │

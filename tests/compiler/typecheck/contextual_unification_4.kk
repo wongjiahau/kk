@@ -1,1 +1,1 @@
-let o: [{x: Integer}] = [{x null}]
+let o: [{x: Integer}] = [{x: null}]
