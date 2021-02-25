@@ -1,5 +1,9 @@
 // testing import all kind of symbols
-import "./import_1.kk" foo=bar Color bomb
+import "./import_1.kk" { 
+  foo: bar 
+  Color 
+  bomb 
+}
 
 do bar.print()
 

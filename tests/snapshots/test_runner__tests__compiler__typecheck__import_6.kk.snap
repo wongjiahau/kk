@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 // circular import
-import "./import_7.kk" spam
+import "./import_7.kk" { spam }
 
 ============
 EXIT CODE
@@ -24,7 +24,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/import_8.kk:2:8
   │
-2 │ import "./import_6.kk" spam
+2 │ import "./import_6.kk" { spam }
   │        ^^^^^^^^^^^^^^^ Cyclic dependencies detected.
   │
   = Explanation:

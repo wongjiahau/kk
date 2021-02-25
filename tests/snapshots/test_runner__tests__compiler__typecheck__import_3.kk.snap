@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 // importing non-existing name
-import "./import_1.kk" bar
+import "./import_1.kk" { bar }
 
 ============
 EXIT CODE
@@ -22,9 +22,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/import_3.kk:2:24
+  ┌─ tests/compiler/typecheck/import_3.kk:2:26
   │
-2 │ import "./import_1.kk" bar
-  │                        ^^^ Unknown Name
+2 │ import "./import_1.kk" { bar }
+  │                          ^^^ Unknown Name
   │
   = This name cannot be found in the imported file.

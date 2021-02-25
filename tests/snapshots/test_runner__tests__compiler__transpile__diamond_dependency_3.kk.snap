@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-import "./diamond_dependency_1.kk" foo
+import "./diamond_dependency_1.kk" { foo }
 
 export let spam = 3
 

@@ -197,7 +197,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordNull => "only used to create a value with the null type (i.e. unit type)",
         TokenType::KeywordTrue | TokenType::KeywordFalse
             => "only used to create a boolean value",
-        TokenType::KeywordImport => "only used for importing symbols from other files, for example: `import \"./foo.kk\" bar`",
+        TokenType::KeywordImport => "only used for importing symbols from other files, for example: `import \"./foo.kk\" { bar spam hello: hello2}`",
         TokenType::KeywordExport => "only used for exporting symbols, for example: `export let foo = 1`",
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
         TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example `{ x: string }`, and constructing record value, for example `{ x = 'hello' }`",
@@ -278,8 +278,8 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::StatementImport => ParseContextDescription {
             name: "Import Statement",
             examples: vec![
-                "import \"./foo.kk\" bar",
-                "import \"./foo.kk\" bar=spam baz",
+                "import \"./foo.kk\" { bar }",
+                "import \"./foo.kk\" { bar: spam baz }",
             ],
         },
         ParseContext::StatementLet => ParseContextDescription {

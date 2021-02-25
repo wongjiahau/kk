@@ -220,9 +220,10 @@ impl<'a> Parser<'a> {
     fn parse_import_statement(&mut self, keyword_import: Token) -> Result<Statement, ParseError> {
         let context = ParseContext::StatementImport;
         let url = self.eat_token(TokenType::String, context)?;
+        self.eat_token(TokenType::LeftCurlyBracket, context)?;
         let first_name = {
             let name = self.eat_token(TokenType::Identifier, context)?;
-            if self.try_eat_token(TokenType::Equals).is_some() {
+            if self.try_eat_token(TokenType::Colon).is_some() {
                 let alias_as = self.eat_token(TokenType::Identifier, context)?;
                 ImportedName {
                     name,
@@ -239,7 +240,7 @@ impl<'a> Parser<'a> {
             let mut other_names = Vec::new();
             loop {
                 if let Some(name) = self.try_eat_token(TokenType::Identifier) {
-                    if self.try_eat_token(TokenType::Equals).is_some() {
+                    if self.try_eat_token(TokenType::Colon).is_some() {
                         let alias_as = self.eat_token(TokenType::Identifier, context)?;
                         other_names.push(ImportedName {
                             name,
@@ -256,6 +257,7 @@ impl<'a> Parser<'a> {
                 }
             }
         };
+        self.eat_token(TokenType::RightCurlyBracket, context)?;
         Ok(Statement::Import(ImportStatement {
             keyword_import,
             url,
