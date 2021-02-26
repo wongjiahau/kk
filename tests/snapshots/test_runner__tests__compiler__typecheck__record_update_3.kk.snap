@@ -7,7 +7,7 @@ INPUT
 ============
 let a = { x: 2 }
 let foo = | _:Integer => "Hello"
-let b = a.{ x.foo() } // expected Integer, got String
+let b = a.{ x.foo() } # expected Integer, got String
 
 ============
 EXIT CODE
@@ -25,7 +25,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_update_3.kk:3:13
   │
-3 │ let b = a.{ x.foo() } // expected Integer, got String
+3 │ let b = a.{ x.foo() } # expected Integer, got String
   │             ^^^^^^^ Type mismatch
   │
   = +---------------+-------------+

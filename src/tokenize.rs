@@ -12,7 +12,7 @@ pub struct Character {
 pub enum TokenizeError {
     CharacterLiteralCannotBeEmpty { position: Position },
     UnterminatedCharacterLiteral { position: Position },
-    UnterminatedComment { position: Position },
+    UnterminatedMultilineComment { position: Position },
     UnterminatedStringLiteral { position: Position },
     InvalidToken { error: String, position: Position },
     UnknownCharacter { character: Character },
@@ -52,33 +52,72 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 representation: "_".to_string(),
                 position: make_position(character, None),
             }),
-            '/' => {
-                let first_slash = character;
-                match it.next() {
-                    Some(Character { value: '/', .. }) => {
-                        let content: Vec<Character> = it
-                            .by_ref()
-                            .peeking_take_while(|character| character.value != '\n')
-                            .collect();
+            '#' => {
+                let first_hash = character;
+                let rest_hashes: Vec<Character> = it
+                    .by_ref()
+                    .peeking_take_while(|character| character.value == '#')
+                    .collect();
 
-                        tokens.push(Token {
-                            token_type: match it.next() {
-                                Some(Character { value: '/', .. }) => TokenType::Documentation,
-                                _ => TokenType::Comment,
-                            },
-                            representation: content
+                // Then this is a multiline comments (a.k.a documentation string)
+                if rest_hashes.len() >= 2 {
+                    let characters = {
+                        let mut characters = Vec::new();
+                        let mut closing_hash_count = 0;
+                        loop {
+                            if let Some(character) = it.next() {
+                                if character.value == '#' {
+                                    closing_hash_count += 1;
+                                    if closing_hash_count == 3 {
+                                        break characters;
+                                    }
+                                } else {
+                                    // reset closing hash count
+                                    closing_hash_count = 0;
+                                }
+                                characters.push(character);
+                            } else {
+                                return Err(TokenizeError::UnterminatedMultilineComment {
+                                    position: make_position(
+                                        first_hash,
+                                        characters.last().or_else(|| rest_hashes.last()),
+                                    ),
+                                });
+                            }
+                        }
+                    };
+                    tokens.push(Token {
+                        position: make_position(first_hash, characters.last()),
+                        token_type: TokenType::MultilineComment,
+                        representation: format!(
+                            "###{}",
+                            characters
                                 .iter()
                                 .map(|character| character.value.to_string())
                                 .collect::<Vec<String>>()
-                                .join(""),
-                            position: make_position(first_slash, content.last()),
-                        })
-                    }
-                    other => {
-                        return Err(TokenizeError::UnterminatedComment {
-                            position: make_position(first_slash, other.as_ref()),
-                        })
-                    }
+                                .join("")
+                        ),
+                    })
+                }
+                // Otherwise this is a single line comment
+                else {
+                    let content: Vec<Character> = it
+                        .by_ref()
+                        .peeking_take_while(|character| character.value != '\n')
+                        .collect();
+                    tokens.push(Token {
+                        token_type: TokenType::Comment,
+                        representation: format!(
+                            "#{}",
+                            rest_hashes
+                                .iter()
+                                .chain(content.iter())
+                                .map(|other| other.value.to_string())
+                                .collect::<Vec<String>>()
+                                .join("")
+                        ),
+                        position: make_position(first_hash, content.last()),
+                    })
                 }
             }
             '\'' => match it.next() {

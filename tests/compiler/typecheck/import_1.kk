@@ -1,5 +1,5 @@
-// base file for testing import
-// should have no error
+# base file for testing import
+# should have no error
 export let foo = 2
 export enum Color = Red Green
 export type People = {name: String}

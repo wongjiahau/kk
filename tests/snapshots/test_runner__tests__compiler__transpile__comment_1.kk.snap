@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// This is a comment
+# This is a comment
 do "Hello".print()
 
 ============

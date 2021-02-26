@@ -439,11 +439,11 @@ pub enum TokenType {
     Float,
     DoubleColon,
 
-    /// Comments starts with double slash (//)
+    /// Comments starts with hash (#)
     Comment,
 
-    /// Documentation starts with triple slash (///)
-    Documentation,
+    /// Multiline comment starts and ends with triple hash (###)
+    MultilineComment,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

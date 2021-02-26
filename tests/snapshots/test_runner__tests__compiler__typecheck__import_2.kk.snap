@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// name clashing
+# name clashing
 import "./import_1.kk" { foo }
 
 let foo = 2

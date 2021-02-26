@@ -8,7 +8,7 @@ INPUT
 let foo = | x:String => [x]
 
 let a = { x: 2 y: {z: 3} }
-let b = a.{ x.foo() } // expected String, got Integer
+let b = a.{ x.foo() } # expected String, got Integer
 
 ============
 EXIT CODE
@@ -26,7 +26,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_update_4.kk:4:13
   │
-4 │ let b = a.{ x.foo() } // expected String, got Integer
+4 │ let b = a.{ x.foo() } # expected String, got Integer
   │             ^ Type mismatch
   │
   = +---------------+-------------+

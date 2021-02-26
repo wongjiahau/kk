@@ -9,7 +9,7 @@ enum Option<T> = Some(T) None
 let foo =
   | Some(1) => Some("hi")
   | Some(_) => Some("lol")
-  | Some(_) => None // This case is unreachable
+  | Some(_) => None # This case is unreachable
   | None => None
 
 ============
@@ -28,7 +28,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/unreachable_case_enum_1.kk:5:5
   │
-5 │   | Some(_) => None // This case is unreachable
+5 │   | Some(_) => None # This case is unreachable
   │     ^^^^^^^ Unreachable case
   │
   = This case is unreachable because all possible cases are already handled by previous branches.

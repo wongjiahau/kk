@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let a = { x: 2 }
-let b = a.{ x: "hi" } // expected Integer, got String
+let b = a.{ x: "hi" } # expected Integer, got String
 
 ============
 EXIT CODE
@@ -24,7 +24,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_update_2.kk:2:16
   │
-2 │ let b = a.{ x: "hi" } // expected Integer, got String
+2 │ let b = a.{ x: "hi" } # expected Integer, got String
   │                ^^^^ Type mismatch
   │
   = +---------------+-------------+

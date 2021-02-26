@@ -5,13 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// This test should fail
+# This test should fail
 
 enum Option<T> = Some(T) None
 
 let baz = | a =>
-  let Some(Some(b)) = a // This should implicitly return Option<Option<T>>
-  Some([b]) // This should fail with: Expected Option<Option<T>>, but got Option<[T]>
+  let Some(Some(b)) = a # This should implicitly return Option<Option<T>>
+  Some([b]) # This should fail with: Expected Option<Option<T>>, but got Option<[T]>
 
 ============
 EXIT CODE
@@ -29,7 +29,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/monadic_let_enum_4.kk:7:3
   │
-7 │   Some([b]) // This should fail with: Expected Option<Option<T>>, but got Option<[T]>
+7 │   Some([b]) # This should fail with: Expected Option<Option<T>>, but got Option<[T]>
   │   ^^^^^^^^^ Type mismatch
   │
   = +-------------------+----------------+

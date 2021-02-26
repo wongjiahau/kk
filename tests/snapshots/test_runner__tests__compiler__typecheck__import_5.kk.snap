@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// import from non-existent path
+# import from non-existent path
 import "./spongbob.kk" { spam }
 
 ============

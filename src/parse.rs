@@ -71,7 +71,7 @@ impl<'a> Parser<'a> {
                     TokenType::Whitespace
                         | TokenType::Newline
                         | TokenType::Comment
-                        | TokenType::Documentation
+                        | TokenType::MultilineComment
                 )
             })
             .collect::<Vec<Token>>();

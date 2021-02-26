@@ -18,14 +18,14 @@ use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
 pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeError) {
     match tokenize_error {
-        TokenizeError::UnterminatedComment { position } => {
+        TokenizeError::UnterminatedMultilineComment { position } => {
             let range = ErrorRange {
                 character_index_start: position.character_index_start,
                 character_index_end: position.character_index_end,
             };
             print_error(module_meta, range, StringifiedError {
-                summary: "Syntax error: Unterminated comment".to_string(),
-                body: "Comments must start with two slashes. Consider adding a slash (/) after here.".to_string()
+                summary: "Syntax error: Unterminated multiline comment".to_string(),
+                body: "Multiline comment must start and end with three hashes. Consider adding triple hash (###) at the end.".to_string()
             })
         }
         TokenizeError::InvalidToken { error, position } => {
@@ -221,7 +221,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Integer => "only used to represent integer values",
         TokenType::Character => "only used to represent character",
         TokenType::Comment => "only used for commenting",
-        TokenType::Documentation => "only used for documentation"
+        TokenType::MultilineComment => "only used for documentation"
     }
 }
 
@@ -387,7 +387,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Float => "123.0",
         TokenType::Integer => "123",
         TokenType::Comment => "// this is a comment",
-        TokenType::Documentation => "/// This is a documentation.",
+        TokenType::MultilineComment => "/// This is a documentation.",
     }
 }
 

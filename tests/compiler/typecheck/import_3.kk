@@ -1,2 +1,2 @@
-// importing non-existing name
+# importing non-existing name
 import "./import_1.kk" { bar }
