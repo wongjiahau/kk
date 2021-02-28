@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x = {x: 2
+let x: {x: Integer} = {x: 2
 
 ============
 EXIT CODE
@@ -21,10 +21,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/parse/expected_record_1.kk:1:14
+  ┌─ tests/compiler/parse/expected_record_1.kk:1:28
   │
-1 │   let x = {x: 2
-  │ ╭─────────────^
+1 │   let x: {x: Integer} = {x: 2
+  │ ╭───────────────────────────^
 2 │ │
   │ ╰^ Syntax error: unexpected EOF (end of file)
   │

@@ -7,9 +7,11 @@ INPUT
 ============
 enum Color = Red Green
 enum Bool = True False
-let firstIsTrue = | x =>
-  let Red = x
-  True
+do
+  let firstIsTrue = | x =>
+    let Red = x
+    True
+  null
 
 ============
 EXIT CODE
@@ -25,10 +27,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_enum_1.kk:5:3
+  ┌─ tests/compiler/typecheck/monadic_let_enum_1.kk:6:5
   │
-5 │   True
-  │   ^^^^ Type mismatch
+6 │     True
+  │     ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

@@ -5,10 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let and =
-  | true true => true
-  | _ _ => false
-  | _ _ => false
+do
+  let and =
+    | true true => true
+    | _ _ => false
+    | _ _ => false
+  null
 
 ============
 EXIT CODE
@@ -24,9 +26,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_1.kk:4:5
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_1.kk:5:7
   │
-4 │   | _ _ => false
-  │     ^^^ Unreachable case
+5 │     | _ _ => false
+  │       ^^^ Unreachable case
   │
   = This case is unreachable because all possible cases are already handled by previous branches.

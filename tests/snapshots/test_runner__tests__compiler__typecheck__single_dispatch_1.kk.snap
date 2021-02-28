@@ -5,8 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo = | _: String => "hello"
-let foo<T> = | _: T => "hello"
+let foo
+  : | String => String
+  = | _ => "hello"
+let foo<T>
+  : | T => String
+  = | _ => "hello"
 
 ============
 EXIT CODE
@@ -22,9 +26,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/single_dispatch_1.kk:2:5
+  ┌─ tests/compiler/typecheck/single_dispatch_1.kk:4:5
   │
-2 │ let foo<T> = | _: T => "hello"
+4 │ let foo<T>
   │     ^^^ Conflicting function definition
   │
   = The first parameter type of this `foo`:

@@ -207,7 +207,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Colon => "only used for annotating types, for example `{ x: string }`",
         TokenType::DoubleColon => "only used for scope resolution, for example: `Color::Red()`",
         TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example: `type Box<T> = { value: T }`",
-        TokenType::Equals => "used for declaring variables, for example `let x = 1`",
+        TokenType::Equals => "used for declaring variables locally, for example `let x = 1`",
         TokenType::Period => "used for calling a function, for example `1.add(2)`",
         TokenType::Spread => panic!("Subject to change"),
         TokenType::Comma => "used for record punning, for example `{x,}`",
@@ -284,7 +284,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::StatementLet => ParseContextDescription {
             name: "Let Statement",
-            examples: vec!["let x = 1", "let identity<T> : | T => T = | x => x"],
+            examples: vec![
+                "let x : Integer = 1",
+                "let identity<T> : | T => T = | x => x",
+            ],
         },
         ParseContext::StatementType => ParseContextDescription {
             name: "Type Statement",
@@ -307,15 +310,11 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::TypeAnnotationFunction => ParseContextDescription {
             name: "Function Type Annotation",
-            examples: vec![
-                "| Boolean -> Boolean",
-                "| Integer Integer -> Integer",
-                "| left:Integer right:Integer -> Integer",
-            ],
+            examples: vec!["| Boolean -> Boolean", "| Integer Integer -> Integer"],
         },
         ParseContext::Pattern => ParseContextDescription {
             name: "Pattern",
-            examples: vec!["1", "\"hello world\"", "true", "Some(x)", "[]", "{ x, y, }"],
+            examples: vec!["1", "\"hello world\"", "true", "Some(x)", "[]", "{ x y }"],
         },
         ParseContext::PatternArray => ParseContextDescription {
             name: "Array Pattern",
@@ -340,10 +339,6 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::TypeVariablesDeclaration => ParseContextDescription {
             name: "Type Variables Declaration",
             examples: vec!["<T>", "<T U>"],
-        },
-        ParseContext::FunctionArguments => ParseContextDescription {
-            name: "Function Arguments",
-            examples: vec!["x", "x:Number"],
         },
     }
 }

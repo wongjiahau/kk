@@ -5,8 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let a = { x: 2 y: { z: 3 } }
-let b = a.{ b: 3 } # 'b' is a non-existing property
+do
+  let a = { x: 2 y: { z: 3 } }
+  let b = a.{ b: 3 } # 'b' is a non-existing property
+  null
 
 ============
 EXIT CODE
@@ -22,10 +24,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_update_1.kk:2:13
+  ┌─ tests/compiler/typecheck/record_update_1.kk:3:15
   │
-2 │ let b = a.{ b: 3 } # 'b' is a non-existing property
-  │             ^ No such property
+3 │   let b = a.{ b: 3 } # 'b' is a non-existing property
+  │               ^ No such property
   │
   = Available properties:
       x

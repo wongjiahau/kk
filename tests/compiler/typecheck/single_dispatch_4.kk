@@ -1,4 +1,9 @@
-let foo = | _: String => "Hello"
-let foo = | _: Integer => "World"
+let foo 
+  : | String => String
+  = | _ => "Hello"
+
+let foo
+  : | Integer => String
+  = | _ => "World"
 
 do true.foo().print()

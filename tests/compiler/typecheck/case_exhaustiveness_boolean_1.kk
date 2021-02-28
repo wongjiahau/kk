@@ -1,4 +1,6 @@
-let and = 
-  | true true => true
-  | _ _ => false
-  | _ _ => false
+do
+  let and = 
+    | true true => true
+    | _ _ => false
+    | _ _ => false
+  null

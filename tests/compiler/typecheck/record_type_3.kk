@@ -1,6 +1,8 @@
-let x = {
-  x: 2
-  y: "hello"
-}
+do
+  let x = {
+    x: 2
+    y: "hello"
+  }
 
-let z = x.a
+  let z = x.a
+  null

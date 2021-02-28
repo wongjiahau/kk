@@ -222,7 +222,7 @@ pub fn transpile_function_branch(function_branch: TypecheckedFunctionBranch) -> 
         }
     };
     format!(
-        "{}{{{};return Promise.resolve({})}}",
+        "{}{{{};return {}}}",
         conditions,
         transpiled_destructure_pattern.bindings.join(";"),
         // return_now,

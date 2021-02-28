@@ -9,9 +9,11 @@ enum List<T> =
   Nil
   Cons({current: T next: List<T>})
 
-let bomb =
-  | Nil => true
-  | Cons({current: true next: _}) => true
+do
+  let bomb =
+    | Nil => true
+    | Cons({current: true next: _}) => true
+  null
 
 ============
 EXIT CODE
@@ -27,11 +29,11 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_2.kk:6:3
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_2.kk:7:5
   │
-6 │ ╭   | Nil => true
-7 │ │   | Cons({current: true next: _}) => true
-  │ ╰─────────────────────────────────────────^ Non-exhaustive cases
+7 │ ╭     | Nil => true
+8 │ │     | Cons({current: true next: _}) => true
+  │ ╰───────────────────────────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

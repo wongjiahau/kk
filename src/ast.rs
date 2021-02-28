@@ -4,8 +4,14 @@ use crate::non_empty::NonEmpty;
 #[derive(Debug, Clone)]
 pub enum Statement {
     Let(LetStatement),
+
+    /// This represent type alias definition.
     Type(TypeStatement),
+
+    /// This represents named sum types (a.k.a tagged union).
     Enum(EnumStatement),
+
+    /// This represents the entry points of a module.
     Do(DoStatement),
     Import(ImportStatement),
 }
@@ -16,8 +22,8 @@ pub struct LetStatement {
     pub keyword_let: Token,
     pub left: Token,
     pub type_variables: Vec<Token>,
+    pub type_annotation: TypeAnnotation,
     pub right: Expression,
-    pub type_annotation: Option<TypeAnnotation>,
 }
 
 #[derive(Debug, Clone)]
@@ -340,15 +346,8 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub struct FunctionBranch {
     pub start_token: Token,
-    pub parameters: NonEmpty<FunctionParameter>,
+    pub parameters: NonEmpty<DestructurePattern>,
     pub body: Box<Expression>,
-    pub return_type_annotation: Option<TypeAnnotation>,
-}
-
-impl FunctionBranch {
-    pub fn parameters(&self) -> NonEmpty<FunctionParameter> {
-        self.parameters.clone()
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -373,7 +372,6 @@ pub struct FunctionBranchRestArguments {
 #[derive(Debug, Clone)]
 pub struct FunctionParameter {
     pub destructure_pattern: DestructurePattern,
-    pub type_annotation: Option<TypeAnnotation>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

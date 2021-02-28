@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+do
+  let f = | {x y: {z}} => {x z}
+  let x = {x: "hi" y: {z: 3}}.f()
+  let y = {x: 2 y: {z: 3}}.f()
+  null
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/let_inference_1.kk:4:15
+  │
+4 │   let y = {x: 2 y: {z: 3}}.f()
+  │               ^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - String      | + Integer   |
+    +---------------+-------------+

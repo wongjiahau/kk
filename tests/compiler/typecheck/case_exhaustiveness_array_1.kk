@@ -1,3 +1,5 @@
-let foo = 
-  | [] => true
-  | [_ ...[]] => false
+do
+  let foo = 
+    | [] => true
+    | [_ ...[]] => false
+  null

@@ -8,7 +8,9 @@ INPUT
 enum Food = Nut
 enum Tool = Nut
 
-let a = Nut
+do
+  let a = Nut
+  null
 
 ============
 EXIT CODE
@@ -24,10 +26,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/enum_6.kk:4:9
+  ┌─ tests/compiler/typecheck/enum_6.kk:5:11
   │
-4 │ let a = Nut
-  │         ^^^ Ambiguous Constructor Usage
+5 │   let a = Nut
+  │           ^^^ Ambiguous Constructor Usage
   │
   = The constructor `Nut` belongs to more than one enums, which are:
 

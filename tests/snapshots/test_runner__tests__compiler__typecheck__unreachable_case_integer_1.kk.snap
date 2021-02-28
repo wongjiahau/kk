@@ -5,11 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo =
-  | 0 => 0
-  | 1 => 1
-  | 1 => 1
-  | _ => 2
+do
+  let foo =
+    | 0 => 0
+    | 1 => 1
+    | 1 => 1
+    | _ => 2
+  null
 
 ============
 EXIT CODE
@@ -25,9 +27,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_integer_1.kk:4:5
+  ┌─ tests/compiler/typecheck/unreachable_case_integer_1.kk:5:7
   │
-4 │   | 1 => 1
-  │     ^ Unreachable case
+5 │     | 1 => 1
+  │       ^ Unreachable case
   │
   = This case is unreachable because all possible cases are already handled by previous branches.

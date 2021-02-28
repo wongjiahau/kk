@@ -1,7 +1,9 @@
-let foo = | _:String => "Hello"
+let foo
+  : | String => String
+  = | String => "Hello"
 
 do 
-  let foo = | _:String => "World"
+  let foo = | _ => "World"
   "x".foo().print()
 
 do "x".foo().print()

@@ -5,10 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let colorIsRed = | _ =>
-  let x = 1
-    else | _ => "hi"
-  x
+do
+  let colorIsRed = | _ =>
+    let x = 1
+      else | _ => "hi"
+    x
+  null
 
 ============
 EXIT CODE
@@ -24,10 +26,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_1.kk:3:17
+  ┌─ tests/compiler/typecheck/monadic_let_1.kk:4:19
   │
-3 │     else | _ => "hi"
-  │                 ^^^^ Type mismatch
+4 │       else | _ => "hi"
+  │                   ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

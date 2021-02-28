@@ -7,8 +7,10 @@ INPUT
 ============
 enum Option<T> = Some(T) None
 
-let is_some_some =
-  | Some(Some(_)) => true
+do
+  let is_some_some =
+    | Some(Some(_)) => true
+  null
 
 ============
 EXIT CODE
@@ -24,10 +26,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_3.kk:4:3
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_3.kk:5:5
   │
-4 │   | Some(Some(_)) => true
-  │   ^^^^^^^^^^^^^^^^^^^^^^^ Non-exhaustive cases
+5 │     | Some(Some(_)) => true
+  │     ^^^^^^^^^^^^^^^^^^^^^^^ Non-exhaustive cases
   │
   = Missing case(s):
 

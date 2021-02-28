@@ -39,17 +39,55 @@ pub fn unify_statements(
     starting_symbol_uid: usize,
     imported_modules: &ImportedModules,
 ) -> Result<UnifyProgramResult, CompileError> {
+    // 1. Partition statements based on their types
+    let (import_statements, type_statements, enum_statements, let_statements, do_statements) = {
+        let mut import_statements = Vec::new();
+        let mut type_statements = Vec::new();
+        let mut enum_statements = Vec::new();
+        let mut let_statements = Vec::new();
+        let mut do_statements = Vec::new();
+        for statement in statements {
+            match statement {
+                Statement::Import(import_statement) => {
+                    import_statements.push(import_statement);
+                }
+                Statement::Type(type_statement) => {
+                    type_statements.push(type_statement);
+                }
+                Statement::Enum(enum_statement) => {
+                    enum_statements.push(enum_statement);
+                }
+                Statement::Let(let_statement) => {
+                    let_statements.push(let_statement);
+                }
+                Statement::Do(do_statement) => {
+                    do_statements.push(do_statement);
+                }
+            }
+        }
+        (
+            import_statements,
+            type_statements,
+            enum_statements,
+            let_statements,
+            do_statements,
+        )
+    };
+
+    // 2. Infer import statements (to include every imported symbols into the current module)
+
     let mut module: Module = Module::new(module_meta, starting_symbol_uid);
 
     let init: (Vec<TypecheckedStatement>, _) = (vec![], imported_modules.clone());
 
-    let (statements, imported_modules) =
-        statements
+    let (typechecked_import_statements, imported_modules) =
+        import_statements
             .into_iter()
-            .fold(Ok(init), |result, statement| match result {
+            .fold(Ok(init), |result, import_statement| match result {
                 Err(error) => Err(error),
                 Ok((mut statements, mut imported_modules)) => {
-                    let current = infer_statement(&mut module, &imported_modules, statement)?;
+                    let current =
+                        infer_import_statement(&mut module, &imported_modules, import_statement)?;
 
                     statements.extend(current.statements.into_iter());
 
@@ -58,8 +96,141 @@ pub fn unify_statements(
                     Ok((statements, imported_modules))
                 }
             })?;
+
+    // 3. Insert type symbols (including enums) into the current module.
+    //    Note that we will first insert them into the current module first before checking their definition,
+    //    this is so that mutually recursive type can be checked.
+    type_statements
+        .into_iter()
+        .map(
+            |type_statement| match infer_type_statement(&mut module, type_statement) {
+                Ok(()) => Ok(()),
+                Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
+            },
+        )
+        .collect::<Result<Vec<()>, CompileError>>()?;
+
+    enum_statements
+        .into_iter()
+        .map(
+            |enum_statement| match infer_enum_statement(&mut module, enum_statement) {
+                Ok(()) => Ok(()),
+                Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
+            },
+        )
+        .collect::<Result<Vec<()>, CompileError>>()?;
+
+    // 4. Insert let symbols into the current module.
+    //    Similar as type symbols, we will insert them into the module first before checking their definition,
+    //    this is to that mutually recursive functions can be checked.
+    let let_statements = let_statements
+        .into_iter()
+        .map(|let_statement| {
+            let type_scheme = {
+                module.step_into_new_child_scope();
+                let_statement
+                    .type_variables
+                    .iter()
+                    .map(|type_variable_name| {
+                        module.insert_explicit_type_variable(type_variable_name)
+                    })
+                    .collect::<Result<Vec<usize>, UnifyError>>()?;
+
+                let type_scheme = TypeScheme {
+                    type_variables: let_statement
+                        .type_variables
+                        .iter()
+                        .map(|type_variable| type_variable.representation.clone())
+                        .collect(),
+                    type_value: type_annotation_to_type(
+                        &mut module,
+                        &let_statement.type_annotation,
+                    )?,
+                };
+                module.step_out_to_parent_scope();
+                Ok(type_scheme)
+            }?;
+            let uid = module.insert_symbol(
+                None,
+                Symbol {
+                    meta: SymbolMeta {
+                        name: let_statement.left.clone(),
+                        exported: let_statement.keyword_export.is_some(),
+                    },
+                    kind: SymbolKind::Value(ValueSymbol {
+                        type_scheme: TypeScheme {
+                            type_variables: type_scheme.type_variables,
+                            type_value: rewrite_explicit_type_variables_as_implicit(
+                                type_scheme.type_value.clone(),
+                                &{
+                                    let mut hashset = HashSet::new();
+                                    for type_variable in &let_statement.type_variables {
+                                        hashset.insert(type_variable.representation.clone());
+                                    }
+                                    hashset
+                                },
+                            ),
+                        },
+                    }),
+                },
+            )?;
+            Ok((
+                uid,
+                let_statement.left.representation,
+                let_statement.type_variables,
+                type_scheme.type_value,
+                let_statement.right,
+            ))
+        })
+        .collect::<Result<Vec<_>, UnifyError>>()
+        .map_err(|error| error.into_compile_error(module.meta.clone()))?;
+
+    let typechecked_let_statements = let_statements
+        .into_iter()
+        .map(|(uid, name, type_variables, expected_type, expression)| {
+            module.step_into_new_child_scope();
+
+            // Populate type variables
+            type_variables
+                .iter()
+                .map(|type_variable_name| module.insert_explicit_type_variable(type_variable_name))
+                .collect::<Result<Vec<usize>, UnifyError>>()?;
+
+            // Typecheck the expression
+            let result = infer_expression_type(&mut module, Some(expected_type), &expression)?;
+
+            module.step_out_to_parent_scope();
+
+            // Return the typechecked statement, which is needed for transpilation
+            Ok(TypecheckedStatement::Let {
+                left: Variable {
+                    uid,
+                    representation: name,
+                },
+                right: result.expression,
+            })
+        })
+        .collect::<Result<Vec<TypecheckedStatement>, UnifyError>>()
+        .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
+
+    // 5. Lastly we will infer do statements
+    let typechecked_do_statements = do_statements
+        .into_iter()
+        .map(
+            |do_statement| match infer_do_statement(&mut module, do_statement) {
+                Ok(statement) => Ok(statement),
+                Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
+            },
+        )
+        .collect::<Result<Vec<TypecheckedStatement>, CompileError>>()?;
     Ok(UnifyProgramResult {
-        statements,
+        statements: {
+            let mut statements = Vec::new();
+            statements.extend(typechecked_import_statements);
+            statements.extend(typechecked_let_statements);
+            statements.extend(typechecked_do_statements);
+            statements
+        },
         module,
         imported_modules,
     })
@@ -172,46 +343,6 @@ type ImportedModules = HashMap<ModuleUid, Module>;
 pub struct InferStatementResult {
     pub statements: Vec<TypecheckedStatement>,
     pub imported_modules: ImportedModules,
-}
-
-pub fn infer_statement(
-    module: &mut Module,
-    imported_modules: &ImportedModules,
-    statement: Statement,
-) -> Result<InferStatementResult, CompileError> {
-    match statement {
-        Statement::Do(do_statement) => match infer_do_statement(module, do_statement) {
-            Ok(statement) => Ok(InferStatementResult {
-                statements: vec![statement],
-                imported_modules: HashMap::new(),
-            }),
-            Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
-        },
-        Statement::Let(let_statement) => match infer_let_statement(module, let_statement) {
-            Ok(statement) => Ok(InferStatementResult {
-                statements: vec![statement],
-                imported_modules: HashMap::new(),
-            }),
-            Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
-        },
-        Statement::Type(type_statement) => match infer_type_statement(module, type_statement) {
-            Ok(()) => Ok(InferStatementResult {
-                statements: vec![],
-                imported_modules: HashMap::new(),
-            }),
-            Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
-        },
-        Statement::Enum(enum_statement) => match infer_enum_statement(module, enum_statement) {
-            Ok(()) => Ok(InferStatementResult {
-                statements: vec![],
-                imported_modules: HashMap::new(),
-            }),
-            Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
-        },
-        Statement::Import(import_statement) => {
-            infer_import_statement(module, imported_modules, import_statement)
-        }
-    }
 }
 
 pub fn infer_import_statement(
@@ -595,79 +726,6 @@ pub fn infer_type_statement(
     Ok(())
 }
 
-pub fn infer_let_statement(
-    module: &mut Module,
-    LetStatement {
-        keyword_export,
-        left,
-        type_variables,
-        right,
-        type_annotation,
-        ..
-    }: LetStatement,
-) -> Result<TypecheckedStatement, UnifyError> {
-    // 0. Populate type variables
-    module.step_into_new_child_scope();
-    type_variables
-        .iter()
-        .map(|type_variable| module.insert_explicit_type_variable(type_variable))
-        .collect::<Result<Vec<_>, UnifyError>>()?;
-
-    // 1. Add itself into current scope to enable recursive definition if type annotation
-    //    is present, and is type of function
-    let type_annotation_type = optional_type_annotation_to_type(module, &type_annotation)?;
-
-    let uid = match type_annotation_type.clone() {
-        Some(Type::Function(function_type)) => {
-            let (uid, _) =
-                module.insert_value_symbol_with_type(&left, Some(Type::Function(function_type)))?;
-            Ok(Some(uid))
-        }
-        _ => Ok(None),
-    }?;
-
-    // 2. Check if right matches type annotation
-    let right = infer_expression_type(module, type_annotation_type, &right)?;
-
-    // 3. Rewrite explicit type variable as implicit type variables
-    let explicit_type_variable_names = type_variables
-        .iter()
-        .map(|token| token.representation.clone())
-        .collect();
-
-    let right_type = rewrite_explicit_type_variables_as_implicit(
-        right.type_value,
-        &explicit_type_variable_names,
-    );
-
-    // 4. Generalize if possible
-    let right_type_scheme = generalize_type(right_type);
-
-    // 5. Add this variable into module
-    //    Note that we have to use back the same uid if this is a recursive function
-    module.step_out_to_parent_scope();
-    let uid = module.insert_symbol(
-        uid,
-        Symbol {
-            meta: SymbolMeta {
-                name: left.clone(),
-                exported: keyword_export.is_some(),
-            },
-            kind: SymbolKind::Value(ValueSymbol {
-                type_scheme: right_type_scheme,
-            }),
-        },
-    )?;
-
-    Ok(TypecheckedStatement::Let {
-        left: Variable {
-            uid,
-            representation: left.representation,
-        },
-        right: right.expression,
-    })
-}
-
 pub fn infer_do_statement(
     module: &mut Module,
     do_statement: DoStatement,
@@ -775,6 +833,8 @@ pub fn rewrite_explicit_type_variables_as_implicit(
     }
 }
 
+/// @deprecated
+/// This function is left here: for reference purpose
 pub fn generalize_type(type_value: Type) -> TypeScheme {
     let type_variables = get_free_type_variables_in_type(&type_value);
     TypeScheme {
@@ -1790,14 +1850,10 @@ fn infer_expression_type_(
                                 FunctionBranch {
                                     start_token: keyword_let.clone(),
                                     parameters: NonEmpty {
-                                        head: FunctionParameter {
-                                            destructure_pattern: *left.clone(),
-                                            type_annotation: type_annotation.clone(),
-                                        },
+                                        head: *left.clone(),
                                         tail: vec![],
                                     },
                                     body: true_branch.clone(),
-                                    return_type_annotation: None,
                                 },
                             );
                             branches
@@ -2236,12 +2292,7 @@ pub fn function_branch_parameters_to_tuple(
 ) -> DestructurePatternTuple {
     DestructurePatternTuple {
         parentheses: None,
-        values: Box::new(
-            function_branch
-                .parameters
-                .clone()
-                .map(|argument| argument.destructure_pattern),
-        ),
+        values: Box::new(function_branch.parameters.clone()),
     }
 }
 
@@ -2396,11 +2447,18 @@ fn infer_function_branch(
     let typechecked_parameters = {
         match &expected_function_type {
             None => function_branch
-                .parameters()
-                .fold_result(|parameter| Ok(infer_function_parameter(module, None, &parameter)?)),
+                .parameters
+                .clone()
+                .fold_result(|destructure_pattern| {
+                    Ok(infer_destructure_pattern(
+                        module,
+                        None,
+                        &destructure_pattern,
+                    )?)
+                }),
 
             Some(expected_function_type) => {
-                let actual_parameters = function_branch.parameters();
+                let actual_parameters = function_branch.parameters.clone();
                 if expected_function_type.parameters_types.len() != actual_parameters.len() {
                     Err(UnifyError {
                         position: get_function_branch_position(&function_branch),
@@ -2415,7 +2473,7 @@ fn infer_function_branch(
                         .parameters_types
                         .zip(actual_parameters)
                         .fold_result(|(expected_parameter_type, actual_parameter)| {
-                            infer_function_parameter(
+                            infer_destructure_pattern(
                                 module,
                                 Some(expected_parameter_type),
                                 &actual_parameter,
@@ -2426,11 +2484,8 @@ fn infer_function_branch(
         }
     }?;
 
-    let expected_return_type = get_expected_type(
-        module,
-        expected_function_type.map(|expected_function_type| *expected_function_type.return_type),
-        function_branch.return_type_annotation.clone(),
-    )?;
+    let expected_return_type =
+        expected_function_type.map(|expected_function_type| *expected_function_type.return_type);
 
     let typechecked_body =
         infer_expression_type(module, expected_return_type, &function_branch.body)?;
@@ -2476,24 +2531,6 @@ pub fn get_expected_type(
             kind: UnifyErrorKind::UnnecessaryTypeAnnotation { expected_type },
         }),
     }
-}
-
-fn infer_function_parameter(
-    module: &mut Module,
-    expected_argument_type: Option<Type>,
-    function_argument: &FunctionParameter,
-) -> Result<InferDestructurePatternResult, UnifyError> {
-    let expected_type = get_expected_type(
-        module,
-        expected_argument_type,
-        function_argument.type_annotation.clone(),
-    )?;
-
-    infer_destructure_pattern(
-        module,
-        expected_type,
-        &function_argument.destructure_pattern,
-    )
 }
 
 pub fn optional_type_annotation_to_type(
@@ -2689,7 +2726,7 @@ fn infer_destructure_pattern_(
             // then treat it as a new variable
             else {
                 let (uid, type_value) =
-                    module.insert_value_symbol_with_type(identifier, expected_type)?;
+                    module.insert_value_symbol_with_type(identifier, expected_type, false)?;
                 Ok(InferDestructurePatternResult {
                     type_value,
                     destructure_pattern: TypecheckedDestructurePattern::Variable(Variable {
@@ -2835,7 +2872,7 @@ fn infer_destructure_pattern_(
                         }
                         None => {
                             let (uid, type_value) =
-                                module.insert_value_symbol_with_type(key, expected_type)?;
+                                module.insert_value_symbol_with_type(key, expected_type, false)?;
                             Ok((
                                 actual_key.clone(),
                                 InferDestructurePatternResult {

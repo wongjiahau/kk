@@ -5,9 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let guess = | x =>
-  let null = x
-  2
+do
+  let guess = | x =>
+    let null = x
+    2
+  null
 
 ============
 EXIT CODE

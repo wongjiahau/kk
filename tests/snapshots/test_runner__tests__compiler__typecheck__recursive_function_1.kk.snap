@@ -10,7 +10,7 @@ enum List<Of> =
   Cons({current: Of next: List<Of>})
 
 let list_map<From To>
-  : | List<From> | From -> To -> List<To>
+  : | List<From> | From => To => List<To>
   = | Nil _ => Nil
     | Cons({current next}) f => Cons({
         current: current.f()
@@ -31,13 +31,16 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/recursive_function_1.kk:10:30
+   ┌─ tests/compiler/typecheck/recursive_function_1.kk:10:53
    │
 10 │         next: Cons({current: 0 next: Nil}).list_map(f)
-   │                              ^ Type mismatch
+   │                                                     ^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |
      +---------------+-------------+
-     | - From        | + Integer   |
+     |   | (         |   | (       |
+     | -   Integer   | +   From    |
+     |   ) =>        |   ) =>      |
+     | -   @TVAR6    | +   To      |
      +---------------+-------------+

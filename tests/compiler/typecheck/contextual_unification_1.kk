@@ -1,3 +1,3 @@
 let f 
-  : | {foo: Float} -> Float
+  : | {foo: Float} => Float
   = | o => o.bar

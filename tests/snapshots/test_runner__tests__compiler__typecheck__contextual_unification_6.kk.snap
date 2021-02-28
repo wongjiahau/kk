@@ -5,13 +5,18 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let match = | x f => x.f()
+let match<A B>
+  : | A | A => B => B
+  = | x f => x.f()
 
-let arrayMap =
-  | [] _ => []
-  | [head ..._] f => [head.f()]
+let map<A B>
+  : | [A] | A => B => [B]
+  = | [] _ => []
+    | [head ..._] f => [head.f()]
 
-let result = [{foo: 2 bar: "hi"}].arrayMap(|.zap)
+do
+  let result = [{foo: 2 bar: "hi"}].map(|.zap)
+  null
 
 ============
 EXIT CODE
@@ -27,11 +32,11 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_6.kk:7:46
-  │
-7 │ let result = [{foo: 2 bar: "hi"}].arrayMap(|.zap)
-  │                                              ^^^ No such property
-  │
-  = Available properties:
-      bar
-      foo
+   ┌─ tests/compiler/typecheck/contextual_unification_6.kk:11:43
+   │
+11 │   let result = [{foo: 2 bar: "hi"}].map(|.zap)
+   │                                           ^^^ No such property
+   │
+   = Available properties:
+       bar
+       foo

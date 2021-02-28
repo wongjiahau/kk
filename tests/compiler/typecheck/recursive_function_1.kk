@@ -3,7 +3,7 @@ enum List<Of> =
   Cons({current: Of next: List<Of>})
 
 let list_map<From To> 
-  : | List<From> | From -> To -> List<To> 
+  : | List<From> | From => To => List<To> 
   = | Nil _ => Nil
     | Cons({current next}) f => Cons({
         current: current.f()

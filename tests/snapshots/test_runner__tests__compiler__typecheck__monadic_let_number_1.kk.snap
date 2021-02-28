@@ -5,9 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let guess = | x =>
-  let 0 = x
-  "bomb"
+do
+  let guess = | x =>
+    let 0 = x
+    "bomb"
+  null
 
 ============
 EXIT CODE
@@ -23,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_number_1.kk:3:3
+  ┌─ tests/compiler/typecheck/monadic_let_number_1.kk:4:5
   │
-3 │   "bomb"
-  │   ^^^^^^ Type mismatch
+4 │     "bomb"
+  │     ^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

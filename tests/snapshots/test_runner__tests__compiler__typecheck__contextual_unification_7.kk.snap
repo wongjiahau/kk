@@ -5,18 +5,19 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let match = | x f => x.f()
+let match<A B>
+  : | A | A => B => B
+  = | x f => x.f()
 
-let array_map<From To> = |
-  xs: [From]
-  f: | From -> To
--> [To] =>
+let map<From To>
+  : | [From] | From => To => [To]
+  = | xs f =>
   xs.match(
     | [] => []
     | [head ..._] => [head.f()]
   )
 
-let result: [String] = [{x: 2}].array_map(| o => o.x)
+let result: [String] = [{x: 2}].map(| o => o.x)
 
 ============
 EXIT CODE
@@ -32,10 +33,10 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/contextual_unification_7.kk:12:24
+   ┌─ tests/compiler/typecheck/contextual_unification_7.kk:13:24
    │
-12 │ let result: [String] = [{x: 2}].array_map(| o => o.x)
-   │                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
+13 │ let result: [String] = [{x: 2}].map(| o => o.x)
+   │                        ^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |

@@ -5,10 +5,12 @@ enum List<Element> =
     next: List<Element>
   })
 
-let xs = Cons({
-  current: 1
-  next: Cons({
-    current: true
-    next: Nil
+let xs: Integer = 
+  let x = Cons({
+    current: 1
+    next: Cons({
+      current: true
+      next: Nil
+    })
   })
-})
+  123

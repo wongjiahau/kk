@@ -12,13 +12,15 @@ enum List<Element> =
     next: List<Element>
   })
 
-let xs = Cons({
-  current: 1
-  next: Cons({
-    current: true
-    next: Nil
+let xs: Integer =
+  let x = Cons({
+    current: 1
+    next: Cons({
+      current: true
+      next: Nil
+    })
   })
-})
+  123
 
 ============
 EXIT CODE
@@ -34,10 +36,10 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/enum_1.kk:11:14
+   ┌─ tests/compiler/typecheck/enum_1.kk:12:16
    │
-11 │     current: true
-   │              ^^^^ Type mismatch
+12 │       current: true
+   │                ^^^^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |

@@ -5,10 +5,12 @@ enum List<Element> =
     next: List<Element>
   })
 
-let foo = | Cons({
-  current: 1
-  next: Cons({
-    current: true
-    next: Nil
-  })
-}) => 0
+do
+  let foo = | Cons({
+    current: 1
+    next: Cons({
+      current: true
+      next: Nil
+    })
+  }) => 0
+  null

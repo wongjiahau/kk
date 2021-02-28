@@ -1,2 +1,4 @@
-let x = 2
-let f = "hi".x()
+do
+  let x = 2
+  let f = "hi".x()
+  null

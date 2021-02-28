@@ -5,9 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let guess = | x =>
-  let [0 ..._] = x
-  true
+do
+  let guess = | x =>
+    let [0 ..._] = x
+    true
+  null
 
 ============
 EXIT CODE
@@ -23,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_array_1.kk:3:3
+  ┌─ tests/compiler/typecheck/monadic_let_array_1.kk:4:5
   │
-3 │   true
-  │   ^^^^ Type mismatch
+4 │     true
+  │     ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

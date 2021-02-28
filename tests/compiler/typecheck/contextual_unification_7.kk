@@ -1,12 +1,13 @@
-let match = | x f => x.f()
+let match<A B>
+  : | A | A => B => B
+  = | x f => x.f()
 
-let array_map<From To> = |
-  xs: [From]
-  f: | From -> To
--> [To] =>
+let map<From To> 
+  : | [From] | From => To => [To]
+  = | xs f =>
   xs.match(
     | [] => []
     | [head ..._] => [head.f()]
   )
 
-let result: [String] = [{x: 2}].array_map(| o => o.x)
+let result: [String] = [{x: 2}].map(| o => o.x)

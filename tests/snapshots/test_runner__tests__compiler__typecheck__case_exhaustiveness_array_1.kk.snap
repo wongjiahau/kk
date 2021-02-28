@@ -5,9 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo =
-  | [] => true
-  | [_ ...[]] => false
+do
+  let foo =
+    | [] => true
+    | [_ ...[]] => false
+  null
 
 ============
 EXIT CODE
@@ -23,11 +25,11 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_array_1.kk:2:3
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_array_1.kk:3:5
   │
-2 │ ╭   | [] => true
-3 │ │   | [_ ...[]] => false
-  │ ╰──────────────────────^ Non-exhaustive cases
+3 │ ╭     | [] => true
+4 │ │     | [_ ...[]] => false
+  │ ╰────────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

@@ -1,4 +1,5 @@
-let foo = 
-  | 'a' => true
-  | 'b' => false
+let foo 
+  : | Character => Boolean
+  = | 'a' => true
+    | 'b' => false
 

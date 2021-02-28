@@ -477,6 +477,7 @@ impl Module {
         &mut self,
         variable_name: &Token,
         type_value: Option<Type>,
+        exported: bool,
     ) -> Result<(/*uid*/ usize, Type), UnifyError> {
         let type_value = match type_value {
             None => Type::ImplicitTypeVariable {
@@ -489,7 +490,7 @@ impl Module {
             Symbol {
                 meta: SymbolMeta {
                     name: variable_name.clone(),
-                    exported: false,
+                    exported,
                 },
                 kind: SymbolKind::Value(ValueSymbol {
                     type_scheme: TypeScheme {

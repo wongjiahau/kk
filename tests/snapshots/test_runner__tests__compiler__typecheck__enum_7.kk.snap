@@ -9,7 +9,9 @@ enum Food = Nut
 enum Tool = Nut
 
 let a: Tool = Nut
-let f = | Nut:Food => 123
+let f
+  : | Food => Integer
+  = | Nut => 123
 
 do a.f()
 
@@ -27,9 +29,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/enum_7.kk:7:4
+  ┌─ tests/compiler/typecheck/enum_7.kk:9:4
   │
-7 │ do a.f()
+9 │ do a.f()
   │    ^ Type mismatch
   │
   = +---------------+-------------+

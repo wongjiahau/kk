@@ -1,4 +1,6 @@
 enum Food = Nut
 enum Tool = Nut
 
-let a = Nut
+do
+  let a = Nut
+  null

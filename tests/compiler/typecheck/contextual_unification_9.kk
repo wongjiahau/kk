@@ -1,6 +1,6 @@
-let bar = | props: {
-  f: | { x: Integer } -> Integer
-} =>
+let bar 
+  : | { f: | { x: Integer } => Integer } => Integer
+  = | props =>
   let { f } = props
   {x: "hi"}.f()
 

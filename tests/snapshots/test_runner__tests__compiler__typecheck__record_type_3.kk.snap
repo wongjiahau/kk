@@ -5,12 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x = {
-  x: 2
-  y: "hello"
-}
+do
+  let x = {
+    x: 2
+    y: "hello"
+  }
 
-let z = x.a
+  let z = x.a
+  null
 
 ============
 EXIT CODE
@@ -26,10 +28,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_type_3.kk:6:11
+  ┌─ tests/compiler/typecheck/record_type_3.kk:7:13
   │
-6 │ let z = x.a
-  │           ^ No such property
+7 │   let z = x.a
+  │             ^ No such property
   │
   = Available properties:
       x

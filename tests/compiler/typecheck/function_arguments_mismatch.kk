@@ -1,3 +1,4 @@
-let f = 
-    | x: Integer => x
+let f 
+  : | Integer => Integer
+  = | x => x
     | _ _ => 1

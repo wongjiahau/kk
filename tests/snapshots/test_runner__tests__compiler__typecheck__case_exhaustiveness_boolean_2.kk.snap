@@ -5,9 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let and =
-  | true true => true
-  | false true => false
+let and
+  : | Boolean Boolean => Boolean
+  = | true true => true
+    | false true => false
 
 ============
 EXIT CODE
@@ -23,11 +24,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_2.kk:2:3
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_2.kk:3:5
   │
-2 │ ╭   | true true => true
-3 │ │   | false true => false
-  │ ╰───────────────────────^ Non-exhaustive cases
+3 │     = | true true => true
+  │ ╭─────^
+4 │ │     | false true => false
+  │ ╰─────────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

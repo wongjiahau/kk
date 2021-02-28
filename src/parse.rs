@@ -54,7 +54,6 @@ pub enum ParseContext {
     TypeArguments,
     EnumConstructorDefinition,
     TypeVariablesDeclaration,
-    FunctionArguments,
 }
 
 pub struct Parser<'a> {
@@ -149,7 +148,8 @@ impl<'a> Parser<'a> {
         let context = ParseContext::StatementLet;
         let left = self.eat_token(TokenType::Identifier, context)?;
         let type_variables = self.try_parse_type_variables_declaration()?;
-        let type_annotation = self.try_parse_colon_type_annotation(context)?;
+        self.eat_token(TokenType::Colon, context)?;
+        let type_annotation = self.parse_type_annotation(context)?;
         self.eat_token(TokenType::Equals, context)?;
         let right = self.parse_expression()?;
         Ok(Statement::Let(LetStatement {
@@ -383,16 +383,10 @@ impl<'a> Parser<'a> {
                     head: FunctionBranch {
                         start_token: phantom_variable.clone(),
                         parameters: NonEmpty {
-                            head: FunctionParameter {
-                                destructure_pattern: DestructurePattern::Identifier(
-                                    phantom_variable,
-                                ),
-                                type_annotation: None,
-                            },
+                            head: DestructurePattern::Identifier(phantom_variable),
                             tail: vec![],
                         },
                         body: Box::new(function_body),
-                        return_type_annotation: None,
                     },
                     tail: vec![],
                 },
@@ -422,32 +416,25 @@ impl<'a> Parser<'a> {
     fn parse_function_branch(&mut self, pipe_token: Token) -> Result<FunctionBranch, ParseError> {
         let context = ParseContext::ExpressionFunction;
         let parameters = self.parse_function_parameters()?;
-        let return_type_annotation = self.try_parse_function_return_type_annotation(context)?;
         self.eat_token(TokenType::FatArrowRight, context)?;
         let body = self.parse_expression()?;
         Ok(FunctionBranch {
             start_token: pipe_token,
             parameters,
             body: Box::new(body),
-            return_type_annotation,
         })
     }
-    fn parse_function_parameters(&mut self) -> Result<NonEmpty<FunctionParameter>, ParseError> {
-        let context = ParseContext::FunctionArguments;
-        let first_parameter = self.parse_function_parameter(context)?;
-        let mut rest_parameters = Vec::<FunctionParameter>::new();
+    fn parse_function_parameters(&mut self) -> Result<NonEmpty<DestructurePattern>, ParseError> {
+        let first_parameter = self.parse_destructure_pattern()?;
+        let mut rest_parameters = Vec::<DestructurePattern>::new();
         loop {
             match self.tokens.peek() {
                 Some(Token {
                     token_type: TokenType::FatArrowRight,
                     ..
-                })
-                | Some(Token {
-                    token_type: TokenType::ThinArrowRight,
-                    ..
                 }) => break,
                 _ => {
-                    rest_parameters.push(self.parse_function_parameter(context)?);
+                    rest_parameters.push(self.parse_destructure_pattern()?);
                 }
             };
         }
@@ -455,78 +442,6 @@ impl<'a> Parser<'a> {
             head: first_parameter,
             tail: rest_parameters,
         })
-
-        // if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis) {
-        //     let first_parameter = self.parse_function_parameter(context)?;
-        //     let mut rest_parameters = Vec::<FunctionParameter>::new();
-        //     let right_parenthesis = loop {
-        //         if self.try_eat_token(TokenType::Comma).is_none() {
-        //             break self.eat_token(TokenType::RightParenthesis, context)?;
-        //         }
-        //         let argument = self.parse_function_parameter(context)?;
-        //         rest_parameters.push(argument);
-        //         if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis) {
-        //             break right_parenthesis;
-        //         } else {
-        //             self.eat_token(TokenType::Comma, context)?;
-        //             if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)
-        //             {
-        //                 break right_parenthesis;
-        //             }
-        //         }
-        //     };
-        //     Ok(FunctionParameters::WithParenthesis {
-        //         left_parenthesis,
-        //         right_parenthesis,
-        //         parameters: NonEmpty {
-        //             head: first_parameter,
-        //             tail: rest_parameters,
-        //         },
-        //     })
-        // } else {
-        //     Ok(FunctionParameters::NoParenthesis {
-        //         parameter: self.parse_function_parameter(context)?,
-        //     })
-        // }
-    }
-    fn parse_function_parameter(
-        &mut self,
-        context: ParseContext,
-    ) -> Result<FunctionParameter, ParseError> {
-        let destructure_pattern = self.parse_destructure_pattern()?;
-        let type_annotation = self.try_parse_colon_type_annotation(context)?;
-        Ok(FunctionParameter {
-            destructure_pattern,
-            type_annotation,
-        })
-    }
-
-    fn try_parse_function_return_type_annotation(
-        &mut self,
-        context: ParseContext,
-    ) -> Result<Option<TypeAnnotation>, ParseError> {
-        if self.try_eat_token(TokenType::ThinArrowRight).is_some() {
-            match self.parse_type_annotation(context) {
-                Ok(type_annotation) => Ok(Some(type_annotation)),
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn try_parse_colon_type_annotation(
-        &mut self,
-        context: ParseContext,
-    ) -> Result<Option<TypeAnnotation>, ParseError> {
-        if self.try_eat_token(TokenType::Colon).is_some() {
-            match self.parse_type_annotation(context) {
-                Ok(type_annotation) => Ok(Some(type_annotation)),
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(None)
-        }
     }
 
     fn parse_type_annotation(
@@ -582,7 +497,7 @@ impl<'a> Parser<'a> {
                         let first_argument = self.parse_type_annotation(context)?;
                         let mut arguments_types = vec![];
                         loop {
-                            if self.try_eat_token(TokenType::ThinArrowRight).is_some() {
+                            if self.try_eat_token(TokenType::FatArrowRight).is_some() {
                                 break;
                             }
                             arguments_types.push(self.parse_type_annotation(context)?)
@@ -674,16 +589,10 @@ impl<'a> Parser<'a> {
                             head: FunctionBranch {
                                 start_token: period.clone(),
                                 parameters: NonEmpty {
-                                    head: FunctionParameter {
-                                        destructure_pattern: DestructurePattern::Identifier(
-                                            property_name.clone(),
-                                        ),
-                                        type_annotation: None,
-                                    },
+                                    head: DestructurePattern::Identifier(property_name.clone()),
                                     tail: vec![],
                                 },
                                 body: Box::new(function_body),
-                                return_type_annotation: None,
                             },
                             tail: vec![],
                         },

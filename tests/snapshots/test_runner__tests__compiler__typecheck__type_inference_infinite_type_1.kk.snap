@@ -5,7 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f = | x => x.x()
+let x: Integer =
+  let f = | x => x.x()
+  123
 
 ============
 EXIT CODE
@@ -21,10 +23,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/type_inference_infinite_type_1.kk:1:16
+  ┌─ tests/compiler/typecheck/type_inference_infinite_type_1.kk:2:18
   │
-1 │ let f = | x => x.x()
-  │                ^^^^^ Infinite type
+2 │   let f = | x => x.x()
+  │                  ^^^^^ Infinite type
   │
   = Infinite type expansion will happen when substituting `@TVAR2` into:
 

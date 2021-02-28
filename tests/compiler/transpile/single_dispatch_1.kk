@@ -1,5 +1,10 @@
-let foo = | _: String => "Hello"
-let foo = | _: Boolean => "World"
+let foo 
+  : | String => String
+  = | _ => "Hello"
+
+let foo 
+  : | Boolean => String
+  = | _ => "World"
 
 do "test".foo().print()
 do true.foo().print()

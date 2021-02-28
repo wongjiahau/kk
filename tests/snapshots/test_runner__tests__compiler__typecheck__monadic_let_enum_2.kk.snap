@@ -7,12 +7,14 @@ INPUT
 ============
 enum Color = Red Green Blue Yellow
 
-let colorToInteger = | xs =>
-  let Red = xs
-    else
-      | Green => 0
-      | Blue => 0
-  1
+do
+  let color_to_integer = | xs =>
+    let Red = xs
+      else
+        | Green => 0
+        | Blue => 0
+    1
+  null
 
 ============
 EXIT CODE
@@ -28,13 +30,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_enum_2.kk:4:3
+  ┌─ tests/compiler/typecheck/monadic_let_enum_2.kk:5:5
   │
-4 │ ╭   let Red = xs
-5 │ │     else
-6 │ │       | Green => 0
-7 │ │       | Blue => 0
-  │ ╰─────────────────^ Non-exhaustive cases
+5 │ ╭     let Red = xs
+6 │ │       else
+7 │ │         | Green => 0
+8 │ │         | Blue => 0
+  │ ╰───────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

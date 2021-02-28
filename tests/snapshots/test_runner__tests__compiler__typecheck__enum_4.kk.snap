@@ -7,7 +7,7 @@ INPUT
 ============
 enum Foo = Bar(String)
 
-let a = Bar
+let a: Foo = Bar
 
 ============
 EXIT CODE
@@ -23,10 +23,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/enum_4.kk:3:9
+  ┌─ tests/compiler/typecheck/enum_4.kk:3:14
   │
-3 │ let a = Bar
-  │         ^^^ Missing Payload
+3 │ let a: Foo = Bar
+  │              ^^^ Missing Payload
   │
   = This enum constructor requires a payload with the type of:
 

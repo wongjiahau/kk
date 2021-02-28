@@ -5,8 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo = | _: String => "Hello"
-let foo = | _: Integer => "World"
+let foo
+  : | String => String
+  = | _ => "Hello"
+
+let foo
+  : | Integer => String
+  = | _ => "World"
 
 do true.foo().print()
 
@@ -24,9 +29,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/single_dispatch_4.kk:4:9
+  ┌─ tests/compiler/typecheck/single_dispatch_4.kk:9:9
   │
-4 │ do true.foo().print()
+9 │ do true.foo().print()
   │         ^^^ No matching overload found.
   │
   =

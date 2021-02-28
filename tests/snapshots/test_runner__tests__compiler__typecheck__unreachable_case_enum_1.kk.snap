@@ -6,11 +6,13 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 enum Option<T> = Some(T) None
-let foo =
-  | Some(1) => Some("hi")
-  | Some(_) => Some("lol")
-  | Some(_) => None # This case is unreachable
-  | None => None
+do
+  let foo =
+    | Some(1) => Some("hi")
+    | Some(_) => Some("lol")
+    | Some(_) => None # This case is unreachable
+    | None => None
+  null
 
 ============
 EXIT CODE
@@ -26,9 +28,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_enum_1.kk:5:5
+  ┌─ tests/compiler/typecheck/unreachable_case_enum_1.kk:6:7
   │
-5 │   | Some(_) => None # This case is unreachable
-  │     ^^^^^^^ Unreachable case
+6 │     | Some(_) => None # This case is unreachable
+  │       ^^^^^^^ Unreachable case
   │
   = This case is unreachable because all possible cases are already handled by previous branches.

@@ -1,2 +1,4 @@
-let foo = 2
-let foo = | _: String => "Hello"
+let foo: Integer = 2
+let foo
+  : | String => String
+  = | _ => "Hello"

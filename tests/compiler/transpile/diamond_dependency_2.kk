@@ -1,3 +1,3 @@
 import "./diamond_dependency_1.kk" { foo }
 
-export let bar = 2
+export let bar: Integer = 2

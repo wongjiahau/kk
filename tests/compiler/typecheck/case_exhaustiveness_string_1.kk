@@ -1,4 +1,6 @@
-let isFriendly = 
-  | "cat" => true
-  | "tiger" => false
+do
+  let isFriendly = 
+    | "cat" => true
+    | "tiger" => false
+  null
 

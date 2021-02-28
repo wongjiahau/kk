@@ -5,9 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo =
-  | 'a' => true
-  | 'b' => false
+let foo
+  : | Character => Boolean
+  = | 'a' => true
+    | 'b' => false
 
 ============
 EXIT CODE
@@ -23,11 +24,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_character_1.kk:2:3
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_character_1.kk:3:5
   │
-2 │ ╭   | 'a' => true
-3 │ │   | 'b' => false
-  │ ╰────────────────^ Non-exhaustive cases
+3 │     = | 'a' => true
+  │ ╭─────^
+4 │ │     | 'b' => false
+  │ ╰──────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

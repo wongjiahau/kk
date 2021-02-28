@@ -5,11 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let bar =
-  | [] => true
-  | [true ..._] => false
-  | [false ..._] => false
-  | _ => false
+do
+  let bar =
+    | [] => true
+    | [true ..._] => false
+    | [false ..._] => false
+    | _ => false
+  null
 
 ============
 EXIT CODE
@@ -25,9 +27,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_array_2.kk:5:5
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_array_2.kk:6:7
   │
-5 │   | _ => false
-  │     ^ Unreachable case
+6 │     | _ => false
+  │       ^ Unreachable case
   │
   = This case is unreachable because all possible cases are already handled by previous branches.

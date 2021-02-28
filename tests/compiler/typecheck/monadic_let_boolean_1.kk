@@ -1,3 +1,5 @@
-let guess = | x => 
-  let true = x
-  2
+do
+  let guess = | x => 
+    let true = x
+    2
+  null

@@ -1,6 +1,7 @@
-let and = 
-  | true true => true
-  | _ _ => false
+let and
+  : | Boolean Boolean => Boolean
+  = | true true => true
+    | _ _ => false 
 
 do true.and(true).print()
 do true.and(false).print()

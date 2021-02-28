@@ -5,11 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f = | x =>
-  let {a} = x
-  a
+do
+  let f = | x =>
+    let {a} = x
+    a
 
-let result: String = {a: 2}.f()
+  let result: String = {a: 2}.f()
+  null
 
 ============
 EXIT CODE
@@ -25,10 +27,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/monadic_let_record_1.kk:5:22
+  ┌─ tests/compiler/typecheck/monadic_let_record_1.kk:6:24
   │
-5 │ let result: String = {a: 2}.f()
-  │                      ^^^^^^^^^^ Type mismatch
+6 │   let result: String = {a: 2}.f()
+  │                        ^^^^^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

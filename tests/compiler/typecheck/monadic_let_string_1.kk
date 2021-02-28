@@ -1,3 +1,5 @@
-let guess = | x => 
-  let "hey" = x
-  2
+let guess 
+  : | String => Integer
+  = | x => 
+    let "hey" = x
+    2

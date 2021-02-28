@@ -5,9 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let bar = | props: {
-  f: | { x: Integer } -> Integer
-} =>
+let bar
+  : | { f: | { x: Integer } => Integer } => Integer
+  = | props =>
   let { f } = props
   {x: "hi"}.f()
 

@@ -1,1 +1,1 @@
-let x = | x - 2
+let x : Integer = | x - 2

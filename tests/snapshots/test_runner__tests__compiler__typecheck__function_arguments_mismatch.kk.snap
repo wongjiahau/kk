@@ -5,8 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f =
-    | x: Integer => x
+let f
+  : | Integer => Integer
+  = | x => x
     | _ _ => 1
 
 ============
@@ -23,9 +24,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:3:5
+  ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:4:5
   │
-3 │     | _ _ => 1
+4 │     | _ _ => 1
   │     ^^^^^^^^^^ Function arguments length mismatch
   │
   = Expected 1 argument, but this function has 2 arguments

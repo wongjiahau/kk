@@ -5,9 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f = | {x y: {z}} => {x z}
-let x: {x: String z: Integer} = {x: "hi" y: {z: 3}}.f()
-let y: {x: String z: Integer} = {x: 2 y: {z: 3}}.f()
+do
+  let f = | {x y: {z}} => {x z}
+  let x = {x: "hi" y: {z: 3}}.f()
+  let y = {x: 2 y: {z: 3}}.f()
+  null
 
 ============
 EXIT CODE
@@ -23,18 +25,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/function_generalization_2.kk:3:33
+  ┌─ tests/compiler/typecheck/function_generalization_2.kk:4:15
   │
-3 │ let y: {x: String z: Integer} = {x: 2 y: {z: 3}}.f()
-  │                                 ^^^^^^^^^^^^^^^^^^^^ Type mismatch
+4 │   let y = {x: 2 y: {z: 3}}.f()
+  │               ^ Type mismatch
   │
-  = +----------------+----------------+
-    | EXPECTED TYPE  |  ACTUAL TYPE   |
-    +----------------+----------------+
-    |   {            |   {            |
-    |     x:         |     x:         |
-    | -     String,  | +     Integer, |
-    |     z:         |     z:         |
-    |       Integer, |       Integer, |
-    |   }            |   }            |
-    +----------------+----------------+
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - String      | + Integer   |
+    +---------------+-------------+

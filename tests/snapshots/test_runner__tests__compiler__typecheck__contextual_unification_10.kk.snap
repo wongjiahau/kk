@@ -5,9 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let bar = | Null -> Integer =>
-  let x = "hello"
-  x
+let bar
+  : | Null => Integer
+  = | null =>
+    let x = "hello"
+    x
 
 ============
 EXIT CODE
@@ -23,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_10.kk:3:3
+  ┌─ tests/compiler/typecheck/contextual_unification_10.kk:5:5
   │
-3 │   x
-  │   ^ Type mismatch
+5 │     x
+  │     ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

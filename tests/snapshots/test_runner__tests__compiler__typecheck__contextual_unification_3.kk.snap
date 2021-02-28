@@ -6,8 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let f
-  : | Integer -> Null
-  = | x -> Integer => 2
+  : | Integer => Null
+  = | x => 2
 
 ============
 EXIT CODE
@@ -25,11 +25,11 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/contextual_unification_3.kk:3:12
   │
-3 │   = | x -> Integer => 2
-  │            ^^^^^^^ Unnecessary type annotation
+3 │   = | x => 2
+  │            ^ Type mismatch
   │
-  = Based on higher level type annotations, we already know that the expected type is:
-
-      Null
-
-    Remove this type annotation to fix this error.
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - Null        | + Integer   |
+    +---------------+-------------+

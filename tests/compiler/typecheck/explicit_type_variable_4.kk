@@ -1,1 +1,3 @@
-let foo<A B> = | x:A -> B => x
+let foo<A B>
+  : | A => B
+  = | x => x

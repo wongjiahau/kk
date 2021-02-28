@@ -1,1 +1,3 @@
-let f = | { x: { z } }: { x: { y: Integer } } => 2
+let f 
+  : | { x: { y: Integer } } => Integer
+  = | { x: { z } } => 2

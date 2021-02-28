@@ -1,3 +1,4 @@
-let and = 
-  | true true => true
-  | false true => false
+let and 
+  : | Boolean Boolean => Boolean
+  = | true true => true
+    | false true => false

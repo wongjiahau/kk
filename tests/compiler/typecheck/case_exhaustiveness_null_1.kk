@@ -1,4 +1,5 @@
-let bomb = 
-  | null => true
-  | null => false
-
+do
+  let bomb = 
+    | null => true
+    | null => false
+  null

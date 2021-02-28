@@ -1,3 +1,3 @@
 enum Foo = Bar
 
-let a = Bar("hi")
+let a: Foo = Bar("hi")

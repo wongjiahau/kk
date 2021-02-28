@@ -1,5 +1,7 @@
-let f = | x => 
-  let {a} = x
-  a
+do
+  let f = | x => 
+    let {a} = x
+    a
 
-let result: String = {a: 2}.f()
+  let result: String = {a: 2}.f()
+  null
