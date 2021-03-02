@@ -339,6 +339,7 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                         '>' => TokenType::MoreThan,
                         '|' => TokenType::Pipe,
                         '_' => TokenType::Underscore,
+                        '`' => TokenType::Backtick,
                         '\n' => TokenType::Newline,
                         _ => return Err(TokenizeError::UnknownCharacter { character }),
                     },

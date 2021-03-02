@@ -26,7 +26,9 @@ error:
 1 │ let x : Integer = | x - 2
   │                       ^ Syntax error: not expecting `-` here
   │
-  = Note that `-` is only used to represent negative numbers, for example `-123.4`.
+  = Note that `-` is only used to represent negative numbers, for example:
+
+    -123.4.
 
     We found this error when we are trying to parse a Pattern.
     Examples of Pattern are:

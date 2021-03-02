@@ -781,6 +781,9 @@ pub fn rewrite_explicit_type_variables_as_implicit(
                 explicit_type_variable_names,
             )))
         }
+        Type::Quoted(type_value) => Type::Quoted(Box::new(
+            rewrite_explicit_type_variables_as_implicit(*type_value, explicit_type_variable_names),
+        )),
         Type::Named {
             name,
             symbol_uid,
@@ -874,6 +877,11 @@ pub fn get_type_annotation_position(type_annotation: &TypeAnnotation) -> Positio
                 ..
             }) => join_position(name.position, right_angular_bracket.position),
         },
+        TypeAnnotation::Quoted {
+            opening_backtick,
+            closing_backtick,
+            ..
+        } => join_position(opening_backtick.position, closing_backtick.position),
     }
 }
 
@@ -933,6 +941,11 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         | Expression::Variable(token)
         | Expression::Null(token)
         | Expression::Boolean { token, .. } => token.position,
+        Expression::Quoted {
+            opening_backtick,
+            closing_backtick,
+            ..
+        } => join_position(opening_backtick.position, closing_backtick.position),
         Expression::EnumConstructor { name, payload, .. } => match payload {
             None => name.position,
             Some(payload) => join_position(name.position, payload.right_parenthesis.position),
@@ -1048,6 +1061,28 @@ pub fn unify_type_(
                 Ok(Type::ExplicitTypeVariable {
                     name: expected_name,
                 })
+            }
+        }
+
+        (Type::Quoted(expected_type), Type::Quoted(actual_type)) => {
+            match unify_type(
+                module,
+                expected_type.as_ref(),
+                actual_type.as_ref(),
+                position,
+            ) {
+                Ok(element_type) => Ok(Type::Quoted(Box::new(element_type))),
+                Err(UnifyError {
+                    kind: UnifyErrorKind::TypeMismatch { .. },
+                    ..
+                }) => Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::TypeMismatch {
+                        expected_type: Type::Quoted(expected_type),
+                        actual_type: Type::Quoted(actual_type),
+                    },
+                }),
+                Err(error) => Err(error),
             }
         }
         (Type::Array(expected_element_type), Type::Array(actual_element_type)) => {
@@ -1346,6 +1381,11 @@ pub fn rewrite_type_variable_in_type(
                 Type::ImplicitTypeVariable { name }
             }
         }
+        Type::Quoted(type_value) => Type::Quoted(Box::new(rewrite_type_variable_in_type(
+            from_type_variable,
+            to_type,
+            *type_value,
+        ))),
         Type::Named {
             name,
             symbol_uid,
@@ -1530,6 +1570,66 @@ fn infer_expression_type_(
             type_value: Type::Boolean,
             expression: TypecheckedExpression::Boolean(*value),
         }),
+        Expression::Quoted {
+            expression,
+            opening_backtick,
+            closing_backtick,
+        } => {
+            let position = join_position(opening_backtick.position, closing_backtick.position);
+            let expected_type = match expected_type {
+                Some(Type::Quoted(type_value)) => Some(*type_value),
+                _ => None,
+            };
+            let result = infer_expression_type(module, expected_type, expression)?;
+            Ok(InferExpressionResult {
+                type_value: Type::Quoted(Box::new(result.type_value)),
+                expression: TypecheckedExpression::Record {
+                    key_value_pairs: vec![
+                        ("value".to_string(), result.expression),
+                        (
+                            "meta".to_string(),
+                            TypecheckedExpression::Record {
+                                key_value_pairs: vec![
+                                    (
+                                        "filename".to_string(),
+                                        TypecheckedExpression::String {
+                                            representation: format!(
+                                                "\"{}\"",
+                                                module.meta.uid.string_value(),
+                                            ),
+                                        },
+                                    ),
+                                    (
+                                        "line_start".to_string(),
+                                        TypecheckedExpression::Integer {
+                                            representation: position.line_start.to_string(),
+                                        },
+                                    ),
+                                    (
+                                        "line_end".to_string(),
+                                        TypecheckedExpression::Integer {
+                                            representation: position.line_end.to_string(),
+                                        },
+                                    ),
+                                    (
+                                        "column_start".to_string(),
+                                        TypecheckedExpression::Integer {
+                                            representation: position.column_start.to_string(),
+                                        },
+                                    ),
+                                    (
+                                        "column_end".to_string(),
+                                        TypecheckedExpression::Integer {
+                                            representation: position.column_end.to_string(),
+                                        },
+                                    ),
+                                ],
+                            },
+                        ),
+                    ],
+                },
+            })
+        }
         Expression::EnumConstructor { name, payload, .. } => {
             let result = get_enum_type(module, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
@@ -1597,33 +1697,50 @@ fn infer_expression_type_(
             property_name,
         } => {
             let expression = infer_expression_type(module, None, expression)?;
-            match expression.type_value {
-                Type::Record { key_type_pairs } => {
-                    match key_type_pairs
-                        .iter()
-                        .find(|(key, _)| *key == property_name.representation)
-                    {
-                        None => Err(UnifyError {
-                            position: property_name.position,
-                            kind: UnifyErrorKind::NoSuchPropertyOnThisRecord {
-                                expected_keys: key_type_pairs
-                                    .iter()
-                                    .map(|(key, _)| key.clone())
-                                    .collect(),
+            let key_type_pairs = match expression.type_value {
+                // Re-pack quoted type as record
+                Type::Quoted(type_value) => {
+                    vec![
+                        ("value".to_string(), *type_value),
+                        (
+                            "meta".to_string(),
+                            Type::Record {
+                                key_type_pairs: vec![
+                                    ("filename".to_string(), Type::String),
+                                    ("line_start".to_string(), Type::Integer),
+                                    ("line_end".to_string(), Type::Integer),
+                                    ("column_start".to_string(), Type::Integer),
+                                    ("column_end".to_string(), Type::Integer),
+                                ],
                             },
-                        }),
-                        Some((_, type_value)) => Ok(InferExpressionResult {
-                            type_value: type_value.clone(),
-                            expression: TypecheckedExpression::RecordAccess {
-                                expression: Box::new(expression.expression),
-                                property_name: property_name.representation.clone(),
-                            },
-                        }),
-                    }
+                        ),
+                    ]
                 }
-                actual_type => Err(UnifyError {
+                Type::Record { key_type_pairs } => key_type_pairs,
+                actual_type => {
+                    return Err(UnifyError {
+                        position: property_name.position,
+                        kind: UnifyErrorKind::CannotAccessPropertyOfNonRecord { actual_type },
+                    })
+                }
+            };
+
+            match key_type_pairs
+                .iter()
+                .find(|(key, _)| *key == property_name.representation)
+            {
+                None => Err(UnifyError {
                     position: property_name.position,
-                    kind: UnifyErrorKind::CannotAccessPropertyOfNonRecord { actual_type },
+                    kind: UnifyErrorKind::NoSuchPropertyOnThisRecord {
+                        expected_keys: key_type_pairs.iter().map(|(key, _)| key.clone()).collect(),
+                    },
+                }),
+                Some((_, type_value)) => Ok(InferExpressionResult {
+                    type_value: type_value.clone(),
+                    expression: TypecheckedExpression::RecordAccess {
+                        expression: Box::new(expression.expression),
+                        property_name: property_name.representation.clone(),
+                    },
                 }),
             }
         }
@@ -2635,6 +2752,12 @@ pub fn type_annotation_to_type(
                 return_type: Box::new(type_annotation_to_type(module, return_type)?),
             }))
         }
+        TypeAnnotation::Quoted {
+            type_annotation, ..
+        } => Ok(Type::Quoted(Box::new(type_annotation_to_type(
+            module,
+            type_annotation.as_ref(),
+        )?))),
     }
 }
 
@@ -2926,6 +3049,11 @@ fn substitute_type_variable_in_type(
             to_type,
             type_value.as_ref(),
         ))),
+        Type::Quoted(type_value) => Type::Quoted(Box::new(substitute_type_variable_in_type(
+            from_type_variable,
+            to_type,
+            type_value.as_ref(),
+        ))),
         Type::ImplicitTypeVariable { name } => {
             if *name == *from_type_variable {
                 to_type.clone()
@@ -2991,7 +3119,9 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
         | Type::Boolean
         | Type::Underscore
         | Type::ExplicitTypeVariable { .. } => HashSet::new(),
-        Type::Array(type_value) => get_free_type_variables_in_type(type_value.as_ref()),
+        Type::Array(type_value) | Type::Quoted(type_value) => {
+            get_free_type_variables_in_type(type_value.as_ref())
+        }
         Type::Tuple(types) => types
             .clone()
             .into_vector()

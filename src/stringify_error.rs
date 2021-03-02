@@ -189,31 +189,31 @@ struct ParseContextDescription {
 
 fn explain_token_type_usage(token_type: TokenType) -> &'static str {
     match token_type {
-        TokenType::KeywordLet => "used for defining variables, for example `let x = 1`",
-        TokenType::KeywordType => "used for defining type alias, for example `type People = { name: String }`",
-        TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example `enum Color = Red() Blue()`",
-        TokenType::KeywordDo => "used for defining expression with side effects, such as `do \"Hello world\".print()`",
-        TokenType::KeywordElse => "only used in monadic let bindings, for example: `let Some(x) = y else | _ => \"Nope\"`",
+        TokenType::KeywordLet => "used for defining variables, for example:\n\n\tlet x = 1",
+        TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
+        TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example:\n\n\tenum Color = Red() Blue()",
+        TokenType::KeywordDo => "used for defining expression with side effects, such as:\n\n\tdo \"Hello world\".print()",
+        TokenType::KeywordElse => "only used in monadic let bindings, for example:\n\n\tlet Some(x) = y else | _ => \"Nope\"",
         TokenType::KeywordNull => "only used to create a value with the null type (i.e. unit type)",
         TokenType::KeywordTrue | TokenType::KeywordFalse
             => "only used to create a boolean value",
-        TokenType::KeywordImport => "only used for importing symbols from other files, for example: `import \"./foo.kk\" { bar spam hello: hello2}`",
-        TokenType::KeywordExport => "only used for exporting symbols, for example: `export let foo = 1`",
+        TokenType::KeywordImport => "only used for importing symbols from other files, for example:\n\n\timport \"./foo.kk\" { bar spam hello: hello2}",
+        TokenType::KeywordExport => "only used for exporting symbols, for example:\n\n\texport let foo = 1",
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
-        TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example `{ x: string }`, and constructing record value, for example `{ x = 'hello' }`",
+        TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example:\n\n\t{ x: string }\n\nand constructing record value, for example: \n\n\t{ x = 'hello' }",
 
         TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions and enum constructor only.",
-        TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example `[1,2,3]`",
-        TokenType::Colon => "only used for annotating types, for example `{ x: string }`",
-        TokenType::DoubleColon => "only used for scope resolution, for example: `Color::Red()`",
-        TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example: `type Box<T> = { value: T }`",
-        TokenType::Equals => "used for declaring variables locally, for example `let x = 1`",
-        TokenType::Period => "used for calling a function, for example `1.add(2)`",
+        TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example:\n\n\t[1,2,3]",
+        TokenType::Colon => "only used for annotating types, for example:\n\n\t{ x: string }",
+        TokenType::DoubleColon => "only used for scope resolution, for example:\n\n\tColor::Red()",
+        TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example:\n\n\ttype Box<T> = { value: T }",
+        TokenType::Equals => "used for declaring variables locally, for example:\n\n\tlet x = 1",
+        TokenType::Period => "used for calling a function, for example:\n\n\t1.add(2)",
         TokenType::Spread => panic!("Subject to change"),
-        TokenType::Comma => "used for record punning, for example `{x,}`",
-        TokenType::Minus => "only used to represent negative numbers, for example `-123.4`",
-        TokenType::FatArrowRight | TokenType::Pipe => "only used for creating function, for example `| x => x.add(1)`",
-        TokenType::ThinArrowRight => "only used for annotating the return type of a function, for example `| x -> String => \"Hello\"`",
+        TokenType::Comma => "used for record punning, for example:\n\n\t{x,}",
+        TokenType::Minus => "only used to represent negative numbers, for example:\n\n\t-123.4",
+        TokenType::FatArrowRight | TokenType::Pipe => "only used for creating function, for example:\n\n\t| x => x.add(1)",
+        TokenType::ThinArrowRight => "only used for annotating the return type of a function, for example:\n\n\t| x -> String => \"Hello\"",
         TokenType::Underscore => "used in pattern matching to match values that are not used afterwards",
         TokenType::Identifier => "used to represent the name of a variable",
         TokenType::String => "only used to represent string values",
@@ -221,7 +221,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Integer => "only used to represent integer values",
         TokenType::Character => "only used to represent character",
         TokenType::Comment => "only used for commenting",
-        TokenType::MultilineComment => "only used for documentation"
+        TokenType::MultilineComment => "only used for documentation",
+        TokenType::Backtick => "only used for quoting expressions, for example:\n\n\t`[123]`"
     }
 }
 
@@ -265,6 +266,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::ExpressionEnumConstructor => ParseContextDescription {
             name: "Enum Constructor",
             examples: vec!["None()", "Some(0)"],
+        },
+        ParseContext::ExpressionQuoted => ParseContextDescription {
+            name: "Quoted Expression",
+            examples: vec!["`123`", "`[{x: 2}]`"],
         },
         ParseContext::Statement => ParseContextDescription {
             name: "Statement",
@@ -311,6 +316,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::TypeAnnotationFunction => ParseContextDescription {
             name: "Function Type Annotation",
             examples: vec!["| Boolean -> Boolean", "| Integer Integer -> Integer"],
+        },
+        ParseContext::TypeAnnotationQuoted => ParseContextDescription {
+            name: "Quoted Type Annotation",
+            examples: vec!["`String`", "`{name: String}`"],
         },
         ParseContext::Pattern => ParseContextDescription {
             name: "Pattern",
@@ -383,6 +392,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Integer => "123",
         TokenType::Comment => "// this is a comment",
         TokenType::MultilineComment => "/// This is a documentation.",
+        TokenType::Backtick => "`",
     }
 }
 
@@ -806,6 +816,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
             format!("[\n{}\n]", stringify_type(*element_type, indent_level + 1)),
             indent_level * 2,
         ),
+        Type::Quoted(type_value) => format!("`{}`", stringify_type(*type_value, indent_level)),
         Type::Named {
             name,
             type_arguments: arguments,

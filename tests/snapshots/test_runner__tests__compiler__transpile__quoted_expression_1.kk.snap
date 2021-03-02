@@ -1,0 +1,32 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let hello_world: `String` = `"yoyo"`
+
+do hello_world.value.print()
+do hello_world.meta.print()
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+yoyo
+{
+  filename: 'tests/compiler/transpile/quoted_expression_1.kk',
+  line_start: 0,
+  line_end: 0,
+  column_start: 28,
+  column_end: 35
+}
+
+============
+STDERR
+============

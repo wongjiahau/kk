@@ -31,6 +31,7 @@ pub enum ParseContext {
     ExpressionRecord,
     ExpressionRecordUpdate,
     ExpressionEnumConstructor,
+    ExpressionQuoted,
 
     // Statement
     Statement,
@@ -43,6 +44,7 @@ pub enum ParseContext {
     TypeAnnotationRecord,
     TypeAnnotationArray,
     TypeAnnotationFunction,
+    TypeAnnotationQuoted,
 
     // Destructure pattern
     Pattern,
@@ -457,6 +459,17 @@ impl<'a> Parser<'a> {
                         type_arguments: self.try_parse_type_arguments()?,
                     })
                 }
+                TokenType::Backtick => {
+                    let context = ParseContext::TypeAnnotationQuoted;
+                    let opening_backtick = token.clone();
+                    let type_annotation = self.parse_type_annotation(context)?;
+                    let closing_backtick = self.eat_token(TokenType::Backtick, context)?;
+                    Ok(TypeAnnotation::Quoted {
+                        opening_backtick,
+                        type_annotation: Box::new(type_annotation),
+                        closing_backtick,
+                    })
+                }
                 TokenType::LeftSquareBracket => {
                     let context = ParseContext::TypeAnnotationArray;
                     let left_square_bracket = token.clone();
@@ -730,6 +743,17 @@ impl<'a> Parser<'a> {
                     } else {
                         Ok(Expression::Variable(token.clone()))
                     }
+                }
+                TokenType::Backtick => {
+                    let context = ParseContext::ExpressionQuoted;
+                    let opening_backtick = token.clone();
+                    let expression = self.parse_expression()?;
+                    let closing_backtick = self.eat_token(TokenType::Backtick, context)?;
+                    Ok(Expression::Quoted {
+                        opening_backtick,
+                        expression: Box::new(expression),
+                        closing_backtick,
+                    })
                 }
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             }

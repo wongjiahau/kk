@@ -109,6 +109,7 @@ pub enum Type {
         name: String,
         type_arguments: Vec<(String, Type)>,
     },
+    Quoted(Box<Type>),
     Function(FunctionType),
     Tuple(Box<NonEmpty<Type>>),
     Boolean,
@@ -156,6 +157,11 @@ pub struct NamedTypeAnnotationArguments {
 
 #[derive(Debug, Clone)]
 pub enum TypeAnnotation {
+    Quoted {
+        opening_backtick: Token,
+        type_annotation: Box<TypeAnnotation>,
+        closing_backtick: Token,
+    },
     Named {
         name: Token,
         type_arguments: Option<TypeArguments>,
@@ -252,6 +258,11 @@ pub enum Expression {
     String(Token),
     Character(Token),
     Variable(Token),
+    Quoted {
+        opening_backtick: Token,
+        expression: Box<Expression>,
+        closing_backtick: Token,
+    },
     EnumConstructor {
         name: Token,
         payload: Option<Box<ExpressionEnumConstructorPayload>>,
@@ -436,6 +447,7 @@ pub enum TokenType {
     Integer,
     Float,
     DoubleColon,
+    Backtick,
 
     /// Comments starts with hash (#)
     Comment,
@@ -446,10 +458,15 @@ pub enum TokenType {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Position {
+    /// First line is zero.
     pub line_start: usize,
     pub line_end: usize,
+
+    /// First column is zero.
     pub column_start: usize,
     pub column_end: usize,
+
+    /// First character is zero.
     pub character_index_start: usize,
     pub character_index_end: usize,
 }

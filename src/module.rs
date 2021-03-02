@@ -396,6 +396,9 @@ impl Module {
                     })
                     .collect(),
             },
+            Type::Quoted(type_value) => Type::Quoted(Box::new(
+                self.apply_subtitution_to_type(type_value.as_ref()),
+            )),
         }
     }
 
