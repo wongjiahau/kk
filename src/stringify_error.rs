@@ -17,24 +17,26 @@ use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
 pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeError) {
-    match tokenize_error {
+    let (range, error) = match tokenize_error {
         TokenizeError::UnterminatedMultilineComment { position } => {
             let range = ErrorRange {
                 character_index_start: position.character_index_start,
                 character_index_end: position.character_index_end,
             };
-            print_error(module_meta, range, StringifiedError {
-                summary: "Syntax error: Unterminated multiline comment".to_string(),
-                body: "Multiline comment must start and end with three hashes. Consider adding triple hash (###) at the end.".to_string()
-            })
+            (
+                range,
+                StringifiedError {
+                    summary: "Syntax error: Unterminated multiline comment".to_string(),
+                    body: "Multiline comment must start and end with three hashes. Consider adding triple hash (###) at the end.".to_string()
+                }
+            )
         }
         TokenizeError::InvalidToken { error, position } => {
             let range = ErrorRange {
                 character_index_start: position.character_index_start,
                 character_index_end: position.character_index_end,
             };
-            print_error(
-                module_meta,
+            (
                 range,
                 StringifiedError {
                     summary: "Syntax error: Invalid token".to_string(),
@@ -47,8 +49,7 @@ pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeErr
                 character_index_start: character.index,
                 character_index_end: character.index,
             };
-            print_error(
-                module_meta,
+            (
                 range,
                 StringifiedError {
                     summary: "Syntax error: Unknown character".to_string(),
@@ -61,8 +62,7 @@ pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeErr
                 character_index_start: position.character_index_start,
                 character_index_end: position.character_index_end,
             };
-            print_error(
-                module_meta,
+            (
                 range,
                 StringifiedError {
                     summary: "Syntax error: unterminated character literal".to_string(),
@@ -75,8 +75,7 @@ pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeErr
                 character_index_start: position.character_index_start,
                 character_index_end: position.character_index_end,
             };
-            print_error(
-                module_meta,
+            (
                 range,
                 StringifiedError {
                     summary: "Syntax error: unterminated string literal".to_string(),
@@ -90,9 +89,7 @@ pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeErr
                 character_index_start: position.character_index_start,
                 character_index_end: position.character_index_end,
             };
-
-            print_error(
-                module_meta,
+            (
                 range,
                 StringifiedError {
                     summary: "Syntax error: character literal cannot be empty".to_string(),
@@ -101,7 +98,40 @@ pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeErr
                 },
             )
         }
-    }
+        TokenizeError::UnexpectedCharacter {
+            position,
+            expected_character_value,
+        } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            (
+                range,
+                StringifiedError {
+                    summary: "Syntax error: unexpected character".to_string(),
+                    body: format!("The expected character is: {}", expected_character_value),
+                },
+            )
+        }
+        TokenizeError::UnexpectedEOF {
+            expected_character_value,
+        } => {
+            let range = ErrorRange {
+                character_index_end: 0,
+                character_index_start: 0,
+            };
+            (
+                range,
+                StringifiedError {
+                    summary: "Syntax error: unexpected EOF (end of file)".to_string(),
+                    body: format!("The expected character is: {}", expected_character_value),
+                },
+            )
+        }
+    };
+
+    print_error(module_meta, range, error)
 }
 
 pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
@@ -222,7 +252,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Character => "only used to represent character",
         TokenType::Comment => "only used for commenting",
         TokenType::MultilineComment => "only used for documentation",
-        TokenType::Backtick => "only used for quoting expressions, for example:\n\n\t`[123]`"
+        TokenType::Backtick => "only used for quoting expressions, for example:\n\n\t`[123]`",
+        TokenType::JavascriptCode => "only used for declaring Javascript interop code."
     }
 }
 
@@ -230,7 +261,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
     match parse_context {
         ParseContext::Expression => ParseContextDescription {
             name: "Expression",
-            examples: vec!["123", "\"hello world\"", "{ x 3 }", "[ 2 ]", "Some(true)"],
+            examples: vec!["123", "\"hello world\"", "{ x: 3 }", "[ 2 ]", "Some(true)"],
         },
         ParseContext::ExpressionLet => ParseContextDescription {
             name: "Let Expression",
@@ -335,7 +366,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::PatternRecord => ParseContextDescription {
             name: "Record Pattern",
-            examples: vec!["{ x, y, }", "{ x true y Nil() }"],
+            examples: vec!["{ x y }", "{ x: true y: Nil() }"],
         },
         ParseContext::TypeArguments => ParseContextDescription {
             name: "Type Arguments",
@@ -390,9 +421,10 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Character => "'c'",
         TokenType::Float => "123.0",
         TokenType::Integer => "123",
-        TokenType::Comment => "// this is a comment",
-        TokenType::MultilineComment => "/// This is a documentation.",
+        TokenType::Comment => "# this is a comment",
+        TokenType::MultilineComment => "### This is a documentation. ###",
         TokenType::Backtick => "`",
+        TokenType::JavascriptCode => "@@@ // this is javascript @@@",
     }
 }
 

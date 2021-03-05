@@ -1,3 +1,6 @@
+use std::iter::Peekable;
+use std::vec::IntoIter;
+
 use crate::ast::*;
 use peeking_take_while::PeekableExt;
 
@@ -10,12 +13,32 @@ pub struct Character {
 }
 
 pub enum TokenizeError {
-    CharacterLiteralCannotBeEmpty { position: Position },
-    UnterminatedCharacterLiteral { position: Position },
-    UnterminatedMultilineComment { position: Position },
-    UnterminatedStringLiteral { position: Position },
-    InvalidToken { error: String, position: Position },
-    UnknownCharacter { character: Character },
+    CharacterLiteralCannotBeEmpty {
+        position: Position,
+    },
+    UnterminatedCharacterLiteral {
+        position: Position,
+    },
+    UnterminatedMultilineComment {
+        position: Position,
+    },
+    UnterminatedStringLiteral {
+        position: Position,
+    },
+    InvalidToken {
+        error: String,
+        position: Position,
+    },
+    UnknownCharacter {
+        character: Character,
+    },
+    UnexpectedCharacter {
+        position: Position,
+        expected_character_value: char,
+    },
+    UnexpectedEOF {
+        expected_character_value: char,
+    },
 }
 
 pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
@@ -120,6 +143,40 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                     })
                 }
             }
+            '@' => {
+                let first_alias = character.clone();
+                let _second_alias = eat_character(&mut it, '@')?;
+                let _third_alias = eat_character(&mut it, '@')?;
+
+                let mut characters = Vec::new();
+                let mut ending_aliases_count = 0;
+                let (characters, last_alias) = loop {
+                    if let Some(character) = it.next() {
+                        if character.value == '@' {
+                            ending_aliases_count += 1;
+                            if ending_aliases_count == 3 {
+                                break (characters, character);
+                            }
+                        } else {
+                            ending_aliases_count = 0;
+                            characters.push(character)
+                        }
+                    } else {
+                        return Err(TokenizeError::UnexpectedEOF {
+                            expected_character_value: '@',
+                        });
+                    }
+                };
+                tokens.push(Token {
+                    token_type: TokenType::JavascriptCode,
+                    position: make_position(first_alias, Some(&last_alias)),
+                    representation: characters
+                        .into_iter()
+                        .map(|character| character.value.to_string())
+                        .collect::<Vec<String>>()
+                        .join(""),
+                })
+            }
             '\'' => match it.next() {
                 Some(quote @ Character { value: '\'', .. }) => {
                     return Err(TokenizeError::CharacterLiteralCannotBeEmpty {
@@ -198,17 +255,25 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                     continue;
                 };
 
-                let fractional = match it.peek() {
+                match it.peek() {
                     Some(Character { value: '.', .. }) => {
                         let period = it.next().unwrap();
-                        let characters = it
-                            // .by_ref()
+                        let fractional = it
                             .peeking_take_while(|character| character.value.is_digit(10))
                             .collect::<Vec<Character>>();
 
-                        if characters.is_empty() {
+                        if fractional.is_empty() {
                             // means there's no fractional part
                             // also, we need to push a period token
+                            tokens.push(Token {
+                                token_type: TokenType::Integer,
+                                representation: format!(
+                                    "{}{}",
+                                    character.value,
+                                    stringify(intergral.clone())
+                                ),
+                                position: make_position(character, intergral.last()),
+                            });
                             tokens.push(Token {
                                 token_type: TokenType::Period,
                                 representation: period.value.to_string(),
@@ -221,34 +286,31 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                                     character_index_end: period.index,
                                 },
                             });
-                            None
                         } else {
-                            Some(characters)
+                            tokens.push(Token {
+                                token_type: TokenType::Float,
+                                representation: format!(
+                                    "{}{}.{}",
+                                    character.value,
+                                    stringify(intergral.clone()),
+                                    stringify(fractional.clone())
+                                ),
+                                position: make_position(character, fractional.last()),
+                            })
                         }
                     }
-                    _ => None,
+                    _ => {
+                        tokens.push(Token {
+                            token_type: TokenType::Integer,
+                            representation: format!(
+                                "{}{}",
+                                character.value,
+                                stringify(intergral.clone())
+                            ),
+                            position: make_position(character, intergral.last()),
+                        });
+                    }
                 };
-                tokens.push(match fractional {
-                    None => Token {
-                        token_type: TokenType::Integer,
-                        representation: format!(
-                            "{}{}",
-                            character.value,
-                            stringify(intergral.clone())
-                        ),
-                        position: make_position(character, intergral.last()),
-                    },
-                    Some(fractional) => Token {
-                        token_type: TokenType::Float,
-                        representation: format!(
-                            "{}{}.{}",
-                            character.value,
-                            stringify(intergral.clone()),
-                            stringify(fractional.clone())
-                        ),
-                        position: make_position(character, fractional.last()),
-                    },
-                })
             }
             'A'..='Z' | 'a'..='z' => {
                 let characters = it
@@ -348,6 +410,27 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
         }
     }
     Ok(tokens)
+}
+
+fn eat_character(
+    it: &mut Peekable<IntoIter<Character>>,
+    value: char,
+) -> Result<Character, TokenizeError> {
+    match it.next() {
+        Some(character) => {
+            if character.value == value {
+                Ok(character)
+            } else {
+                Err(TokenizeError::UnexpectedCharacter {
+                    position: make_position(character, None),
+                    expected_character_value: value,
+                })
+            }
+        }
+        None => Err(TokenizeError::UnexpectedEOF {
+            expected_character_value: value,
+        }),
+    }
 }
 
 pub fn make_position(first: Character, last: Option<&Character>) -> Position {

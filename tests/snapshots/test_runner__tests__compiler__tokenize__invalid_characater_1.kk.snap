@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x = @
+let x = ~
 
 ============
 EXIT CODE
@@ -23,7 +23,7 @@ STDERR
 error:
   ┌─ tests/compiler/tokenize/invalid_characater_1.kk:1:9
   │
-1 │ let x = @
+1 │ let x = ~
   │         ^ Syntax error: Unknown character
   │
   = This character is not used anywhere in the syntax of KK.

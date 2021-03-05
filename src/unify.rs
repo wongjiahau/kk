@@ -988,6 +988,7 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             true_branch,
             ..
         } => join_position(keyword_let.position, get_expression_position(&true_branch)),
+        Expression::UnsafeJavascript { code } => code.position,
     }
 }
 
@@ -1258,20 +1259,27 @@ pub fn unify_type_(
                 key_type_pairs: mut actual_key_type_pairs,
             },
         ) => {
-            let mut expected_keys = expected_key_type_pairs
+            let expected_keys = expected_key_type_pairs
                 .clone()
                 .into_iter()
-                .map(|(key, _)| key);
+                .map(|(key, _)| key)
+                .collect::<Vec<String>>();
 
-            let mut actual_keys = actual_key_type_pairs
+            let actual_keys = actual_key_type_pairs
                 .clone()
                 .into_iter()
-                .map(|(key, _)| key);
+                .map(|(key, _)| key)
+                .collect::<Vec<String>>();
 
             // 1. Find for missing keys
             let missing_keys: Vec<String> = expected_keys
                 .clone()
-                .filter(|expected_key| !actual_keys.any(|actual_key| *expected_key == actual_key))
+                .into_iter()
+                .filter(|expected_key| {
+                    !actual_keys
+                        .iter()
+                        .any(|actual_key| **expected_key == *actual_key)
+                })
                 .collect();
 
             if !missing_keys.is_empty() {
@@ -1283,7 +1291,12 @@ pub fn unify_type_(
 
             // 2. Find for extraneous keys
             let extraneous_keys: Vec<String> = actual_keys
-                .filter(|actual_key| !expected_keys.any(|expected_key| expected_key == *actual_key))
+                .into_iter()
+                .filter(|actual_key| {
+                    !expected_keys
+                        .iter()
+                        .any(|expected_key| *expected_key == *actual_key)
+                })
                 .collect();
 
             if !extraneous_keys.is_empty() {
@@ -1504,6 +1517,7 @@ pub struct TypeVariableSubstitution {
 }
 type TypeVariableSubstitutions = Vec<TypeVariableSubstitution>;
 
+#[derive(Debug)]
 struct InferExpressionResult {
     expression: TypecheckedExpression,
     type_value: Type,
@@ -2240,6 +2254,12 @@ fn infer_expression_type_(
                 },
             })
         }
+        Expression::UnsafeJavascript { code } => Ok(InferExpressionResult {
+            type_value: module.introduce_implicit_type_variable(None)?,
+            expression: TypecheckedExpression::Javascript {
+                code: code.representation.clone(),
+            },
+        }),
     }?;
     Ok(InferExpressionResult {
         type_value: module.apply_subtitution_to_type(&result.type_value),

@@ -188,6 +188,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
+        TypecheckedExpression::Javascript { code } => code,
     }
 }
 

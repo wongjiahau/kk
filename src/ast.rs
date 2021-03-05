@@ -297,6 +297,9 @@ pub enum Expression {
         true_branch: Box<Expression>,
         false_branch: Option<Box<Function>>,
     },
+    UnsafeJavascript {
+        code: Token,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -454,6 +457,8 @@ pub enum TokenType {
 
     /// Multiline comment starts and ends with triple hash (###)
     MultilineComment,
+
+    JavascriptCode,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

@@ -63,6 +63,9 @@ pub enum TypecheckedExpression {
     Array {
         elements: Vec<TypecheckedExpression>,
     },
+    Javascript {
+        code: String,
+    },
 }
 
 #[derive(Debug, Clone)]

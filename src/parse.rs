@@ -695,6 +695,9 @@ impl<'a> Parser<'a> {
                     let let_token = self.tokens.next().unwrap().clone();
                     self.parse_let_expression(let_token)
                 }
+                TokenType::JavascriptCode => Ok(Expression::UnsafeJavascript {
+                    code: self.tokens.next().unwrap().clone(),
+                }),
                 _ => {
                     let simple_expression = self.parse_simple_expression()?;
                     self.try_parse_dot_expression(simple_expression)

@@ -41,7 +41,7 @@ error:
 
     Example #3:
 
-      { x 3 }
+      { x: 3 }
 
     Example #4:
 
