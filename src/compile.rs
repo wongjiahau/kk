@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, process};
 
 use crate::tokenize::tokenize;
 use crate::transpile_cps::transpile_statements;
@@ -49,6 +49,9 @@ pub fn compile(module_meta: ModuleMeta) {
                             }
                             if !stderr.is_empty() {
                                 eprintln!("{}", stderr.trim())
+                            }
+                            if let Some(code) = output.status.code() {
+                                process::exit(code)
                             }
                         }
                     }
