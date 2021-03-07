@@ -63,11 +63,23 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 column_number,
             },
         )
+        .into_iter()
         .collect::<Vec<Character>>();
 
     let mut it = characters.into_iter().peekable();
-    let mut tokens = Vec::<Token>::new();
+    let tokens = eat_token(&mut it, EatMode::Normal)?;
+    Ok(tokens)
+}
 
+enum EatMode {
+    Normal,
+    DocumentationCodeSnippet,
+}
+fn eat_token(
+    it: &mut Peekable<IntoIter<Character>>,
+    eat_mode: EatMode,
+) -> Result<Vec<Token>, TokenizeError> {
+    let mut tokens = Vec::new();
     while let Some(character) = it.next() {
         match character.value {
             '_' => tokens.push(Token {
@@ -75,6 +87,33 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 representation: "_".to_string(),
                 position: make_position(character, None),
             }),
+            '`' => {
+                let backticks = it
+                    .by_ref()
+                    .peeking_take_while(|character| character.value == '`')
+                    .collect::<Vec<Character>>();
+
+                tokens.push(Token {
+                    token_type: TokenType::Backtick,
+                    representation: "`".to_string(),
+                    position: make_position(character, None),
+                });
+                tokens.extend(
+                    backticks
+                        .iter()
+                        .map(|backtick| Token {
+                            token_type: TokenType::Backtick,
+                            representation: "`".to_string(),
+                            position: make_position(backtick.clone(), None),
+                        })
+                        .collect::<Vec<Token>>(),
+                );
+                if let EatMode::DocumentationCodeSnippet = eat_mode {
+                    if backticks.len() >= 2 {
+                        return Ok(tokens);
+                    }
+                }
+            }
             '#' => {
                 let first_hash = character;
                 let rest_hashes: Vec<Character> = it
@@ -85,25 +124,56 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
                 // Then this is a multiline comments (a.k.a documentation string)
                 if rest_hashes.len() >= 2 {
                     let characters = {
-                        let mut characters = Vec::new();
+                        let mut documentation_characters = Vec::new();
                         let mut closing_hash_count = 0;
+
+                        // These are for parsing code snippets
+                        let mut opening_backtick_count = 0;
+
                         loop {
                             if let Some(character) = it.next() {
                                 if character.value == '#' {
                                     closing_hash_count += 1;
                                     if closing_hash_count == 3 {
-                                        break characters;
+                                        break documentation_characters;
+                                    }
+                                } else if character.value == '`' {
+                                    opening_backtick_count += 1;
+                                    if opening_backtick_count == 3 {
+                                        let code_snippet_tokens =
+                                            eat_token(it, EatMode::DocumentationCodeSnippet)?;
+
+                                        // We need to remove the trailing triple-backticks
+                                        let (code_snippet_tokens, triple_backticks) =
+                                            code_snippet_tokens
+                                                .split_at(code_snippet_tokens.len() - 3);
+
+                                        // Push the code snippet tokens to the current tokens vector
+                                        tokens.extend(code_snippet_tokens.to_vec());
+
+                                        // Push the trailing triple-backticks to the documentation
+                                        documentation_characters.extend(
+                                            triple_backticks.iter().map(|token| Character {
+                                                column_number: token.position.column_start,
+                                                line_number: token.position.line_start,
+                                                index: token.position.character_index_start,
+                                                value: '`',
+                                            }),
+                                        )
                                     }
                                 } else {
-                                    // reset closing hash count
+                                    // reset all counts
                                     closing_hash_count = 0;
+                                    opening_backtick_count = 0;
                                 }
-                                characters.push(character);
+                                documentation_characters.push(character);
                             } else {
                                 return Err(TokenizeError::UnterminatedMultilineComment {
                                     position: make_position(
                                         first_hash,
-                                        characters.last().or_else(|| rest_hashes.last()),
+                                        documentation_characters
+                                            .last()
+                                            .or_else(|| rest_hashes.last()),
                                     ),
                                 });
                             }
@@ -145,8 +215,8 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
             }
             '@' => {
                 let first_alias = character.clone();
-                let _second_alias = eat_character(&mut it, '@')?;
-                let _third_alias = eat_character(&mut it, '@')?;
+                let _second_alias = eat_character(it, '@')?;
+                let _third_alias = eat_character(it, '@')?;
 
                 let mut characters = Vec::new();
                 let mut ending_aliases_count = 0;

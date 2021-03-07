@@ -1,0 +1,31 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+###
+This function takes anything string and output 123.
+For example:
+```
+do "Hi".foo().print()
+```
+###
+let foo
+  : | String => Integer
+  = | _ => 123
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+123
+
+============
+STDERR
+============
