@@ -1,7 +1,5 @@
 use crate::typechecked_ast::*;
 
-/// Note that `k` means continutation, it means `callback` in JavaScript
-
 pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
     let built_in_library = "
         const kk_apply_functional_updates = (record, functional_updates) =>
@@ -83,10 +81,9 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
             expression,
             property_name,
         } => format!(
-            "Promise.all([{}]).then(([{{{}}}]) => {})",
+            "Promise.all([{}]).then(([{{{property_name}}}]) => {property_name})",
             transpile_expression(*expression),
-            property_name,
-            property_name
+            property_name = format!("${}", property_name),
         ),
         TypecheckedExpression::RecordUpdate {
             expression,
@@ -112,7 +109,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 Vec<(TypecheckedExpression, bool)>,
             ) = value_updates.into_iter().unzip();
             format!(
-                "Promise.all([{},{}]).then(([record,{value_update_keys}]) => 
+                "Promise.all([{},{}]).then(([record,{value_update_keys}]) =>
                     kk_apply_functional_updates(
                         {{...record, {value_update_keys}}},
                         [{functional_updates}]
@@ -125,12 +122,16 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                     .map(|(expression, _)| transpile_expression(expression))
                     .collect::<Vec<String>>()
                     .join(","),
-                value_update_keys = value_updates_keys.join(","),
+                value_update_keys = value_updates_keys
+                    .into_iter()
+                    .map(|key| format!("${}", key))
+                    .collect::<Vec<String>>()
+                    .join(","),
                 functional_updates = functional_updates
                     .into_iter()
                     .map(|(key, (function, _))| {
                         format!(
-                            "{{key: '{}', func: {}}}",
+                            "{{key: '${}', func: {}}}",
                             key,
                             transpile_expression(function)
                         )
@@ -142,7 +143,11 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
         TypecheckedExpression::Record { key_value_pairs } => {
             let (keys, values): (Vec<String>, Vec<TypecheckedExpression>) =
                 key_value_pairs.into_iter().unzip();
-            let keys = keys.join(",");
+            let keys = keys
+                .into_iter()
+                .map(|key| format!("${}", key))
+                .collect::<Vec<String>>()
+                .join(",");
             format!(
                 "Promise.all([{}]).then(([{keys}]) => ({{{keys}}}))",
                 values
@@ -207,10 +212,6 @@ pub fn transpile_function_branch(function_branch: TypecheckedFunctionBranch) -> 
             join_transpiled_destructure_pattern,
         );
 
-    // let return_now = match *function_branch.body {
-    //     TypecheckedExpression::Let { .. } => "",
-    //     _ => "return ",
-    // };
     let body = transpile_expression(*function_branch.body);
     let conditions = {
         if transpiled_destructure_pattern.conditions.is_empty() {
@@ -327,7 +328,7 @@ pub fn transpile_destructure_pattern(
                     result,
                     transpile_destructure_pattern(
                         destructure_pattern,
-                        format!("{}.{}", from_expression, key),
+                        format!("{}.${}", from_expression, key),
                     ),
                 )
             },

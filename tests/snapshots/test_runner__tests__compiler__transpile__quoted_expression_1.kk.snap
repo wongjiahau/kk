@@ -20,11 +20,11 @@ STDOUT
 ============
 yoyo
 {
-  filename: 'tests/compiler/transpile/quoted_expression_1.kk',
-  line_start: 0,
-  line_end: 0,
-  column_start: 28,
-  column_end: 35
+  '$filename': 'tests/compiler/transpile/quoted_expression_1.kk',
+  '$line_start': 0,
+  '$line_end': 0,
+  '$column_start': 28,
+  '$column_end': 35
 }
 
 ============

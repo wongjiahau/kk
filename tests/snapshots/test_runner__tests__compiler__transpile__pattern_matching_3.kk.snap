@@ -5,22 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo<A>
-  : | A => Integer
-  = | _ => 123
+# Using Javascript's keyword as property name should not fail
 
-let z: Integer = 3
-let x: {
-  x: Integer
-  y: String
-  z: Integer
-} = {
-  x: null.foo()
-  y: "456"
-  z
-}
+let foo: | {with: String} => String =  | {with} => with
 
-do x.print()
+do {with: "Hello"}.foo().print()
 
 ============
 EXIT CODE
@@ -30,7 +19,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$x': 123, '$y': '456', '$z': 3 }
+Hello
 
 ============
 STDERR
