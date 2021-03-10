@@ -30,7 +30,7 @@ error:
   │
   = Infinite type expansion will happen when substituting `@TVAR2` into:
 
-      | (
+      |
         @TVAR2
-      ) =>
+      =>
         @TVAR3

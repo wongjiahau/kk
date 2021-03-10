@@ -987,6 +987,7 @@ fn overlap(a: &Type, b: &Type) -> bool {
         (Type::Null, Type::Null) => true,
         (Type::String, Type::String) => true,
         (Type::Boolean, Type::Boolean) => true,
+        (Type::Integer, Type::Integer) => true,
         (Type::Float, Type::Float) => true,
         (Type::Tuple(xs), Type::Tuple(ys)) => {
             xs.len() == ys.len() && xs.clone().zip(*ys.clone()).all(|(a, b)| overlap(a, b))

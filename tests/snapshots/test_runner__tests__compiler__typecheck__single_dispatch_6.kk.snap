@@ -1,0 +1,45 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo
+  : | Integer Integer => Integer
+  = | _ _ => 123
+
+do 9.foo(8).print()
+
+let foo
+  : | Float Float => Float
+  = | _ _ => 789.0
+
+do 9.0.foo(8.0).print()
+
+do 1.0.foo(2) # compile error
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+   ┌─ tests/compiler/typecheck/single_dispatch_6.kk:13:12
+   │
+13 │ do 1.0.foo(2) # compile error
+   │            ^ Type mismatch
+   │
+   = +---------------+-------------+
+     | EXPECTED TYPE | ACTUAL TYPE |
+     +---------------+-------------+
+     | - Float       | + Integer   |
+     +---------------+-------------+

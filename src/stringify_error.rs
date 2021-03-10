@@ -904,12 +904,12 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         }
         Type::Function(function_type) => {
             let result = format!(
-                "| (\n{}\n) =>\n{}",
+                "|\n{}\n=>\n{}",
                 function_type
                     .parameters_types
                     .map(|argument_type| { indent_string(stringify_type(argument_type, 0), 2) })
                     .into_vector()
-                    .join(",\n"),
+                    .join("\n"),
                 indent_string(stringify_type(*function_type.return_type, 0), 2)
             );
             indent_string(result, indent_level * 2)
