@@ -1,0 +1,38 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+# Error: function name overlap with property name
+let name
+  : | {name: String} => String
+  = | _ => "foo"
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/function_1.kk:2:5
+  │
+2 │ let name
+  │     ^^^^ Clashed with first parameter property name.
+  │
+  = The first parameter type of this function is a record that has a property also named 'name'.
+    Suppose we have an expression x that has the first paramter type, then the expression below is ambiguous:
+
+        x.name
+
+    This is ambiguous because we will not know if it meant to call the 'name' function or to access the property 'name'.
+    Therefore, to prevent such ambiguity, such function definition is disallowed.

@@ -150,6 +150,28 @@ pub fn unify_statements(
                 module.step_out_to_parent_scope();
                 Ok(type_scheme)
             }?;
+
+            // Check for clashing between function name and record property name
+            if let Type::Function(FunctionType {
+                parameters_types, ..
+            }) = &type_scheme.type_value
+            {
+                let first_parameter_type = parameters_types.first();
+                if let Type::Record { key_type_pairs } = first_parameter_type {
+                    if key_type_pairs
+                        .iter()
+                        .any(|(key, _)| *key == let_statement.left.representation)
+                    {
+                        return Err(UnifyError {
+                            position: let_statement.left.position,
+                            kind: UnifyErrorKind::PropertyNameClashWithFunctionName {
+                                name: let_statement.left.representation.clone(),
+                            },
+                        });
+                    }
+                }
+            };
+
             let uid = module.insert_symbol(
                 None,
                 Symbol {
@@ -253,6 +275,9 @@ impl UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    PropertyNameClashWithFunctionName {
+        name: String,
+    },
     CyclicDependency {
         import_relations: Vec<ImportRelation>,
     },

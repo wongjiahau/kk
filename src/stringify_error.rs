@@ -612,10 +612,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "No such property or function".to_string(),
             body: format!("Available properties:\n{}", indent_string(expected_keys.join("\n"), 2))
         } },
-        UnifyErrorKind::CannotAccessPropertyOfNonRecord {actual_type} => StringifiedError {
-            summary: "Cannot access property on a non-record type".to_string(),
-            body: format!("The type of this expression is:\n{}", stringify_type(actual_type, 1))
-        },
         UnifyErrorKind::InfiniteTypeDetected {type_variable_name, in_type} => StringifiedError {
             summary: "Infinite type".to_string(),
             body: format!(
@@ -786,8 +782,26 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                     2
                 )
             )
+        },
+        UnifyErrorKind::PropertyNameClashWithFunctionName{ name} => {
+            let example = format!("x.{}", name);
+            StringifiedError {
+                summary: "Clashed with first parameter property name.".to_string(),
+                body: format!(
+                    "{} '{}'.\n{}\n    {}\n\n{}{}{}{}{}\n{}",
+                    "The first parameter type of this function is a record that has a property also named",
+                    name,
+                    "Suppose we have an expression x that has the first paramter type, then the expression below is ambiguous:\n",
+                    example,
+                    "This is ambiguous because we will not know if it meant to call the '",
+                    name,
+                    "' function or to access the property '",
+                    name,
+                    "'.",
+                    "Therefore, to prevent such ambiguity, such function definition is disallowed.",
+                )
+            }
         }
-
     }
 }
 
