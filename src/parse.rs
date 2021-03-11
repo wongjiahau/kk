@@ -1,5 +1,5 @@
-use crate::ast::*;
 use crate::non_empty::NonEmpty;
+use crate::{ast::*, unify::join_position};
 use core::slice::Iter;
 use std::iter::Peekable;
 
@@ -11,6 +11,9 @@ pub struct ParseError {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseErrorKind {
+    UnnecessaryParenthesisForSingleArgumentFunctionCall {
+        position: Position,
+    },
     InvalidToken {
         actual_token: Token,
         expected_token_type: Option<TokenType>,
@@ -548,34 +551,49 @@ impl<'a> Parser<'a> {
         let first_argument = {
             if let Some(left_curly_bracket) = self.try_eat_token(TokenType::LeftCurlyBracket) {
                 // Then this is a record update
-                return self.parse_record_update(first_argument, left_curly_bracket);
-            }
-
-            let name = self.eat_token(TokenType::Identifier, context)?;
-            match self.tokens.peek() {
-                Some(Token {
-                    token_type: TokenType::LeftParenthesis,
-                    ..
-                })
-                | Some(Token {
-                    token_type: TokenType::LessThan,
-                    ..
-                }) => {
-                    // Then this is a function call
-                    let type_arguments = self.try_parse_type_arguments()?;
-                    let function_call_arguments = self.parse_function_call_rest_arguments()?;
-                    Expression::FunctionCall(Box::new(FunctionCall {
-                        first_argument: Box::new(first_argument),
-                        rest_arguments: function_call_arguments,
-                        type_arguments,
-                        function_name: name,
-                    }))
-                }
-                _ => {
-                    // Then this is a property access
-                    Expression::RecordAccess {
-                        expression: Box::new(first_argument),
-                        property_name: name,
+                self.parse_record_update(first_argument, left_curly_bracket)?
+            } else if self.try_eat_token(TokenType::LeftParenthesis).is_some() {
+                // Then this is a immediately invoked function
+                let function = self.parse_expression()?;
+                self.eat_token(
+                    TokenType::RightParenthesis,
+                    ParseContext::ExpressionFunctionCall,
+                )?;
+                let type_arguments = self.try_parse_type_arguments()?;
+                let function_call_arguments = self.parse_function_call_rest_arguments()?;
+                Expression::FunctionCall(Box::new(FunctionCall {
+                    first_argument: Box::new(first_argument),
+                    rest_arguments: function_call_arguments,
+                    type_arguments,
+                    function: Box::new(function),
+                }))
+            } else {
+                let name = self.eat_token(TokenType::Identifier, context)?;
+                match self.tokens.peek() {
+                    Some(Token {
+                        token_type: TokenType::LeftParenthesis,
+                        ..
+                    })
+                    | Some(Token {
+                        token_type: TokenType::LessThan,
+                        ..
+                    }) => {
+                        // Then this is a function call
+                        let type_arguments = self.try_parse_type_arguments()?;
+                        let function_call_arguments = self.parse_function_call_rest_arguments()?;
+                        Expression::FunctionCall(Box::new(FunctionCall {
+                            first_argument: Box::new(first_argument),
+                            rest_arguments: function_call_arguments,
+                            type_arguments,
+                            function: Box::new(Expression::Variable(name)),
+                        }))
+                    }
+                    _ => {
+                        // Then this is a property access or single-argument function call
+                        Expression::RecordAccessOrFunctionCall {
+                            expression: Box::new(first_argument),
+                            property_name: name,
+                        }
                     }
                 }
             }
@@ -643,28 +661,43 @@ impl<'a> Parser<'a> {
         &mut self,
     ) -> Result<Option<FunctionCallRestArguments>, ParseError> {
         let context = ParseContext::ExpressionFunctionCall;
-        let left_parenthesis = self.eat_token(TokenType::LeftParenthesis, context)?;
-        let arguments = {
-            let mut arguments: Vec<Expression> = vec![];
-            match self.tokens.peek() {
-                Some(Token {
-                    token_type: TokenType::RightParenthesis,
-                    ..
-                }) => arguments,
-                _ => loop {
-                    arguments.push(self.parse_expression()?);
-                    if self.try_eat_token(TokenType::Comma).is_none() {
-                        break arguments;
-                    }
-                },
+        if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis) {
+            let arguments = {
+                let mut arguments: Vec<Expression> = vec![];
+                match self.tokens.peek() {
+                    Some(Token {
+                        token_type: TokenType::RightParenthesis,
+                        ..
+                    }) => arguments,
+                    _ => loop {
+                        arguments.push(self.parse_expression()?);
+                        if self.try_eat_token(TokenType::Comma).is_none() {
+                            break arguments;
+                        }
+                    },
+                }
+            };
+            let right_parenthesis = self.eat_token(TokenType::RightParenthesis, context)?;
+            if arguments.is_empty() {
+                Err(ParseError {
+                    context,
+                    kind: ParseErrorKind::UnnecessaryParenthesisForSingleArgumentFunctionCall {
+                        position: join_position(
+                            left_parenthesis.position,
+                            right_parenthesis.position,
+                        ),
+                    },
+                })
+            } else {
+                Ok(Some(FunctionCallRestArguments {
+                    left_parenthesis,
+                    arguments,
+                    right_parenthesis,
+                }))
             }
-        };
-        let right_parenthesis = self.eat_token(TokenType::RightParenthesis, context)?;
-        Ok(Some(FunctionCallRestArguments {
-            left_parenthesis,
-            arguments,
-            right_parenthesis,
-        }))
+        } else {
+            Ok(None)
+        }
     }
 
     fn try_parse_dot_expression(

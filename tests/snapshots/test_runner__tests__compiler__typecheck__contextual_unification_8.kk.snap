@@ -28,7 +28,7 @@ error:
   ┌─ tests/compiler/typecheck/contextual_unification_8.kk:4:15
   │
 4 │   f: | o => o.y
-  │               ^ No such property
+  │               ^ No such property or function
   │
   = Available properties:
       x

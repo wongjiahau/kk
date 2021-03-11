@@ -6,7 +6,7 @@ let and
     let True = y
     True
 
-do True.and(True).print()
-do True.and(False).print()
-do False.and(True).print()
-do False.and(False).print()
+do True.and(True).print
+do True.and(False).print
+do False.and(True).print
+do False.and(False).print

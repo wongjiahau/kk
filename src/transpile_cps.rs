@@ -11,7 +11,7 @@ pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
                     }))
                 })
             }, record)
-        const print_0 = (x) => { console.log(x); return Promise.resolve(null)}
+        const print_0 = (x) => { console.log(x) }
         const read_file_1 = (filename) => new Promise(resolve => require('fs').readFile(filename, (err, content) => {
             if(err) {
                 resolve({$: 'Error', _: err.toString()})
@@ -27,7 +27,7 @@ pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
     format!(
         "(async () => {{{};\n{}}})()",
         built_in_library,
-        user_defined.join(";\n")
+        user_defined.join(";\n\n")
     )
 }
 

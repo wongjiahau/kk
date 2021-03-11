@@ -14,7 +14,7 @@ let foo
   = | _ => "World"
 
 let bar: Integer =
-  let f = | x => x.foo()
+  let f = | x => x.foo
   123
 
 ============
@@ -33,7 +33,7 @@ STDERR
 error:
    ┌─ tests/compiler/typecheck/single_dispatch_2.kk:10:20
    │
-10 │   let f = | x => x.foo()
+10 │   let f = | x => x.foo
    │                    ^^^ Ambiguous Reference
    │
    = This function is overloaded with multiple signatures, but the first argument provided has unknown type.

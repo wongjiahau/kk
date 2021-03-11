@@ -8,7 +8,7 @@ INPUT
 do
   let a = { x: 2 }
   let foo = | _ => "Hello"
-  let b = a.{ x.foo() } # expected Integer, got String
+  let b = a.{ x.foo } # expected Integer, got String
   null
 
 ============
@@ -27,8 +27,8 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_update_3.kk:4:15
   │
-4 │   let b = a.{ x.foo() } # expected Integer, got String
-  │               ^^^^^^^ Type mismatch
+4 │   let b = a.{ x.foo } # expected Integer, got String
+  │               ^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

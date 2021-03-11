@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do true.foo().print()
+do true.foo.print
 
 ============
 EXIT CODE
@@ -23,7 +23,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/single_dispatch_5.kk:1:9
   │
-1 │ do true.foo().print()
+1 │ do true.foo.print
   │         ^^^ Unknown value symbol
   │
   = Cannot find this value symbol in the current scope

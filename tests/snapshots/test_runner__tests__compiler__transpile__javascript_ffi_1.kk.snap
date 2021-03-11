@@ -17,18 +17,14 @@ let less_than
   : | Integer Integer => Boolean
   = @@@ (x, y) => x < y @@@
 
-let match<A B>
-  : | A | A => B => B
-  = | x f => x.f()
-
 let factorial
   : | Integer => Integer
-  = | n => n.less_than(2).match(
+  = | n => n.less_than(2).(
       | true => 1
-      | false => n.multiply(n.minus(1).factorial())
+      | false => n.multiply(n.minus(1).factorial)
     )
 
-do 21.factorial().print()
+do 21.factorial.print
 
 ============
 EXIT CODE

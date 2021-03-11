@@ -3,6 +3,6 @@ let identity<A>
   = | x => x
 
 do
-  let x = "hello".identity()
+  let x = "hello".identity
   let y: Integer = x
   null

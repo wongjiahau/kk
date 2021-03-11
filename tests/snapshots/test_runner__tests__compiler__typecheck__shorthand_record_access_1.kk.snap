@@ -7,9 +7,9 @@ INPUT
 ============
 let match<A B>
   : | A | A => B => B
-  = | x f => x.f()
+  = | x f => x.f
 
-do { a: 2 }.match(|.b).print()
+do { a: 2 }.match(|.b).print
 
 ============
 EXIT CODE
@@ -27,8 +27,8 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/shorthand_record_access_1.kk:5:21
   │
-5 │ do { a: 2 }.match(|.b).print()
-  │                     ^ No such property
+5 │ do { a: 2 }.match(|.b).print
+  │                     ^ No such property or function
   │
   = Available properties:
       a

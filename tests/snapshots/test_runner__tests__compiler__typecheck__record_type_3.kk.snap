@@ -31,7 +31,7 @@ error:
   ┌─ tests/compiler/typecheck/record_type_3.kk:7:13
   │
 7 │   let z = x.a
-  │             ^ No such property
+  │             ^ No such property or function
   │
   = Available properties:
       x

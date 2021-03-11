@@ -8,4 +8,4 @@ let add
     | Succ(n) a => Succ(n.add(a))
 
 let one: Nat = Succ(Zero)
-do one.add(one).print()
+do one.add(one).print

@@ -1,1 +1,1 @@
-do true.foo().print()
+do true.foo.print

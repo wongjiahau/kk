@@ -5,8 +5,8 @@ let foo<A>
 let xs
   : [Integer] 
   = [
-    null.foo() 
-    {x: null.foo()}.x
+    null.foo 
+    {x: null.foo}.x
   ]
 
-do xs.print()
+do xs.print

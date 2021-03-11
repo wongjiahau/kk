@@ -1,2 +1,2 @@
 # This is a comment
-do "Hello".print()
+do "Hello".print

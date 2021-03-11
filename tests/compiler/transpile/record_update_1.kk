@@ -7,5 +7,5 @@ type R = {
 let a: R = { x: 2 y: { z: 3 } }
 let b: R = a.{ x: 3 y.{ z: 4 }}
 
-do a.print()
-do b.print()
+do a.print
+do b.print

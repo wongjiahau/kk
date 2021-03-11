@@ -7,5 +7,5 @@ let foo
   = | _ => "World"
 
 let bar: Integer = 
-  let f = | x => x.foo()
+  let f = | x => x.foo
   123

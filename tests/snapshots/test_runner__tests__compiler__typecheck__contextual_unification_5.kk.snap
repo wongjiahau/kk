@@ -26,7 +26,7 @@ error:
   ┌─ tests/compiler/typecheck/contextual_unification_5.kk:3:14
   │
 3 │   = | { x: { z } } => 2
-  │              ^ No such property
+  │              ^ No such property or function
   │
   = Available properties:
       y

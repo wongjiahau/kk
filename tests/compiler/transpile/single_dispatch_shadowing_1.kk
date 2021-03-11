@@ -4,6 +4,6 @@ let foo
 
 do 
   let foo = | _ => "World"
-  "x".foo().print()
+  "x".foo.print
 
-do "x".foo().print()
+do "x".foo.print

@@ -27,7 +27,7 @@ error:
   ┌─ tests/compiler/typecheck/record_update_1.kk:3:15
   │
 3 │   let b = a.{ b: 3 } # 'b' is a non-existing property
-  │               ^ No such property
+  │               ^ No such property or function
   │
   = Available properties:
       x

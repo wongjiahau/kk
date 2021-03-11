@@ -8,9 +8,9 @@ let x: {
   y: String
   z: Integer
 } = {
-  x: null.foo() 
+  x: null.foo 
   y: "456" 
   z
 }
 
-do x.print()
+do x.print

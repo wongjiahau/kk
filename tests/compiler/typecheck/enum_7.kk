@@ -6,4 +6,4 @@ let f
   : | Food => Integer 
   = | Nut => 123
 
-do a.f()
+do a.f

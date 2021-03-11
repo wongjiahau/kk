@@ -15,7 +15,7 @@ let constant<A>
 
 let map<A B>
   : | A | A => B => B
-  = | x f => x.f()
+  = | x f => x.f
 
 let x: String = "hello".map(identity)
 let y: String = "hello".map(| _ => "yo")

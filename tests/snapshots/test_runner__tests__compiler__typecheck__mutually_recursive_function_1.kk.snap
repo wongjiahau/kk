@@ -7,11 +7,11 @@ INPUT
 ============
 let foo
   : | Integer => Integer
-  = |.bar()  # Error: Expected Integer, got String
+  = |.bar  # Error: Expected Integer, got String
 
 let bar
   : | Integer => String
-  = |.foo()
+  = |.foo
 
 ============
 EXIT CODE
@@ -29,8 +29,8 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/mutually_recursive_function_1.kk:3:6
   │
-3 │   = |.bar()  # Error: Expected Integer, got String
-  │      ^^^^^^ Type mismatch
+3 │   = |.bar  # Error: Expected Integer, got String
+  │      ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

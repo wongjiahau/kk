@@ -13,7 +13,7 @@ let foo
   : | Integer => String
   = | _ => "World"
 
-do true.foo().print()
+do true.foo.print
 
 ============
 EXIT CODE
@@ -31,7 +31,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/single_dispatch_4.kk:9:9
   │
-9 │ do true.foo().print()
+9 │ do true.foo.print
   │         ^^^ No matching overload found.
   │
   =

@@ -4,6 +4,6 @@ let foo<A>
 
 let match<A B> 
   : | A | A => B => B
-  = | x f => x.f()
+  = | x f => x.f
 
-do "hello".match(|.foo(2)).print()
+do "hello".match(|.foo(2)).print

@@ -152,7 +152,7 @@ pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
             .collect::<Vec<String>>()
             .join("\n\n")
     );
-    match parse_error.kind {
+    let (range, error) = match parse_error.kind {
         ParseErrorKind::InvalidToken {
             actual_token,
             expected_token_type,
@@ -185,7 +185,7 @@ pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
                     expected_token_message, actual_token_explanation, parse_context_description
                 ),
             };
-            print_error(module_meta, range, error)
+            (range, error)
         }
         ParseErrorKind::UnexpectedEOF {
             expected_token_type,
@@ -207,9 +207,21 @@ pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
                 summary: "Syntax error: unexpected EOF (end of file)".to_string(),
                 body: format!("{}{}", expected_token_message, parse_context_description),
             };
-            print_error(module_meta, range, error)
+            (range, error)
         }
-    }
+        ParseErrorKind::UnnecessaryParenthesisForSingleArgumentFunctionCall { position } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            let error = StringifiedError{
+                summary: "Unnecessary parentheses.".to_string(),
+                body: "Parentheses are not needed for calling single-argument function. Consider removing them.".to_string()
+            };
+            (range, error)
+        }
+    };
+    print_error(module_meta, range, error)
 }
 
 struct ParseContextDescription {
@@ -232,7 +244,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
         TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example:\n\n\t{ x: string }\n\nand constructing record value, for example: \n\n\t{ x = 'hello' }",
 
-        TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions and enum constructor only.",
+        TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions and enum constructor only",
         TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example:\n\n\t[1,2,3]",
         TokenType::Colon => "only used for annotating types, for example:\n\n\t{ x: string }",
         TokenType::DoubleColon => "only used for scope resolution, for example:\n\n\tColor::Red()",
@@ -284,7 +296,11 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::ExpressionFunctionCall => ParseContextDescription {
             name: "Function call",
-            examples: vec!["\"Hello world\".print()", "x.add(y)"],
+            examples: vec![
+                "\"Hello world\".print",
+                "x.add(y)",
+                "is_big.(| true => \"big\" | false => \"small\")",
+            ],
         },
         ParseContext::ExpressionRecord => ParseContextDescription {
             name: "Record",
@@ -588,12 +604,12 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Unreachable case".to_string(),
             body: "This case is unreachable because all possible cases are already handled by previous branches.".to_string()
         },
-        UnifyErrorKind::NoSuchPropertyOnThisRecord {
+        UnifyErrorKind::NoSuchPropertyOrFunction {
             mut expected_keys
         } => {
             expected_keys.sort();
             StringifiedError{
-            summary: "No such property".to_string(),
+            summary: "No such property or function".to_string(),
             body: format!("Available properties:\n{}", indent_string(expected_keys.join("\n"), 2))
         } },
         UnifyErrorKind::CannotAccessPropertyOfNonRecord {actual_type} => StringifiedError {

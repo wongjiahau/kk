@@ -6,4 +6,4 @@ let foo
   : | Integer => String
   = | _ => "World"
 
-do true.foo().print()
+do true.foo.print

@@ -293,11 +293,8 @@ pub enum UnifyErrorKind {
     DoBodyMustHaveNullType {
         actual_type: Type,
     },
-    NoSuchPropertyOnThisRecord {
+    NoSuchPropertyOrFunction {
         expected_keys: Vec<String>,
-    },
-    CannotAccessPropertyOfNonRecord {
-        actual_type: Type,
     },
     CannotPerformRecordUpdateOnNonRecord {
         actual_type: Type,
@@ -950,7 +947,7 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             None => name.position,
             Some(payload) => join_position(name.position, payload.right_parenthesis.position),
         },
-        Expression::RecordAccess {
+        Expression::RecordAccessOrFunctionCall {
             expression,
             property_name,
         } => join_position(get_expression_position(&expression), property_name.position),
@@ -974,7 +971,7 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
                 Some(FunctionCallRestArguments {
                     right_parenthesis, ..
                 }) => right_parenthesis.position,
-                None => function_call.function_name.position,
+                None => get_expression_position(&function_call.function),
             };
             join_position(start_position, end_position)
         }
@@ -1706,12 +1703,12 @@ fn infer_expression_type_(
                 })
             }
         }
-        Expression::RecordAccess {
+        Expression::RecordAccessOrFunctionCall {
             expression,
             property_name,
         } => {
-            let expression = infer_expression_type(module, None, expression)?;
-            let key_type_pairs = match expression.type_value {
+            let result = infer_expression_type(module, None, expression)?;
+            let key_type_pairs = match result.type_value {
                 // Re-pack quoted type as record
                 Type::Quoted(type_value) => {
                     vec![
@@ -1731,11 +1728,18 @@ fn infer_expression_type_(
                     ]
                 }
                 Type::Record { key_type_pairs } => key_type_pairs,
-                actual_type => {
-                    return Err(UnifyError {
-                        position: property_name.position,
-                        kind: UnifyErrorKind::CannotAccessPropertyOfNonRecord { actual_type },
-                    })
+                _ => {
+                    // Infer as function call
+                    return infer_expression_type(
+                        module,
+                        expected_type,
+                        &Expression::FunctionCall(Box::new(FunctionCall {
+                            function: Box::new(Expression::Variable(property_name.clone())),
+                            first_argument: expression.clone(),
+                            rest_arguments: None,
+                            type_arguments: None,
+                        })),
+                    );
                 }
             };
 
@@ -1743,16 +1747,39 @@ fn infer_expression_type_(
                 .iter()
                 .find(|(key, _)| *key == property_name.representation)
             {
-                None => Err(UnifyError {
-                    position: property_name.position,
-                    kind: UnifyErrorKind::NoSuchPropertyOnThisRecord {
-                        expected_keys: key_type_pairs.iter().map(|(key, _)| key.clone()).collect(),
-                    },
-                }),
+                None => {
+                    // Try to infer as function call
+                    match infer_expression_type(
+                        module,
+                        expected_type,
+                        &Expression::FunctionCall(Box::new(FunctionCall {
+                            function: Box::new(Expression::Variable(property_name.clone())),
+                            first_argument: expression.clone(),
+                            rest_arguments: None,
+                            type_arguments: None,
+                        })),
+                    ) {
+                        Ok(result) => Ok(result),
+                        Err(UnifyError {
+                            kind: UnifyErrorKind::UnknownValueSymbol,
+                            ..
+                        }) => Err(UnifyError {
+                            position: property_name.position,
+                            kind: UnifyErrorKind::NoSuchPropertyOrFunction {
+                                expected_keys: key_type_pairs
+                                    .iter()
+                                    .map(|(key, _)| key.clone())
+                                    .collect(),
+                            },
+                        }),
+
+                        Err(other_error) => Err(other_error),
+                    }
+                }
                 Some((_, type_value)) => Ok(InferExpressionResult {
                     type_value: type_value.clone(),
                     expression: TypecheckedExpression::RecordAccess {
-                        expression: Box::new(expression.expression),
+                        expression: Box::new(result.expression),
                         property_name: property_name.representation.clone(),
                     },
                 }),
@@ -1784,7 +1811,7 @@ fn infer_expression_type_(
                             match matching_key_type_pair {
                                 None => Err(UnifyError {
                                     position: actual_key.position,
-                                    kind: UnifyErrorKind::NoSuchPropertyOnThisRecord {
+                                    kind: UnifyErrorKind::NoSuchPropertyOrFunction {
                                         expected_keys: key_type_pairs
                                             .iter()
                                             .map(|(key, _)| key.clone())
@@ -2061,7 +2088,7 @@ fn infer_expression_type_(
             let typechecked_function = infer_expression_type_(
                 module,
                 Some(expected_function_type),
-                &Expression::Variable(function_call.function_name.clone()),
+                function_call.function.as_ref(),
             )?;
 
             // Check if expression being invoked is a function
@@ -2194,7 +2221,7 @@ fn infer_expression_type_(
                     })
                 }
                 other => Err(UnifyError {
-                    position: function_call.function_name.position,
+                    position: get_expression_position(&function_call.function),
                     kind: UnifyErrorKind::CannotInvokeNonFunction { actual_type: other },
                 }),
             }
@@ -2991,7 +3018,7 @@ fn infer_destructure_pattern_(
                             match matching_key_type_pair {
                                 None => Err(UnifyError {
                                     position: key.position,
-                                    kind: UnifyErrorKind::NoSuchPropertyOnThisRecord {
+                                    kind: UnifyErrorKind::NoSuchPropertyOrFunction {
                                         expected_keys: expected_key_type_pairs
                                             .iter()
                                             .map(|(key, _)| key.clone())

@@ -13,7 +13,7 @@ let f
   : | Food => Integer
   = | Nut => 123
 
-do a.f()
+do a.f
 
 ============
 EXIT CODE
@@ -31,7 +31,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/enum_7.kk:9:4
   │
-9 │ do a.f()
+9 │ do a.f
   │    ^ Type mismatch
   │
   = +---------------+-------------+

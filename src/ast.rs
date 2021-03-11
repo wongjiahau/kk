@@ -274,7 +274,7 @@ pub enum Expression {
         key_value_pairs: Vec<RecordKeyValue>,
         right_curly_bracket: Token,
     },
-    RecordAccess {
+    RecordAccessOrFunctionCall {
         expression: Box<Expression>,
         property_name: Token,
     },
@@ -332,7 +332,7 @@ pub struct RecordKeyValue {
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
-    pub function_name: Token,
+    pub function: Box<Expression>,
     pub first_argument: Box<Expression>,
     pub rest_arguments: Option<FunctionCallRestArguments>,
     pub type_arguments: Option<TypeArguments>,

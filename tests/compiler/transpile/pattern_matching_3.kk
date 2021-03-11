@@ -2,4 +2,4 @@
 
 let foo: | {with: String} => String =  | {with} => with
 
-do {with: "Hello"}.foo().print()
+do {with: "Hello"}.foo.print

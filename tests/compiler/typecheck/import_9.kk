@@ -5,10 +5,10 @@ import "./import_1.kk" {
   bomb 
 }
 
-do bar.print()
+do bar.print
 
 let x: Color = Red
-do x.print()
-do Green.print()
-do true.bomb().print()
-do "hi".bomb().print()
+do x.print
+do Green.print
+do true.bomb.print
+do "hi".bomb.print

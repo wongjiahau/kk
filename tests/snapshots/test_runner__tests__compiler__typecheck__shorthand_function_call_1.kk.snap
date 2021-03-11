@@ -11,9 +11,9 @@ let foo<A>
 
 let match<A B>
   : | A | A => B => B
-  = | x f => x.f()
+  = | x f => x.f
 
-do "hello".match(|.foo(2)).print()
+do "hello".match(|.foo(2)).print
 
 ============
 EXIT CODE
@@ -31,7 +31,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/shorthand_function_call_1.kk:9:24
   │
-9 │ do "hello".match(|.foo(2)).print()
+9 │ do "hello".match(|.foo(2)).print
   │                        ^ Type mismatch
   │
   = +---------------+-------------+
