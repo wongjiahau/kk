@@ -1,7 +1,7 @@
 use std::{collections::HashMap, process};
 
 use crate::tokenize::tokenize;
-use crate::transpile_cps::transpile_statements;
+use crate::transpile::transpile_statements;
 use crate::unify::unify_statements;
 use crate::{
     module::ModuleMeta,

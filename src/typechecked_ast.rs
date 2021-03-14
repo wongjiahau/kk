@@ -50,11 +50,11 @@ pub enum TypecheckedExpression {
     Function(Box<TypecheckedFunction>),
     FunctionCall(Box<TypecheckedFunctionCall>),
     Record {
-        key_value_pairs: Vec<(String, TypecheckedExpression)>,
+        key_value_pairs: Vec<(PropertyName, TypecheckedExpression)>,
     },
     RecordAccess {
         expression: Box<TypecheckedExpression>,
-        property_name: String,
+        property_name: PropertyName,
     },
     RecordUpdate {
         expression: Box<TypecheckedExpression>,
@@ -68,14 +68,18 @@ pub enum TypecheckedExpression {
     },
 }
 
+/// This is to ensure that we transpile property name properly.
+#[derive(Debug, Clone)]
+pub struct PropertyName(pub String);
+
 #[derive(Debug, Clone)]
 pub enum TypecheckedRecordUpdate {
     ValueUpdate {
-        property_name: String,
+        property_name: PropertyName,
         new_value: TypecheckedExpression,
     },
     FunctionalUpdate {
-        property_name: String,
+        property_name: PropertyName,
         function: TypecheckedExpression,
     },
 }
@@ -117,7 +121,7 @@ pub enum TypecheckedDestructurePattern {
         payload: Option<Box<TypecheckedDestructurePattern>>,
     },
     Record {
-        key_pattern_pairs: Vec<(String, TypecheckedDestructurePattern)>,
+        key_pattern_pairs: Vec<(PropertyName, TypecheckedDestructurePattern)>,
     },
     Array {
         spread: Option<TypecheckedDesturcturePatternArraySpread>,

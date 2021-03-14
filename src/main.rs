@@ -5,8 +5,8 @@ mod module;
 
 mod unify;
 
-// mod transpile;
-mod transpile_cps;
+mod transpile;
+// mod transpile_cps;
 
 mod parse;
 

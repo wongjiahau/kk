@@ -1621,13 +1621,13 @@ fn infer_expression_type_(
                 type_value: Type::Quoted(Box::new(result.type_value)),
                 expression: TypecheckedExpression::Record {
                     key_value_pairs: vec![
-                        ("value".to_string(), result.expression),
+                        (PropertyName("value".to_string()), result.expression),
                         (
-                            "meta".to_string(),
+                            PropertyName("meta".to_string()),
                             TypecheckedExpression::Record {
                                 key_value_pairs: vec![
                                     (
-                                        "filename".to_string(),
+                                        PropertyName("filename".to_string()),
                                         TypecheckedExpression::String {
                                             representation: format!(
                                                 "\"{}\"",
@@ -1636,25 +1636,25 @@ fn infer_expression_type_(
                                         },
                                     ),
                                     (
-                                        "line_start".to_string(),
+                                        PropertyName("line_start".to_string()),
                                         TypecheckedExpression::Integer {
                                             representation: position.line_start.to_string(),
                                         },
                                     ),
                                     (
-                                        "line_end".to_string(),
+                                        PropertyName("line_end".to_string()),
                                         TypecheckedExpression::Integer {
                                             representation: position.line_end.to_string(),
                                         },
                                     ),
                                     (
-                                        "column_start".to_string(),
+                                        PropertyName("column_start".to_string()),
                                         TypecheckedExpression::Integer {
                                             representation: position.column_start.to_string(),
                                         },
                                     ),
                                     (
-                                        "column_end".to_string(),
+                                        PropertyName("column_end".to_string()),
                                         TypecheckedExpression::Integer {
                                             representation: position.column_end.to_string(),
                                         },
@@ -1805,7 +1805,7 @@ fn infer_expression_type_(
                     type_value: type_value.clone(),
                     expression: TypecheckedExpression::RecordAccess {
                         expression: Box::new(result.expression),
-                        property_name: property_name.representation.clone(),
+                        property_name: PropertyName(property_name.representation.clone()),
                     },
                 }),
             }
@@ -1855,7 +1855,9 @@ fn infer_expression_type_(
                                             new_value,
                                         )?;
                                         Ok(TypecheckedRecordUpdate::ValueUpdate {
-                                            property_name: property_name.representation.clone(),
+                                            property_name: PropertyName(
+                                                property_name.representation.clone(),
+                                            ),
                                             new_value: typechecked_value.expression,
                                         })
                                     }
@@ -1877,7 +1879,9 @@ fn infer_expression_type_(
                                             function,
                                         )?;
                                         Ok(TypecheckedRecordUpdate::FunctionalUpdate {
-                                            property_name: property_name.representation.clone(),
+                                            property_name: PropertyName(
+                                                property_name.representation.clone(),
+                                            ),
                                             function: typechecked_function.expression,
                                         })
                                     }
@@ -2414,7 +2418,7 @@ fn infer_record_type(
         expression: TypecheckedExpression::Record {
             key_value_pairs: typechecked_key_value_pairs
                 .iter()
-                .map(|(key, result)| (key.clone(), result.expression.clone()))
+                .map(|(key, result)| (PropertyName(key.clone()), result.expression.clone()))
                 .collect(),
         },
     })
@@ -3095,7 +3099,12 @@ fn infer_destructure_pattern_(
                 destructure_pattern: TypecheckedDestructurePattern::Record {
                     key_pattern_pairs: typechecked_key_pattern_pairs
                         .iter()
-                        .map(|(key, pattern)| (key.clone(), pattern.destructure_pattern.clone()))
+                        .map(|(key, pattern)| {
+                            (
+                                PropertyName(key.clone()),
+                                pattern.destructure_pattern.clone(),
+                            )
+                        })
                         .collect(),
                 },
             })

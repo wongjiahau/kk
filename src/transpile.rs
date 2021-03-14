@@ -63,12 +63,22 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
         TypecheckedExpression::RecordAccess {
             expression,
             property_name,
-        } => format!("({}).{}", transpile_expression(*expression), property_name),
+        } => format!(
+            "({}).{}",
+            transpile_expression(*expression),
+            transpile_property_name(property_name)
+        ),
         TypecheckedExpression::Record { key_value_pairs } => format!(
             "{{{}}}",
             key_value_pairs
                 .into_iter()
-                .map(|(key, value)| { format!("{}: {}", key, transpile_expression(value)) })
+                .map(|(key, value)| {
+                    format!(
+                        "{}: {}",
+                        transpile_property_name(key),
+                        transpile_expression(value)
+                    )
+                })
                 .collect::<Vec<String>>()
                 .join(",")
         ),
@@ -107,7 +117,50 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
+        TypecheckedExpression::RecordUpdate {
+            expression,
+            updates,
+        } => {
+            let updates = updates
+                .into_iter()
+                .map(|update| match update {
+                    TypecheckedRecordUpdate::ValueUpdate {
+                        property_name,
+                        new_value,
+                    } => {
+                        format!(
+                            "{}: {}",
+                            transpile_property_name(property_name),
+                            transpile_expression(new_value)
+                        )
+                    }
+                    TypecheckedRecordUpdate::FunctionalUpdate {
+                        property_name,
+                        function,
+                    } => {
+                        let property_name = transpile_property_name(property_name);
+                        format!(
+                            "{}: ({})($.{})",
+                            property_name,
+                            transpile_expression(function),
+                            property_name,
+                        )
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join(",");
+            format!(
+                "($=>({{...$,{}}}))({})",
+                updates,
+                transpile_expression(*expression)
+            )
+        }
+        TypecheckedExpression::Javascript { code } => code,
     }
+}
+
+fn transpile_property_name(property_name: PropertyName) -> String {
+    format!("${}", property_name.0)
 }
 
 pub fn transpile_function_branch(function_branch: TypecheckedFunctionBranch) -> String {
@@ -247,7 +300,7 @@ pub fn transpile_function_destructure_pattern(
                     result,
                     transpile_function_destructure_pattern(
                         destructure_pattern,
-                        format!("{}.{}", from_expression, key),
+                        format!("{}.{}", from_expression, transpile_property_name(key)),
                     ),
                 )
             },
