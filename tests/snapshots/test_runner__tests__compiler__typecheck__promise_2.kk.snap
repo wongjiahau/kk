@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo: !Integer
+  = let! result = !2
+    result # Must return promise
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/promise_2.kk:3:5
+  │
+3 │     result # Must return promise
+  │     ^^^^^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - !Integer    | + Integer   |
+    +---------------+-------------+

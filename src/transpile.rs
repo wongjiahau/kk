@@ -94,20 +94,26 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
         }
         TypecheckedExpression::FunctionCall(function) => {
             let TypecheckedFunctionCall {
+                asynchronous,
                 function,
                 first_argument,
                 rest_arguments,
             } = *function;
-            format!(
-                "({})({})",
-                transpile_expression(*function),
-                vec![*first_argument]
-                    .into_iter()
-                    .chain(rest_arguments.into_iter())
-                    .map(transpile_expression)
-                    .collect::<Vec<String>>()
-                    .join(",")
-            )
+            let function = transpile_expression(*function);
+            let arguments = vec![*first_argument]
+                .into_iter()
+                .chain(rest_arguments.into_iter())
+                .map(transpile_expression)
+                .collect::<Vec<String>>()
+                .join(",");
+            if asynchronous {
+                format!(
+                    "Promise.all([{}]).then(args => ({})(...args))",
+                    arguments, function
+                )
+            } else {
+                format!("({})({})", function, arguments)
+            }
         }
         TypecheckedExpression::Array { elements, .. } => format!(
             "[{}]",
@@ -156,6 +162,9 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
             )
         }
         TypecheckedExpression::Javascript { code } => code,
+        TypecheckedExpression::Promise(expression) => {
+            format!("Promise.resolve({})", transpile_expression(*expression))
+        }
     }
 }
 

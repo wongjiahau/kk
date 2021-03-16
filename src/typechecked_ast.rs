@@ -66,6 +66,7 @@ pub enum TypecheckedExpression {
     Javascript {
         code: String,
     },
+    Promise(Box<TypecheckedExpression>),
 }
 
 /// This is to ensure that we transpile property name properly.
@@ -88,6 +89,7 @@ pub struct TypecheckedFunctionCall {
     pub function: Box<TypecheckedExpression>,
     pub first_argument: Box<TypecheckedExpression>,
     pub rest_arguments: Vec<TypecheckedExpression>,
+    pub asynchronous: bool,
 }
 
 #[derive(Debug, Clone)]

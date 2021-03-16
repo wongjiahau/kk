@@ -356,9 +356,13 @@ impl Module {
             Type::ExplicitTypeVariable { name } => {
                 Type::ExplicitTypeVariable { name: name.clone() }
             }
-            Type::Array(type_value) => Type::Array(Box::new(
-                self.apply_subtitution_to_type(type_value.as_ref()),
-            )),
+            Type::BuiltInOneArgumentType {
+                kind,
+                type_argument,
+            } => Type::BuiltInOneArgumentType {
+                kind: kind.clone(),
+                type_argument: Box::new(self.apply_subtitution_to_type(type_argument.as_ref())),
+            },
             Type::Tuple(types) => Type::Tuple(Box::new(
                 types
                     .clone()
@@ -396,9 +400,6 @@ impl Module {
                     })
                     .collect(),
             },
-            Type::Quoted(type_value) => Type::Quoted(Box::new(
-                self.apply_subtitution_to_type(type_value.as_ref()),
-            )),
         }
     }
 
@@ -1013,7 +1014,25 @@ fn overlap(a: &Type, b: &Type) -> bool {
                     .all(|(a, b)| overlap(a, b))
                     && overlap(a.return_type.as_ref(), b.return_type.as_ref()))
         }
-        (Type::Array(a), Type::Array(b)) => overlap(a.as_ref(), b.as_ref()),
+        (
+            Type::BuiltInOneArgumentType {
+                kind: expected_kind,
+                type_argument: expected_type_argument,
+            },
+            Type::BuiltInOneArgumentType {
+                kind: actual_kind,
+                type_argument: actual_type_argument,
+            },
+        ) => {
+            if expected_kind.ne(&actual_kind) {
+                false
+            } else {
+                overlap(
+                    expected_type_argument.as_ref(),
+                    actual_type_argument.as_ref(),
+                )
+            }
+        }
         (
             Type::Named {
                 symbol_uid: symbol_uid_a,

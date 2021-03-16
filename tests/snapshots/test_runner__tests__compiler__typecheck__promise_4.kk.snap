@@ -1,0 +1,41 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+# let! should have promise type annotation
+let foo: Integer
+  = let! x: Integer = !1
+    !x
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/promise_4.kk:3:13
+  │
+3 │   = let! x: Integer = !1
+  │             ^^^^^^^ Missing ! operator.
+  │
+  = When we see:
+
+    let!
+
+    we expect the type annotation be of Promise type.
+    But this type annotation is not a Promise, but rather:
+
+        Integer
+
+    To fix this error, consider adding ! at the beginning of this type annotation.

@@ -356,11 +356,17 @@ impl ExpandablePattern {
                     .map(|(key, pattern)| (key.clone(), pattern.to_type(module)))
                     .collect(),
             },
-            ExpandablePattern::EmptyArray => Type::Array(Box::new(Type::ImplicitTypeVariable {
-                name: module.get_next_type_variable_name(),
-            })),
+            ExpandablePattern::EmptyArray => Type::BuiltInOneArgumentType {
+                kind: BuiltInOneArgumentTypeKind::Array,
+                type_argument: Box::new(Type::ImplicitTypeVariable {
+                    name: module.get_next_type_variable_name(),
+                }),
+            },
             ExpandablePattern::NonEmptyArray { first_element, .. } => {
-                Type::Array(Box::new(first_element.to_type(module)))
+                Type::BuiltInOneArgumentType {
+                    kind: BuiltInOneArgumentTypeKind::Array,
+                    type_argument: Box::new(first_element.to_type(module)),
+                }
             }
             ExpandablePattern::Boolean(_) => Type::Boolean,
             ExpandablePattern::Infinite { kind, .. } => match kind {
@@ -562,7 +568,11 @@ pub fn match_pattern(
         (
             DestructurePattern::Array { .. },
             ExpandablePattern::Any {
-                type_value: Type::Array(element_type),
+                type_value:
+                    Type::BuiltInOneArgumentType {
+                        kind: BuiltInOneArgumentTypeKind::Array,
+                        type_argument: element_type,
+                    },
             },
         ) => MatchPatternResult::PartiallyMatched {
             expanded_patterns: vec![
@@ -572,7 +582,10 @@ pub fn match_pattern(
                         type_value: *element_type.clone(),
                     }),
                     rest_elements: Box::new(ExpandablePattern::Any {
-                        type_value: Type::Array(element_type.clone()),
+                        type_value: Type::BuiltInOneArgumentType {
+                            kind: BuiltInOneArgumentTypeKind::Array,
+                            type_argument: element_type.clone(),
+                        },
                     }),
                 },
             ],

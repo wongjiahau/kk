@@ -472,6 +472,7 @@ fn eat_token(
                         '|' => TokenType::Pipe,
                         '_' => TokenType::Underscore,
                         '`' => TokenType::Backtick,
+                        '!' => TokenType::Bang,
                         '\n' => TokenType::Newline,
                         _ => return Err(TokenizeError::UnknownCharacter { character }),
                     },

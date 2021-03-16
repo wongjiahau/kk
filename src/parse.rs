@@ -48,6 +48,7 @@ pub enum ParseContext {
     TypeAnnotationArray,
     TypeAnnotationFunction,
     TypeAnnotationQuoted,
+    TypeAnnotationPromise,
 
     // Destructure pattern
     Pattern,
@@ -530,6 +531,15 @@ impl<'a> Parser<'a> {
                         return_type: Box::new(return_type),
                     })
                 }
+                TokenType::Bang => {
+                    let bang_token = token.clone();
+                    let context = ParseContext::TypeAnnotationPromise;
+                    let type_annotation = self.parse_type_annotation(context)?;
+                    Ok(TypeAnnotation::Promise {
+                        bang_token,
+                        type_annotation: Box::new(type_annotation),
+                    })
+                }
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             }
         } else {
@@ -731,6 +741,10 @@ impl<'a> Parser<'a> {
                 TokenType::JavascriptCode => Ok(Expression::UnsafeJavascript {
                     code: self.tokens.next().unwrap().clone(),
                 }),
+                TokenType::Bang => Ok(Expression::Promise {
+                    bang: self.tokens.next().unwrap().clone(),
+                    expression: Box::new(self.parse_expression()?),
+                }),
                 _ => {
                     let simple_expression = self.parse_simple_expression()?;
                     self.try_parse_dot_expression(simple_expression)
@@ -846,6 +860,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_let_expression(&mut self, keyword_let: Token) -> Result<Expression, ParseError> {
+        let bang = self.try_eat_token(TokenType::Bang);
         let context = ParseContext::ExpressionLet;
         let left = self.parse_destructure_pattern()?;
         let type_annotation = if self.try_eat_token(TokenType::Colon).is_some() {
@@ -864,6 +879,7 @@ impl<'a> Parser<'a> {
         let return_value = self.parse_expression()?;
         Ok(Expression::Let {
             keyword_let,
+            bang,
             left: Box::new(left),
             type_annotation,
             right: Box::new(right),

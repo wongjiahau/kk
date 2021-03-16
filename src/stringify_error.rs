@@ -265,7 +265,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Comment => "only used for commenting",
         TokenType::MultilineComment => "only used for documentation",
         TokenType::Backtick => "only used for quoting expressions, for example:\n\n\t`[123]`",
-        TokenType::JavascriptCode => "only used for declaring Javascript interop code."
+        TokenType::JavascriptCode => "only used for declaring Javascript interop code.",
+        TokenType::Bang => "used for annotating Promise type, for example: \n\n\t!Integer"
     }
 }
 
@@ -364,6 +365,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Function Type Annotation",
             examples: vec!["| Boolean -> Boolean", "| Integer Integer -> Integer"],
         },
+        ParseContext::TypeAnnotationPromise => ParseContextDescription {
+            name: "Promise Type Annotation",
+            examples: vec!["!Integer", "!Result<Integer String>"],
+        },
         ParseContext::TypeAnnotationQuoted => ParseContextDescription {
             name: "Quoted Type Annotation",
             examples: vec!["`String`", "`{name: String}`"],
@@ -441,6 +446,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::MultilineComment => "### This is a documentation. ###",
         TokenType::Backtick => "`",
         TokenType::JavascriptCode => "@@@ // this is javascript @@@",
+        TokenType::Bang => "!",
     }
 }
 
@@ -802,6 +808,19 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 )
             }
         }
+        UnifyErrorKind::ExpectedPromiseTypeAnnotation { actual_type } => {
+            StringifiedError {
+                summary: "Missing ! operator.".to_string(),
+                body: format!(
+                    "{}\n{}\n{}\n{}",
+                    "When we see:\n\n\tlet!\n\nwe expect the type annotation be of Promise type.",
+                    "But this type annotation is not a Promise, but rather:\n",
+                    stringify_type(actual_type, 2),
+                    "\nTo fix this error, consider adding ! at the beginning of this type annotation."
+
+                )
+            }
+        }
     }
 }
 
@@ -874,11 +893,21 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Null => indent_string("Null".to_string(), indent_level * 2),
         Type::String => indent_string("String".to_string(), indent_level * 2),
         Type::Character => indent_string("Character".to_string(), indent_level * 2),
-        Type::Array(element_type) => indent_string(
-            format!("[\n{}\n]", stringify_type(*element_type, indent_level + 1)),
-            indent_level * 2,
-        ),
-        Type::Quoted(type_value) => format!("`{}`", stringify_type(*type_value, indent_level)),
+        Type::BuiltInOneArgumentType {
+            kind,
+            type_argument,
+        } => match kind {
+            BuiltInOneArgumentTypeKind::Array => indent_string(
+                format!("[\n{}\n]", stringify_type(*type_argument, indent_level + 1)),
+                indent_level * 2,
+            ),
+            BuiltInOneArgumentTypeKind::Quoted => {
+                format!("`{}`", stringify_type(*type_argument, indent_level))
+            }
+            BuiltInOneArgumentTypeKind::Promise => {
+                format!("!{}", stringify_type(*type_argument, indent_level))
+            }
+        },
         Type::Named {
             name,
             type_arguments: arguments,

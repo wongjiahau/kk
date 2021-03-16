@@ -165,7 +165,7 @@ pub fn unify_statements(
                         return Err(UnifyError {
                             position: let_statement.left.position,
                             kind: UnifyErrorKind::PropertyNameClashWithFunctionName {
-                                name: let_statement.left.representation.clone(),
+                                name: let_statement.left.representation,
                             },
                         });
                     }
@@ -275,6 +275,9 @@ impl UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    ExpectedPromiseTypeAnnotation {
+        actual_type: Type,
+    },
     PropertyNameClashWithFunctionName {
         name: String,
     },
@@ -797,15 +800,16 @@ pub fn rewrite_explicit_type_variables_as_implicit(
         Type::Tuple(types) => Type::Tuple(Box::new(types.map(|type_value| {
             rewrite_explicit_type_variables_as_implicit(type_value, explicit_type_variable_names)
         }))),
-        Type::Array(element_type) => {
-            Type::Array(Box::new(rewrite_explicit_type_variables_as_implicit(
-                *element_type,
+        Type::BuiltInOneArgumentType {
+            kind,
+            type_argument: argument,
+        } => Type::BuiltInOneArgumentType {
+            kind,
+            type_argument: Box::new(rewrite_explicit_type_variables_as_implicit(
+                *argument,
                 explicit_type_variable_names,
-            )))
-        }
-        Type::Quoted(type_value) => Type::Quoted(Box::new(
-            rewrite_explicit_type_variables_as_implicit(*type_value, explicit_type_variable_names),
-        )),
+            )),
+        },
         Type::Named {
             name,
             symbol_uid,
@@ -904,6 +908,13 @@ pub fn get_type_annotation_position(type_annotation: &TypeAnnotation) -> Positio
             closing_backtick,
             ..
         } => join_position(opening_backtick.position, closing_backtick.position),
+        TypeAnnotation::Promise {
+            bang_token,
+            type_annotation,
+        } => join_position(
+            bang_token.position,
+            get_type_annotation_position(type_annotation),
+        ),
     }
 }
 
@@ -963,6 +974,9 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         | Expression::Variable(token)
         | Expression::Null(token)
         | Expression::Boolean { token, .. } => token.position,
+        Expression::Promise { bang, expression } => {
+            join_position(bang.position, get_expression_position(expression))
+        }
         Expression::Quoted {
             opening_backtick,
             closing_backtick,
@@ -1086,47 +1100,48 @@ pub fn unify_type_(
                 })
             }
         }
-
-        (Type::Quoted(expected_type), Type::Quoted(actual_type)) => {
-            match unify_type(
-                module,
-                expected_type.as_ref(),
-                actual_type.as_ref(),
+        (
+            Type::BuiltInOneArgumentType {
+                kind: expected_kind,
+                type_argument: expected_type_argument,
+            },
+            Type::BuiltInOneArgumentType {
+                kind: actual_kind,
+                type_argument: actual_type_argument,
+            },
+        ) => {
+            let unify_error = UnifyError {
                 position,
-            ) {
-                Ok(element_type) => Ok(Type::Quoted(Box::new(element_type))),
-                Err(UnifyError {
-                    kind: UnifyErrorKind::TypeMismatch { .. },
-                    ..
-                }) => Err(UnifyError {
-                    position,
-                    kind: UnifyErrorKind::TypeMismatch {
-                        expected_type: Type::Quoted(expected_type),
-                        actual_type: Type::Quoted(actual_type),
+                kind: UnifyErrorKind::TypeMismatch {
+                    expected_type: Type::BuiltInOneArgumentType {
+                        kind: expected_kind.clone(),
+                        type_argument: expected_type_argument.clone(),
                     },
-                }),
-                Err(error) => Err(error),
-            }
-        }
-        (Type::Array(expected_element_type), Type::Array(actual_element_type)) => {
-            match unify_type(
-                module,
-                expected_element_type.as_ref(),
-                actual_element_type.as_ref(),
-                position,
-            ) {
-                Ok(element_type) => Ok(Type::Array(Box::new(element_type))),
-                Err(UnifyError {
-                    kind: UnifyErrorKind::TypeMismatch { .. },
-                    ..
-                }) => Err(UnifyError {
-                    position,
-                    kind: UnifyErrorKind::TypeMismatch {
-                        expected_type: Type::Array(expected_element_type),
-                        actual_type: Type::Array(actual_element_type),
+                    actual_type: Type::BuiltInOneArgumentType {
+                        kind: actual_kind.clone(),
+                        type_argument: actual_type_argument.clone(),
                     },
-                }),
-                Err(error) => Err(error),
+                },
+            };
+            if expected_kind != actual_kind {
+                Err(unify_error)
+            } else {
+                match unify_type(
+                    module,
+                    expected_type_argument.as_ref(),
+                    actual_type_argument.as_ref(),
+                    position,
+                ) {
+                    Ok(type_value) => Ok(Type::BuiltInOneArgumentType {
+                        kind: expected_kind,
+                        type_argument: Box::new(type_value),
+                    }),
+                    Err(UnifyError {
+                        kind: UnifyErrorKind::TypeMismatch { .. },
+                        ..
+                    }) => Err(unify_error),
+                    Err(error) => Err(error),
+                }
             }
         }
         (
@@ -1404,11 +1419,6 @@ pub fn rewrite_type_variable_in_type(
         Type::Character => Type::Character,
         Type::Null => Type::Null,
         Type::ExplicitTypeVariable { name } => Type::ExplicitTypeVariable { name },
-        Type::Array(type_value) => Type::Array(Box::new(rewrite_type_variable_in_type(
-            from_type_variable,
-            to_type,
-            *type_value,
-        ))),
         Type::ImplicitTypeVariable { name } => {
             if name == *from_type_variable {
                 to_type.clone()
@@ -1416,11 +1426,17 @@ pub fn rewrite_type_variable_in_type(
                 Type::ImplicitTypeVariable { name }
             }
         }
-        Type::Quoted(type_value) => Type::Quoted(Box::new(rewrite_type_variable_in_type(
-            from_type_variable,
-            to_type,
-            *type_value,
-        ))),
+        Type::BuiltInOneArgumentType {
+            kind,
+            type_argument,
+        } => Type::BuiltInOneArgumentType {
+            kind,
+            type_argument: Box::new(rewrite_type_variable_in_type(
+                from_type_variable,
+                to_type,
+                *type_argument,
+            )),
+        },
         Type::Named {
             name,
             symbol_uid,
@@ -1613,12 +1629,18 @@ fn infer_expression_type_(
         } => {
             let position = join_position(opening_backtick.position, closing_backtick.position);
             let expected_type = match expected_type {
-                Some(Type::Quoted(type_value)) => Some(*type_value),
+                Some(Type::BuiltInOneArgumentType {
+                    kind: BuiltInOneArgumentTypeKind::Quoted,
+                    type_argument,
+                }) => Some(*type_argument),
                 _ => None,
             };
             let result = infer_expression_type(module, expected_type, expression)?;
             Ok(InferExpressionResult {
-                type_value: Type::Quoted(Box::new(result.type_value)),
+                type_value: Type::BuiltInOneArgumentType {
+                    kind: BuiltInOneArgumentTypeKind::Quoted,
+                    type_argument: Box::new(result.type_value),
+                },
                 expression: TypecheckedExpression::Record {
                     key_value_pairs: vec![
                         (PropertyName("value".to_string()), result.expression),
@@ -1735,9 +1757,12 @@ fn infer_expression_type_(
             let result = infer_expression_type(module, None, expression)?;
             let key_type_pairs = match result.type_value {
                 // Re-pack quoted type as record
-                Type::Quoted(type_value) => {
+                Type::BuiltInOneArgumentType {
+                    kind: BuiltInOneArgumentTypeKind::Quoted,
+                    type_argument,
+                } => {
                     vec![
-                        ("value".to_string(), *type_value),
+                        ("value".to_string(), *type_argument),
                         (
                             "meta".to_string(),
                             Type::Record {
@@ -1915,11 +1940,56 @@ fn infer_expression_type_(
             true_branch,
             type_annotation,
             keyword_let,
+            bang,
             ..
         } => {
             module.step_into_new_child_scope();
-            let type_annotation_type = optional_type_annotation_to_type(module, type_annotation)?;
-            let typechecked_right = infer_expression_type(module, type_annotation_type, right)?;
+            let typechecked_right = {
+                match bang {
+                    Some(_) => {
+                        // Then the right type must have type of promise
+                        match type_annotation {
+                            None => {
+                                let type_variable =
+                                    module.introduce_implicit_type_variable(None)?;
+                                infer_expression_type(
+                                    module,
+                                    Some(Type::BuiltInOneArgumentType {
+                                        kind: BuiltInOneArgumentTypeKind::Promise,
+                                        type_argument: Box::new(type_variable),
+                                    }),
+                                    right,
+                                )?
+                            }
+                            Some(type_annotation) => {
+                                let type_annotation_type =
+                                    type_annotation_to_type(module, type_annotation)?;
+                                match type_annotation_type {
+                                    Type::BuiltInOneArgumentType {
+                                        kind: BuiltInOneArgumentTypeKind::Promise,
+                                        ..
+                                    } => infer_expression_type(
+                                        module,
+                                        Some(type_annotation_type),
+                                        right,
+                                    ),
+                                    _ => Err(UnifyError {
+                                        position: get_type_annotation_position(type_annotation),
+                                        kind: UnifyErrorKind::ExpectedPromiseTypeAnnotation {
+                                            actual_type: type_annotation_type,
+                                        },
+                                    }),
+                                }?
+                            }
+                        }
+                    }
+                    None => {
+                        let type_annotation_type =
+                            optional_type_annotation_to_type(module, type_annotation)?;
+                        infer_expression_type(module, type_annotation_type, right)?
+                    }
+                }
+            };
 
             let result = match false_branch {
                 None => {
@@ -1929,13 +1999,25 @@ fn infer_expression_type_(
                         type_annotation.clone(),
                     )?;
 
-                    let typechecked_left =
-                        infer_destructure_pattern(module, expected_left_type, left)?;
+                    let typechecked_left = {
+                        let expected_left_type = if bang.is_some() {
+                            match expected_left_type {
+                                Some(Type::BuiltInOneArgumentType {
+                                    kind: BuiltInOneArgumentTypeKind::Promise,
+                                    type_argument: type_value,
+                                }) => Some(*type_value),
+                                other => other,
+                            }
+                        } else {
+                            expected_left_type
+                        };
+                        infer_destructure_pattern(module, expected_left_type, left)?
+                    };
 
                     let typechecked_true_branch =
                         infer_expression_type(module, expected_type, true_branch)?;
 
-                    let result_type = match check_exhaustiveness(
+                    let (result_type, left_pattern_is_exhaustive) = match check_exhaustiveness(
                         module,
                         typechecked_left.type_value.clone(),
                         NonEmpty {
@@ -1947,7 +2029,11 @@ fn infer_expression_type_(
                         Ok(_) => {
                             // If the pattern of left is already exhaustive,
                             // the type of this let expression should be true_branch_type
-                            Ok(typechecked_true_branch.type_value)
+                            let left_pattern_is_exhaustive = true;
+                            Ok((
+                                typechecked_true_branch.type_value,
+                                left_pattern_is_exhaustive,
+                            ))
                         }
                         Err(UnifyError {
                             kind: UnifyErrorKind::MissingCases(remaining_patterns),
@@ -1990,7 +2076,8 @@ fn infer_expression_type_(
                                 &typechecked_true_branch.type_value,
                                 get_expression_position(true_branch),
                             )?;
-                            Ok(type_value)
+                            let left_pattern_is_exhaustive = false;
+                            Ok((type_value, left_pattern_is_exhaustive))
                         }
                         Err(other_error) => Err(other_error),
                     }?;
@@ -1999,6 +2086,7 @@ fn infer_expression_type_(
                         type_value: result_type,
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
+                                asynchronous: bang.is_some(),
                                 function: Box::new(TypecheckedExpression::Function(Box::new(
                                     TypecheckedFunction {
                                         branches: Box::new(NonEmpty {
@@ -2009,7 +2097,10 @@ fn infer_expression_type_(
                                                 }),
                                                 body: Box::new(typechecked_true_branch.expression),
                                             },
-                                            tail: vec![TypecheckedFunctionBranch {
+                                            tail: if left_pattern_is_exhaustive {
+                                                vec![]
+                                            } else {
+                                                vec![TypecheckedFunctionBranch {
                                                 parameters: Box::new(NonEmpty {
                                                     head: TypecheckedDestructurePattern::Underscore,
                                                     tail: vec![],
@@ -2017,7 +2108,8 @@ fn infer_expression_type_(
                                                 body: Box::new(
                                                     typechecked_right.expression.clone(),
                                                 ),
-                                            }],
+                                            }]
+                                            },
                                         }),
                                     },
                                 ))),
@@ -2060,6 +2152,7 @@ fn infer_expression_type_(
                         type_value: *typechecked_function.function_type.return_type,
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
+                                asynchronous: bang.is_some(),
                                 first_argument: Box::new(typechecked_right.expression),
                                 rest_arguments: vec![],
                                 function: Box::new(TypecheckedExpression::Function(Box::new(
@@ -2177,6 +2270,7 @@ fn infer_expression_type_(
                             .apply_subtitution_to_type(expected_function_type.return_type.as_ref()),
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
+                                asynchronous: false,
                                 function: Box::new(typechecked_function.expression),
                                 first_argument: Box::new(typechecked_first_argument.expression),
                                 rest_arguments: typechecked_rest_arguments
@@ -2239,6 +2333,7 @@ fn infer_expression_type_(
                         type_value: module.apply_subtitution_to_type(&return_type),
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
+                                asynchronous: false,
                                 function: Box::new(typechecked_function.expression),
                                 first_argument: Box::new(typechecked_first_argument.expression),
                                 rest_arguments: typechecked_rest_arguments
@@ -2291,7 +2386,10 @@ fn infer_expression_type_(
         }
         Expression::Array { elements, .. } => {
             let element_type = match expected_type {
-                Some(Type::Array(expected_element_type)) => Ok(*expected_element_type),
+                Some(Type::BuiltInOneArgumentType {
+                    kind: BuiltInOneArgumentTypeKind::Array,
+                    type_argument: expected_element_type,
+                }) => Ok(*expected_element_type),
                 _ => Ok(Type::ImplicitTypeVariable {
                     name: module.get_next_type_variable_name(),
                 }),
@@ -2301,7 +2399,10 @@ fn infer_expression_type_(
                 .map(|element| infer_expression_type(module, Some(element_type.clone()), element))
                 .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?;
             Ok(InferExpressionResult {
-                type_value: Type::Array(Box::new(module.apply_subtitution_to_type(&element_type))),
+                type_value: Type::BuiltInOneArgumentType {
+                    kind: BuiltInOneArgumentTypeKind::Array,
+                    type_argument: Box::new(module.apply_subtitution_to_type(&element_type)),
+                },
                 expression: TypecheckedExpression::Array {
                     elements: typechecked_elements
                         .iter()
@@ -2316,6 +2417,23 @@ fn infer_expression_type_(
                 code: code.representation.clone(),
             },
         }),
+        Expression::Promise { expression, .. } => {
+            let expected_type = match expected_type {
+                Some(Type::BuiltInOneArgumentType {
+                    kind: BuiltInOneArgumentTypeKind::Promise,
+                    type_argument: type_value,
+                }) => Some(*type_value),
+                other => other,
+            };
+            let result = infer_expression_type(module, expected_type, expression)?;
+            Ok(InferExpressionResult {
+                type_value: Type::BuiltInOneArgumentType {
+                    kind: BuiltInOneArgumentTypeKind::Promise,
+                    type_argument: Box::new(result.type_value),
+                },
+                expression: TypecheckedExpression::Promise(Box::new(result.expression)),
+            })
+        }
     }?;
     Ok(InferExpressionResult {
         type_value: module.apply_subtitution_to_type(&result.type_value),
@@ -2813,9 +2931,22 @@ pub fn type_annotation_to_type(
                 .collect::<Result<Vec<(String, Type)>, UnifyError>>()?;
             Ok(Type::Record { key_type_pairs })
         }
-        TypeAnnotation::Array { element_type, .. } => Ok(Type::Array(Box::new(
-            type_annotation_to_type(module, element_type)?,
-        ))),
+        TypeAnnotation::Array { element_type, .. } => Ok(Type::BuiltInOneArgumentType {
+            kind: BuiltInOneArgumentTypeKind::Array,
+            type_argument: Box::new(type_annotation_to_type(module, element_type)?),
+        }),
+        TypeAnnotation::Quoted {
+            type_annotation, ..
+        } => Ok(Type::BuiltInOneArgumentType {
+            kind: BuiltInOneArgumentTypeKind::Quoted,
+            type_argument: Box::new(type_annotation_to_type(module, type_annotation.as_ref())?),
+        }),
+        TypeAnnotation::Promise {
+            type_annotation, ..
+        } => Ok(Type::BuiltInOneArgumentType {
+            kind: BuiltInOneArgumentTypeKind::Promise,
+            type_argument: Box::new(type_annotation_to_type(module, type_annotation.as_ref())?),
+        }),
         TypeAnnotation::Function {
             parameters_types,
             return_type,
@@ -2828,12 +2959,6 @@ pub fn type_annotation_to_type(
                 return_type: Box::new(type_annotation_to_type(module, return_type)?),
             }))
         }
-        TypeAnnotation::Quoted {
-            type_annotation, ..
-        } => Ok(Type::Quoted(Box::new(type_annotation_to_type(
-            module,
-            type_annotation.as_ref(),
-        )?))),
     }
 }
 
@@ -2986,9 +3111,12 @@ fn infer_destructure_pattern_(
             }
         }
         DestructurePattern::Array { spread: None, .. } => Ok(InferDestructurePatternResult {
-            type_value: Type::Array(Box::new(Type::ImplicitTypeVariable {
-                name: module.get_next_type_variable_name(),
-            })),
+            type_value: Type::BuiltInOneArgumentType {
+                kind: BuiltInOneArgumentTypeKind::Array,
+                type_argument: Box::new(Type::ImplicitTypeVariable {
+                    name: module.get_next_type_variable_name(),
+                }),
+            },
             destructure_pattern: TypecheckedDestructurePattern::Array { spread: None },
         }),
         DestructurePattern::Array {
@@ -2996,7 +3124,10 @@ fn infer_destructure_pattern_(
             ..
         } => {
             let expected_element_type = match expected_type {
-                Some(Type::Array(expected_type)) => *expected_type,
+                Some(Type::BuiltInOneArgumentType {
+                    kind: BuiltInOneArgumentTypeKind::Array,
+                    type_argument: expected_type,
+                }) => *expected_type,
                 _ => Type::ImplicitTypeVariable {
                     name: module.get_next_type_variable_name(),
                 },
@@ -3008,7 +3139,10 @@ fn infer_destructure_pattern_(
                 &spread.first_element,
             )?;
 
-            let expected_array_type = Type::Array(Box::new(expected_element_type));
+            let expected_array_type = Type::BuiltInOneArgumentType {
+                kind: BuiltInOneArgumentTypeKind::Array,
+                type_argument: Box::new(expected_element_type),
+            };
             let typechecked_rest_elements = infer_destructure_pattern(
                 module,
                 Some(expected_array_type.clone()),
@@ -3125,16 +3259,17 @@ fn substitute_type_variable_in_type(
         Type::Integer => Type::Integer,
         Type::Boolean => Type::Boolean,
         Type::ExplicitTypeVariable { name } => Type::ExplicitTypeVariable { name: name.clone() },
-        Type::Array(type_value) => Type::Array(Box::new(substitute_type_variable_in_type(
-            from_type_variable,
-            to_type,
-            type_value.as_ref(),
-        ))),
-        Type::Quoted(type_value) => Type::Quoted(Box::new(substitute_type_variable_in_type(
-            from_type_variable,
-            to_type,
-            type_value.as_ref(),
-        ))),
+        Type::BuiltInOneArgumentType {
+            kind,
+            type_argument,
+        } => Type::BuiltInOneArgumentType {
+            kind: kind.clone(),
+            type_argument: Box::new(substitute_type_variable_in_type(
+                from_type_variable,
+                to_type,
+                type_argument.as_ref(),
+            )),
+        },
         Type::ImplicitTypeVariable { name } => {
             if *name == *from_type_variable {
                 to_type.clone()
@@ -3200,8 +3335,8 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
         | Type::Boolean
         | Type::Underscore
         | Type::ExplicitTypeVariable { .. } => HashSet::new(),
-        Type::Array(type_value) | Type::Quoted(type_value) => {
-            get_free_type_variables_in_type(type_value.as_ref())
+        Type::BuiltInOneArgumentType { type_argument, .. } => {
+            get_free_type_variables_in_type(type_argument.as_ref())
         }
         Type::Tuple(types) => types
             .clone()

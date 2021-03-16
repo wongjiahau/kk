@@ -109,7 +109,10 @@ pub enum Type {
         name: String,
         type_arguments: Vec<(String, Type)>,
     },
-    Quoted(Box<Type>),
+    BuiltInOneArgumentType {
+        kind: BuiltInOneArgumentTypeKind,
+        type_argument: Box<Type>,
+    },
     Function(FunctionType),
     Tuple(Box<NonEmpty<Type>>),
     Boolean,
@@ -118,7 +121,13 @@ pub enum Type {
     String,
     Character,
     Null,
-    Array(Box<Type>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuiltInOneArgumentTypeKind {
+    Quoted,
+    Promise,
+    Array,
 }
 
 #[derive(Debug, Clone)]
@@ -175,6 +184,10 @@ pub enum TypeAnnotation {
         left_square_bracket: Token,
         element_type: Box<TypeAnnotation>,
         right_square_bracket: Token,
+    },
+    Promise {
+        bang_token: Token,
+        type_annotation: Box<TypeAnnotation>,
     },
     Underscore(Token),
     Function {
@@ -291,11 +304,16 @@ pub enum Expression {
     },
     Let {
         keyword_let: Token,
+        bang: Option<Token>,
         left: Box<DestructurePattern>,
         type_annotation: Option<TypeAnnotation>,
         right: Box<Expression>,
         true_branch: Box<Expression>,
         false_branch: Option<Box<Function>>,
+    },
+    Promise {
+        bang: Token,
+        expression: Box<Expression>,
     },
     UnsafeJavascript {
         code: Token,
@@ -432,6 +450,8 @@ pub enum TokenType {
     LeftSquareBracket,
     RightSquareBracket,
     Newline,
+    /// Also known as Exclamation Mark (!)
+    Bang,
     Colon,
     LessThan,
     MoreThan,
