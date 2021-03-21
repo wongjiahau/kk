@@ -94,7 +94,6 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
         }
         TypecheckedExpression::FunctionCall(function) => {
             let TypecheckedFunctionCall {
-                asynchronous,
                 function,
                 first_argument,
                 rest_arguments,
@@ -106,14 +105,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 .map(transpile_expression)
                 .collect::<Vec<String>>()
                 .join(",");
-            if asynchronous {
-                format!(
-                    "Promise.all([{}]).then(args => ({})(...args))",
-                    arguments, function
-                )
-            } else {
-                format!("({})({})", function, arguments)
-            }
+            format!("({})({})", function, arguments)
         }
         TypecheckedExpression::Array { elements, .. } => format!(
             "[{}]",

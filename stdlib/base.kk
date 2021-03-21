@@ -203,7 +203,19 @@ export let should_be<A>
       )
 
 enum Result<A B> = Ok(A) Error(B)
+
+# Option's function
 enum Option<A> = Some(A) None
+
+let is_some<A>
+  : | Option<A> => Boolean
+  = | Some(_) => true
+    | _ => false
+
+let is_none<A>
+  : | Option<A> => Boolean
+  = | None => true
+    | _ => false
 
 ###
 Exit a process with a specific code.
@@ -256,7 +268,7 @@ export let concat
   = @@@ (x,y)=>x+y @@@
 
 
-# Integer functions 
+# Integer and Float functions 
 
 ###
 For converting an Integer to String.
@@ -332,7 +344,7 @@ do `9.multiply(8)`.should_be(`72`)
 ###
 export let multiply
   : | Integer Integer => Integer
-  = @@@ (x, y) => x * y @@@
+  = @@@ (x, y) => x*y @@@
 
 ###
 Multiply two floats.
@@ -466,6 +478,315 @@ export let more_than
   : | Float Float => Boolean
   = @@@ (x,y) => x > y @@@
 
+###
+Negates a float value.
+```
+do `1.0.negative`.should_be(`-1.0`)
+```
+###
+export let negative
+  : | Float => Float
+  = @@@ x => -x @@@
+
+###
+Represents positive infinity.
+###
+export let INFINITY
+  : Float
+  = @@@ Number.INFINITY @@@
+
+###
+Returns the value of pi.
+```
+do `PI.round(9)`.should_be(`3.141592654`)
+```
+###
+export let PI
+  : Float
+  = @@@ Math.PI @@@ 
+
+###
+This value represents Euler's number, the base of natural logarithms, e.
+```
+do `E.round(9)`.should_be(`2.718281828`)
+```
+###
+export let E
+  : Float
+  = @@@ Math.E @@@
+
+###
+This value represents the natural logarithm of 10.
+```
+do `LN_10.round(4)`.should_be(`2.3026`)
+```
+###
+export let LN_10
+  : Float
+  = @@@ Math.LN10 @@@
+
+###
+This value represents the natural logarithm of 2.
+```
+do `LN_2.round(4)`.should_be(`0.6931`)
+```
+###
+export let LN_2
+  : Float
+  = @@@ Math.LN2 @@@
+
+###
+This value represents the base 10 logarithm of e.
+```
+do `LOG_10_E.round(4)`.should_be(`0.4343`)
+```
+###
+export let LOG_10_E
+  : Float
+  = @@@ Math.LOG10E @@@
+  
+###
+This value represents the base 2 logarithm of e.
+```
+do `LOG_2_E.round(4)`.should_be(`1.4427`)
+```
+###
+export let LOG_2_E
+  : Float
+  = @@@ Math.LOG2E @@@
+
+###
+This value represents the square root of 1/2.
+```
+do `SQUARE_ROOT_HALF.round(4)`.should_be(`0.7071`)
+```
+###
+export let SQUARE_ROOT_HALF
+  : Float
+  = @@@ Math.SQRT1_2 @@@
+
+###
+This value represents the square root of 2.
+```
+do `SQUARE_ROOT_2.round(4)`.should_be(`1.4142`)
+```
+###
+export let SQUARE_ROOT_2
+  : Float
+  = @@@ Math.SQRT2 @@@
+
+###
+Returns the absolute value of a number.
+```
+do `-2.0.absolute`.should_be(`2.0`)
+do `1.0.absolute`.should_be(`1.0`)
+```
+###
+export let absolute
+  : | Float => Float
+  = @@@ Math.abs @@@
+
+###
+Compute the arc-cosine of a number.
+```
+do `0.5.acos.round(4)`.should_be(`1.0472`)
+```
+###
+export let acos
+  : | Float => Float
+  = @@@ Math.acos @@@
+
+###
+Compute the hyperbolic arc-cosine of a number.
+```
+do `2.0.acosh.round(4)`.should_be(`1.317`)
+```
+###
+export let acosh
+  : | Float => Float
+  = @@@ Math.acosh @@@
+
+###
+Compute the arc-sine of a number.
+```
+do `0.5.asin.round(4)`.should_be(`0.5236`)
+```
+###
+export let asin
+  : | Float => Float
+  = @@@ Math.asin @@@
+
+###
+Compute the hyperbolic arc-sine of a number.
+```
+do `1.0.asinh.round(4)`.should_be(`0.8814`)
+```
+###
+export let asinh
+  : | Float => Float
+  = @@@ Math.asinh @@@
+
+###
+Compute the arc-tangent of a number
+```
+do `1.0.atan.round(4)`.should_be(`0.7854`)
+```
+###
+export let atan
+  : | Float => Float
+  = @@@ Math.atan @@@
+
+###
+Compute the angle in the plane (in radians) between the positive x-axis and the ray from (0,0) to the point (x,y).
+```
+do `1.0.atan2(3.0).round(4)`.should_be(`0.3218`)
+```
+###
+export let atan2
+  : | Float Float => Float
+  = @@@ Math.atan2 @@@
+
+###
+Compute the hyperbolic arc-tangent of a number.
+```
+do `0.5.atanh.round(4)`.should_be(`0.5493`)
+```
+###
+export let atanh
+  : | Float => Float
+  = @@@ Math.atanh @@@
+
+###
+Compute the cube root of a number.
+```
+do `27.0.cube_root`.should_be(`3.0`)
+```
+###
+export let cube_root
+  : | Float => Float
+  = @@@ Math.cbrt @@@
+
+###
+Round up a float to the nearest integer.
+```
+do `1.0001.ceiling`.should_be(`2`)
+```
+###
+export let ceiling
+  : | Float => Integer
+  = @@@ Math.ceil @@@
+
+###
+Compute the cosine of an angle in radian.
+```
+do `PI.cos`.should_be(`-1.0`)
+```
+###
+export let cos
+  : | Float => Float
+  = @@@ Math.cos @@@
+
+###
+Compute the hyperbolic cosine of a number.
+```
+do `1.0.cosh.round(4)`.should_be(`1.5431`)
+```
+###
+export let cosh
+  : | Float => Float
+  = @@@ Math.cosh @@@
+
+###
+Compute the natural exponentiation of a number.
+```
+do `E.power(3.0).round(9)`.should_be(`3.0.exp.round(9)`)
+```
+###
+export let exp
+  : | Float => Float
+  = @@@ Math.exp @@@
+
+###
+Compute the natural exponentiation of a number, minus 1.
+```
+do `E.power(3.0).minus(1.0).round(9)`.should_be(`3.0.expm1.round(9)`)
+```
+###
+export let expm1
+  : | Float => Float
+  = @@@ Math.expm1 @@@
+
+###
+Round down a float to the nearest integer.
+```
+do `9.9999.floor`.should_be(`9`)
+```
+###
+export let floor
+  : | Float => Integer
+  = @@@ Math.floor @@@
+
+###
+Compute the natural logarithm of a number.
+```
+do `E.log`.should_be(`1.0`)
+```
+###
+export let log
+  : | Float => Float
+  = @@@ Math.log @@@
+
+###
+Compute the base 10 logarithm of a number.
+```
+do `10.0.log10`.should_be(`1.0`)
+```
+###
+export let log10
+  : | Float => Float
+  = @@@ Math.log10 @@@
+
+###
+Compute the base 2 logarithm of a number.
+```
+do `2.0.log2`.should_be(`1.0`)
+```
+###
+export let log2
+  : | Float => Float
+  = @@@ Math.log2 @@@
+
+###
+Returns the maximum float of array.
+```
+do `[1.2 52.0 3.3 2.3].max`.should_be(`52.0`)
+```
+###
+export let max<A>
+  : | [Float] => Float
+  = @@@ (xs) => Math.max(...xs) @@@
+
+###
+Returns the minimum float of array.
+```
+do `[1.2 52.0 3.3 2.3].min`.should_be(`1.2`)
+```
+###
+export let min<A>
+  : | [Float] => Float
+  = @@@ (xs) => Math.min(...xs) @@@
+
+###
+Compute the sine of a number.
+```
+do `0.0.sin`.should_be(`0.0`)
+```
+###
+export let sin
+  : | Float => Float
+  = @@@ Math.sin @@@
+
+
 # Array functions
 
 ###
@@ -486,13 +807,13 @@ export let append<A>
     return result
   } @@@
 ###
-Get the element of an array at a specified zero-based index.
+Get the element of an array get a specified zero-based index.
 ```
-do `[].at(0)`.should_be(`None`)
-do `[1 2 3].at(1)`.should_be(`Some(2)`)
+do `[].get(0)`.should_be(`None`)
+do `[1 2 3].get(1)`.should_be(`Some(2)`)
 ```
 ###
-export let at<A>
+export let get<A>
   : | [A] Integer => Option<A>
   = @@@ (xs, i) => i < xs.length ? {$:"Some",_:xs[i]} : {$:"None",_:null} @@@
 
@@ -559,11 +880,11 @@ do `[1 2 3 1].drop_while(|.less_than(9))`.should_be(`[]`)
 export let drop_while<A>
   : | [A] | A => Boolean => [A]
   = @@@
-    async (xs, p) => {
+     (xs, p) => {
       var length = xs.length
       for(var i = 0; i < length; i++) {
         var x = xs[i]
-        if(await p(x)) {
+        if( p(x)) {
           continue
         }
         else {
@@ -588,40 +909,19 @@ do `[1 2 3].every(|.more_than(1))`.should_be(`false`)
 ###
 export let every<A>
   : | [A] | A => Boolean => Boolean
-  = @@@
-  async (xs, predicate) => {
-    var length = xs.length
-    for(var i = 0; i < length; i++) {
-      if(!await predicate(xs[i])) {
-        return false
-      } 
-    }
-    return true
-  }
-  @@@
-
+  = | xs predicate => xs
+      .find_map(|x => x.predicate.(|false => Some(null) |_ => None))
+      .is_some.not
 
 ###
-Filter out element from an array that does not fulfil the specified predicate.  
+Filter out element from an array that does not satisfy the given predicate.  
 ```
 do `[1 2 3].filter(|.more_than(1))`.should_be(`[2 3]`)
 ```
 ###
 export let filter<A>
   : | [A] | A => Boolean => [A]
-  = @@@
-  async (xs, f) => {
-    var result = []
-    var length = xs.length
-    for(var i = 0; i < length; i++) {
-      var x = xs[i]
-      if(await f(x)) {
-        result.push(x)
-      } 
-    }
-    return result
-  }
-  @@@
+  = | xs predicate => xs.flat_map(|x => x.predicate.(|true => [x] |_ => []))
 
 ###
 Apply a transform function to each matching elements in an array.  
@@ -640,20 +940,19 @@ do `animals.filter_map(|Bird({wings}) => Some(wings) |_ => None)`.should_be(`[2 
 ###
 export let filter_map<A B>
   : | [A] | A => Option<B> => [B]
-  = @@@
-  async (xs, f) => {
-    var results = []
-    var length = xs.length
-    for(var i = 0; i < length; i++) {
-      var x = xs[i]
-      var result = await f(x)
-      if(result.$ === 'Some') {
-        results.push(result._)
-      }
-    }
-    return results
-  }
-  @@@
+  = | xs f => xs.flat_map(|x => x.f.(|Some(y) => [y] |_ => []))
+
+###
+Find the first element that satisfies the given predicate.
+```
+do `[1 2 3].find(|.more_than(2))`.should_be(`Some(3)`)
+do `[1 2 3].find(|.more_than(10))`.should_be(`None`)
+```
+###
+export let find<A>
+  : | [A] | A => Boolean => Option<A>
+  = | xs predicate => xs.find_map(|x => x.predicate.(|true => Some(x) |_ => None))
+
 
 ### 
 This function is similar to `filter_map` except that the mapping function only 
@@ -666,12 +965,13 @@ do `[{id: 1 name: "Foo"} {id: 2 name: "Bar"}]
 ###
 export let find_map<A B>
   : | [A] | A => Option<B> => Option<B>
-  = @@@
-  async (xs, f) => {
+  = 
+  @@@
+   (xs, f) => {
     var length = xs.length
     for(var i = 0; i < length; i++) {
       var x = xs[i]
-      var result = await f(x)
+      var result =  f(x)
       if(result.$ === 'Some') {
         return result
       }
@@ -698,6 +998,36 @@ export let first<A>
   @@@
 
 ###
+Flatten an array.
+```
+do `[[1] [2 3] [4]].flat`.should_be(`[1 2 3 4]`)
+```
+###
+export let flat<A>
+  : | [[A]] => [A]
+  = @@@ xs => xs.flat() @@@
+
+
+###
+Apply a function to each element of an array an flatten the result.
+```
+do `[1 2 3].flat_map(|x => [x x])`.should_be(`[1 1 2 2 3 3]`)
+```
+###
+export let flat_map<A B>
+  : | [A] | A => [B] => [B]
+  = @@@
+     (xs, f) => {
+      var result = []
+      var length = xs.length
+      for(var i = 0; i < length; i++) {
+        result.push(... f(xs[i]))
+      }
+      return result
+    }
+  @@@
+
+###
 Aggregate an array into different groups based on the specified key.
 ```
 do
@@ -711,12 +1041,12 @@ do
 ###
 export let group<A>
   : | [A] | A => String => [{key: String first: A rest: [A]}]
-  = @@@ async (xs, f) => {
+  = @@@  (xs, f) => {
     var length = xs.length
     var result = {}
     for(var i = 0; i < length; i++) {
       var x = xs[i]
-      var key = await f(x)
+      var key =  f(x)
       if(result[key]) {
         result[key].$rest.push(x)
       }
@@ -773,6 +1103,51 @@ export let length<A>
   : | [A] => Integer
   = @@@ xs => xs.length @@@
 
+
+enum Continuation<State Answer> = Continue(State) Break(Answer)
+
+###
+Loop with a state.
+For example, the factorial function can be implemented as follows:
+```
+let factorial
+  : | Integer => Integer
+  = | n => {n result: 1}.loop(|{n result} =>
+      n.less_than(2).(
+        | true => Break(result)
+        | _ => Continue({n: n.minus(1) result: result.multiply(n) })
+      )
+    )
+
+do `0.factorial`.should_be(`1`)
+do `10.factorial`.should_be(`3628800`)
+```
+###
+export let loop<A B>
+  : | A | A => Continuation<A B> => B
+  = @@@ (state, f) => {
+    while(true) {
+      let next = f(state)
+      if(next.$==='Continue') {
+        state = next._
+      }
+      else {
+        return next._
+      }
+    }
+  }
+  @@@
+
+let naive_map_2<A B>
+  : | [A] | A => B => [B]
+  = | xs f => {index: 0 result: []}.loop(|state =>
+      xs.get(state.index).(
+        | Some(x) => Continue(state.{index.plus(1) result.append(x.f)})
+        | None => Break(state.result)
+      )
+    )
+
+
 ###
 Map a function to each element of an array.
 ```
@@ -781,17 +1156,7 @@ do `[1 2 3].map(|.plus(1))`.should_be(`[2 3 4]`)
 ###
 export let map<A B>
   : | [A] | A => B => [B]
-  = @@@
-  async (xs, f) => {
-    var result = Array(xs.length)
-    var length = xs.length
-    for(var i = 0; i < length; i++) {
-      result[i] = await f(xs[i])
-    }
-    return result
-  }
-  @@@
-
+  = | xs f => xs.flat_map(| x => [x.f])
 
 ###
 Partition an array into two parts based on a test.
@@ -801,13 +1166,13 @@ do `[1 2 3 4].partition(|.more_than(2))`.should_be(`{passed: [3 4] failed: [1 2]
 ###
 export let partition<A>
   : | [A] | A => Boolean => {passed: [A] failed: [A]}
-  = @@@ async (xs, f) => {
+  = @@@  (xs, f) => {
     var length = xs.length
     var passed = []
     var failed = []
     for(var i = 0; i < length; i++) {
       var x = xs[i]
-      if(await f(x)) {
+      if( f(x)) {
         passed.push(x)
       }
       else {
@@ -838,11 +1203,11 @@ do `[
 export let reduce<A B>
   : | [A] { from: B with: | B A => B } => B
   = @@@
-  async (xs, {$from, $with}) => {
+   (xs, {$from, $with}) => {
     let result = $from
     let length = xs.length
     for(var i = 0; i < length; i++) {
-      result = await $with(result, xs[i])
+      result =  $with(result, xs[i])
     }
     return result
   }
@@ -868,6 +1233,26 @@ export let repeat<A>
     }
   @@@
 
+###
+Reverse an array. The original array will not be mutated.
+```
+do `[1 2 3].reverse`.should_be(`[3 2 1]`)
+do `[].reverse`.should_be(`[]`)
+```
+###
+export let reverse<A>
+  : | [A] => [A]
+  = @@@
+    (xs) => {
+      var length = xs.length
+      var result = Array(length)
+      for(var i = 0; i < length; i++) {
+        result[i] = xs[length - i -1]
+      }
+      return result
+    }
+  @@@
+
 
 ###
 Check if some element in this array matches the specified predicate.
@@ -879,17 +1264,27 @@ do `[1 2 3].some(|.more_than(3))`.should_be(`false`)
 ###
 export let some<A>
   : | [A] | A => Boolean => Boolean
-  = @@@
-  async (xs, predicate) => {
-    var length = xs.length
-    for(var i = 0; i < length; i++) {
-      if(await predicate(xs[i])) {
-        return true
-      } 
+  = | xs predicate => xs.find_map(|x => x.predicate.(|true => Some(null) |_ => None)).is_some
+
+enum Order = Lesser Equals Greater
+###
+Sort an array based on a compare function.
+```
+#do `[1 3 4 2].sort_by(
+#      | a b if a.more_than(b) => Greater 
+#      | a b if a.less_than(b) => Lesser 
+#      | _ _                   => Equals
+#    )`.should_be(`[1 2 3 4]`)
+```
+###
+export let sort_by<A>
+  : | [A] | A A => Order => [A]
+  = @@@ 
+     (xs, f) => {
+      throw new Error("Not implemented yet")
     }
-    return false
-  }
   @@@
+
 
 ###
 Take N elements of an array, starting from the left.
@@ -928,12 +1323,12 @@ do `[1 2 3 1].take_while(|.more_than(4))`.should_be(`[]`)
 export let take_while<A>
   : | [A] | A => Boolean => [A]
   = @@@ 
-    async (xs, p) => {
+     (xs, p) => {
       var result = []
       var length = xs.length
       for(var i = 0; i < length; i++) {
         var x = xs[i]
-        if(await p(x)) {
+        if( p(x)) {
           result.push(x)
         }
         else {
@@ -974,12 +1369,12 @@ do `[{id: 1} {id: 2} {id: 3} {id: 1}].unique(|.id.to_string)`
 export let unique<A>
   : | [A] | A => String => [A]
   = @@@
-  async (xs, getKey) => {
+   (xs, getKey) => {
     var result = {}
     var length = xs.length
     for(var i = 0; i < length; i++) {
       var x = xs[i]
-      var key = await getKey(x)
+      var key =  getKey(x)
       if(!result[key]) {
         result[key] = x
       }
@@ -998,19 +1393,39 @@ do `["apple" "banana" "cane"].update_each({ if: |.ends_with("e") then: |.to_uppe
 export let update_each<A>
   : | [A] {if: | A => Boolean then: | A => A} => [A]
   = @@@
-  async (xs, {$if, $then}) => {
+   (xs, {$if, $then}) => {
     var result = []
     var length = xs.length
     for(var i = 0; i < length; i++) {
       var x = xs[i]
-      if(await $if(x)) {
-        result.push(await $then(x))
+      if( $if(x)) {
+        result.push( $then(x))
       } else {
         result.push(x)
       }
     }
     return result
   }
+  @@@
+
+###
+Zip two arrays together.
+```
+do `[1 2].zip(["a" "b"])`.should_be(`[{left: 1 right: "a"} {left: 2 right: "b"}]`)
+do `[1 2 3].zip(["a"])`.should_be(`[{left: 1 right: "a"}]`)
+```
+###
+export let zip<A B>
+  : | [A] [B] => [{left: A right: B}]
+  = @@@
+    (xs, ys) => {
+      var length = Math.min(xs.length, ys.length)
+      var result = Array(length)
+      for(var i = 0; i < length; i++) {
+        result[i] = {$left: xs[i], $right: ys[i]}
+      }
+      return result
+    }
   @@@
 
 
@@ -1096,12 +1511,36 @@ Benchmark a function.
 export let benchmark<A>
   : | Null | Null => A => Duration
   = @@@
-  async (_, f) => {
+   async (_, f) => {
     var justNow = Date.now()
     await f()
+    console.log( Date.now() - justNow, "ms")
     return {$: "Duration", _: {$milliseconds: Date.now() - justNow}}
   }
   @@@
+
+enum File = File({path: String})
+
+# File system functions
+export let read_file
+  : | File => !Result<String String>
+  = @@@
+    ({_: {$path}}) => {
+      return new Promise((resolve, reject) => {
+        require("fs").readFile($path, 'utf8', (error, result) => {
+          if(error) {
+            reject(error)
+          }
+          else {
+            resolve(result.toString())
+          }
+        })
+      })
+    }
+  @@@
+
+
+# Garbage code for testing
 
 export let native_map<A B>
   : | [A] | A => B => [B]
@@ -1111,8 +1550,38 @@ export let native_reduce<A B>
   : | [A] {from: B with: | B A => B} => [B]
   = @@@ (xs, {$from, $with}) => xs.reduce($with, $from) @@@
 
-# do null.benchmark(|_ => 0.to(100000).native_map(|.plus(2))).print
-# do null.benchmark(|_ => 0.to(100000).map(|.plus(2))).print
+let native_push<A>
+  : | [A] A => [A]
+  = @@@ (xs, x) => {
+      xs.push(x)
+      return xs
+    } @@@
+
+# do 0.to(10).native_map(|.plus(2)).print
+
+let naive_map<A B>
+  : | [A] | A => B => [B]
+  = | [] _ => []
+    | [x...xs] f => [x.f].concat(xs.naive_map(f))
+
+
+# do null.benchmark(|_ => 0.to(100000).naive_map_2(|.plus(2))).print
+# do null.benchmark(|_ => 0.to(1000000).native_map(|.plus(2))).print
+# do null.benchmark(|_ => 0.to(1000000).map(|.plus(2))).print
+# do null.benchmark(|_ => 0.to(100000).reduce({from: [] with: |result x => result.native_push(x.plus(2))})).print
+# do null.benchmark(|_ => [1].repeat(100000).flat).print
+# do null.benchmark(|_ => 0.to(100000).filter_map(|n => n.modulo(2).equals(0).(|true => Some(n.multiply(2)) | _ => None))).print
 
 # do null.benchmark(|_ => 0.to(100000).native_reduce({from: 0 with: plus})).print
 # do null.benchmark(|_ => 0.to(100000).reduce({from: 0 with: plus})).print
+# do null.benchmark(|_ => 0.to(100000).update_each({if: |.modulo(2).equals(0) then: |.plus(2)})).print
+# do null.benchmark(|_ => 0.to(10000000).find(|.less_than(-1))).print
+# do null.benchmark(|_ => 100.factorial).print
+
+do 20.factorial.print
+
+let x: !Result<Null String>
+  = let! Ok(file) = File({path: "./stdlib/base.kk"}).read_file
+      else | Error(error) => Error(error)
+    let _ = file.print
+    !Ok(null)

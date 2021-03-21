@@ -5,9 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo: !Integer
-  = let! result = !2
-    result # Must return promise
+let foo: Integer = !123
 
 ============
 EXIT CODE
@@ -23,13 +21,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/promise_2.kk:3:5
+  ┌─ tests/compiler/typecheck/promise_2.kk:1:20
   │
-3 │     result # Must return promise
-  │     ^^^^^^ Type mismatch
+1 │ let foo: Integer = !123
+  │                    ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - !Integer    | + Integer   |
+    | - Integer     | + !Integer  |
     +---------------+-------------+

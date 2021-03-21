@@ -266,7 +266,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::MultilineComment => "only used for documentation",
         TokenType::Backtick => "only used for quoting expressions, for example:\n\n\t`[123]`",
         TokenType::JavascriptCode => "only used for declaring Javascript interop code.",
-        TokenType::Bang => "used for annotating Promise type, for example: \n\n\t!Integer"
+        TokenType::Bang => "used for annotating Promise type, for example: \n\n\t!Integer",
+        TokenType::Slash => {panic!()}
     }
 }
 
@@ -401,6 +402,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Type Variables Declaration",
             examples: vec!["<T>", "<T U>"],
         },
+        ParseContext::ExpressionMonadicLet => ParseContextDescription {
+            name: "Monadic Let Expression",
+            examples: vec!["let/map x = Some(2)\nSome([x])"],
+        },
     }
 }
 
@@ -447,6 +452,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Backtick => "`",
         TokenType::JavascriptCode => "@@@ // this is javascript @@@",
         TokenType::Bang => "!",
+        TokenType::Slash => "/",
     }
 }
 
@@ -808,18 +814,16 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 )
             }
         }
-        UnifyErrorKind::ExpectedPromiseTypeAnnotation { actual_type } => {
-            StringifiedError {
-                summary: "Missing ! operator.".to_string(),
-                body: format!(
-                    "{}\n{}\n{}\n{}",
-                    "When we see:\n\n\tlet!\n\nwe expect the type annotation be of Promise type.",
-                    "But this type annotation is not a Promise, but rather:\n",
-                    stringify_type(actual_type, 2),
-                    "\nTo fix this error, consider adding ! at the beginning of this type annotation."
-
-                )
-            }
+        UnifyErrorKind::ApplicativeLetExpressionBindFunctionConditionNotMet { actual_type } => StringifiedError {
+            summary: "Unsatifactory bind function.".to_string(),
+            body: format!("The bind function must satisfies all of the following conditions\n{}\n\n{}\n\n{}", 
+                vec![
+                    "  (1) Must be a two-parameter function",
+                    "  (2) The expected second parameter type must be type of function",
+                ].join("\n"), 
+                "But the given bind function has the following type:", 
+                stringify_type(actual_type, 2)
+            )
         }
     }
 }
@@ -921,11 +925,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                     name,
                     arguments
                         .into_iter()
-                        .map(|(key, type_value)| format!(
-                            "{}\n{},",
-                            indent_string(key, 2),
-                            indent_string(stringify_type(type_value, 0), 4)
-                        ),)
+                        .map(|(_, type_value)| indent_string(stringify_type(type_value, 0), 2))
                         .collect::<Vec<String>>()
                         .join("\n")
                 );

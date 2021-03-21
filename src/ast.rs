@@ -304,12 +304,18 @@ pub enum Expression {
     },
     Let {
         keyword_let: Token,
-        bang: Option<Token>,
         left: Box<DestructurePattern>,
         type_annotation: Option<TypeAnnotation>,
         right: Box<Expression>,
         true_branch: Box<Expression>,
         false_branch: Option<Box<Function>>,
+    },
+    ApplicativeLet {
+        keyword_let: Token,
+        left: Box<DestructurePattern>,
+        binary_function_name: Token,
+        right: Box<Expression>,
+        body: Box<Expression>,
     },
     Promise {
         bang: Token,
@@ -463,6 +469,7 @@ pub enum TokenType {
     FatArrowRight,
     ThinArrowRight,
     Pipe,
+    Slash,
     Underscore,
     Identifier,
     String,

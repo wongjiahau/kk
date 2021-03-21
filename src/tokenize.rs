@@ -470,6 +470,7 @@ fn eat_token(
                         '<' => TokenType::LessThan,
                         '>' => TokenType::MoreThan,
                         '|' => TokenType::Pipe,
+                        '/' => TokenType::Slash,
                         '_' => TokenType::Underscore,
                         '`' => TokenType::Backtick,
                         '!' => TokenType::Bang,

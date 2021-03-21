@@ -34,14 +34,12 @@ error:
 8 │     Some([b]) # This should fail with: Expected Option<Option<T>>, but got Option<[T]>
   │     ^^^^^^^^^ Type mismatch
   │
-  = +-------------------+----------------+
-    |   EXPECTED TYPE   |  ACTUAL TYPE   |
-    +-------------------+----------------+
-    |   Option<         |   Option<      |
-    |     T             |     T          |
-    | -     Option<     | +     [        |
-    | -       T         | +       @TVAR2 |
-    | -         @TVAR7, | +     ],       |
-    | -     >,          |   >            |
-    |   >               |                |
-    +-------------------+----------------+
+  = +---------------+--------------+
+    | EXPECTED TYPE | ACTUAL TYPE  |
+    +---------------+--------------+
+    |   Option<     |   Option<    |
+    | -   Option<   | +   [        |
+    | -     @TVAR7  | +     @TVAR2 |
+    | -   >         | +   ]        |
+    |   >           |   >          |
+    +---------------+--------------+

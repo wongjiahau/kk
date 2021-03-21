@@ -35,6 +35,7 @@ pub enum ParseContext {
     ExpressionRecordUpdate,
     ExpressionEnumConstructor,
     ExpressionQuoted,
+    ExpressionMonadicLet,
 
     // Statement
     Statement,
@@ -860,7 +861,19 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_let_expression(&mut self, keyword_let: Token) -> Result<Expression, ParseError> {
-        let bang = self.try_eat_token(TokenType::Bang);
+        if self.try_eat_token(TokenType::Slash).is_some() {
+            let context = ParseContext::ExpressionMonadicLet;
+            let binary_function_name = self.eat_token(TokenType::Identifier, context)?;
+            let left = Box::new(self.parse_destructure_pattern()?);
+            self.eat_token(TokenType::Equals, context)?;
+            return Ok(Expression::ApplicativeLet {
+                keyword_let,
+                left,
+                binary_function_name,
+                right: Box::new(self.parse_expression()?),
+                body: Box::new(self.parse_expression()?),
+            });
+        }
         let context = ParseContext::ExpressionLet;
         let left = self.parse_destructure_pattern()?;
         let type_annotation = if self.try_eat_token(TokenType::Colon).is_some() {
@@ -879,7 +892,6 @@ impl<'a> Parser<'a> {
         let return_value = self.parse_expression()?;
         Ok(Expression::Let {
             keyword_let,
-            bang,
             left: Box::new(left),
             type_annotation,
             right: Box::new(right),

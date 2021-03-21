@@ -1,0 +1,48 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+# Should not fail
+enum Result<A B> = Ok(A) Error(B)
+
+let foo: !Result<String String> = !Ok("Hello")
+
+let bar: !Result<[String] String>
+  = let! Ok(x) = foo else
+      | Error(error) => !Error(error)
+    !Ok([x])
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/promise_5.kk:9:5
+  │
+9 │     !Ok([x])
+  │     ^^^^^^^^ Type mismatch
+  │
+  = +----------------+----------------+
+    | EXPECTED TYPE  |  ACTUAL TYPE   |
+    +----------------+----------------+
+    | - Result<      | + !Result<     |
+    |     A          |     A          |
+    |       [        |       [        |
+    |         String |         String |
+    |       ],       |       ],       |
+    |     B          |     B          |
+    |       @TVAR5,  |       @TVAR5,  |
+    |   >            |   >            |
+    +----------------+----------------+

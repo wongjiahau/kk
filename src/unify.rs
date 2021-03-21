@@ -275,7 +275,7 @@ impl UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
-    ExpectedPromiseTypeAnnotation {
+    ApplicativeLetExpressionBindFunctionConditionNotMet {
         actual_type: Type,
     },
     PropertyNameClashWithFunctionName {
@@ -1025,6 +1025,9 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
             ..
         } => join_position(keyword_let.position, get_expression_position(&true_branch)),
         Expression::UnsafeJavascript { code } => code.position,
+        Expression::ApplicativeLet {
+            keyword_let, body, ..
+        } => join_position(keyword_let.position, get_expression_position(body)),
     }
 }
 
@@ -1940,55 +1943,13 @@ fn infer_expression_type_(
             true_branch,
             type_annotation,
             keyword_let,
-            bang,
             ..
         } => {
             module.step_into_new_child_scope();
             let typechecked_right = {
-                match bang {
-                    Some(_) => {
-                        // Then the right type must have type of promise
-                        match type_annotation {
-                            None => {
-                                let type_variable =
-                                    module.introduce_implicit_type_variable(None)?;
-                                infer_expression_type(
-                                    module,
-                                    Some(Type::BuiltInOneArgumentType {
-                                        kind: BuiltInOneArgumentTypeKind::Promise,
-                                        type_argument: Box::new(type_variable),
-                                    }),
-                                    right,
-                                )?
-                            }
-                            Some(type_annotation) => {
-                                let type_annotation_type =
-                                    type_annotation_to_type(module, type_annotation)?;
-                                match type_annotation_type {
-                                    Type::BuiltInOneArgumentType {
-                                        kind: BuiltInOneArgumentTypeKind::Promise,
-                                        ..
-                                    } => infer_expression_type(
-                                        module,
-                                        Some(type_annotation_type),
-                                        right,
-                                    ),
-                                    _ => Err(UnifyError {
-                                        position: get_type_annotation_position(type_annotation),
-                                        kind: UnifyErrorKind::ExpectedPromiseTypeAnnotation {
-                                            actual_type: type_annotation_type,
-                                        },
-                                    }),
-                                }?
-                            }
-                        }
-                    }
-                    None => {
-                        let type_annotation_type =
-                            optional_type_annotation_to_type(module, type_annotation)?;
-                        infer_expression_type(module, type_annotation_type, right)?
-                    }
-                }
+                let type_annotation_type =
+                    optional_type_annotation_to_type(module, type_annotation)?;
+                infer_expression_type(module, type_annotation_type, right)?
             };
 
             let result = match false_branch {
@@ -1999,20 +1960,8 @@ fn infer_expression_type_(
                         type_annotation.clone(),
                     )?;
 
-                    let typechecked_left = {
-                        let expected_left_type = if bang.is_some() {
-                            match expected_left_type {
-                                Some(Type::BuiltInOneArgumentType {
-                                    kind: BuiltInOneArgumentTypeKind::Promise,
-                                    type_argument: type_value,
-                                }) => Some(*type_value),
-                                other => other,
-                            }
-                        } else {
-                            expected_left_type
-                        };
-                        infer_destructure_pattern(module, expected_left_type, left)?
-                    };
+                    let typechecked_left =
+                        infer_destructure_pattern(module, expected_left_type, left)?;
 
                     let typechecked_true_branch =
                         infer_expression_type(module, expected_type, true_branch)?;
@@ -2043,7 +1992,7 @@ fn infer_expression_type_(
                             // the type of this let expression should be type of `cases` unified together
                             // This unification is for handling cases as such:
                             //
-                            //      let foo = \null =>
+                            //      let foo = | null =>
                             //          let Ok(x) = Ok(1)
                             //          Ok({x})
                             //
@@ -2086,7 +2035,6 @@ fn infer_expression_type_(
                         type_value: result_type,
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
-                                asynchronous: bang.is_some(),
                                 function: Box::new(TypecheckedExpression::Function(Box::new(
                                     TypecheckedFunction {
                                         branches: Box::new(NonEmpty {
@@ -2152,7 +2100,6 @@ fn infer_expression_type_(
                         type_value: *typechecked_function.function_type.return_type,
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
-                                asynchronous: bang.is_some(),
                                 first_argument: Box::new(typechecked_right.expression),
                                 rest_arguments: vec![],
                                 function: Box::new(TypecheckedExpression::Function(Box::new(
@@ -2180,12 +2127,14 @@ fn infer_expression_type_(
             })
         }
         Expression::FunctionCall(function_call) => {
+            // Get the type of the first argument, this is necessary for performing single-dispatch
+            let typechecked_first_argument =
+                infer_expression_type(module, None, function_call.first_argument.as_ref())?;
+
             // Get expected function type
             let expected_function_type = {
                 // Note that we only infer the type of the first argument
                 // The rest arguments is just instantiated with type variables
-                let typechecked_first_argument =
-                    infer_expression_type(module, None, function_call.first_argument.as_ref())?;
                 let expected_rest_arguments_types = match &function_call.rest_arguments {
                     None => Ok(vec![]),
                     Some(rest_arguments) => rest_arguments
@@ -2270,7 +2219,6 @@ fn infer_expression_type_(
                             .apply_subtitution_to_type(expected_function_type.return_type.as_ref()),
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
-                                asynchronous: false,
                                 function: Box::new(typechecked_function.expression),
                                 first_argument: Box::new(typechecked_first_argument.expression),
                                 rest_arguments: typechecked_rest_arguments
@@ -2333,7 +2281,6 @@ fn infer_expression_type_(
                         type_value: module.apply_subtitution_to_type(&return_type),
                         expression: TypecheckedExpression::FunctionCall(Box::new(
                             TypecheckedFunctionCall {
-                                asynchronous: false,
                                 function: Box::new(typechecked_function.expression),
                                 first_argument: Box::new(typechecked_first_argument.expression),
                                 rest_arguments: typechecked_rest_arguments
@@ -2347,6 +2294,104 @@ fn infer_expression_type_(
                 other => Err(UnifyError {
                     position: get_expression_position(&function_call.function),
                     kind: UnifyErrorKind::CannotInvokeNonFunction { actual_type: other },
+                }),
+            }
+        }
+        Expression::ApplicativeLet {
+            left,
+            binary_function_name,
+            right,
+            body,
+            ..
+        } => {
+            // Get the type of the first argument, this is necessary for performing single-dispatch
+            let right = infer_expression_type(module, None, right.as_ref())?;
+
+            // Get expected function type
+            let expected_function_type = {
+                // Note that we only infer the type of the first argument
+                // The rest arguments is just instantiated with type variables
+                let expected_rest_arguments_types =
+                    vec![module.introduce_implicit_type_variable(None)?];
+                let expected_return_type = module.introduce_implicit_type_variable(None)?;
+                Type::Function(FunctionType {
+                    parameters_types: Box::new(NonEmpty {
+                        head: right.type_value,
+                        tail: expected_rest_arguments_types,
+                    }),
+                    return_type: Box::new(expected_return_type),
+                })
+            };
+
+            // Get the actual function type
+            // note that we use infer_expression_type_ instead of infer_expression_type
+            // This is so that we can throw the error of `cannot invoke non-function`
+            let bind_function = infer_expression_type_(
+                module,
+                Some(expected_function_type),
+                &Expression::Variable(binary_function_name.clone()),
+            )?;
+
+            match &bind_function.type_value {
+                Type::Function(bind_function_type) => {
+                    let rest_parameters_types = bind_function_type.parameters_types.tail();
+                    match rest_parameters_types.split_first() {
+                        Some((Type::Function(function_type), [])) => {
+                            if function_type.parameters_types.len() > 1 {
+                                panic!("To be implemented")
+                            }
+                            module.step_into_new_child_scope();
+                            let left = infer_destructure_pattern(
+                                module,
+                                Some(function_type.parameters_types.first().clone()),
+                                left,
+                            )?;
+
+                            let body = infer_expression_type(
+                                module,
+                                Some(*function_type.return_type.clone()),
+                                body,
+                            )?;
+
+                            module.step_out_to_parent_scope();
+
+                            Ok(InferExpressionResult {
+                                expression: TypecheckedExpression::FunctionCall(Box::new(
+                                    TypecheckedFunctionCall {
+                                        function: Box::new(bind_function.expression),
+                                        first_argument: Box::new(right.expression),
+                                        rest_arguments: vec![TypecheckedExpression::Function(
+                                            Box::new(TypecheckedFunction {
+                                                branches: Box::new(NonEmpty {
+                                                    head: TypecheckedFunctionBranch {
+                                                        parameters: Box::new(NonEmpty {
+                                                            head: left.destructure_pattern,
+                                                            tail: vec![],
+                                                        }),
+                                                        body: Box::new(body.expression),
+                                                    },
+                                                    tail: vec![],
+                                                }),
+                                            }),
+                                        )],
+                                    },
+                                )),
+                                type_value: *bind_function_type.return_type.clone(),
+                            })
+                        }
+                        _ => Err(UnifyError {
+                            position: binary_function_name.position,
+                            kind: UnifyErrorKind::ApplicativeLetExpressionBindFunctionConditionNotMet {
+                                actual_type: bind_function.type_value,
+                            },
+                        }),
+                    }
+                }
+                other_type => Err(UnifyError {
+                    position: binary_function_name.position,
+                    kind: UnifyErrorKind::ApplicativeLetExpressionBindFunctionConditionNotMet {
+                        actual_type: other_type.clone(),
+                    },
                 }),
             }
         }

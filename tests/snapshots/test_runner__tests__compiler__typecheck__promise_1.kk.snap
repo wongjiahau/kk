@@ -5,14 +5,15 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo: !Null
-  = let! x = 1 # Right side must be promise
-    x
+# No error
+let foo
+  : !Null
+  = !null
 
 ============
 EXIT CODE
 ============
-1
+0
 
 ============
 STDOUT
@@ -22,14 +23,3 @@ STDOUT
 ============
 STDERR
 ============
-error:
-  ┌─ tests/compiler/typecheck/promise_1.kk:2:14
-  │
-2 │   = let! x = 1 # Right side must be promise
-  │              ^ Type mismatch
-  │
-  = +---------------+-------------+
-    | EXPECTED TYPE | ACTUAL TYPE |
-    +---------------+-------------+
-    | - !@TVAR0     | + Integer   |
-    +---------------+-------------+
