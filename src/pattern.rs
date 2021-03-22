@@ -1,6 +1,6 @@
+use crate::ast::*;
+use crate::module::*;
 use crate::unify::rewrite_type_variables_in_type;
-use crate::{ast::*, unify::get_enum_type};
-use crate::{module::*, unify::unify_type};
 use std::collections::HashSet;
 
 #[derive(Debug)]
@@ -320,62 +320,6 @@ pub enum ExpandablePattern {
         handled_cases: Vec<String>,
         kind: InfinitePatternKind,
     },
-}
-
-impl ExpandablePattern {
-    pub fn to_type(&self, module: &mut Module) -> Type {
-        match &self {
-            ExpandablePattern::Any { type_value } => type_value.clone(),
-            ExpandablePattern::EnumConstructor { name, payload, .. } => {
-                let enum_type = get_enum_type(module, None, &Token::dummy_identifier(name.clone()))
-                    .expect("Compile error, should be able to get enum_type without error");
-
-                let expected_payload_type = enum_type.expected_payload_type;
-                let actual_payload_type = payload.clone().map(|payload| payload.to_type(module));
-                match (&expected_payload_type, &actual_payload_type) {
-                    (None, None) => enum_type.expected_enum_type,
-                    (Some(expected_payload_type), Some(actual_payload_type)) => {
-                        unify_type(
-                            module,
-                            expected_payload_type,
-                            actual_payload_type,
-                            Position::dummy(),
-                        )
-                        .expect("Compile error");
-                        enum_type.expected_enum_type
-                    }
-                    _ => panic!("Compiler error"),
-                }
-            }
-            ExpandablePattern::Tuple(_) => {
-                panic!("Should not be possible to reach this branch, since we don't allow user to construct Tuple values")
-            }
-            ExpandablePattern::Record { key_pattern_pairs } => Type::Record {
-                key_type_pairs: key_pattern_pairs
-                    .iter()
-                    .map(|(key, pattern)| (key.clone(), pattern.to_type(module)))
-                    .collect(),
-            },
-            ExpandablePattern::EmptyArray => Type::BuiltInOneArgumentType {
-                kind: BuiltInOneArgumentTypeKind::Array,
-                type_argument: Box::new(Type::ImplicitTypeVariable {
-                    name: module.get_next_type_variable_name(),
-                }),
-            },
-            ExpandablePattern::NonEmptyArray { first_element, .. } => {
-                Type::BuiltInOneArgumentType {
-                    kind: BuiltInOneArgumentTypeKind::Array,
-                    type_argument: Box::new(first_element.to_type(module)),
-                }
-            }
-            ExpandablePattern::Boolean(_) => Type::Boolean,
-            ExpandablePattern::Infinite { kind, .. } => match kind {
-                InfinitePatternKind::String => Type::String,
-                InfinitePatternKind::Character => Type::Character,
-                InfinitePatternKind::Integer => Type::Integer,
-            },
-        }
-    }
 }
 
 pub fn match_patterns(

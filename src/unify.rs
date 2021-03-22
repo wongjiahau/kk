@@ -275,6 +275,9 @@ impl UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    LetBindingRefutablePattern {
+        missing_patterns: Vec<ExpandablePattern>,
+    },
     ApplicativeLetExpressionBindFunctionConditionNotMet {
         actual_type: Type,
     },
@@ -1021,7 +1024,7 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         }
         Expression::Let {
             keyword_let,
-            true_branch,
+            body: true_branch,
             ..
         } => join_position(keyword_let.position, get_expression_position(&true_branch)),
         Expression::UnsafeJavascript { code } => code.position,
@@ -1944,10 +1947,8 @@ fn infer_expression_type_(
         Expression::Let {
             left,
             right,
-            false_branch,
-            true_branch,
+            body: true_branch,
             type_annotation,
-            keyword_let,
             ..
         } => {
             module.step_into_new_child_scope();
@@ -1957,164 +1958,62 @@ fn infer_expression_type_(
                 infer_expression_type(module, type_annotation_type, right)?
             };
 
-            let result = match false_branch {
-                None => {
-                    let expected_left_type = get_expected_type(
-                        module,
-                        Some(typechecked_right.type_value),
-                        type_annotation.clone(),
-                    )?;
+            let expected_left_type = get_expected_type(
+                module,
+                Some(typechecked_right.type_value),
+                type_annotation.clone(),
+            )?;
 
-                    let typechecked_left =
-                        infer_destructure_pattern(module, expected_left_type, left)?;
+            let typechecked_left = infer_destructure_pattern(module, expected_left_type, left)?;
 
-                    let typechecked_true_branch =
-                        infer_expression_type(module, expected_type, true_branch)?;
+            let typechecked_body = infer_expression_type(module, expected_type, true_branch)?;
 
-                    let (result_type, left_pattern_is_exhaustive) = match check_exhaustiveness(
-                        module,
-                        typechecked_left.type_value.clone(),
-                        NonEmpty {
-                            head: *left.clone(),
-                            tail: vec![],
-                        },
-                        get_destructure_pattern_position(left),
-                    ) {
-                        Ok(_) => {
-                            // If the pattern of left is already exhaustive,
-                            // the type of this let expression should be true_branch_type
-                            let left_pattern_is_exhaustive = true;
-                            Ok((
-                                typechecked_true_branch.type_value,
-                                left_pattern_is_exhaustive,
-                            ))
-                        }
-                        Err(UnifyError {
-                            kind: UnifyErrorKind::MissingCases(remaining_patterns),
-                            ..
-                        }) => {
-                            // If the pattern of the `left` is NOT exhaustive
-                            // the type of this let expression should be type of `cases` unified together
-                            // This unification is for handling cases as such:
-                            //
-                            //      let foo = | null =>
-                            //          let Ok(x) = Ok(1)
-                            //          Ok({x})
-                            //
-                            // In this case, the implicit return type should be Result<T, U>, not Result<Integer, U>
-                            // This is required such that the ending type can be Result<X, U>, where X can be not Integer
-                            let expected_type = {
-                                let type_value = Type::ImplicitTypeVariable {
-                                    name: module.get_next_type_variable_name(),
-                                };
-                                let types = remaining_patterns
-                                    .into_iter()
-                                    .map(|expandable_pattern| expandable_pattern.to_type(module))
-                                    .collect::<Vec<Type>>();
-                                types
-                                    .into_iter()
-                                    .fold(Ok(type_value), |result, type_value| match result {
-                                        Err(error) => Err(error),
-                                        Ok(expected_type) => unify_type(
-                                            module,
-                                            &expected_type,
-                                            &type_value,
-                                            Position::dummy(),
-                                        ),
-                                    })?
-                            };
-
-                            let type_value = unify_type(
-                                module,
-                                &expected_type,
-                                &typechecked_true_branch.type_value,
-                                get_expression_position(true_branch),
-                            )?;
-                            let left_pattern_is_exhaustive = false;
-                            Ok((type_value, left_pattern_is_exhaustive))
-                        }
-                        Err(other_error) => Err(other_error),
-                    }?;
-
-                    Ok(InferExpressionResult {
-                        type_value: result_type,
-                        expression: TypecheckedExpression::FunctionCall(Box::new(
-                            TypecheckedFunctionCall {
-                                function: Box::new(TypecheckedExpression::Function(Box::new(
-                                    TypecheckedFunction {
-                                        branches: Box::new(NonEmpty {
-                                            head: TypecheckedFunctionBranch {
-                                                parameters: Box::new(NonEmpty {
-                                                    head: typechecked_left.destructure_pattern,
-                                                    tail: vec![],
-                                                }),
-                                                body: Box::new(typechecked_true_branch.expression),
-                                            },
-                                            tail: if left_pattern_is_exhaustive {
-                                                vec![]
-                                            } else {
-                                                vec![TypecheckedFunctionBranch {
-                                                parameters: Box::new(NonEmpty {
-                                                    head: TypecheckedDestructurePattern::Underscore,
-                                                    tail: vec![],
-                                                }),
-                                                body: Box::new(
-                                                    typechecked_right.expression.clone(),
-                                                ),
-                                            }]
-                                            },
-                                        }),
-                                    },
-                                ))),
-                                first_argument: Box::new(typechecked_right.expression),
-                                rest_arguments: vec![],
-                            },
-                        )),
-                    })
-                }
-                Some(false_branch) => {
-                    // Check the case exhaustiveness of the union between left and false_branch
-                    let function = Function {
-                        branches: {
-                            let mut branches = false_branch.branches.clone();
-                            branches.insert(
-                                0,
-                                FunctionBranch {
-                                    start_token: keyword_let.clone(),
-                                    parameters: NonEmpty {
-                                        head: *left.clone(),
-                                        tail: vec![],
-                                    },
-                                    body: true_branch.clone(),
-                                },
-                            );
-                            branches
-                        },
-                    };
-                    let expected_function_type = FunctionType {
-                        parameters_types: Box::new(NonEmpty {
-                            head: typechecked_right.type_value,
-                            tail: vec![],
-                        }),
-                        return_type: Box::new(module.introduce_implicit_type_variable(None)?),
-                    };
-                    let typechecked_function =
-                        infer_function(module, Some(expected_function_type), &Box::new(function))?;
-
-                    Ok(InferExpressionResult {
-                        type_value: *typechecked_function.function_type.return_type,
-                        expression: TypecheckedExpression::FunctionCall(Box::new(
-                            TypecheckedFunctionCall {
-                                first_argument: Box::new(typechecked_right.expression),
-                                rest_arguments: vec![],
-                                function: Box::new(TypecheckedExpression::Function(Box::new(
-                                    typechecked_function.function,
-                                ))),
-                            },
-                        )),
-                    })
-                }
+            let result_type = match check_exhaustiveness(
+                module,
+                typechecked_left.type_value.clone(),
+                NonEmpty {
+                    head: *left.clone(),
+                    tail: vec![],
+                },
+                get_destructure_pattern_position(left),
+            ) {
+                Ok(_) => Ok(typechecked_body.type_value),
+                Err(UnifyError {
+                    kind: UnifyErrorKind::MissingCases(remaining_patterns),
+                    position,
+                }) => Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::LetBindingRefutablePattern {
+                        missing_patterns: remaining_patterns,
+                    },
+                }),
+                Err(other_error) => Err(other_error),
             }?;
+
+            let result = InferExpressionResult {
+                type_value: result_type,
+                expression: TypecheckedExpression::FunctionCall(Box::new(
+                    TypecheckedFunctionCall {
+                        function: Box::new(TypecheckedExpression::Function(Box::new(
+                            TypecheckedFunction {
+                                branches: Box::new(NonEmpty {
+                                    head: TypecheckedFunctionBranch {
+                                        parameters: Box::new(NonEmpty {
+                                            head: typechecked_left.destructure_pattern,
+                                            tail: vec![],
+                                        }),
+                                        body: Box::new(typechecked_body.expression),
+                                    },
+                                    tail: vec![],
+                                }),
+                            },
+                        ))),
+                        first_argument: Box::new(typechecked_right.expression),
+                        rest_arguments: vec![],
+                    },
+                )),
+            };
+
             module.step_out_to_parent_scope();
             Ok(result)
         }

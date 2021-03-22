@@ -236,7 +236,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
         TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example:\n\n\tenum Color = Red() Blue()",
         TokenType::KeywordDo => "used for defining expression with side effects, such as:\n\n\tdo \"Hello world\".print()",
-        TokenType::KeywordElse => "only used in monadic let bindings, for example:\n\n\tlet Some(x) = y else | _ => \"Nope\"",
         TokenType::KeywordNull => "only used to create a value with the null type (i.e. unit type)",
         TokenType::KeywordTrue | TokenType::KeywordFalse
             => "only used to create a boolean value",
@@ -417,7 +416,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordType => "type",
         TokenType::KeywordEnum => "enum",
         TokenType::KeywordDo => "do",
-        TokenType::KeywordElse => "else",
         TokenType::KeywordNull => "null",
         TokenType::KeywordTrue => "true",
         TokenType::KeywordFalse => "false",
@@ -826,6 +824,19 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 "But the given bind function has the following type:", 
                 stringify_type(actual_type, 2)
             )
+        },
+        UnifyErrorKind::LetBindingRefutablePattern { missing_patterns } => StringifiedError {
+            summary: "Let Binding Refutable Pattern".to_string(),
+            body: format!(
+                "{}\n{}\n{}",
+                "Refutable pattern (non-exhaustive) pattern is not allowed for let binding.",
+                "The cases that are not matched are:\n",
+                missing_patterns
+                    .into_iter()
+                    .map(|pattern| indent_string(stringify_expandable_pattern(pattern), 2))
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            )
         }
     }
 }
@@ -864,14 +875,10 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
             .collect::<Vec<String>>()
             .join(" "),
         ExpandablePattern::Any { .. } | ExpandablePattern::Infinite { .. } => "_".to_string(),
-        ExpandablePattern::EnumConstructor { name, payload, .. } => format!(
-            "{}({})",
-            name,
-            match payload {
-                Some(payload) => stringify_expandable_pattern(*payload),
-                None => "".to_string(),
-            }
-        ),
+        ExpandablePattern::EnumConstructor { name, payload, .. } => match payload {
+            Some(payload) => format!("{}({})", name, stringify_expandable_pattern(*payload),),
+            None => name,
+        },
     }
 }
 

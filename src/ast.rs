@@ -307,8 +307,7 @@ pub enum Expression {
         left: Box<DestructurePattern>,
         type_annotation: Option<TypeAnnotation>,
         right: Box<Expression>,
-        true_branch: Box<Expression>,
-        false_branch: Option<Box<Function>>,
+        body: Box<Expression>,
     },
     ApplicativeLet {
         keyword_let: Token,
@@ -449,7 +448,6 @@ pub enum TokenType {
     KeywordType,
     KeywordEnum,
     KeywordDo,
-    KeywordElse,
     KeywordNull,
     KeywordTrue,
     KeywordFalse,

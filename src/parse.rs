@@ -896,20 +896,13 @@ impl<'a> Parser<'a> {
         };
         self.eat_token(TokenType::Equals, context)?;
         let right = self.parse_expression()?;
-        let else_return = if self.try_eat_token(TokenType::KeywordElse).is_some() {
-            let pipe_token = self.eat_token(TokenType::Pipe, context)?;
-            Some(Box::new(self.parse_function(pipe_token)?))
-        } else {
-            None
-        };
         let return_value = self.parse_expression()?;
         Ok(Expression::Let {
             keyword_let,
             left: Box::new(left),
             type_annotation,
             right: Box::new(right),
-            false_branch: else_return,
-            true_branch: Box::new(return_value),
+            body: Box::new(return_value),
         })
     }
 
