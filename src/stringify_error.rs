@@ -231,6 +231,7 @@ struct ParseContextDescription {
 
 fn explain_token_type_usage(token_type: TokenType) -> &'static str {
     match token_type {
+        TokenType::KeywordIf => "used for creating if-expression, for example:\n\n\tif happy \"red\" \"blue\"",
         TokenType::KeywordLet => "used for defining variables, for example:\n\n\tlet x = 1",
         TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
         TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example:\n\n\tenum Color = Red() Blue()",
@@ -411,6 +412,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
 
 fn stringify_token_type(token_type: TokenType) -> &'static str {
     match token_type {
+        TokenType::KeywordIf => "if",
         TokenType::KeywordLet => "let",
         TokenType::KeywordType => "type",
         TokenType::KeywordEnum => "enum",

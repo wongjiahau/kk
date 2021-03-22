@@ -735,6 +735,10 @@ impl<'a> Parser<'a> {
                     let function = self.parse_function(pipe_token)?;
                     Ok(Expression::Function(Box::new(function)))
                 }
+                TokenType::KeywordIf => {
+                    let keyword_if = self.tokens.next().unwrap().clone();
+                    self.parse_if_expression(keyword_if)
+                }
                 TokenType::KeywordLet => {
                     let let_token = self.tokens.next().unwrap().clone();
                     self.parse_let_expression(let_token)
@@ -857,6 +861,15 @@ impl<'a> Parser<'a> {
             key_value_pairs,
             left_curly_bracket,
             right_curly_bracket,
+        })
+    }
+
+    fn parse_if_expression(&mut self, keyword_if: Token) -> Result<Expression, ParseError> {
+        Ok(Expression::If {
+            keyword_if,
+            condition: Box::new(self.parse_expression()?),
+            if_true: Box::new(self.parse_expression()?),
+            if_false: Box::new(self.parse_expression()?),
         })
     }
 

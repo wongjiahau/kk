@@ -66,6 +66,11 @@ pub enum TypecheckedExpression {
     Javascript {
         code: String,
     },
+    If {
+        condition: Box<TypecheckedExpression>,
+        if_true: Box<TypecheckedExpression>,
+        if_false: Box<TypecheckedExpression>,
+    },
     Promise(Box<TypecheckedExpression>),
 }
 

@@ -529,7 +529,9 @@ pub fn stringify(characters: Vec<Character>) -> String {
 }
 
 pub fn get_token_type(s: String) -> TokenType {
-    if s.eq("let") {
+    if s.eq("if") {
+        TokenType::KeywordIf
+    } else if s.eq("let") {
         TokenType::KeywordLet
     } else if s.eq("type") {
         TokenType::KeywordType

@@ -157,6 +157,18 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
         TypecheckedExpression::Promise(expression) => {
             format!("Promise.resolve({})", transpile_expression(*expression))
         }
+        TypecheckedExpression::If {
+            condition,
+            if_true,
+            if_false,
+        } => {
+            format!(
+                "(({}) ? ({}) : ({}))",
+                transpile_expression(*condition),
+                transpile_expression(*if_true),
+                transpile_expression(*if_false),
+            )
+        }
     }
 }
 

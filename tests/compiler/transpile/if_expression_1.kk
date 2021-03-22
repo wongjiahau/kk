@@ -1,0 +1,17 @@
+let more_than
+  : | Float Float => Boolean
+  = @@@ (x,y) => x > y @@@
+
+enum Grade = A B C Failed
+let grade
+  : | Float => Grade
+  = | score =>
+    if score.more_than(80.0) A
+    if score.more_than(60.0) B
+    if score.more_than(40.0) C
+    Failed
+
+do 85.0.grade.print
+do 65.0.grade.print
+do 45.0.grade.print
+do 35.0.grade.print

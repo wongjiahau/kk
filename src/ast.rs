@@ -317,6 +317,12 @@ pub enum Expression {
         right: Box<Expression>,
         body: Box<Expression>,
     },
+    If {
+        keyword_if: Token,
+        condition: Box<Expression>,
+        if_true: Box<Expression>,
+        if_false: Box<Expression>,
+    },
     Promise {
         bang: Token,
         expression: Box<Expression>,
@@ -438,6 +444,7 @@ impl Token {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenType {
+    KeywordIf,
     KeywordLet,
     KeywordType,
     KeywordEnum,

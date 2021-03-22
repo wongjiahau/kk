@@ -1028,6 +1028,11 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         Expression::ApplicativeLet {
             keyword_let, body, ..
         } => join_position(keyword_let.position, get_expression_position(body)),
+        Expression::If {
+            keyword_if,
+            if_false,
+            ..
+        } => join_position(keyword_if.position, get_expression_position(if_false)),
     }
 }
 
@@ -2477,6 +2482,26 @@ fn infer_expression_type_(
                     type_argument: Box::new(result.type_value),
                 },
                 expression: TypecheckedExpression::Promise(Box::new(result.expression)),
+            })
+        }
+        Expression::If {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            let condition = infer_expression_type(module, Some(Type::Boolean), condition)?;
+            let return_type = module.introduce_implicit_type_variable(None)?;
+            let if_true = infer_expression_type(module, Some(return_type.clone()), if_true)?;
+            let if_false = infer_expression_type(module, Some(return_type.clone()), if_false)?;
+
+            Ok(InferExpressionResult {
+                type_value: module.apply_subtitution_to_type(&return_type),
+                expression: TypecheckedExpression::If {
+                    condition: Box::new(condition.expression),
+                    if_true: Box::new(if_true.expression),
+                    if_false: Box::new(if_false.expression),
+                },
             })
         }
     }?;
