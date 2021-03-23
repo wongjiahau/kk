@@ -13,17 +13,14 @@ let map<A B>
   = | Some(x) f => x.f
     | None _ => None
 
-export let sum
-  : | Option<Integer> Option<Integer> => Option<[Integer]>
-  = | a b =>
+export let foo
+  : | Option<{bar: String}> => Option<String>
+  = | a =>
       let/map x = a
-      let/map y = b
-      Some([x y])
+      Some(x.bar)
 
-do Some(1).sum(Some(2)).print
-do None.sum(Some(2)).print
-do Some(1).sum(None).print
-do None.sum(None).print
+do Some({bar: "hello world"}).foo.print
+do None.foo.print
 
 ============
 EXIT CODE
@@ -33,9 +30,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': 'Some', _: [ 1, 2 ] }
-{ '$': 'None', _: null }
-{ '$': 'None', _: null }
+{ '$': 'Some', _: 'hello world' }
 { '$': 'None', _: null }
 
 ============

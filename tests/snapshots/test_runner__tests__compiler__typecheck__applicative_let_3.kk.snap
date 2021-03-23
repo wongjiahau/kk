@@ -1,0 +1,47 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let lift
+  : | Integer => [Integer]
+  = | x => [x]
+
+do
+  let/lift x = 123
+     # Error, lift is not a satisfactory bind function
+  null
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/applicative_let_3.kk:6:7
+  │
+6 │   let/lift x = 123
+  │       ^^^^ Unsatifactory bind function.
+  │
+  = The bind function must satisfies all of the following conditions:
+      (1) Must be a two-parameter function
+      (2) The expected second parameter type must be type of function
+
+    But the given bind function has the following type:
+
+        |
+          Integer
+        =>
+          [
+            Integer
+          ]

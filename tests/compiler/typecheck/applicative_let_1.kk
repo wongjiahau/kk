@@ -1,3 +1,4 @@
+# Expects no error
 enum Option<T> = Some(T) None
 
 let map<A B>

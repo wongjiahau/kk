@@ -816,7 +816,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         }
         UnifyErrorKind::ApplicativeLetExpressionBindFunctionConditionNotMet { actual_type } => StringifiedError {
             summary: "Unsatifactory bind function.".to_string(),
-            body: format!("The bind function must satisfies all of the following conditions\n{}\n\n{}\n\n{}", 
+            body: format!("The bind function must satisfies all of the following conditions:\n{}\n\n{}\n\n{}", 
                 vec![
                     "  (1) Must be a two-parameter function",
                     "  (2) The expected second parameter type must be type of function",

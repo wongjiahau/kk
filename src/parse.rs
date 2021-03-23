@@ -877,15 +877,32 @@ impl<'a> Parser<'a> {
         if self.try_eat_token(TokenType::Slash).is_some() {
             let context = ParseContext::ExpressionMonadicLet;
             let binary_function_name = self.eat_token(TokenType::Identifier, context)?;
-            let left = Box::new(self.parse_destructure_pattern()?);
+            let left_patterns = {
+                let first_left_pattern = self.parse_destructure_pattern()?;
+                let mut tail_left_patterns = vec![];
+                loop {
+                    match self.tokens.peek() {
+                        Some(Token {
+                            token_type: TokenType::Equals,
+                            ..
+                        }) => {
+                            break NonEmpty {
+                                head: first_left_pattern,
+                                tail: tail_left_patterns,
+                            }
+                        }
+                        _ => tail_left_patterns.push(self.parse_destructure_pattern()?),
+                    }
+                }
+            };
             self.eat_token(TokenType::Equals, context)?;
-            return Ok(Expression::ApplicativeLet {
+            return Ok(Expression::ApplicativeLet(ApplicativeLet {
                 keyword_let,
-                left,
+                left_patterns,
                 binary_function_name,
                 right: Box::new(self.parse_expression()?),
                 body: Box::new(self.parse_expression()?),
-            });
+            }));
         }
         let context = ParseContext::ExpressionLet;
         let left = self.parse_destructure_pattern()?;

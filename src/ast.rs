@@ -309,13 +309,7 @@ pub enum Expression {
         right: Box<Expression>,
         body: Box<Expression>,
     },
-    ApplicativeLet {
-        keyword_let: Token,
-        left: Box<DestructurePattern>,
-        binary_function_name: Token,
-        right: Box<Expression>,
-        body: Box<Expression>,
-    },
+    ApplicativeLet(ApplicativeLet),
     If {
         keyword_if: Token,
         condition: Box<Expression>,
@@ -329,6 +323,15 @@ pub enum Expression {
     UnsafeJavascript {
         code: Token,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct ApplicativeLet {
+    pub keyword_let: Token,
+    pub left_patterns: NonEmpty<DestructurePattern>,
+    pub binary_function_name: Token,
+    pub right: Box<Expression>,
+    pub body: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]
