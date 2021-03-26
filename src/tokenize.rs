@@ -272,19 +272,39 @@ fn eat_token(
                 }
             },
             '"' => {
-                let quote = character.value;
-                let content: Vec<Character> = it
-                    .by_ref()
-                    .peeking_take_while(|character| character.value != quote)
-                    .collect();
+                let content = {
+                    let mut content: Vec<Character> = vec![character.clone()];
+                    let mut escaping = false;
+                    while let Some(character) = it.next() {
+                        match character.value {
+                            '\\' => {
+                                content.push(character);
+                                escaping = !escaping;
+                            }
+                            '"' => {
+                                content.push(character);
+                                if !escaping {
+                                    break;
+                                } else {
+                                    escaping = false;
+                                }
+                            }
+                            _ => {
+                                content.push(character);
+                                escaping = false;
+                            }
+                        }
+                    }
+                    content
+                };
 
-                match it.by_ref().next() {
-                    Some(ending_quote) => tokens.push(Token {
+                match content.last() {
+                    Some(ending_quote @ Character { value: '"', .. }) => tokens.push(Token {
                         token_type: TokenType::String,
-                        representation: format!("\"{}\"", stringify(content.clone())),
+                        representation: stringify(content.clone()),
                         position: make_position(character, Some(&ending_quote)),
                     }),
-                    None => {
+                    _ => {
                         return Err(TokenizeError::UnterminatedStringLiteral {
                             position: make_position(character, content.last()),
                         })
