@@ -577,11 +577,14 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         } => StringifiedError {
             summary: "Function arguments length mismatch".to_string(),
             body: format!(
-                "Expected {} {}, but this function has {} {}",
+                "Expected {} {}{}, but {}{} {} {} provided.",
                 expected_length,
                 pluralize("argument".to_string(), expected_length),
+                if expected_length < actual_length {" only"} else {""},
+                if actual_length < expected_length {"only "} else {""},
                 actual_length,
                 pluralize("argument".to_string(), actual_length),
+                if actual_length > 1 {"are"} else {"is"}
             ),
         },
         UnifyErrorKind::CannotInvokeNonFunction { .. } => StringifiedError {

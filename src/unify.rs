@@ -2763,11 +2763,6 @@ pub fn unify_function_type(
     }
 }
 
-pub fn get_function_branch_position(function_branch: &FunctionBranch) -> Position {
-    let body_position = get_expression_position(&function_branch.body);
-    join_position(function_branch.start_token.position, body_position)
-}
-
 struct InferFunctionBranchResult {
     function_branch: TypecheckedFunctionBranch,
     function_type: FunctionType,
@@ -2792,7 +2787,10 @@ fn infer_function_branch(
                 let actual_parameters = function_branch.parameters.clone();
                 if expected_function_type.parameters_types.len() != actual_parameters.len() {
                     Err(UnifyError {
-                        position: get_function_branch_position(&function_branch),
+                        position: join_position(
+                            get_destructure_pattern_position(function_branch.parameters.first()),
+                            get_destructure_pattern_position(function_branch.parameters.last()),
+                        ),
                         kind: UnifyErrorKind::InvalidFunctionArgumentLength {
                             expected_length: expected_function_type.parameters_types.len(),
                             actual_length: actual_parameters.len(),

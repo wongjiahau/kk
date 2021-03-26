@@ -24,9 +24,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:4:5
+  ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:4:7
   │
 4 │     | _ _ => 1
-  │     ^^^^^^^^^^ Function arguments length mismatch
+  │       ^^^ Function arguments length mismatch
   │
-  = Expected 1 argument, but this function has 2 arguments
+  = Expected 1 argument only, but 2 arguments are provided.

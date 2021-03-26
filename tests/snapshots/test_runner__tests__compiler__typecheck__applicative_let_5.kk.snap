@@ -33,4 +33,4 @@ error:
 6 │   let/apply x = 123
   │             ^ Function arguments length mismatch
   │
-  = Expected 2 arguments, but this function has 1 argument
+  = Expected 2 arguments, but only 1 argument is provided.
