@@ -1,0 +1,8 @@
+# This is for testing:
+# Entry points should only be transpiled at entry points
+
+export let foo
+  : String
+  = "Hello"
+
+do "Hello world".print
