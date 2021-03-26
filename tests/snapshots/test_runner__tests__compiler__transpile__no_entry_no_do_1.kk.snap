@@ -1,0 +1,29 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+# This is for testing:
+# Entry points should only be transpiled at entry points
+
+import "./no_entry_no_do_2.kk" {
+  foo
+}
+
+do "World".print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+World
+
+============
+STDERR
+============

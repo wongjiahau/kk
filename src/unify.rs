@@ -38,6 +38,7 @@ pub fn unify_statements(
     statements: Vec<Statement>,
     starting_symbol_uid: usize,
     imported_modules: &ImportedModules,
+    is_entry_point: bool,
 ) -> Result<UnifyProgramResult, CompileError> {
     // 1. Partition statements based on their types
     let (import_statements, type_statements, enum_statements, let_statements, do_statements) = {
@@ -61,7 +62,10 @@ pub fn unify_statements(
                     let_statements.push(let_statement);
                 }
                 Statement::Do(do_statement) => {
-                    do_statements.push(do_statement);
+                    // Do statements will only be compiled on entrypoint file
+                    if is_entry_point {
+                        do_statements.push(do_statement);
+                    }
                 }
             }
         }
@@ -466,6 +470,7 @@ pub fn infer_import_statement(
                         statements,
                         module.get_next_symbol_uid(),
                         imported_modules,
+                        false,
                     )?
                 }
                 Err(error) => {

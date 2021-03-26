@@ -30,7 +30,7 @@ pub fn compile(module_meta: ModuleMeta) {
             match Parser::parse(tokens) {
                 Err(parse_error) => print_parse_error(module_meta, parse_error),
                 Ok(statements) => {
-                    match unify_statements(module_meta, statements, 0, &HashMap::new()) {
+                    match unify_statements(module_meta, statements, 0, &HashMap::new(), true) {
                         Err(compile_error) => print_compile_error(compile_error),
                         Ok(result) => {
                             use std::process::Command;
