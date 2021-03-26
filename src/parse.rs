@@ -18,7 +18,7 @@ pub enum ParseErrorKind {
         actual_token: Token,
         expected_token_type: Option<TokenType>,
     },
-    UnexpectedEOF {
+    UnexpectedEof {
         expected_token_type: Option<TokenType>,
     },
 }
@@ -100,7 +100,7 @@ impl<'a> Parser<'a> {
     fn unexpected_eof(context: ParseContext) -> ParseError {
         ParseError {
             context,
-            kind: ParseErrorKind::UnexpectedEOF {
+            kind: ParseErrorKind::UnexpectedEof {
                 expected_token_type: None,
             },
         }
@@ -295,7 +295,7 @@ impl<'a> Parser<'a> {
         } else {
             Err(ParseError {
                 context,
-                kind: ParseErrorKind::UnexpectedEOF {
+                kind: ParseErrorKind::UnexpectedEof {
                     expected_token_type: Some(token_type),
                 },
             })

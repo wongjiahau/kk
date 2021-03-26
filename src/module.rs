@@ -1082,7 +1082,7 @@ fn built_in_symbols() -> Vec<Symbol> {
                 token_type: TokenType::Identifier,
             },
         }
-    };
+    }
     let type_variable_name = "T".to_string();
     vec![
         // build-in values

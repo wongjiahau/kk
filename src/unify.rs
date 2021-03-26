@@ -2785,11 +2785,7 @@ fn infer_function_branch(
                 .parameters
                 .clone()
                 .fold_result(|destructure_pattern| {
-                    Ok(infer_destructure_pattern(
-                        module,
-                        None,
-                        &destructure_pattern,
-                    )?)
+                    infer_destructure_pattern(module, None, &destructure_pattern)
                 }),
 
             Some(expected_function_type) => {

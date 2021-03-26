@@ -114,7 +114,7 @@ pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeErr
                 },
             )
         }
-        TokenizeError::UnexpectedEOF {
+        TokenizeError::UnexpectedEof {
             expected_character_value,
         } => {
             let range = ErrorRange {
@@ -187,7 +187,7 @@ pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
             };
             (range, error)
         }
-        ParseErrorKind::UnexpectedEOF {
+        ParseErrorKind::UnexpectedEof {
             expected_token_type,
         } => {
             let range = ErrorRange {

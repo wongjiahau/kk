@@ -36,7 +36,7 @@ pub enum TokenizeError {
         position: Position,
         expected_character_value: char,
     },
-    UnexpectedEOF {
+    UnexpectedEof {
         expected_character_value: char,
     },
 }
@@ -232,7 +232,7 @@ fn eat_token(
                             characters.push(character)
                         }
                     } else {
-                        return Err(TokenizeError::UnexpectedEOF {
+                        return Err(TokenizeError::UnexpectedEof {
                             expected_character_value: '@',
                         });
                     }
@@ -499,7 +499,7 @@ fn eat_character(
                 })
             }
         }
-        None => Err(TokenizeError::UnexpectedEOF {
+        None => Err(TokenizeError::UnexpectedEof {
             expected_character_value: value,
         }),
     }
