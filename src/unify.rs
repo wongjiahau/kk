@@ -2103,9 +2103,7 @@ fn infer_expression_type_(
                         };
                         if actual_arguments_length != expected_arguments_length {
                             return Err(UnifyError {
-                                position: get_expression_position(&Expression::FunctionCall(
-                                    function_call.clone(),
-                                )),
+                                position: get_expression_position(function_call.function.as_ref()),
                                 kind: UnifyErrorKind::InvalidFunctionArgumentLength {
                                     actual_length: actual_arguments_length,
                                     expected_length: expected_arguments_length,
