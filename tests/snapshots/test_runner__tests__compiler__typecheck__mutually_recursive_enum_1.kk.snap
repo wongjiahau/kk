@@ -1,0 +1,41 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Foo =
+  Foo(Bar)
+  NullFoo
+
+enum Bar =
+  Bar(Foo)
+  NullBar
+
+do Foo(Bar(Foo(NullFoo))).print # Compile Error
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/mutually_recursive_enum_1.kk:9:16
+  │
+9 │ do Foo(Bar(Foo(NullFoo))).print # Compile Error
+  │                ^^^^^^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - Bar         | + Foo       |
+    +---------------+-------------+

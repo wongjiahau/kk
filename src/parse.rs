@@ -179,7 +179,7 @@ impl<'a> Parser<'a> {
         let type_variables = self.try_parse_type_variables_declaration()?;
         self.eat_token(TokenType::Equals, context)?;
         let right = self.parse_type_annotation(context)?;
-        Ok(Statement::Type(TypeStatement {
+        Ok(Statement::Type(TypeAliasStatement {
             keyword_export,
             keyword_type,
             left,

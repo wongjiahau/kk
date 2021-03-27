@@ -104,25 +104,28 @@ pub fn unify_statements(
     // 3. Insert type symbols (including enums) into the current module.
     //    Note that we will first insert them into the current module first before checking their definition,
     //    this is so that mutually recursive type can be checked.
+    let enum_statements = enum_statements
+        .into_iter()
+        .map(|enum_statement| {
+            let enum_uid = insert_enum_symbol(&mut module, enum_statement.clone())?;
+            Ok((enum_uid, enum_statement))
+        })
+        .collect::<Result<Vec<(usize, EnumStatement)>, UnifyError>>()
+        .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
+
     type_statements
         .into_iter()
-        .map(
-            |type_statement| match infer_type_statement(&mut module, type_statement) {
-                Ok(()) => Ok(()),
-                Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
-            },
-        )
-        .collect::<Result<Vec<()>, CompileError>>()?;
+        .map(|type_statement| infer_type_alias_statement(&mut module, type_statement))
+        .collect::<Result<Vec<()>, UnifyError>>()
+        .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     enum_statements
         .into_iter()
-        .map(
-            |enum_statement| match infer_enum_statement(&mut module, enum_statement) {
-                Ok(()) => Ok(()),
-                Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
-            },
-        )
-        .collect::<Result<Vec<()>, CompileError>>()?;
+        .map(|(enum_uid, enum_statement)| {
+            infer_enum_statement(&mut module, enum_uid, enum_statement)
+        })
+        .collect::<Result<Vec<()>, UnifyError>>()
+        .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     // 4. Insert let symbols into the current module.
     //    Similar as type symbols, we will insert them into the module first before checking their definition,
@@ -588,22 +591,22 @@ pub fn infer_import_statement(
     })
 }
 
-pub fn infer_enum_statement(
+/// Insert the symbol of an enum into the current module without checking it's body.  
+/// Returns the UID of this enum.
+pub fn insert_enum_symbol(
     module: &mut Module,
     EnumStatement {
         name,
-        constructors,
         type_variables,
         keyword_export,
         ..
     }: EnumStatement,
-) -> Result<(), UnifyError> {
-    // 1. Add this enum into module first, to allow recursive definition
+) -> Result<usize, UnifyError> {
     let enum_uid = module.get_next_symbol_uid();
     let enum_name = name.representation.clone();
     let enum_type = Type::Named {
         symbol_uid: enum_uid,
-        name: enum_name.clone(),
+        name: enum_name,
         type_arguments: type_variables
             .clone()
             .into_iter()
@@ -618,7 +621,6 @@ pub fn infer_enum_statement(
             .collect(),
     };
     let type_variable_names = type_variables
-        .clone()
         .into_iter()
         .map(|type_variable| type_variable.representation)
         .collect::<Vec<String>>();
@@ -632,14 +634,27 @@ pub fn infer_enum_statement(
             },
             kind: SymbolKind::Type(TypeSymbol {
                 type_scheme: TypeScheme {
-                    type_variables: type_variable_names.clone(),
+                    type_variables: type_variable_names,
                     type_value: enum_type,
                 },
             }),
         },
-    )?;
+    )
+}
 
-    // 2. Populate type variables into current module
+/// Validate the body of an enum statement and insert the constructors into the current module
+pub fn infer_enum_statement(
+    module: &mut Module,
+    enum_uid: usize,
+    EnumStatement {
+        name,
+        constructors,
+        type_variables,
+        keyword_export,
+        ..
+    }: EnumStatement,
+) -> Result<(), UnifyError> {
+    // 1. Populate type variables into current module
     module.step_into_new_child_scope();
     for type_variable in type_variables.clone() {
         module.insert_symbol(
@@ -661,7 +676,7 @@ pub fn infer_enum_statement(
         )?;
     }
 
-    // 3. Add each tags into the enum namespace
+    // 2. Add each tags into the enum namespace
     let constructor_symbols = constructors
         .iter()
         .map(|constructor| {
@@ -672,9 +687,13 @@ pub fn infer_enum_statement(
                 },
                 kind: SymbolKind::EnumConstructor(EnumConstructorSymbol {
                     enum_uid,
-                    enum_name: enum_name.clone(),
+                    enum_name: name.representation.clone(),
                     constructor_name: constructor.name.representation.clone(),
-                    type_variables: type_variable_names.clone(),
+                    type_variables: type_variables
+                        .clone()
+                        .into_iter()
+                        .map(|type_variable| type_variable.representation)
+                        .collect(),
                     payload: match &constructor.payload {
                         None => None,
                         Some(payload) => {
@@ -699,17 +718,17 @@ pub fn infer_enum_statement(
     Ok(())
 }
 
-pub fn infer_type_statement(
+/// Validate the body of a type alias statement
+pub fn infer_type_alias_statement(
     module: &mut Module,
-    TypeStatement {
+    TypeAliasStatement {
         keyword_export,
         left,
         right,
         type_variables,
         ..
-    }: TypeStatement,
+    }: TypeAliasStatement,
 ) -> Result<(), UnifyError> {
-    module.step_into_new_child_scope();
     // 1. Populate type variables into current module
     module.step_into_new_child_scope();
     for type_variable in type_variables.clone() {

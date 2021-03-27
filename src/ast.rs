@@ -6,7 +6,7 @@ pub enum Statement {
     Let(LetStatement),
 
     /// This represent type alias definition.
-    Type(TypeStatement),
+    Type(TypeAliasStatement),
 
     /// This represents named sum types (a.k.a tagged union).
     Enum(EnumStatement),
@@ -27,7 +27,7 @@ pub struct LetStatement {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypeStatement {
+pub struct TypeAliasStatement {
     pub keyword_export: Option<Token>,
     pub keyword_type: Token,
     pub left: Token,
