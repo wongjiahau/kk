@@ -94,14 +94,18 @@ impl Tokenizer {
             .into_iter()
             .collect::<Vec<Character>>();
 
-        Tokenizer::from_characters(characters)
+        Tokenizer::from_character_iter(characters.into_iter())
     }
 
-    pub fn from_characters(characters: Vec<Character>) -> Tokenizer {
+    pub fn from_character_iter(characters: IntoIter<Character>) -> Tokenizer {
         Tokenizer {
-            characters_iterator: characters.into_iter().peekable(),
+            characters_iterator: characters.peekable(),
             peeked_tokens: vec![],
         }
+    }
+
+    pub fn remaining_characters(self) -> Vec<Character> {
+        self.characters_iterator.collect()
     }
 
     fn eat_character(&mut self, value: char) -> Result<Character, ParseError> {

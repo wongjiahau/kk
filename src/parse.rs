@@ -183,20 +183,35 @@ impl<'a> Parser<'a> {
                     .map(vectorized)
                 }
                 TokenType::MultilineComment { characters } => {
-                    let mut tokenizer = Tokenizer::from_characters(characters);
                     let mut statements = vec![];
-                    while let Some(token) = tokenizer.next()? {
-                        if let TokenType::TripleBacktick = token.token_type {
-                            let mut parser = Parser::new(&mut tokenizer);
-                            statements.extend(parser.parse_statements()?);
-                            parser.eat_token(
-                                TokenType::TripleBacktick,
-                                Some(ParseContext::DocumentationCodeSnippet),
-                            )?;
+                    let mut iter = characters.into_iter();
+                    loop {
+                        let mut backtick_count = 0;
+                        loop {
+                            if let Some(character) = iter.next() {
+                                if character.value == '`' {
+                                    backtick_count += 1;
+                                } else {
+                                    backtick_count = 0;
+                                }
+                                if backtick_count == 3 {
+                                    break;
+                                }
+                            } else {
+                                return Ok(statements);
+                            }
                         }
-                    }
 
-                    Ok(statements)
+                        // Extract statements from code snippets whenever possible
+                        let mut tokenizer = Tokenizer::from_character_iter(iter);
+                        let mut parser = Parser::new(&mut tokenizer);
+                        statements.extend(parser.parse_statements()?);
+                        parser.eat_token(
+                            TokenType::TripleBacktick,
+                            Some(ParseContext::DocumentationCodeSnippet),
+                        )?;
+                        iter = tokenizer.remaining_characters().into_iter();
+                    }
                 }
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             },

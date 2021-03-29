@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+###
+Euler's number
+```
+do e.print
+```
+###
+let e
+  : Float
+  = 2.718281828459045
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+2.718281828459045
+
+============
+STDERR
+============
