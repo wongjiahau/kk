@@ -1,4 +1,4 @@
-use crate::non_empty::NonEmpty;
+use crate::{non_empty::NonEmpty, tokenize::Character};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -269,6 +269,11 @@ pub enum Expression {
     Float(Token),
     Integer(Token),
     String(Token),
+    InterpolatedString {
+        start_quote: Box<Character>,
+        sections: NonEmpty<InterpolatedStringSection>,
+        end_quote: Box<Character>,
+    },
     Character(Token),
     Variable(Token),
     Quoted {
@@ -403,7 +408,7 @@ pub enum FunctionParameters {
     },
     WithParenthesis {
         left_parenthesis: Token,
-        parameters: NonEmpty<FunctionParameter>,
+        parameters: Box<NonEmpty<FunctionParameter>>,
         right_parenthesis: Token,
     },
 }
@@ -420,7 +425,7 @@ pub struct FunctionParameter {
     pub destructure_pattern: DestructurePattern,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub position: Position,
@@ -444,7 +449,7 @@ impl Token {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub enum TokenType {
     KeywordIf,
     KeywordLet,
@@ -475,25 +480,40 @@ pub enum TokenType {
     Comma,
     Minus,
     FatArrowRight,
-    ThinArrowRight,
     Pipe,
     Slash,
     Underscore,
     Identifier,
     String,
+    InterpolatedString {
+        start_quote: Box<Character>,
+        sections: NonEmpty<InterpolatedStringSection>,
+        end_quote: Box<Character>,
+    },
     Character,
     Integer,
     Float,
     DoubleColon,
     Backtick,
+    TripleBacktick,
 
     /// Comments starts with hash (#)
     Comment,
 
     /// Multiline comment starts and ends with triple hash (###)
-    MultilineComment,
+    MultilineComment {
+        /// Note that these characters excludeds opening and closing triple-hash
+        characters: Vec<Character>,
+    },
 
     JavascriptCode,
+    Other(char),
+}
+
+#[derive(Debug, Clone)]
+pub enum InterpolatedStringSection {
+    String(String),
+    Expression(Box<Expression>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

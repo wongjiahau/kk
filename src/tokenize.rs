@@ -1,10 +1,12 @@
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use crate::ast::*;
+use crate::non_empty::NonEmpty;
+use crate::parse::{ParseErrorKind, Parser};
+use crate::{ast::*, parse::ParseError};
 use peeking_take_while::PeekableExt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Character {
     pub index: usize,
     pub line_number: usize,
@@ -12,6 +14,20 @@ pub struct Character {
     pub value: char,
 }
 
+impl Character {
+    pub fn position(&self) -> Position {
+        Position {
+            line_start: self.line_number,
+            line_end: self.line_number,
+            column_start: self.column_number,
+            column_end: self.column_number,
+            character_index_start: self.index,
+            character_index_end: self.index,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum TokenizeError {
     CharacterLiteralCannotBeEmpty {
         position: Position,
@@ -29,9 +45,6 @@ pub enum TokenizeError {
         error: String,
         position: Position,
     },
-    UnknownCharacter {
-        character: Character,
-    },
     UnexpectedCharacter {
         position: Position,
         expected_character_value: char,
@@ -41,356 +54,420 @@ pub enum TokenizeError {
     },
 }
 
-pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
-    let characters: Vec<Character> = input
-        .split('\n')
-        .enumerate()
-        .flat_map(|(line_number, line)| {
-            let mut characters = line.chars().into_iter().collect::<Vec<char>>();
-            characters.push('\n');
-            characters
-                .into_iter()
-                .enumerate()
-                .map(move |(column_number, character)| (character, line_number, column_number))
-                .collect::<Vec<(char, usize, usize)>>()
-        })
-        .enumerate()
-        .map(
-            |(index, (character, line_number, column_number))| Character {
-                index,
-                value: character,
-                line_number,
-                column_number,
+impl TokenizeError {
+    pub fn into_parse_error(self) -> ParseError {
+        ParseError {
+            context: None,
+            kind: ParseErrorKind::TokenizeError(self),
+        }
+    }
+}
+
+pub struct Tokenizer {
+    characters_iterator: Peekable<IntoIter<Character>>,
+    peeked_tokens: Vec<Token>,
+}
+
+impl Tokenizer {
+    pub fn new(input: String) -> Tokenizer {
+        let characters: Vec<Character> = input
+            .split('\n')
+            .enumerate()
+            .flat_map(|(line_number, line)| {
+                let mut characters = line.chars().into_iter().collect::<Vec<char>>();
+                characters.push('\n');
+                characters
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(column_number, character)| (character, line_number, column_number))
+                    .collect::<Vec<(char, usize, usize)>>()
+            })
+            .enumerate()
+            .map(
+                |(index, (character, line_number, column_number))| Character {
+                    index,
+                    value: character,
+                    line_number,
+                    column_number,
+                },
+            )
+            .into_iter()
+            .collect::<Vec<Character>>();
+
+        Tokenizer::from_characters(characters)
+    }
+
+    pub fn from_characters(characters: Vec<Character>) -> Tokenizer {
+        Tokenizer {
+            characters_iterator: characters.into_iter().peekable(),
+            peeked_tokens: vec![],
+        }
+    }
+
+    fn eat_character(&mut self, value: char) -> Result<Character, ParseError> {
+        match self.characters_iterator.next() {
+            Some(character) => {
+                if character.value == value {
+                    Ok(character)
+                } else {
+                    Err(TokenizeError::UnexpectedCharacter {
+                        position: make_position(character, None),
+                        expected_character_value: value,
+                    }
+                    .into_parse_error())
+                }
+            }
+            None => Err(TokenizeError::UnexpectedEof {
+                expected_character_value: value,
+            }
+            .into_parse_error()),
+        }
+    }
+
+    pub fn peek(&mut self) -> Result<Option<Token>, ParseError> {
+        match self.peeked_tokens.last() {
+            Some(token) => Ok(Some(token.clone())),
+            None => match self.next() {
+                Ok(result) => match result {
+                    Some(token) => {
+                        self.peeked_tokens.push(token.clone());
+                        Ok(Some(token))
+                    }
+                    None => Ok(None),
+                },
+                Err(error) => Err(error),
             },
-        )
-        .into_iter()
-        .collect::<Vec<Character>>();
+        }
+    }
 
-    let mut it = characters.into_iter().peekable();
-    let tokens = eat_token(&mut it, EatMode::Normal)?;
-    Ok(tokens)
-}
+    pub fn next(&mut self) -> Result<Option<Token>, ParseError> {
+        // Clear peeked token
+        if let Some(token) = self.peeked_tokens.pop() {
+            return Ok(Some(token));
+        }
 
-enum EatMode {
-    Normal,
-    DocumentationCodeSnippet,
-}
-fn eat_token(
-    it: &mut Peekable<IntoIter<Character>>,
-    eat_mode: EatMode,
-) -> Result<Vec<Token>, TokenizeError> {
-    let mut tokens = Vec::new();
-    while let Some(character) = it.next() {
-        match character.value {
-            '_' => tokens.push(Token {
-                token_type: TokenType::Underscore,
-                representation: "_".to_string(),
-                position: make_position(character, None),
-            }),
-            '`' => {
-                let backticks = it
-                    .by_ref()
-                    .peeking_take_while(|character| character.value == '`')
-                    .collect::<Vec<Character>>();
-
-                tokens.push(Token {
-                    token_type: TokenType::Backtick,
-                    representation: "`".to_string(),
+        if let Some(character) = self.characters_iterator.next() {
+            match character.value {
+                '_' => Ok(Some(Token {
+                    token_type: TokenType::Underscore,
+                    representation: "_".to_string(),
                     position: make_position(character, None),
-                });
-                tokens.extend(
-                    backticks
-                        .iter()
-                        .map(|backtick| Token {
+                })),
+                '`' => {
+                    let trailing_backticks = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| character.value == '`')
+                        .collect::<Vec<Character>>();
+
+                    match trailing_backticks.len() {
+                        0 => Ok(Some(Token {
                             token_type: TokenType::Backtick,
                             representation: "`".to_string(),
-                            position: make_position(backtick.clone(), None),
-                        })
-                        .collect::<Vec<Token>>(),
-                );
-                if let EatMode::DocumentationCodeSnippet = eat_mode {
-                    if backticks.len() >= 2 {
-                        return Ok(tokens);
+                            position: make_position(character, None),
+                        })),
+                        2 => Ok(Some(Token {
+                            token_type: TokenType::TripleBacktick,
+                            representation: "```".to_string(),
+                            position: make_position(character, trailing_backticks.last()),
+                        })),
+                        _ => panic!("Not implemented yet"),
                     }
                 }
-            }
-            '#' => {
-                let first_hash = character;
-                let rest_hashes: Vec<Character> = it
-                    .by_ref()
-                    .peeking_take_while(|character| character.value == '#')
-                    .collect();
+                '#' => {
+                    let first_hash = character;
+                    let rest_hashes: Vec<Character> = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| character.value == '#')
+                        .collect();
 
-                // Then this is a multiline comments (a.k.a documentation string)
-                if rest_hashes.len() >= 2 {
-                    let characters = {
-                        let mut documentation_characters = Vec::new();
-                        let mut closing_hash_count = 0;
+                    // Then this is a multiline comments (a.k.a documentation string)
+                    if rest_hashes.len() >= 2 {
+                        let characters = {
+                            let mut documentation_characters = Vec::new();
+                            let mut closing_hash_count = 0;
 
-                        // These are for parsing code snippets
-                        let mut opening_backtick_count = 0;
-
-                        loop {
-                            if let Some(character) = it.next() {
-                                if character.value == '#' {
-                                    closing_hash_count += 1;
-                                    if closing_hash_count == 3 {
-                                        break documentation_characters;
-                                    }
-                                } else if character.value == '`' {
-                                    opening_backtick_count += 1;
-                                    if opening_backtick_count == 3 {
-                                        let code_snippet_tokens =
-                                            eat_token(it, EatMode::DocumentationCodeSnippet)?;
-
-                                        // We need to remove the trailing triple-backticks
-                                        let (code_snippet_tokens, triple_backticks) =
-                                            code_snippet_tokens
-                                                .split_at(code_snippet_tokens.len() - 3);
-
-                                        // Push the code snippet tokens to the current tokens vector
-                                        tokens.extend(code_snippet_tokens.to_vec());
-
-                                        // Push the trailing triple-backticks to the documentation
-                                        documentation_characters.extend(
-                                            triple_backticks.iter().map(|token| Character {
-                                                column_number: token.position.column_start,
-                                                line_number: token.position.line_start,
-                                                index: token.position.character_index_start,
-                                                value: '`',
-                                            }),
-                                        )
+                            loop {
+                                if let Some(character) = self.characters_iterator.next() {
+                                    documentation_characters.push(character.clone());
+                                    if character.value == '#' {
+                                        closing_hash_count += 1;
+                                        if closing_hash_count == 3 {
+                                            break documentation_characters;
+                                        }
+                                    } else {
+                                        // reset all counts
+                                        closing_hash_count = 0;
                                     }
                                 } else {
-                                    // reset all counts
-                                    closing_hash_count = 0;
-                                    opening_backtick_count = 0;
+                                    return Err(TokenizeError::UnterminatedMultilineComment {
+                                        position: make_position(
+                                            first_hash,
+                                            documentation_characters
+                                                .last()
+                                                .or_else(|| rest_hashes.last()),
+                                        ),
+                                    }
+                                    .into_parse_error());
                                 }
-                                documentation_characters.push(character);
-                            } else {
-                                return Err(TokenizeError::UnterminatedMultilineComment {
-                                    position: make_position(
-                                        first_hash,
-                                        documentation_characters
-                                            .last()
-                                            .or_else(|| rest_hashes.last()),
-                                    ),
-                                });
                             }
+                        };
+                        Ok(Some(Token {
+                            position: make_position(first_hash, characters.last()),
+                            token_type: TokenType::MultilineComment {
+                                characters: characters[0..characters.len() - 4].to_vec(),
+                            },
+                            representation: format!(
+                                "###{}",
+                                characters
+                                    .iter()
+                                    .map(|character| character.value.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join("")
+                            ),
+                        }))
+                    }
+                    // Otherwise this is a single line comment
+                    else {
+                        let content: Vec<Character> = self
+                            .characters_iterator
+                            .by_ref()
+                            .peeking_take_while(|character| character.value != '\n')
+                            .collect();
+                        Ok(Some(Token {
+                            token_type: TokenType::Comment,
+                            representation: format!(
+                                "#{}",
+                                rest_hashes
+                                    .iter()
+                                    .chain(content.iter())
+                                    .map(|other| other.value.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join("")
+                            ),
+                            position: make_position(first_hash, content.last()),
+                        }))
+                    }
+                }
+                '@' => {
+                    let first_alias = character;
+                    let _second_alias = self.eat_character('@')?;
+                    let _third_alias = self.eat_character('@')?;
+
+                    let mut characters = Vec::new();
+                    let mut ending_aliases_count = 0;
+                    let (characters, last_alias) = loop {
+                        if let Some(character) = self.characters_iterator.next() {
+                            if character.value == '@' {
+                                ending_aliases_count += 1;
+                                if ending_aliases_count == 3 {
+                                    break (characters, character);
+                                }
+                            } else {
+                                ending_aliases_count = 0;
+                                characters.push(character)
+                            }
+                        } else {
+                            return Err(TokenizeError::UnexpectedEof {
+                                expected_character_value: '@',
+                            }
+                            .into_parse_error());
                         }
                     };
-                    tokens.push(Token {
-                        position: make_position(first_hash, characters.last()),
-                        token_type: TokenType::MultilineComment,
-                        representation: format!(
-                            "###{}",
-                            characters
-                                .iter()
-                                .map(|character| character.value.to_string())
-                                .collect::<Vec<String>>()
-                                .join("")
-                        ),
-                    })
+                    Ok(Some(Token {
+                        token_type: TokenType::JavascriptCode,
+                        position: make_position(first_alias, Some(&last_alias)),
+                        representation: characters
+                            .into_iter()
+                            .map(|character| character.value.to_string())
+                            .collect::<Vec<String>>()
+                            .join(""),
+                    }))
                 }
-                // Otherwise this is a single line comment
-                else {
-                    let content: Vec<Character> = it
-                        .by_ref()
-                        .peeking_take_while(|character| character.value != '\n')
-                        .collect();
-                    tokens.push(Token {
-                        token_type: TokenType::Comment,
-                        representation: format!(
-                            "#{}",
-                            rest_hashes
-                                .iter()
-                                .chain(content.iter())
-                                .map(|other| other.value.to_string())
-                                .collect::<Vec<String>>()
-                                .join("")
-                        ),
-                        position: make_position(first_hash, content.last()),
-                    })
-                }
-            }
-            '@' => {
-                let first_alias = character.clone();
-                let _second_alias = eat_character(it, '@')?;
-                let _third_alias = eat_character(it, '@')?;
-
-                let mut characters = Vec::new();
-                let mut ending_aliases_count = 0;
-                let (characters, last_alias) = loop {
-                    if let Some(character) = it.next() {
-                        if character.value == '@' {
-                            ending_aliases_count += 1;
-                            if ending_aliases_count == 3 {
-                                break (characters, character);
-                            }
-                        } else {
-                            ending_aliases_count = 0;
-                            characters.push(character)
+                '\'' => match self.characters_iterator.next() {
+                    Some(quote @ Character { value: '\'', .. }) => {
+                        Err(TokenizeError::CharacterLiteralCannotBeEmpty {
+                            position: make_position(character, Some(&quote)),
                         }
-                    } else {
-                        return Err(TokenizeError::UnexpectedEof {
-                            expected_character_value: '@',
-                        });
+                        .into_parse_error())
                     }
-                };
-                tokens.push(Token {
-                    token_type: TokenType::JavascriptCode,
-                    position: make_position(first_alias, Some(&last_alias)),
-                    representation: characters
-                        .into_iter()
-                        .map(|character| character.value.to_string())
-                        .collect::<Vec<String>>()
-                        .join(""),
-                })
-            }
-            '\'' => match it.next() {
-                Some(quote @ Character { value: '\'', .. }) => {
-                    return Err(TokenizeError::CharacterLiteralCannotBeEmpty {
-                        position: make_position(character, Some(&quote)),
-                    })
-                }
-                Some(c) => match it.next() {
-                    Some(end_quote @ Character { value: '\'', .. }) => tokens.push(Token {
-                        token_type: TokenType::Character,
-                        representation: format!("'{}'", c.value),
-                        position: make_position(character, Some(&end_quote)),
-                    }),
-                    other => {
-                        return Err(TokenizeError::UnterminatedCharacterLiteral {
+                    Some(c) => match self.characters_iterator.next() {
+                        Some(end_quote @ Character { value: '\'', .. }) => Ok(Some(Token {
+                            token_type: TokenType::Character,
+                            representation: format!("'{}'", c.value),
+                            position: make_position(character, Some(&end_quote)),
+                        })),
+                        other => Err(TokenizeError::UnterminatedCharacterLiteral {
                             position: make_position(character, other.as_ref()),
-                        })
-                    }
-                },
-                None => {
-                    return Err(TokenizeError::UnterminatedCharacterLiteral {
+                        }
+                        .into_parse_error()),
+                    },
+                    None => Err(TokenizeError::UnterminatedCharacterLiteral {
                         position: make_position(character, None),
-                    })
-                }
-            },
-            '"' => {
-                let content = {
-                    let mut content: Vec<Character> = vec![character.clone()];
-                    let mut escaping = false;
-                    while let Some(character) = it.next() {
-                        match character.value {
-                            '\\' => {
-                                content.push(character);
-                                escaping = !escaping;
-                            }
-                            '"' => {
-                                content.push(character);
-                                if !escaping {
-                                    break;
-                                } else {
-                                    escaping = false;
+                    }
+                    .into_parse_error()),
+                },
+                '"' => {
+                    let start_quote = character;
+                    enum StartOf {
+                        Nothing,
+                        Escape,
+                        StringInterpolation,
+                    }
+                    let mut interpolated_string_sections: Vec<InterpolatedStringSection> = vec![];
+                    let (end_quote, characters) = {
+                        let mut characters: Vec<Character> = vec![];
+                        let mut start_of = StartOf::Nothing;
+                        let end_quote = loop {
+                            if let Some(character) = self.characters_iterator.next() {
+                                let (character, next_start_of) = match &character.value {
+                                    '\\' => (
+                                        Some(character),
+                                        match start_of {
+                                            StartOf::Escape => StartOf::Nothing,
+                                            _ => StartOf::Escape,
+                                        },
+                                    ),
+                                    '"' => match start_of {
+                                        StartOf::Escape => (Some(character), StartOf::Nothing),
+                                        _ => break Ok(character),
+                                    },
+                                    '#' => (None, StartOf::StringInterpolation),
+                                    '{' => {
+                                        if let StartOf::StringInterpolation = start_of {
+                                            interpolated_string_sections.push(
+                                                InterpolatedStringSection::String(stringify(
+                                                    characters.clone(),
+                                                )),
+                                            );
+                                            characters.clear();
+                                            let mut parser = Parser::new(self);
+                                            interpolated_string_sections.push(
+                                                InterpolatedStringSection::Expression(Box::new(
+                                                    parser.parse_expression()?,
+                                                )),
+                                            );
+                                            parser.eat_token(TokenType::RightCurlyBracket, None)?;
+                                            (None, StartOf::Nothing)
+                                        } else {
+                                            (Some(character), StartOf::Nothing)
+                                        }
+                                    }
+                                    _ => (Some(character), StartOf::Nothing),
+                                };
+
+                                if let Some(character) = character {
+                                    characters.push(character.clone());
                                 }
+                                start_of = next_start_of;
+                            } else {
+                                break Err(TokenizeError::UnterminatedStringLiteral {
+                                    position: make_position(start_quote.clone(), characters.last()),
+                                }
+                                .into_parse_error());
                             }
-                            _ => {
-                                content.push(character);
-                                escaping = false;
-                            }
-                        }
-                    }
-                    content
-                };
+                        }?;
+                        (end_quote, characters)
+                    };
 
-                match content.last() {
-                    Some(ending_quote @ Character { value: '"', .. }) => tokens.push(Token {
-                        token_type: TokenType::String,
-                        representation: stringify(content.clone()),
-                        position: make_position(character, Some(&ending_quote)),
-                    }),
-                    _ => {
-                        return Err(TokenizeError::UnterminatedStringLiteral {
-                            position: make_position(character, content.last()),
-                        })
-                    }
-                }
-            }
-            '-' | '0'..='9' => {
-                if character.value == '-' {
-                    if let Some(Character { value: '>', .. }) = it.peek() {
-                        let greater_than_character = it.by_ref().next();
-                        tokens.push(Token {
-                            token_type: TokenType::ThinArrowRight,
-                            representation: "->".to_string(),
-                            position: make_position(character, greater_than_character.as_ref()),
-                        });
-                        continue;
-                    }
-                }
-
-                let intergral = it
-                    .by_ref()
-                    .peeking_take_while(|character| character.value.is_digit(10))
-                    .collect::<Vec<Character>>();
-
-                if character.value == '-' && intergral.is_empty() {
-                    tokens.push(Token {
-                        token_type: TokenType::Minus,
-                        representation: character.value.to_string(),
-                        position: Position {
-                            line_start: character.line_number,
-                            line_end: character.line_number,
-                            column_start: character.column_number,
-                            column_end: character.column_number,
-                            character_index_start: character.index,
-                            character_index_end: character.index,
-                        },
-                    });
-                    continue;
-                };
-
-                match it.peek() {
-                    Some(Character { value: '.', .. }) => {
-                        let period = it.next().unwrap();
-                        let fractional = it
-                            .peeking_take_while(|character| character.value.is_digit(10))
-                            .collect::<Vec<Character>>();
-
-                        if fractional.is_empty() {
-                            // means there's no fractional part
-                            // also, we need to push a period token
-                            tokens.push(Token {
-                                token_type: TokenType::Integer,
-                                representation: format!(
-                                    "{}{}",
-                                    character.value,
-                                    stringify(intergral.clone())
-                                ),
-                                position: make_position(character, intergral.last()),
-                            });
-                            tokens.push(Token {
-                                token_type: TokenType::Period,
-                                representation: period.value.to_string(),
-                                position: Position {
-                                    line_start: period.line_number,
-                                    line_end: period.line_number,
-                                    column_start: period.column_number,
-                                    column_end: period.column_number,
-                                    character_index_start: period.index,
-                                    character_index_end: period.index,
+                    match interpolated_string_sections.split_first() {
+                        Some((head, interpolated_string_sections)) => {
+                            let interpolated_string_sections = {
+                                let mut interpolated_string_sections =
+                                    interpolated_string_sections.to_vec();
+                                interpolated_string_sections
+                                    .push(InterpolatedStringSection::String(stringify(characters)));
+                                interpolated_string_sections
+                            };
+                            Ok(Some(Token {
+                                token_type: TokenType::InterpolatedString {
+                                    start_quote: Box::new(start_quote.clone()),
+                                    sections: NonEmpty {
+                                        head: head.clone(),
+                                        tail: interpolated_string_sections,
+                                    },
+                                    end_quote: Box::new(end_quote.clone()),
                                 },
-                            });
-                        } else {
-                            tokens.push(Token {
-                                token_type: TokenType::Float,
-                                representation: format!(
-                                    "{}{}.{}",
-                                    character.value,
-                                    stringify(intergral.clone()),
-                                    stringify(fractional.clone())
-                                ),
-                                position: make_position(character, fractional.last()),
-                            })
+                                representation: "".to_string(),
+                                position: make_position(start_quote, Some(&end_quote)),
+                            }))
                         }
+                        None => Ok(Some(Token {
+                            token_type: TokenType::String,
+                            representation: format!("\"{}\"", stringify(characters)),
+                            position: make_position(start_quote, Some(&end_quote)),
+                        })),
                     }
-                    _ => {
-                        tokens.push(Token {
+                }
+                '-' | '0'..='9' => {
+                    let intergral = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| character.value.is_digit(10))
+                        .collect::<Vec<Character>>();
+
+                    if character.value == '-' && intergral.is_empty() {
+                        return Ok(Some(Token {
+                            token_type: TokenType::Minus,
+                            representation: character.value.to_string(),
+                            position: Position {
+                                line_start: character.line_number,
+                                line_end: character.line_number,
+                                column_start: character.column_number,
+                                column_end: character.column_number,
+                                character_index_start: character.index,
+                                character_index_end: character.index,
+                            },
+                        }));
+                    };
+
+                    match self.characters_iterator.peek() {
+                        Some(Character { value: '.', .. }) => {
+                            let period = self.characters_iterator.next().unwrap();
+                            let fractional = self
+                                .characters_iterator
+                                .peeking_take_while(|character| character.value.is_digit(10))
+                                .collect::<Vec<Character>>();
+
+                            if fractional.is_empty() {
+                                // means there's no fractional part
+                                // that means the next token is a Period
+                                self.peeked_tokens.push(Token {
+                                    token_type: TokenType::Period,
+                                    representation: period.value.to_string(),
+                                    position: Position {
+                                        line_start: period.line_number,
+                                        line_end: period.line_number,
+                                        column_start: period.column_number,
+                                        column_end: period.column_number,
+                                        character_index_start: period.index,
+                                        character_index_end: period.index,
+                                    },
+                                });
+                                Ok(Some(Token {
+                                    token_type: TokenType::Integer,
+                                    representation: format!(
+                                        "{}{}",
+                                        character.value,
+                                        stringify(intergral.clone())
+                                    ),
+                                    position: make_position(character, intergral.last()),
+                                }))
+                            } else {
+                                Ok(Some(Token {
+                                    token_type: TokenType::Float,
+                                    representation: format!(
+                                        "{}{}.{}",
+                                        character.value,
+                                        stringify(intergral),
+                                        stringify(fractional.clone())
+                                    ),
+                                    position: make_position(character, fractional.last()),
+                                }))
+                            }
+                        }
+                        _ => Ok(Some(Token {
                             token_type: TokenType::Integer,
                             representation: format!(
                                 "{}{}",
@@ -398,84 +475,83 @@ fn eat_token(
                                 stringify(intergral.clone())
                             ),
                             position: make_position(character, intergral.last()),
-                        });
+                        })),
                     }
-                };
-            }
-            'A'..='Z' | 'a'..='z' => {
-                let characters = it
-                    .by_ref()
-                    .peeking_take_while(|character| {
-                        character.value.is_alphanumeric() || character.value == '_'
-                    })
-                    .collect::<Vec<Character>>();
+                }
+                'A'..='Z' | 'a'..='z' => {
+                    let characters = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| {
+                            character.value.is_alphanumeric() || character.value == '_'
+                        })
+                        .collect::<Vec<Character>>();
 
-                let representation =
-                    format!("{}{}", character.value, stringify(characters.clone()));
-                tokens.push(Token {
-                    token_type: get_token_type(representation.clone()),
-                    representation,
-                    position: make_position(character, characters.last()),
-                })
-            }
-            '.' => {
-                let dots = it
-                    .by_ref()
-                    .peeking_take_while(|character| character.value == '.')
-                    .collect::<Vec<Character>>();
+                    let representation =
+                        format!("{}{}", character.value, stringify(characters.clone()));
+                    Ok(Some(Token {
+                        token_type: get_token_type(representation.clone()),
+                        representation,
+                        position: make_position(character, characters.last()),
+                    }))
+                }
+                '.' => {
+                    let dots = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| character.value == '.')
+                        .collect::<Vec<Character>>();
 
-                match dots.len() {
-                    0 => tokens.push(Token {
-                        token_type: TokenType::Period,
-                        representation: ".".to_string(),
-                        position: make_position(character, None),
-                    }),
-                    2 => tokens.push(Token {
-                        token_type: TokenType::Spread,
-                        representation: "...".to_string(),
-                        position: make_position(character, dots.last()),
-                    }),
-                    _ => {
-                        return Err(TokenizeError::InvalidToken {
+                    match dots.len() {
+                        0 => Ok(Some(Token {
+                            token_type: TokenType::Period,
+                            representation: ".".to_string(),
+                            position: make_position(character, None),
+                        })),
+                        2 => Ok(Some(Token {
+                            token_type: TokenType::Spread,
+                            representation: "...".to_string(),
+                            position: make_position(character, dots.last()),
+                        })),
+                        _ => Err(TokenizeError::InvalidToken {
                             error: "Only one dot (.) or three dots (...) is acceptable".to_string(),
                             position: make_position(character, dots.last()),
-                        })
+                        }
+                        .into_parse_error()),
                     }
                 }
-            }
-            '=' => match it.peek() {
-                Some(Character { value: '>', .. }) => {
-                    let greater_than_character = it.by_ref().next();
-                    tokens.push(Token {
-                        token_type: TokenType::FatArrowRight,
-                        representation: "=>".to_string(),
-                        position: make_position(character, greater_than_character.as_ref()),
-                    })
-                }
-                _ => tokens.push(Token {
-                    token_type: TokenType::Equals,
-                    representation: "=".to_string(),
+                '=' => match self.characters_iterator.peek() {
+                    Some(Character { value: '>', .. }) => {
+                        let greater_than_character = self.characters_iterator.by_ref().next();
+                        Ok(Some(Token {
+                            token_type: TokenType::FatArrowRight,
+                            representation: "=>".to_string(),
+                            position: make_position(character, greater_than_character.as_ref()),
+                        }))
+                    }
+                    _ => Ok(Some(Token {
+                        token_type: TokenType::Equals,
+                        representation: "=".to_string(),
+                        position: make_position(character, None),
+                    })),
+                },
+                ':' => match self.characters_iterator.peek() {
+                    Some(Character { value: ':', .. }) => {
+                        let colon = self.characters_iterator.by_ref().next();
+                        Ok(Some(Token {
+                            token_type: TokenType::DoubleColon,
+                            representation: "::".to_string(),
+                            position: make_position(character, colon.as_ref()),
+                        }))
+                    }
+                    _ => Ok(Some(Token {
+                        token_type: TokenType::Colon,
+                        representation: ":".to_string(),
+                        position: make_position(character, None),
+                    })),
+                },
+                other => Ok(Some(Token {
                     position: make_position(character, None),
-                }),
-            },
-            ':' => match it.peek() {
-                Some(Character { value: ':', .. }) => {
-                    let colon = it.by_ref().next();
-                    tokens.push(Token {
-                        token_type: TokenType::DoubleColon,
-                        representation: "::".to_string(),
-                        position: make_position(character, colon.as_ref()),
-                    })
-                }
-                _ => tokens.push(Token {
-                    token_type: TokenType::Colon,
-                    representation: ":".to_string(),
-                    position: make_position(character, None),
-                }),
-            },
-            other => {
-                tokens.push(Token {
-                    position: make_position(character.clone(), None),
                     representation: other.to_string(),
                     token_type: match other {
                         '{' => TokenType::LeftCurlyBracket,
@@ -495,33 +571,13 @@ fn eat_token(
                         '`' => TokenType::Backtick,
                         '!' => TokenType::Bang,
                         '\n' => TokenType::Newline,
-                        _ => return Err(TokenizeError::UnknownCharacter { character }),
+                        other => TokenType::Other(other),
                     },
-                });
+                })),
             }
+        } else {
+            Ok(None)
         }
-    }
-    Ok(tokens)
-}
-
-fn eat_character(
-    it: &mut Peekable<IntoIter<Character>>,
-    value: char,
-) -> Result<Character, TokenizeError> {
-    match it.next() {
-        Some(character) => {
-            if character.value == value {
-                Ok(character)
-            } else {
-                Err(TokenizeError::UnexpectedCharacter {
-                    position: make_position(character, None),
-                    expected_character_value: value,
-                })
-            }
-        }
-        None => Err(TokenizeError::UnexpectedEof {
-            expected_character_value: value,
-        }),
     }
 }
 

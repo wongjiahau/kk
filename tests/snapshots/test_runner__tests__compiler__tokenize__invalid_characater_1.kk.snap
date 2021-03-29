@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x = ~
+let x : String = ~
 
 ============
 EXIT CODE
@@ -21,9 +21,32 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/tokenize/invalid_characater_1.kk:1:9
+  ┌─ tests/compiler/tokenize/invalid_characater_1.kk:1:18
   │
-1 │ let x = ~
-  │         ^ Syntax error: Unknown character
+1 │ let x : String = ~
+  │                  ^ Syntax error: not expecting `~` here
   │
-  = This character is not used anywhere in the syntax of KK.
+  = Note that `~` is not used anywhere in the syntax of KK.
+
+    We found this error when we are trying to parse a Expression.
+    Examples of Expression are:
+
+    Example #1:
+
+      123
+
+    Example #2:
+
+      "hello world"
+
+    Example #3:
+
+      { x: 3 }
+
+    Example #4:
+
+      [ 2 ]
+
+    Example #5:
+
+      Some(true)

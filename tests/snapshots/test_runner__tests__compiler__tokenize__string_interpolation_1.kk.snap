@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+# Unterminated string interpolation
+do "I am #{123
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/tokenize/string_interpolation_1.kk:2:15
+  │
+2 │ do "I am #{123
+  │               ^ Syntax error: unexpected EOF (end of file)
+  │
+  = The expected token here is `}`.

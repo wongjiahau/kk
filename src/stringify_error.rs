@@ -16,8 +16,8 @@ use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
-pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeError) {
-    let (range, error) = match tokenize_error {
+fn get_tokenize_error(tokenize_error: TokenizeError) -> (ErrorRange, StringifiedError) {
+    match tokenize_error {
         TokenizeError::UnterminatedMultilineComment { position } => {
             let range = ErrorRange {
                 character_index_start: position.character_index_start,
@@ -41,19 +41,6 @@ pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeErr
                 StringifiedError {
                     summary: "Syntax error: Invalid token".to_string(),
                     body: error,
-                },
-            )
-        }
-        TokenizeError::UnknownCharacter { character } => {
-            let range = ErrorRange {
-                character_index_start: character.index,
-                character_index_end: character.index,
-            };
-            (
-                range,
-                StringifiedError {
-                    summary: "Syntax error: Unknown character".to_string(),
-                    body: "This character is not used anywhere in the syntax of KK.".to_string(),
                 },
             )
         }
@@ -129,29 +116,34 @@ pub fn print_tokenize_error(module_meta: ModuleMeta, tokenize_error: TokenizeErr
                 },
             )
         }
-    };
-
-    print_error(module_meta, range, error)
+    }
 }
 
 pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
-    let parse_context_description = get_parse_context_description(parse_error.context);
-    let parse_context_description = format!(
-        "We found this error when we are trying to parse a {}.\nExamples of {} are:\n\n{}",
-        parse_context_description.name,
-        parse_context_description.name,
-        parse_context_description
-            .examples
-            .into_iter()
-            .enumerate()
-            .map(|(index, example)| format!(
-                "Example #{}:\n\n{}",
-                index + 1,
-                indent_string(example.to_string(), 2)
-            ))
-            .collect::<Vec<String>>()
-            .join("\n\n")
-    );
+    let parse_context_description = {
+        match parse_error.context {
+            Some(context) => {
+                let parse_context_description = get_parse_context_description(context);
+                Some(format!(
+                    "We found this error when we are trying to parse a {}.\nExamples of {} are:\n\n{}",
+                    parse_context_description.name,
+                    parse_context_description.name,
+                    parse_context_description
+                        .examples
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, example)| format!(
+                            "Example #{}:\n\n{}",
+                            index + 1,
+                            indent_string(example.to_string(), 2)
+                        ))
+                        .collect::<Vec<String>>()
+                        .join("\n\n")
+                ))
+            }
+            None => None,
+        }
+    }.unwrap_or_else(||"".to_string());
     let (range, error) = match parse_error.kind {
         ParseErrorKind::InvalidToken {
             actual_token,
@@ -220,6 +212,7 @@ pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
             };
             (range, error)
         }
+        ParseErrorKind::TokenizeError(tokenize_error) => get_tokenize_error(tokenize_error),
     };
     print_error(module_meta, range, error)
 }
@@ -234,40 +227,41 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordIf => "used for creating if-expression, for example:\n\n\tif happy \"red\" \"blue\"",
         TokenType::KeywordLet => "used for defining variables, for example:\n\n\tlet x = 1",
         TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
-        TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example:\n\n\tenum Color = Red() Blue()",
-        TokenType::KeywordDo => "used for defining expression with side effects, such as:\n\n\tdo \"Hello world\".print()",
+        TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example:\n\n\tenum Color = Red Blue",
+        TokenType::KeywordDo => "used for defining expression with side effects, such as:\n\n\tdo \"Hello world\".print",
         TokenType::KeywordNull => "only used to create a value with the null type (i.e. unit type)",
         TokenType::KeywordTrue | TokenType::KeywordFalse
             => "only used to create a boolean value",
         TokenType::KeywordImport => "only used for importing symbols from other files, for example:\n\n\timport \"./foo.kk\" { bar spam hello: hello2}",
         TokenType::KeywordExport => "only used for exporting symbols, for example:\n\n\texport let foo = 1",
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
-        TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example:\n\n\t{ x: string }\n\nand constructing record value, for example: \n\n\t{ x = 'hello' }",
+        TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example:\n\n\t{ x: String }\n\nand constructing record value, for example: \n\n\t{ x: \"hello\" }",
 
         TokenType::LeftParenthesis | TokenType::RightParenthesis => "used for wrapping expressions and enum constructor only",
-        TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example:\n\n\t[1,2,3]",
+        TokenType::LeftSquareBracket | TokenType::RightSquareBracket => "used for creating and destructuring array, for example:\n\n\t[1 2 3]",
         TokenType::Colon => "only used for annotating types, for example:\n\n\t{ x: string }",
         TokenType::DoubleColon => "only used for scope resolution, for example:\n\n\tColor::Red()",
         TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example:\n\n\ttype Box<T> = { value: T }",
         TokenType::Equals => "used for declaring variables locally, for example:\n\n\tlet x = 1",
         TokenType::Period => "used for calling a function, for example:\n\n\t1.add(2)",
         TokenType::Spread => panic!("Subject to change"),
-        TokenType::Comma => "used for record punning, for example:\n\n\t{x,}",
+        TokenType::Comma => "used for record punning, for example:\n\n\t{x}",
         TokenType::Minus => "only used to represent negative numbers, for example:\n\n\t-123.4",
         TokenType::FatArrowRight | TokenType::Pipe => "only used for creating function, for example:\n\n\t| x => x.add(1)",
-        TokenType::ThinArrowRight => "only used for annotating the return type of a function, for example:\n\n\t| x -> String => \"Hello\"",
         TokenType::Underscore => "used in pattern matching to match values that are not used afterwards",
         TokenType::Identifier => "used to represent the name of a variable",
-        TokenType::String => "only used to represent string values",
+        TokenType::InterpolatedString{..} | TokenType::String => "only used to represent string values",
         TokenType::Float => "only used to represent floating point values",
         TokenType::Integer => "only used to represent integer values",
         TokenType::Character => "only used to represent character",
         TokenType::Comment => "only used for commenting",
-        TokenType::MultilineComment => "only used for documentation",
+        TokenType::MultilineComment {..} => "only used for documentation",
         TokenType::Backtick => "only used for quoting expressions, for example:\n\n\t`[123]`",
         TokenType::JavascriptCode => "only used for declaring Javascript interop code.",
         TokenType::Bang => "used for annotating Promise type, for example: \n\n\t!Integer",
-        TokenType::Slash => {panic!()}
+        TokenType::Slash => "used for applicative let",
+        TokenType::TripleBacktick => "used for writing code snippet in documentation comments",
+        TokenType::Other(_) => "not used anywhere in the syntax of KK"
     }
 }
 
@@ -279,22 +273,15 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::ExpressionLet => ParseContextDescription {
             name: "Let Expression",
-            examples: vec![
-                "let x = 1\nlet y = 2\nx.add(y)",
-                "let Some(x) = a else | _ => Error(\"oops\")\nOk(x)",
-            ],
+            examples: vec!["let x = 1\nlet y = 2\nx.add(y)"],
         },
         ParseContext::ExpressionFunction => ParseContextDescription {
             name: "Function",
-            examples: vec![
-                "| x => x.add(1)",
-                "| x:String  y:String -> String => x.concat(y)",
-                "| true true => true\n| _ _ => false",
-            ],
+            examples: vec!["| x => x.add(1)", "| true true => true\n| _ _ => false"],
         },
         ParseContext::DotExpression => ParseContextDescription {
             name: "Dot Expression: Function Call, Property Access, or Record Update",
-            examples: vec!["x.add(1)", "people.name", "x.{a 3}", "x.{a.square()}"],
+            examples: vec!["x.add(1)", "people.name", "x.{a: 3}", "x.{a.square}"],
         },
         ParseContext::ExpressionFunctionCall => ParseContextDescription {
             name: "Function call",
@@ -325,7 +312,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             examples: vec![
                 "let x = 1",
                 "type People = { name: String }",
-                "do \"hello world\".print()",
+                "do \"hello world\".print",
                 "enum Color = Red Green",
             ],
         },
@@ -345,13 +332,13 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::StatementType => ParseContextDescription {
             name: "Type Statement",
-            examples: vec!["type ID = string", "type Box<T> = { value: T }"],
+            examples: vec!["type ID = String", "type Box<T> = { value: T }"],
         },
         ParseContext::StatementEnum => ParseContextDescription {
             name: "Enum Statement",
             examples: vec![
-                "enum Color = Red() Green()",
-                "enum List<Element> = Nil() Cons({current: Element next: List<Element Element>})",
+                "enum Color = Red Green",
+                "enum List<A> = Nil() Cons({current: A next: List<A A>})",
             ],
         },
         ParseContext::TypeAnnotationArray => ParseContextDescription {
@@ -364,7 +351,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::TypeAnnotationFunction => ParseContextDescription {
             name: "Function Type Annotation",
-            examples: vec!["| Boolean -> Boolean", "| Integer Integer -> Integer"],
+            examples: vec!["| Boolean => Boolean", "| Integer Integer => Integer"],
         },
         ParseContext::TypeAnnotationPromise => ParseContextDescription {
             name: "Promise Type Annotation",
@@ -384,11 +371,11 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::PatternEnum => ParseContextDescription {
             name: "Enum Pattern",
-            examples: vec!["None()", "Some(x)"],
+            examples: vec!["None", "Some(x)"],
         },
         ParseContext::PatternRecord => ParseContextDescription {
             name: "Record Pattern",
-            examples: vec!["{ x y }", "{ x: true y: Nil() }"],
+            examples: vec!["{ x y }", "{ x: true y: Nil }"],
         },
         ParseContext::TypeArguments => ParseContextDescription {
             name: "Type Arguments",
@@ -396,7 +383,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::EnumConstructorDefinition => ParseContextDescription {
             name: "Enum Constructor Definition",
-            examples: vec!["Hello(number)", "Apple({ name: string })", "Bomb()"],
+            examples: vec!["Hello(number)", "Apple({ name: string })", "Bomb"],
         },
         ParseContext::TypeVariablesDeclaration => ParseContextDescription {
             name: "Type Variables Declaration",
@@ -405,6 +392,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::ExpressionMonadicLet => ParseContextDescription {
             name: "Monadic Let Expression",
             examples: vec!["let/map x = Some(2)\nSome([x])"],
+        },
+        ParseContext::DocumentationCodeSnippet => ParseContextDescription {
+            name: "Documentation Code Snippet",
+            examples: vec!["```\"Hello world\".print```"],
         },
     }
 }
@@ -439,28 +430,27 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Comma => ",",
         TokenType::Minus => "-",
         TokenType::FatArrowRight => "=>",
-        TokenType::ThinArrowRight => "->",
         TokenType::Pipe => "|",
         TokenType::Underscore => "_",
         TokenType::Identifier => "abc",
-        TokenType::String => "\"abc\"",
         TokenType::Character => "'c'",
         TokenType::Float => "123.0",
         TokenType::Integer => "123",
         TokenType::Comment => "# this is a comment",
-        TokenType::MultilineComment => "### This is a documentation. ###",
+        TokenType::MultilineComment { .. } => "### This is a documentation. ###",
         TokenType::Backtick => "`",
         TokenType::JavascriptCode => "@@@ // this is javascript @@@",
         TokenType::Bang => "!",
         TokenType::Slash => "/",
+        TokenType::String => "\"Hello \"",
+        TokenType::InterpolatedString { .. } => "\"Hello #{my_name}\"",
+        TokenType::TripleBacktick => "```",
+        TokenType::Other(_) => "unknown character",
     }
 }
 
 pub fn print_compile_error(CompileError { kind, module_meta }: CompileError) {
     match kind {
-        CompileErrorKind::TokenizeError(tokenize_error) => {
-            print_tokenize_error(module_meta, tokenize_error)
-        }
         CompileErrorKind::ParseError(parse_error) => print_parse_error(module_meta, *parse_error),
         CompileErrorKind::UnifyError(unify_error) => print_unify_error(module_meta, *unify_error),
     }

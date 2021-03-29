@@ -47,6 +47,25 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
         | TypecheckedExpression::Character { representation }
         | TypecheckedExpression::Float { representation }
         | TypecheckedExpression::Integer { representation } => representation,
+        TypecheckedExpression::InterpolatedString { sections } => {
+            format!(
+                "({})",
+                sections
+                    .into_iter()
+                    .map(|section| {
+                        match section {
+                            TypecheckedInterpolatedStringSection::String(string) => {
+                                format!("\"{}\"", string)
+                            }
+                            TypecheckedInterpolatedStringSection::Expression(expression) => {
+                                format!("({})", transpile_expression(*expression))
+                            }
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join("+")
+            )
+        }
         TypecheckedExpression::Variable(variable) => transpile_variable(variable),
         TypecheckedExpression::EnumConstructor {
             constructor_name,

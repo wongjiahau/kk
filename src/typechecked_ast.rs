@@ -39,6 +39,9 @@ pub enum TypecheckedExpression {
     String {
         representation: String,
     },
+    InterpolatedString {
+        sections: Vec<TypecheckedInterpolatedStringSection>,
+    },
     Character {
         representation: String,
     },
@@ -72,6 +75,12 @@ pub enum TypecheckedExpression {
         if_false: Box<TypecheckedExpression>,
     },
     Promise(Box<TypecheckedExpression>),
+}
+
+#[derive(Debug, Clone)]
+pub enum TypecheckedInterpolatedStringSection {
+    String(String),
+    Expression(Box<TypecheckedExpression>),
 }
 
 /// This is to ensure that we transpile property name properly.

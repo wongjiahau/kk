@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x = "hello world
+let x : String = "hello world
 
 ============
 EXIT CODE
@@ -21,10 +21,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/tokenize/unterminated_string_1.kk:1:9
+  ┌─ tests/compiler/tokenize/unterminated_string_1.kk:1:18
   │
-1 │   let x = "hello world
-  │ ╭─────────^
+1 │   let x : String = "hello world
+  │ ╭──────────────────^
 2 │ │
   │ ╰^ Syntax error: unterminated string literal
   │

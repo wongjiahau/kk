@@ -1,1 +1,1 @@
-let x = "hello world
+let x : String = "hello world

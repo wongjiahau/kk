@@ -1,0 +1,23 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+# Nested interpolations
+do "I am #{"Hello #{"World"}"} years old".print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+I am Hello World years old
+
+============
+STDERR
+============

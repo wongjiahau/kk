@@ -2,7 +2,7 @@ use crate::{
     compile::{CompileError, CompileErrorKind},
     non_empty::NonEmpty,
     parse::Parser,
-    tokenize::tokenize,
+    tokenize::Tokenizer,
 };
 
 use crate::ast::*;
@@ -449,17 +449,8 @@ pub fn infer_import_statement(
                         },
                     };
 
-                    // Tokenize the imported module
-                    let tokens = match tokenize(code) {
-                        Ok(tokens) => Ok(tokens),
-                        Err(tokenize_error) => Err(CompileError {
-                            module_meta: module_meta.clone(),
-                            kind: CompileErrorKind::TokenizeError(tokenize_error),
-                        }),
-                    }?;
-
                     // Parse the imported module
-                    let statements = match Parser::parse(tokens) {
+                    let statements = match Parser::parse(&mut Tokenizer::new(code)) {
                         Ok(statements) => Ok(statements),
                         Err(parse_error) => Err(CompileError {
                             module_meta: module_meta.clone(),
@@ -1001,6 +992,11 @@ pub fn get_expression_position(expression_value: &Expression) -> Position {
         | Expression::Variable(token)
         | Expression::Null(token)
         | Expression::Boolean { token, .. } => token.position,
+        Expression::InterpolatedString {
+            start_quote,
+            end_quote,
+            ..
+        } => join_position(start_quote.position(), end_quote.position()),
         Expression::Promise { bang, expression } => {
             join_position(bang.position, get_expression_position(expression))
         }
@@ -1633,6 +1629,31 @@ fn infer_expression_type_(
             type_value: Type::String,
             expression: TypecheckedExpression::String {
                 representation: token.representation.clone(),
+            },
+        }),
+        Expression::InterpolatedString { sections, .. } => Ok(InferExpressionResult {
+            type_value: Type::String,
+            expression: TypecheckedExpression::InterpolatedString {
+                sections: sections
+                    .clone()
+                    .into_vector()
+                    .into_iter()
+                    .map(|section| match section {
+                        InterpolatedStringSection::String(string) => {
+                            Ok(TypecheckedInterpolatedStringSection::String(string))
+                        }
+                        InterpolatedStringSection::Expression(expression) => {
+                            let expression = infer_expression_type(
+                                module,
+                                Some(Type::String),
+                                expression.as_ref(),
+                            )?;
+                            Ok(TypecheckedInterpolatedStringSection::Expression(Box::new(
+                                expression.expression,
+                            )))
+                        }
+                    })
+                    .collect::<Result<Vec<TypecheckedInterpolatedStringSection>, UnifyError>>()?,
             },
         }),
         Expression::Character(token) => Ok(InferExpressionResult {
