@@ -197,15 +197,22 @@ impl Module {
             type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
             scope: Scope::new(),
-            current_uid: Cell::new(starting_symbol_uid),
+            current_uid: Cell::new(0),
             meta: module_meta,
         };
 
-        built_in_symbols()
+        let built_in_symbols = built_in_symbols();
+
+        let built_in_symbols_length = built_in_symbols.len();
+        built_in_symbols
             .into_iter()
             .map(|symbol| result.insert_symbol(None, symbol))
             .collect::<Result<Vec<usize>, UnifyError>>()
             .expect("Compiler error: built-in symbols should not have conflict");
+
+        result
+            .current_uid
+            .set(built_in_symbols_length + starting_symbol_uid);
 
         result
     }
@@ -720,7 +727,7 @@ impl Module {
                 if entry.uid == symbol_uid {
                     match &entry.symbol.kind {
                         SymbolKind::Type(type_symbol) => Some(type_symbol.clone()),
-                        _ => panic!("Compiler error"),
+                        _ => panic!("Compiler error, {:?}", entry.symbol.meta),
                     }
                 } else {
                     None
