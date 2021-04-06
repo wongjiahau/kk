@@ -1,0 +1,39 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+type People = {
+  first_name: String
+  last_name: String
+}
+
+let s
+  : | String String => People
+  = | _ last_name => {..}
+                    # Error: missing property first_name
+
+do "Adam".s("James").print
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/record_wildcard_4.kk:8:23
+  │
+8 │   = | _ last_name => {..}
+  │                       ^^ Unknown variable `first_name`
+  │
+  = Cannot find this value symbol in the current scope

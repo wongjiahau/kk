@@ -20,6 +20,9 @@ pub enum ParseErrorKind {
     UnexpectedEof {
         expected_token_type: Option<TokenType>,
     },
+    RecordWilcardCanOnlyAppearOnce {
+        position: Position,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -347,20 +350,20 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    pub fn eat_token(
-        &mut self,
-        token_type: TokenType,
+    fn validate_token(
+        expected_token_type: TokenType,
+        actual_token: Option<Token>,
         context: Option<ParseContext>,
     ) -> Result<Token, ParseError> {
-        if let Some(token) = self.next_meaningful_token()? {
-            if variant_eq(&token.token_type, &token_type) {
+        if let Some(token) = actual_token {
+            if variant_eq(&token.token_type, &expected_token_type) {
                 Ok(token)
             } else {
                 Err(ParseError {
                     context,
                     kind: ParseErrorKind::InvalidToken {
                         actual_token: token,
-                        expected_token_type: Some(token_type),
+                        expected_token_type: Some(expected_token_type),
                     },
                 })
             }
@@ -368,10 +371,19 @@ impl<'a> Parser<'a> {
             Err(ParseError {
                 context,
                 kind: ParseErrorKind::UnexpectedEof {
-                    expected_token_type: Some(token_type),
+                    expected_token_type: Some(expected_token_type),
                 },
             })
         }
+    }
+
+    pub fn eat_token(
+        &mut self,
+        token_type: TokenType,
+        context: Option<ParseContext>,
+    ) -> Result<Token, ParseError> {
+        let token = self.next_meaningful_token()?;
+        Parser::validate_token(token_type, token, context)
     }
 
     fn try_eat_token(&mut self, token_type: TokenType) -> Result<Option<Token>, ParseError> {
@@ -918,15 +930,39 @@ impl<'a> Parser<'a> {
 
     fn parse_record(&mut self, left_curly_bracket: Token) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::ExpressionRecord);
+        let mut wildcard = None;
         let mut key_value_pairs: Vec<RecordKeyValue> = Vec::new();
-        loop {
-            match self.peek_next_meaningful_token()? {
-                Some(Token {
-                    token_type: TokenType::RightCurlyBracket,
-                    ..
-                }) => break,
-                _ => {
-                    let key = self.eat_token(TokenType::Identifier, context)?;
+        let right_curly_bracket = loop {
+            match self.next_meaningful_token()? {
+                Some(
+                    right_curly_bracket
+                    @
+                    Token {
+                        token_type: TokenType::RightCurlyBracket,
+                        ..
+                    },
+                ) => break right_curly_bracket,
+                Some(
+                    double_period
+                    @
+                    Token {
+                        token_type: TokenType::DoublePeriod,
+                        ..
+                    },
+                ) => {
+                    if wildcard.is_none() {
+                        wildcard = Some(double_period)
+                    } else {
+                        return Err(ParseError {
+                            context,
+                            kind: ParseErrorKind::RecordWilcardCanOnlyAppearOnce {
+                                position: double_period.position,
+                            },
+                        });
+                    }
+                }
+                other => {
+                    let key = Parser::validate_token(TokenType::Identifier, other, context)?;
                     let value = if self.try_eat_token(TokenType::Colon)?.is_some() {
                         self.parse_expression()?
                     } else {
@@ -939,9 +975,9 @@ impl<'a> Parser<'a> {
                     })
                 }
             }
-        }
-        let right_curly_bracket = self.eat_token(TokenType::RightCurlyBracket, context)?;
+        };
         Ok(Expression::Record {
+            wildcard,
             key_value_pairs,
             left_curly_bracket,
             right_curly_bracket,
@@ -1036,22 +1072,42 @@ impl<'a> Parser<'a> {
                 TokenType::Underscore => Ok(DestructurePattern::Underscore(token.clone())),
                 TokenType::LeftCurlyBracket => {
                     let context = Some(ParseContext::PatternRecord);
+                    let mut wildcard = None;
                     let mut key_value_pairs: Vec<DestructuredRecordKeyValue> = Vec::new();
                     let right_curly_bracket = loop {
-                        if let Some(right_curly_bracket) =
-                            self.try_eat_token(TokenType::RightCurlyBracket)?
-                        {
-                            break right_curly_bracket;
+                        match self.next_meaningful_token()? {
+                            Some(
+                                right_curly_bracket
+                                @
+                                Token {
+                                    token_type: TokenType::RightCurlyBracket,
+                                    ..
+                                },
+                            ) => {
+                                break right_curly_bracket;
+                            }
+                            Some(
+                                double_period
+                                @
+                                Token {
+                                    token_type: TokenType::DoublePeriod,
+                                    ..
+                                },
+                            ) => wildcard = Some(double_period),
+                            other => {
+                                let key =
+                                    Parser::validate_token(TokenType::Identifier, other, context)?;
+                                let as_value = if self.try_eat_token(TokenType::Colon)?.is_some() {
+                                    Some(self.parse_destructure_pattern()?)
+                                } else {
+                                    None
+                                };
+                                key_value_pairs.push(DestructuredRecordKeyValue { key, as_value });
+                            }
                         }
-                        let key = self.eat_token(TokenType::Identifier, context)?;
-                        let as_value = if self.try_eat_token(TokenType::Colon)?.is_some() {
-                            Some(self.parse_destructure_pattern()?)
-                        } else {
-                            None
-                        };
-                        key_value_pairs.push(DestructuredRecordKeyValue { key, as_value });
                     };
                     Ok(DestructurePattern::Record {
+                        wildcard,
                         left_curly_bracket: token.clone(),
                         key_value_pairs,
                         right_curly_bracket,
@@ -1091,7 +1147,7 @@ impl<'a> Parser<'a> {
                         })
                     } else {
                         let first_element = Box::new(self.parse_destructure_pattern()?);
-                        let spread_token = self.eat_token(TokenType::Spread, context)?;
+                        let spread_token = self.eat_token(TokenType::DoublePeriod, context)?;
                         let rest_elements = Box::new(self.parse_destructure_pattern()?);
                         let right_square_bracket =
                             self.eat_token(TokenType::RightSquareBracket, context)?;

@@ -8,7 +8,7 @@ INPUT
 do
   let foo =
     | [] => true
-    | [_ ...[]] => false
+    | [_ ..[]] => false
   null
 
 ============
@@ -28,8 +28,8 @@ error:
   ┌─ tests/compiler/typecheck/case_exhaustiveness_array_1.kk:3:5
   │
 3 │ ╭     | [] => true
-4 │ │     | [_ ...[]] => false
-  │ ╰────────────────────────^ Non-exhaustive cases
+4 │ │     | [_ ..[]] => false
+  │ ╰───────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

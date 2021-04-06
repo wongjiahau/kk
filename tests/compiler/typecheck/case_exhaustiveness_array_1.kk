@@ -1,5 +1,5 @@
 do
   let foo = 
     | [] => true
-    | [_ ...[]] => false
+    | [_ ..[]] => false
   null

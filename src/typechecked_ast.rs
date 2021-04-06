@@ -1,4 +1,8 @@
-use crate::non_empty::NonEmpty;
+use crate::{
+    ast::{InfinitePatternKind, Position, Token},
+    non_empty::NonEmpty,
+    unify::join_position,
+};
 /// The syntax tree here represents the syntax tree that is type-checked
 /// Which contain information necessary for the transpilation
 /// For example, multiple-dispatch requires the typechecker
@@ -11,7 +15,7 @@ use crate::non_empty::NonEmpty;
 #[derive(Debug, Clone)]
 pub enum TypecheckedStatement {
     Let {
-        left: Variable,
+        left: Identifier,
         right: TypecheckedExpression,
     },
     Do {
@@ -20,10 +24,10 @@ pub enum TypecheckedStatement {
 }
 
 #[derive(Debug, Clone)]
-pub struct Variable {
+pub struct Identifier {
     /// This is needed for disambiguating overloaded functions
     pub uid: usize,
-    pub representation: String,
+    pub token: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +49,7 @@ pub enum TypecheckedExpression {
     Character {
         representation: String,
     },
-    Variable(Variable),
+    Variable(Identifier),
     EnumConstructor {
         constructor_name: String,
         payload: Option<Box<TypecheckedExpression>>,
@@ -85,7 +89,7 @@ pub enum TypecheckedInterpolatedStringSection {
 
 /// This is to ensure that we transpile property name properly.
 #[derive(Debug, Clone)]
-pub struct PropertyName(pub String);
+pub struct PropertyName(pub Token);
 
 #[derive(Debug, Clone)]
 pub enum TypecheckedRecordUpdate {
@@ -118,32 +122,77 @@ pub struct TypecheckedFunctionBranch {
 
 #[derive(Debug, Clone)]
 pub enum TypecheckedDestructurePattern {
-    String {
-        representation: String,
+    Infinite {
+        kind: InfinitePatternKind,
+        token: Token,
     },
-    Character {
-        representation: String,
+    Boolean {
+        token: Token,
+        value: bool,
     },
-    Integer {
-        representation: String,
-    },
-    Boolean(bool),
-    Null,
-    Underscore,
-    Variable(Variable),
+    Null(Token),
+    Underscore(Token),
+    Identifier(Box<Identifier>),
     EnumConstructor {
-        constructor_name: String,
-        payload: Option<Box<TypecheckedDestructurePattern>>,
+        constructor_name: Token,
+        payload: Option<TypecheckedDestructurePatternEnumConstructorPayload>,
     },
     Record {
+        left_curly_bracket: Token,
         key_pattern_pairs: Vec<(PropertyName, TypecheckedDestructurePattern)>,
+        right_curly_bracket: Token,
     },
     Array {
+        left_square_bracket: Token,
         spread: Option<TypecheckedDesturcturePatternArraySpread>,
+        right_square_bracket: Token,
     },
     Tuple {
         values: Box<NonEmpty<TypecheckedDestructurePattern>>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct TypecheckedDestructurePatternEnumConstructorPayload {
+    pub left_parenthesis: Token,
+    pub pattern: Box<TypecheckedDestructurePattern>,
+    pub right_parenthesis: Token,
+}
+
+impl TypecheckedDestructurePattern {
+    pub fn position(&self) -> Position {
+        match self {
+            TypecheckedDestructurePattern::Infinite { token, .. }
+            | TypecheckedDestructurePattern::Boolean { token, .. }
+            | TypecheckedDestructurePattern::Null(token)
+            | TypecheckedDestructurePattern::Underscore(token) => token.position,
+            TypecheckedDestructurePattern::Identifier(identifier) => identifier.token.position,
+            TypecheckedDestructurePattern::EnumConstructor {
+                constructor_name,
+                payload,
+                ..
+            } => match payload {
+                None => constructor_name.position,
+                Some(payload) => join_position(
+                    constructor_name.position,
+                    payload.right_parenthesis.position,
+                ),
+            },
+            TypecheckedDestructurePattern::Record {
+                left_curly_bracket,
+                right_curly_bracket,
+                ..
+            } => join_position(left_curly_bracket.position, right_curly_bracket.position),
+            TypecheckedDestructurePattern::Array {
+                left_square_bracket,
+                right_square_bracket,
+                ..
+            } => join_position(left_square_bracket.position, right_square_bracket.position),
+            TypecheckedDestructurePattern::Tuple { values } => {
+                join_position(values.first().position(), values.last().position())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

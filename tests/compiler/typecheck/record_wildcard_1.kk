@@ -1,0 +1,11 @@
+# No error
+type People = {
+  first_name: String
+  last_name: String
+}
+
+let to_string
+  : | People => String
+  = | {..} => "#{first_name}, #{last_name}"
+
+do {first_name: "Adam"  last_name: "Bob"}.to_string.print

@@ -7,7 +7,6 @@ use crate::{
 };
 use crate::{module::ModuleMeta, pattern::ExpandablePattern};
 use colored::*;
-use core::panic;
 use prettytable::{format::Alignment, Cell, Row, Table};
 use std::ops::Range;
 
@@ -212,6 +211,18 @@ pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
             };
             (range, error)
         }
+        ParseErrorKind::RecordWilcardCanOnlyAppearOnce { position } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            let error = StringifiedError {
+                summary: "Extraneous wildcard operator".to_string(),
+                body: "Wildcard operator (..) can only appear once in a record expression."
+                    .to_string(),
+            };
+            (range, error)
+        }
         ParseErrorKind::TokenizeError(tokenize_error) => get_tokenize_error(tokenize_error),
     };
     print_error(module_meta, range, error)
@@ -244,7 +255,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example:\n\n\ttype Box<T> = { value: T }",
         TokenType::Equals => "used for declaring variables locally, for example:\n\n\tlet x = 1",
         TokenType::Period => "used for calling a function, for example:\n\n\t1.add(2)",
-        TokenType::Spread => panic!("Subject to change"),
+        TokenType::DoublePeriod => "used for record wildcard, for example:\n\n\tlet f : |{x: Integer y: Integer} => Integer = |{..} => x.plus(y)",
         TokenType::Comma => "used for record punning, for example:\n\n\t{x}",
         TokenType::Minus => "only used to represent negative numbers, for example:\n\n\t-123.4",
         TokenType::FatArrowRight | TokenType::Pipe => "only used for creating function, for example:\n\n\t| x => x.add(1)",
@@ -426,7 +437,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::MoreThan => ">",
         TokenType::Equals => "=",
         TokenType::Period => ".",
-        TokenType::Spread => "...",
+        TokenType::DoublePeriod => "...",
         TokenType::Comma => ",",
         TokenType::Minus => "-",
         TokenType::FatArrowRight => "=>",
@@ -581,8 +592,8 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Cannot call a non-function".to_string(),
             body: "The type of this expression is not function, so you cannot call it.".to_string(),
         },
-        UnifyErrorKind::UnknownValueSymbol => StringifiedError {
-            summary: "Unknown value symbol".to_string(),
+        UnifyErrorKind::UnknownValueSymbol {symbol_name} => StringifiedError {
+            summary: format!("Unknown variable `{}`", symbol_name),
             body: "Cannot find this value symbol in the current scope".to_string(),
         },
         UnifyErrorKind::UnknownTypeSymbol => StringifiedError {
@@ -830,6 +841,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                     .collect::<Vec<String>>()
                     .join("\n")
             )
+        },
+        UnifyErrorKind::MissingTypeAnnotationForRecordWildcard => StringifiedError {
+            summary: "Missing Type Annotation for Record Wildcard".to_string(),
+            body: "Without type annotation, the compiler cannot populate the properties automatically.\nConsider adding type annotation on the outer level to fix this problem.".to_string(),
         }
     }
 }
@@ -858,7 +873,7 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
             "{{ {} }}",
             key_pattern_pairs
                 .into_iter()
-                .map(|(key, pattern)| format!("{} {}", key, stringify_expandable_pattern(pattern)))
+                .map(|(key, pattern)| format!("{}: {}", key, stringify_expandable_pattern(pattern)))
                 .collect::<Vec<String>>()
                 .join(" ")
         ),

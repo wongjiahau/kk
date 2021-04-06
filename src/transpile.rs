@@ -29,8 +29,8 @@ pub fn transpile_statement(statement: TypecheckedStatement) -> String {
     }
 }
 
-fn transpile_variable(variable: Variable) -> String {
-    format!("{}_{}", variable.representation, variable.uid)
+fn transpile_variable(variable: Identifier) -> String {
+    format!("{}_{}", variable.token.representation, variable.uid)
 }
 
 pub fn transpile_expression(expression: TypecheckedExpression) -> String {
@@ -192,7 +192,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
 }
 
 fn transpile_property_name(property_name: PropertyName) -> String {
-    format!("${}", property_name.0)
+    format!("${}", property_name.0.representation)
 }
 
 pub fn transpile_function_branch(function_branch: TypecheckedFunctionBranch) -> String {
@@ -247,15 +247,11 @@ pub fn transpile_function_destructure_pattern(
     from_expression: String,
 ) -> TranspiledDestructurePattern {
     match destructure_pattern {
-        TypecheckedDestructurePattern::Integer { representation }
-        | TypecheckedDestructurePattern::String { representation }
-        | TypecheckedDestructurePattern::Character { representation } => {
-            TranspiledDestructurePattern {
-                conditions: vec![format!("{} === {}", from_expression, representation)],
-                bindings: vec![],
-            }
-        }
-        TypecheckedDestructurePattern::Boolean(value) => TranspiledDestructurePattern {
+        TypecheckedDestructurePattern::Infinite { token, .. } => TranspiledDestructurePattern {
+            conditions: vec![format!("{} === {}", from_expression, token.representation)],
+            bindings: vec![],
+        },
+        TypecheckedDestructurePattern::Boolean { value, .. } => TranspiledDestructurePattern {
             conditions: vec![format!(
                 "{} === {}",
                 from_expression,
@@ -263,11 +259,11 @@ pub fn transpile_function_destructure_pattern(
             )],
             bindings: vec![],
         },
-        TypecheckedDestructurePattern::Null => TranspiledDestructurePattern {
+        TypecheckedDestructurePattern::Null { .. } => TranspiledDestructurePattern {
             conditions: vec![format!("{} === null", from_expression)],
             bindings: vec![],
         },
-        TypecheckedDestructurePattern::Underscore => TranspiledDestructurePattern {
+        TypecheckedDestructurePattern::Underscore { .. } => TranspiledDestructurePattern {
             conditions: vec![],
             bindings: vec![],
         },
@@ -291,11 +287,11 @@ pub fn transpile_function_destructure_pattern(
                 ),
             ]),
         },
-        TypecheckedDestructurePattern::Variable(variable) => TranspiledDestructurePattern {
+        TypecheckedDestructurePattern::Identifier(variable) => TranspiledDestructurePattern {
             conditions: vec![],
             bindings: vec![format!(
                 "var {} = {}",
-                transpile_variable(variable),
+                transpile_variable(*variable),
                 from_expression
             )],
         },
@@ -305,13 +301,16 @@ pub fn transpile_function_destructure_pattern(
             ..
         } => {
             let first = TranspiledDestructurePattern {
-                conditions: vec![format!("{}.$==='{}'", from_expression, constructor_name)],
+                conditions: vec![format!(
+                    "{}.$==='{}'",
+                    from_expression, constructor_name.representation
+                )],
                 bindings: vec![],
             };
             let rest = match payload {
                 None => None,
                 Some(payload) => Some(transpile_function_destructure_pattern(
-                    *payload,
+                    *payload.pattern,
                     format!("{}._", from_expression),
                 )),
             };

@@ -222,6 +222,7 @@ pub enum DestructurePattern {
         payload: Option<Box<DestructurePatternEnumConstructorPayload>>,
     },
     Record {
+        wildcard: Option<Token>,
         left_curly_bracket: Token,
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
         right_curly_bracket: Token,
@@ -288,6 +289,7 @@ pub enum Expression {
     Function(Box<Function>),
     FunctionCall(Box<FunctionCall>),
     Record {
+        wildcard: Option<Token>,
         left_curly_bracket: Token,
         key_value_pairs: Vec<RecordKeyValue>,
         right_curly_bracket: Token,
@@ -476,7 +478,7 @@ pub enum TokenType {
     MoreThan,
     Equals,
     Period,
-    Spread,
+    DoublePeriod,
     Comma,
     Minus,
     FatArrowRight,

@@ -762,7 +762,9 @@ impl Module {
             None => match self.scope.get_parent_scope_name(scope_name) {
                 None => Err(UnifyError {
                     position: symbol_name.position,
-                    kind: UnifyErrorKind::UnknownValueSymbol,
+                    kind: UnifyErrorKind::UnknownValueSymbol {
+                        symbol_name: symbol_name.representation.clone(),
+                    },
                 }),
                 Some(scope_name) => self.get_value_symbol(symbol_name, expected_type, scope_name),
             },

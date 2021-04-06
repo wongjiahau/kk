@@ -1,6 +1,6 @@
 use crate::ast::*;
-use crate::module::*;
 use crate::unify::rewrite_type_variables_in_type;
+use crate::{module::*, typechecked_ast::TypecheckedDestructurePattern};
 use std::collections::HashSet;
 
 #[derive(Debug)]
@@ -27,7 +27,7 @@ enum PatternMatrix {
 
 struct PatternPair {
     expected_pattern: ExpandablePattern,
-    actual_pattern: DestructurePattern,
+    actual_pattern: TypecheckedDestructurePattern,
 }
 
 fn match_pattern_matrix(module: &Module, pattern_matrix: PatternMatrix) -> MatchPatternResult {
@@ -39,7 +39,7 @@ fn match_pattern_matrix(module: &Module, pattern_matrix: PatternMatrix) -> Match
 
     struct RawPatternMatrix {
         key: String,
-        actual_pattern: DestructurePattern,
+        actual_pattern: TypecheckedDestructurePattern,
         expected_pattern: ExpandablePattern,
     }
 
@@ -324,7 +324,7 @@ pub enum ExpandablePattern {
 
 pub fn match_patterns(
     module: &Module,
-    actual_pattern: &DestructurePattern,
+    actual_pattern: &TypecheckedDestructurePattern,
     expected_patterns: Vec<ExpandablePattern>,
 ) -> Vec<ExpandablePattern> {
     expected_patterns
@@ -343,18 +343,18 @@ pub fn match_patterns(
 
 pub fn match_pattern(
     module: &Module,
-    actual_pattern: &DestructurePattern,
+    actual_pattern: &TypecheckedDestructurePattern,
     expected_pattern: &ExpandablePattern,
 ) -> MatchPatternResult {
     match (actual_pattern, expected_pattern) {
-        (DestructurePattern::Underscore(_), _) => MatchPatternResult::Matched,
-        (DestructurePattern::Identifier(identifier), _) => {
+        (TypecheckedDestructurePattern::Underscore(_), _) => MatchPatternResult::Matched,
+        (TypecheckedDestructurePattern::Identifier(identifier), _) => {
             // check if identifier matches any enum constructor
-            if module.matches_some_enum_constructor(&identifier.representation) {
+            if module.matches_some_enum_constructor(&identifier.token.representation) {
                 match_pattern(
                     module,
-                    &DestructurePattern::EnumConstructor {
-                        name: identifier.clone(),
+                    &TypecheckedDestructurePattern::EnumConstructor {
+                        constructor_name: identifier.token.clone(),
                         payload: None,
                     },
                     expected_pattern,
@@ -363,14 +363,16 @@ pub fn match_pattern(
                 MatchPatternResult::Matched
             }
         }
-        (DestructurePattern::Boolean { value: true, .. }, ExpandablePattern::Boolean(true)) => {
-            MatchPatternResult::Matched
-        }
-        (DestructurePattern::Boolean { value: false, .. }, ExpandablePattern::Boolean(false)) => {
-            MatchPatternResult::Matched
-        }
         (
-            DestructurePattern::Infinite { token, .. },
+            TypecheckedDestructurePattern::Boolean { value: true, .. },
+            ExpandablePattern::Boolean(true),
+        ) => MatchPatternResult::Matched,
+        (
+            TypecheckedDestructurePattern::Boolean { value: false, .. },
+            ExpandablePattern::Boolean(false),
+        ) => MatchPatternResult::Matched,
+        (
+            TypecheckedDestructurePattern::Infinite { token, .. },
             ExpandablePattern::Infinite {
                 handled_cases,
                 kind,
@@ -393,8 +395,8 @@ pub fn match_pattern(
             }
         }
         (
-            DestructurePattern::EnumConstructor {
-                name: actual_name,
+            TypecheckedDestructurePattern::EnumConstructor {
+                constructor_name: actual_name,
                 payload: None,
                 ..
             },
@@ -411,8 +413,8 @@ pub fn match_pattern(
             }
         }
         (
-            DestructurePattern::EnumConstructor {
-                name: actual_name,
+            TypecheckedDestructurePattern::EnumConstructor {
+                constructor_name: actual_name,
                 payload: Some(actual_payload),
                 ..
             },
@@ -441,8 +443,11 @@ pub fn match_pattern(
                 }
             }
         }
-        (DestructurePattern::Tuple(tuple), ExpandablePattern::Tuple(expected_patterns)) => {
-            let actual_patterns = tuple.values.clone();
+        (
+            TypecheckedDestructurePattern::Tuple { values },
+            ExpandablePattern::Tuple(expected_patterns),
+        ) => {
+            let actual_patterns = values.clone();
             if actual_patterns.len() != expected_patterns.len() {
                 MatchPatternResult::NotMatched
             } else {
@@ -460,8 +465,8 @@ pub fn match_pattern(
             }
         }
         (
-            DestructurePattern::Record {
-                key_value_pairs: actual_key_pattern_pairs,
+            TypecheckedDestructurePattern::Record {
+                key_pattern_pairs: actual_key_pattern_pairs,
                 ..
             },
             ExpandablePattern::Record {
@@ -470,7 +475,7 @@ pub fn match_pattern(
         ) => {
             let actual_keys = actual_key_pattern_pairs
                 .iter()
-                .map(|key| key.key.representation.clone())
+                .map(|(key, _)| key.0.representation.clone())
                 .collect::<HashSet<String>>();
 
             let expected_keys = expected_key_pattern_pairs
@@ -484,33 +489,27 @@ pub fn match_pattern(
             let mut actual_key_pattern_pairs = actual_key_pattern_pairs.clone();
             let mut expected_key_pattern_pairs = expected_key_pattern_pairs.clone();
             actual_key_pattern_pairs
-                .sort_by(|a, b| a.key.representation.cmp(&b.key.representation));
+                .sort_by(|(a, _), (b, _)| a.0.representation.cmp(&b.0.representation));
             expected_key_pattern_pairs.sort_by(|(a, _), (b, _)| a.cmp(&b));
 
             let key_pattern_pairs = actual_key_pattern_pairs
                 .into_iter()
                 .zip(expected_key_pattern_pairs.into_iter())
-                .map(
-                    |(DestructuredRecordKeyValue { key, as_value, .. }, (_, expected_pattern))| {
-                        let actual_pattern = match as_value {
-                            None => DestructurePattern::Identifier(key.clone()),
-                            Some(destructure_pattern) => destructure_pattern,
-                        };
-                        (
-                            key.representation,
-                            PatternPair {
-                                actual_pattern,
-                                expected_pattern,
-                            },
-                        )
-                    },
-                )
+                .map(|((key, as_value, ..), (_, expected_pattern))| {
+                    (
+                        key.0.representation,
+                        PatternPair {
+                            actual_pattern: as_value,
+                            expected_pattern,
+                        },
+                    )
+                })
                 .collect::<Vec<(String, PatternPair)>>();
 
             match_pattern_matrix(module, PatternMatrix::Record { key_pattern_pairs })
         }
         (
-            DestructurePattern::Array { .. },
+            TypecheckedDestructurePattern::Array { .. },
             ExpandablePattern::Any {
                 type_value:
                     Type::BuiltInOneArgumentType {
@@ -534,11 +533,12 @@ pub fn match_pattern(
                 },
             ],
         },
-        (DestructurePattern::Array { spread: None, .. }, ExpandablePattern::EmptyArray) => {
-            MatchPatternResult::Matched
-        }
         (
-            DestructurePattern::Array {
+            TypecheckedDestructurePattern::Array { spread: None, .. },
+            ExpandablePattern::EmptyArray,
+        ) => MatchPatternResult::Matched,
+        (
+            TypecheckedDestructurePattern::Array {
                 spread: Some(spread),
                 ..
             },
@@ -560,7 +560,7 @@ pub fn match_pattern(
             },
         ),
         (
-            DestructurePattern::Null(_),
+            TypecheckedDestructurePattern::Null(_),
             ExpandablePattern::Any {
                 type_value: Type::Null,
             },
@@ -570,8 +570,8 @@ pub fn match_pattern(
             MatchPatternResult::Matched
         }
         // (
-        //     DestructurePattern::Integer(_),
-        //     TypedDestructurePattern::Any {
+        //     TypecheckedDestructurePattern::Integer(_),
+        //     TypedTypecheckedDestructurePattern::Any {
         //         type_value: Type::Integer,
         //     },
         // ) => {
@@ -579,8 +579,8 @@ pub fn match_pattern(
         //     MatchPatternResult::NotMatched
         // }
         // (
-        //     DestructurePattern::String(_),
-        //     TypedDestructurePattern::Any {
+        //     TypecheckedDestructurePattern::String(_),
+        //     TypedTypecheckedDestructurePattern::Any {
         //         type_value: Type::String,
         //     },
         // ) => {
@@ -588,8 +588,8 @@ pub fn match_pattern(
         //     MatchPatternResult::NotMatched
         // }
         // (
-        //     DestructurePattern::Character(_),
-        //     TypedDestructurePattern::Any {
+        //     TypecheckedDestructurePattern::Character(_),
+        //     TypedTypecheckedDestructurePattern::Any {
         //         type_value: Type::Character,
         //     },
         // ) => {

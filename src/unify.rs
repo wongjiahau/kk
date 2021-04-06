@@ -205,7 +205,7 @@ pub fn unify_statements(
             )?;
             Ok((
                 uid,
-                let_statement.left.representation,
+                let_statement.left,
                 let_statement.type_variables,
                 type_scheme.type_value,
                 let_statement.right,
@@ -232,10 +232,7 @@ pub fn unify_statements(
 
             // Return the typechecked statement, which is needed for transpilation
             Ok(TypecheckedStatement::Let {
-                left: Variable {
-                    uid,
-                    representation: name,
-                },
+                left: Identifier { uid, token: name },
                 right: result.expression,
             })
         })
@@ -282,6 +279,7 @@ impl UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    MissingTypeAnnotationForRecordWildcard,
     LetBindingRefutablePattern {
         missing_patterns: Vec<ExpandablePattern>,
     },
@@ -366,7 +364,9 @@ pub enum UnifyErrorKind {
         actual_length: usize,
     },
     UnknownTypeSymbol,
-    UnknownValueSymbol,
+    UnknownValueSymbol {
+        symbol_name: String,
+    },
     UnknownEnumConstructor,
     TypeMismatch {
         expected_type: Type,
@@ -528,19 +528,16 @@ pub fn infer_import_statement(
                                     Some(alias_as) => match entry.symbol.kind {
                                         SymbolKind::Value(_) => {
                                             Ok(vec![TypecheckedStatement::Let {
-                                                left: Variable {
+                                                left: Identifier {
                                                     uid,
-                                                    representation: alias_as.representation,
+                                                    token: alias_as,
                                                 },
-                                                right: TypecheckedExpression::Variable(Variable {
-                                                    uid: entry.uid,
-                                                    representation: entry
-                                                        .symbol
-                                                        .meta
-                                                        .name
-                                                        .representation
-                                                        .clone(),
-                                                }),
+                                                right: TypecheckedExpression::Variable(
+                                                    Identifier {
+                                                        uid: entry.uid,
+                                                        token: entry.symbol.meta.name.clone(),
+                                                    },
+                                                ),
                                             }])
                                         }
                                         _ => Ok(vec![]),
@@ -1699,13 +1696,18 @@ fn infer_expression_type_(
                 },
                 expression: TypecheckedExpression::Record {
                     key_value_pairs: vec![
-                        (PropertyName("value".to_string()), result.expression),
                         (
-                            PropertyName("meta".to_string()),
+                            PropertyName(Token::dummy_identifier("value".to_string())),
+                            result.expression,
+                        ),
+                        (
+                            PropertyName(Token::dummy_identifier("meta".to_string())),
                             TypecheckedExpression::Record {
                                 key_value_pairs: vec![
                                     (
-                                        PropertyName("filename".to_string()),
+                                        PropertyName(Token::dummy_identifier(
+                                            "filename".to_string(),
+                                        )),
                                         TypecheckedExpression::String {
                                             representation: format!(
                                                 "\"{}\"",
@@ -1714,25 +1716,33 @@ fn infer_expression_type_(
                                         },
                                     ),
                                     (
-                                        PropertyName("line_start".to_string()),
+                                        PropertyName(Token::dummy_identifier(
+                                            "line_start".to_string(),
+                                        )),
                                         TypecheckedExpression::Integer {
                                             representation: position.line_start.to_string(),
                                         },
                                     ),
                                     (
-                                        PropertyName("line_end".to_string()),
+                                        PropertyName(Token::dummy_identifier(
+                                            "line_end".to_string(),
+                                        )),
                                         TypecheckedExpression::Integer {
                                             representation: position.line_end.to_string(),
                                         },
                                     ),
                                     (
-                                        PropertyName("column_start".to_string()),
+                                        PropertyName(Token::dummy_identifier(
+                                            "column_start".to_string(),
+                                        )),
                                         TypecheckedExpression::Integer {
                                             representation: position.column_start.to_string(),
                                         },
                                     ),
                                     (
-                                        PropertyName("column_end".to_string()),
+                                        PropertyName(Token::dummy_identifier(
+                                            "column_end".to_string(),
+                                        )),
                                         TypecheckedExpression::Integer {
                                             representation: position.column_end.to_string(),
                                         },
@@ -1799,9 +1809,9 @@ fn infer_expression_type_(
                 )?;
                 Ok(InferExpressionResult {
                     type_value: instantiate_type_scheme(module, result.type_scheme),
-                    expression: TypecheckedExpression::Variable(Variable {
+                    expression: TypecheckedExpression::Variable(Identifier {
                         uid: result.symbol_uid,
-                        representation: variable.representation.clone(),
+                        token: variable.clone(),
                     }),
                 })
             }
@@ -1867,7 +1877,7 @@ fn infer_expression_type_(
                     ) {
                         Ok(result) => Ok(result),
                         Err(UnifyError {
-                            kind: UnifyErrorKind::UnknownValueSymbol,
+                            kind: UnifyErrorKind::UnknownValueSymbol { .. },
                             ..
                         }) => Err(UnifyError {
                             position: property_name.position,
@@ -1886,7 +1896,7 @@ fn infer_expression_type_(
                     type_value: type_value.clone(),
                     expression: TypecheckedExpression::RecordAccess {
                         expression: Box::new(result.expression),
-                        property_name: PropertyName(property_name.representation.clone()),
+                        property_name: PropertyName(property_name.clone()),
                     },
                 }),
             }
@@ -1936,9 +1946,7 @@ fn infer_expression_type_(
                                             new_value,
                                         )?;
                                         Ok(TypecheckedRecordUpdate::ValueUpdate {
-                                            property_name: PropertyName(
-                                                property_name.representation.clone(),
-                                            ),
+                                            property_name: PropertyName(property_name.clone()),
                                             new_value: typechecked_value.expression,
                                         })
                                     }
@@ -1960,9 +1968,7 @@ fn infer_expression_type_(
                                             function,
                                         )?;
                                         Ok(TypecheckedRecordUpdate::FunctionalUpdate {
-                                            property_name: PropertyName(
-                                                property_name.representation.clone(),
-                                            ),
+                                            property_name: PropertyName(property_name.clone()),
                                             function: typechecked_function.expression,
                                         })
                                     }
@@ -2017,7 +2023,7 @@ fn infer_expression_type_(
                 module,
                 typechecked_left.type_value.clone(),
                 NonEmpty {
-                    head: *left.clone(),
+                    head: typechecked_left.destructure_pattern.clone(),
                     tail: vec![],
                 },
                 get_destructure_pattern_position(left),
@@ -2251,6 +2257,7 @@ fn infer_expression_type_(
             key_value_pairs,
             left_curly_bracket,
             right_curly_bracket,
+            wildcard,
             ..
         } => {
             // Check for duplicated keys
@@ -2271,14 +2278,55 @@ fn infer_expression_type_(
 
             let record_position =
                 join_position(left_curly_bracket.position, right_curly_bracket.position);
+
+            let key_value_pairs = match wildcard {
+                None => Ok(key_value_pairs.clone()),
+                Some(wildcard) => match &expected_type {
+                    None => Err(UnifyError {
+                        position: wildcard.position,
+                        kind: UnifyErrorKind::MissingTypeAnnotationForRecordWildcard,
+                    }),
+                    Some(Type::Record {
+                        key_type_pairs: expected_key_type_pairs,
+                    }) => Ok(key_value_pairs
+                        .clone()
+                        .into_iter()
+                        .chain(expected_key_type_pairs.clone().into_iter().filter_map(
+                            |(expected_key, _)| {
+                                if key_value_pairs.iter().any(|actual_key_value| {
+                                    actual_key_value.key.representation == *expected_key
+                                }) {
+                                    None
+                                } else {
+                                    let key = Token {
+                                        position: wildcard.position,
+                                        token_type: TokenType::Identifier,
+                                        representation: expected_key.clone(),
+                                    };
+                                    Some(RecordKeyValue {
+                                        key,
+                                        value: Expression::Variable(Token {
+                                            position: wildcard.position,
+                                            token_type: TokenType::Identifier,
+                                            representation: expected_key,
+                                        }),
+                                    })
+                                }
+                            },
+                        ))
+                        .collect()),
+                    _ => Ok(key_value_pairs.clone()),
+                },
+            }?;
+
             match expected_type {
                 Some(Type::Record { key_type_pairs }) => infer_record_type(
                     module,
                     Some(key_type_pairs),
-                    key_value_pairs.clone(),
+                    key_value_pairs,
                     record_position,
                 ),
-                _ => infer_record_type(module, None, key_value_pairs.clone(), record_position),
+                _ => infer_record_type(module, None, key_value_pairs, record_position),
             }
         }
         Expression::Array { elements, .. } => {
@@ -2441,10 +2489,17 @@ fn infer_applicative_let_type(
                         module,
                         Type::Tuple(function_type.parameters_types.clone()),
                         NonEmpty {
-                            head: DestructurePattern::Tuple(DestructurePatternTuple {
-                                parentheses: None,
-                                values: Box::new(left_patterns.clone()),
-                            }),
+                            head: TypecheckedDestructurePattern::Tuple {
+                                values: Box::new(NonEmpty {
+                                    head: typechecked_left_first_pattern
+                                        .destructure_pattern
+                                        .clone(),
+                                    tail: typechecked_left_tail_patterns
+                                        .iter()
+                                        .map(|pattern| pattern.destructure_pattern.clone())
+                                        .collect(),
+                                }),
+                            },
                             tail: vec![],
                         },
                         function_arguments_position,
@@ -2584,15 +2639,15 @@ fn infer_record_type(
                 .clone()
                 .map(|(_, type_value)| type_value);
             let value_type = infer_expression_type(module, expected_type, &value)?;
-            Ok((key.representation.clone(), value_type))
+            Ok((key.clone(), value_type))
         })
-        .collect::<Result<Vec<(String, InferExpressionResult)>, UnifyError>>()?;
+        .collect::<Result<Vec<(Token, InferExpressionResult)>, UnifyError>>()?;
 
     Ok(InferExpressionResult {
         type_value: Type::Record {
             key_type_pairs: typechecked_key_value_pairs
                 .iter()
-                .map(|(key, result)| (key.clone(), result.type_value.clone()))
+                .map(|(key, result)| (key.representation.clone(), result.type_value.clone()))
                 .collect(),
         },
         expression: TypecheckedExpression::Record {
@@ -2634,10 +2689,13 @@ fn infer_function(
 
     // Check for case exhaustiveness
     let expected_type = Type::Tuple(function_type.clone().parameters_types);
-    let actual_patterns = function
-        .clone()
-        .branches
-        .map(|branch| DestructurePattern::Tuple(function_branch_parameters_to_tuple(&branch)));
+    let actual_patterns = NonEmpty {
+        head: function_branch_parameters_to_tuple(&typechecked_first_branch.function_branch),
+        tail: typechecked_rest_branches
+            .iter()
+            .map(|branch| function_branch_parameters_to_tuple(&branch.function_branch))
+            .collect(),
+    };
 
     check_exhaustiveness(
         module,
@@ -2661,18 +2719,17 @@ fn infer_function(
 }
 
 pub fn function_branch_parameters_to_tuple(
-    function_branch: &FunctionBranch,
-) -> DestructurePatternTuple {
-    DestructurePatternTuple {
-        parentheses: None,
-        values: Box::new(function_branch.parameters.clone()),
+    function_branch: &TypecheckedFunctionBranch,
+) -> TypecheckedDestructurePattern {
+    TypecheckedDestructurePattern::Tuple {
+        values: function_branch.parameters.clone(),
     }
 }
 
 pub fn check_exhaustiveness(
     module: &Module,
     expected_type: Type,
-    actual_patterns: NonEmpty<DestructurePattern>,
+    actual_patterns: NonEmpty<TypecheckedDestructurePattern>,
     position: Position,
 ) -> Result<(), UnifyError> {
     check_exhaustiveness_(
@@ -2688,7 +2745,7 @@ pub fn check_exhaustiveness(
 pub fn check_exhaustiveness_(
     module: &Module,
     expected_patterns: Vec<ExpandablePattern>,
-    actual_patterns: NonEmpty<DestructurePattern>,
+    actual_patterns: NonEmpty<TypecheckedDestructurePattern>,
     position: Position,
 ) -> Result<(), UnifyError> {
     // println!("expected_patterns = {:#?}", expected_patterns);
@@ -2704,7 +2761,7 @@ pub fn check_exhaustiveness_(
                     // If there are still remaning actual_patterns but expected_patterns already exhausted
                     // Then this actual_pattern is an unreachable case
                     Err(UnifyError {
-                        position: get_destructure_pattern_position(&actual_pattern),
+                        position: actual_pattern.position(),
                         kind: UnifyErrorKind::UnreachableCase,
                     })
                 } else {
@@ -2716,7 +2773,7 @@ pub fn check_exhaustiveness_(
                         // Then this actual_pattern is also an unreachable case
                         //  as it does not remove any patterns from expected_patterns
                         Err(UnifyError {
-                            position: get_destructure_pattern_position(&actual_pattern),
+                            position: actual_pattern.position(),
                             kind: UnifyErrorKind::UnreachableCase,
                         })
                     } else {
@@ -3050,44 +3107,31 @@ fn infer_destructure_pattern_(
     destructure_pattern: &DestructurePattern,
 ) -> Result<InferDestructurePatternResult, UnifyError> {
     match destructure_pattern {
-        DestructurePattern::Infinite {
-            token,
-            kind: InfinitePatternKind::String,
-        } => Ok(InferDestructurePatternResult {
-            type_value: Type::String,
-            destructure_pattern: TypecheckedDestructurePattern::String {
-                representation: token.representation.clone(),
+        DestructurePattern::Infinite { token, kind } => Ok(InferDestructurePatternResult {
+            type_value: match &kind {
+                InfinitePatternKind::Character => Type::Character,
+                InfinitePatternKind::String => Type::String,
+                InfinitePatternKind::Integer => Type::Integer,
+            },
+            destructure_pattern: TypecheckedDestructurePattern::Infinite {
+                kind: kind.clone(),
+                token: token.clone(),
             },
         }),
-        DestructurePattern::Infinite {
-            token,
-            kind: InfinitePatternKind::Character,
-        } => Ok(InferDestructurePatternResult {
-            type_value: Type::Character,
-            destructure_pattern: TypecheckedDestructurePattern::Character {
-                representation: token.representation.clone(),
-            },
-        }),
-        DestructurePattern::Infinite {
-            token,
-            kind: InfinitePatternKind::Integer,
-        } => Ok(InferDestructurePatternResult {
-            type_value: Type::Integer,
-            destructure_pattern: TypecheckedDestructurePattern::Integer {
-                representation: token.representation.clone(),
-            },
-        }),
-        DestructurePattern::Null(_) => Ok(InferDestructurePatternResult {
+        DestructurePattern::Null(token) => Ok(InferDestructurePatternResult {
             type_value: Type::Null,
-            destructure_pattern: TypecheckedDestructurePattern::Null,
+            destructure_pattern: TypecheckedDestructurePattern::Null(token.clone()),
         }),
-        DestructurePattern::Boolean { value, .. } => Ok(InferDestructurePatternResult {
+        DestructurePattern::Boolean { value, token } => Ok(InferDestructurePatternResult {
             type_value: Type::Boolean,
-            destructure_pattern: TypecheckedDestructurePattern::Boolean(*value),
+            destructure_pattern: TypecheckedDestructurePattern::Boolean {
+                value: *value,
+                token: token.clone(),
+            },
         }),
-        DestructurePattern::Underscore(_) => Ok(InferDestructurePatternResult {
+        DestructurePattern::Underscore(token) => Ok(InferDestructurePatternResult {
             type_value: module.introduce_implicit_type_variable(None)?,
-            destructure_pattern: TypecheckedDestructurePattern::Underscore,
+            destructure_pattern: TypecheckedDestructurePattern::Underscore(token.clone()),
         }),
         DestructurePattern::Identifier(identifier) => {
             // If this identifier matches any enum constructor,
@@ -3109,10 +3153,12 @@ fn infer_destructure_pattern_(
                     module.insert_value_symbol_with_type(identifier, expected_type, false)?;
                 Ok(InferDestructurePatternResult {
                     type_value,
-                    destructure_pattern: TypecheckedDestructurePattern::Variable(Variable {
-                        uid,
-                        representation: identifier.representation.clone(),
-                    }),
+                    destructure_pattern: TypecheckedDestructurePattern::Identifier(Box::new(
+                        Identifier {
+                            uid,
+                            token: identifier.clone(),
+                        },
+                    )),
                 })
             }
         }
@@ -3136,7 +3182,7 @@ fn infer_destructure_pattern_(
                 (None, None) => Ok(InferDestructurePatternResult {
                     type_value: result.expected_enum_type,
                     destructure_pattern: TypecheckedDestructurePattern::EnumConstructor {
-                        constructor_name: name.representation.clone(),
+                        constructor_name: name.clone(),
                         payload: None,
                     },
                 }),
@@ -3159,23 +3205,37 @@ fn infer_destructure_pattern_(
                     Ok(InferDestructurePatternResult {
                         type_value: result.expected_enum_type,
                         destructure_pattern: TypecheckedDestructurePattern::EnumConstructor {
-                            constructor_name: name.representation.clone(),
-                            payload: Some(Box::new(typechecked_payload.destructure_pattern)),
+                            constructor_name: name.clone(),
+                            payload: Some(TypecheckedDestructurePatternEnumConstructorPayload {
+                                right_parenthesis: payload.right_parenthesis,
+                                left_parenthesis: payload.left_parenthesis,
+                                pattern: Box::new(typechecked_payload.destructure_pattern),
+                            }),
                         },
                     })
                 }
             }
         }
-        DestructurePattern::Array { spread: None, .. } => Ok(InferDestructurePatternResult {
+        DestructurePattern::Array {
+            spread: None,
+            left_square_bracket,
+            right_square_bracket,
+        } => Ok(InferDestructurePatternResult {
             type_value: Type::BuiltInOneArgumentType {
                 kind: BuiltInOneArgumentTypeKind::Array,
                 type_argument: Box::new(Type::ImplicitTypeVariable {
                     name: module.get_next_type_variable_name(),
                 }),
             },
-            destructure_pattern: TypecheckedDestructurePattern::Array { spread: None },
+            destructure_pattern: TypecheckedDestructurePattern::Array {
+                spread: None,
+                left_square_bracket: left_square_bracket.clone(),
+                right_square_bracket: right_square_bracket.clone(),
+            },
         }),
         DestructurePattern::Array {
+            left_square_bracket,
+            right_square_bracket,
             spread: Some(spread),
             ..
         } => {
@@ -3208,6 +3268,8 @@ fn infer_destructure_pattern_(
             Ok(InferDestructurePatternResult {
                 type_value: module.apply_subtitution_to_type(&expected_array_type),
                 destructure_pattern: TypecheckedDestructurePattern::Array {
+                    left_square_bracket: left_square_bracket.clone(),
+                    right_square_bracket: right_square_bracket.clone(),
                     spread: Some(TypecheckedDesturcturePatternArraySpread {
                         first_element: Box::new(typechecked_first_element.destructure_pattern),
                         rest_elements: Box::new(typechecked_rest_elements.destructure_pattern),
@@ -3216,24 +3278,62 @@ fn infer_destructure_pattern_(
             })
         }
         DestructurePattern::Record {
-            key_value_pairs, ..
+            wildcard,
+            key_value_pairs,
+            left_curly_bracket,
+            right_curly_bracket,
+            ..
         } => {
             let expected_key_type_pairs = match expected_type {
                 Some(Type::Record { key_type_pairs }) => Some(key_type_pairs),
                 _ => None,
             };
+            let key_value_pairs =
+                match wildcard {
+                    None => Ok(key_value_pairs.clone()),
+                    Some(wildcard) => match &expected_key_type_pairs {
+                        None => Err(UnifyError {
+                            position: wildcard.position,
+                            kind: UnifyErrorKind::MissingTypeAnnotationForRecordWildcard,
+                        }),
+                        Some(expected_key_type_pairs) => Ok(key_value_pairs
+                            .clone()
+                            .into_iter()
+                            .chain(expected_key_type_pairs.iter().filter_map(
+                                |(expected_key, _)| {
+                                    if key_value_pairs.iter().any(|actual_key_value| {
+                                        actual_key_value.key.representation == *expected_key
+                                    }) {
+                                        None
+                                    } else {
+                                        let key = Token {
+                                            position: wildcard.position,
+                                            token_type: TokenType::Identifier,
+                                            representation: expected_key.clone(),
+                                        };
+                                        Some(DestructuredRecordKeyValue {
+                                            key,
+                                            as_value: None,
+                                        })
+                                    }
+                                },
+                            ))
+                            .collect()),
+                    },
+                }?;
             let typechecked_key_pattern_pairs = key_value_pairs
                 .iter()
                 .map(|DestructuredRecordKeyValue { key, as_value }| {
                     // Try to find the expected type for this key
                     // TODO: optimise this section, as the current algorithm is very slow
-                    let actual_key = key.representation.clone();
+                    let actual_key = key.clone();
                     let expected_type = match &expected_key_type_pairs {
                         None => Ok(None),
                         Some(expected_key_type_pairs) => {
-                            let matching_key_type_pair = expected_key_type_pairs
-                                .iter()
-                                .find(|(expected_key, _)| actual_key.eq(expected_key));
+                            let matching_key_type_pair =
+                                expected_key_type_pairs.iter().find(|(expected_key, _)| {
+                                    actual_key.representation.eq(expected_key)
+                                });
                             match matching_key_type_pair {
                                 None => Err(UnifyError {
                                     position: key.position,
@@ -3266,27 +3366,31 @@ fn infer_destructure_pattern_(
                                 actual_key.clone(),
                                 InferDestructurePatternResult {
                                     type_value,
-                                    destructure_pattern: TypecheckedDestructurePattern::Variable(
-                                        Variable {
+                                    destructure_pattern: TypecheckedDestructurePattern::Identifier(
+                                        Box::new(Identifier {
                                             uid,
-                                            representation: actual_key,
-                                        },
+                                            token: actual_key,
+                                        }),
                                     ),
                                 },
                             ))
                         }
                     }
                 })
-                .collect::<Result<Vec<(String, InferDestructurePatternResult)>, UnifyError>>()?;
+                .collect::<Result<Vec<(Token, InferDestructurePatternResult)>, UnifyError>>()?;
 
             Ok(InferDestructurePatternResult {
                 type_value: Type::Record {
                     key_type_pairs: typechecked_key_pattern_pairs
                         .iter()
-                        .map(|(key, pattern)| (key.clone(), pattern.type_value.clone()))
+                        .map(|(key, pattern)| {
+                            (key.representation.clone(), pattern.type_value.clone())
+                        })
                         .collect(),
                 },
                 destructure_pattern: TypecheckedDestructurePattern::Record {
+                    left_curly_bracket: left_curly_bracket.clone(),
+                    right_curly_bracket: right_curly_bracket.clone(),
                     key_pattern_pairs: typechecked_key_pattern_pairs
                         .iter()
                         .map(|(key, pattern)| {

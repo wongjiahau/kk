@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let s
+  : | Null => Null
+  = | null =>
+    let f = | {..} => null
+              # Error: missing type annotation
+    null
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/record_wildcard_5.kk:4:16
+  │
+4 │     let f = | {..} => null
+  │                ^^ Missing Type Annotation for Record Wildcard
+  │
+  = Without type annotation, the compiler cannot populate the properties automatically.
+    Consider adding type annotation on the outer level to fix this problem.

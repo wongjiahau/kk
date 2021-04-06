@@ -24,6 +24,6 @@ error:
   ┌─ tests/compiler/typecheck/single_dispatch_5.kk:1:9
   │
 1 │ do true.foo.print
-  │         ^^^ Unknown value symbol
+  │         ^^^ Unknown variable `foo`
   │
   = Cannot find this value symbol in the current scope

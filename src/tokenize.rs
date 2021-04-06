@@ -512,13 +512,13 @@ impl Tokenizer {
                             representation: ".".to_string(),
                             position: make_position(character, None),
                         })),
-                        2 => Ok(Some(Token {
-                            token_type: TokenType::Spread,
-                            representation: "...".to_string(),
+                        1 => Ok(Some(Token {
+                            token_type: TokenType::DoublePeriod,
+                            representation: "..".to_string(),
                             position: make_position(character, dots.last()),
                         })),
                         _ => Err(TokenizeError::InvalidToken {
-                            error: "Only one dot (.) or three dots (...) is acceptable".to_string(),
+                            error: "Only one dot (.) or two dots(..) are acceptable.".to_string(),
                             position: make_position(character, dots.last()),
                         }
                         .into_parse_error()),
