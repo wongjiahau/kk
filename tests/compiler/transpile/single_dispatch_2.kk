@@ -1,14 +1,11 @@
-let foo 
-  : | String => String
-  = | _ => "Hello"
+function foo(_: String): String
+  "Hello"
 
-let foo
-  : | Boolean => String
-  = | _ => "World"
+function foo(_: Boolean): String
+  "World"
 
-let map<A B>
-  : | A | A => B => B
-  = | x f => x.f
+function map<A, B>(x: A, f: (a: A) => B): B
+  x.f()
 
-do true.map(foo).print
-do true.map(foo).map(| x => x.foo).print
+do true.map(foo).print()
+do true.map(foo).map(x => x.foo()).print()

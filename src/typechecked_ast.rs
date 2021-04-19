@@ -54,7 +54,7 @@ pub enum TypecheckedExpression {
         constructor_name: String,
         payload: Option<Box<TypecheckedExpression>>,
     },
-    Function(Box<TypecheckedFunction>),
+    BranchedFunction(Box<TypecheckedBranchedFunction>),
     FunctionCall(Box<TypecheckedFunctionCall>),
     Record {
         key_value_pairs: Vec<(PropertyName, TypecheckedExpression)>,
@@ -110,7 +110,7 @@ pub struct TypecheckedFunctionCall {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedFunction {
+pub struct TypecheckedBranchedFunction {
     pub branches: Box<NonEmpty<TypecheckedFunctionBranch>>,
 }
 

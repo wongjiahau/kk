@@ -28,7 +28,7 @@ error:
 2 │ │
   │ ╰^ Syntax error: unexpected EOF (end of file)
   │
-  = The expected token here is `abc`.
+  = The expected token here is `}`.
 
     We found this error when we are trying to parse a Record.
     Examples of Record are:

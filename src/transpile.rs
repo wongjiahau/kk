@@ -101,8 +101,8 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
-        TypecheckedExpression::Function(function) => {
-            let TypecheckedFunction { branches } = *function;
+        TypecheckedExpression::BranchedFunction(function) => {
+            let TypecheckedBranchedFunction { branches } = *function;
             let number_of_args = branches.first().parameters.len();
             let arguments: Vec<String> = (0..number_of_args).map(|x| format!("_{}", x)).collect();
             let branches = branches

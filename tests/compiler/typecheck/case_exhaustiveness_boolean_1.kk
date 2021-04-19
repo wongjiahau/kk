@@ -1,6 +1,6 @@
-do
-  let and = 
-    | true true => true
-    | _ _ => false
-    | _ _ => false
-  null
+function and(x: Boolean, y: Boolean): Boolean
+  switch ({ x, y }) {
+    case { x: true, y: true }: true
+    case _: false
+    case _: false
+  }

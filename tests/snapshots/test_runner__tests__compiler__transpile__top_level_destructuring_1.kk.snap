@@ -5,17 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-function foo(_: String): String
-  "Hello"
+let {..}
+  : {say: String greetings: String}
+  = { say: "Hello" greetings: "Yo" }
 
-function foo(_: Boolean): String
-  "World"
-
-function map<A, B>(x: A, f: (a: A) => B): B
-  x.f()
-
-do true.map(foo).print()
-do true.map(foo).map(x => x.foo()).print()
+do say.print
+do greetings.print
 
 ============
 EXIT CODE
@@ -25,8 +20,8 @@ EXIT CODE
 ============
 STDOUT
 ============
-World
 Hello
+Yo
 
 ============
 STDERR

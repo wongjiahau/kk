@@ -1,11 +1,10 @@
-let foo 
-  : | String => String
-  = | _ => "Hello"
+function foo(_: String): String
+  "Hello"
 
-let foo 
-  : | Boolean => String
-  = | _ => "World"
+function foo(_: Boolean): String
+  "World"
 
-let bar: Integer = 
-  let f = | x => x.foo
+function main(): Integer {
+  let f = x => x.foo();
   123
+}

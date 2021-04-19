@@ -1,8 +1,13 @@
+use std::str;
+
 use crate::{non_empty::NonEmpty, tokenize::Character};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
 pub enum Statement {
+    Function(Box<FunctionStatement>),
+
+    /// @deprecated: to be repurposed as `const`
     Let(LetStatement),
 
     /// This represent type alias definition.
@@ -14,6 +19,17 @@ pub enum Statement {
     /// This represents the entry points of a module.
     Do(DoStatement),
     Import(ImportStatement),
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionStatement {
+    pub keyword_export: Option<Token>,
+    pub keyword_function: Token,
+    pub name: Token,
+    pub type_variables: Vec<Token>,
+    pub parameters: FunctionParameters,
+    pub return_type_annotation: Option<TypeAnnotation>,
+    pub body: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -40,8 +56,9 @@ pub struct EnumStatement {
     pub keyword_export: Option<Token>,
     pub keyword_enum: Token,
     pub name: Token,
-    pub constructors: Vec<EnumConstructorDefinition>,
     pub type_variables: Vec<Token>,
+    pub constructors: Vec<EnumConstructorDefinition>,
+    pub right_curly_bracket: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -86,7 +103,8 @@ pub enum Type {
     Underscore,
 
     /// Type variable that is declared. Cannot be substituted before instantiation.
-    /// Note that a type variable is only explicit within its own scope
+    /// Note that a type variable is only explicit within its own scope.
+    /// This is also commonly known as Rigid Type Variable.
     ExplicitTypeVariable {
         name: String,
     },
@@ -191,8 +209,7 @@ pub enum TypeAnnotation {
     },
     Underscore(Token),
     Function {
-        start_token: Token,
-        parameters_types: Box<NonEmpty<TypeAnnotation>>,
+        parameters: FunctionParameters,
         return_type: Box<TypeAnnotation>,
     },
 }
@@ -276,7 +293,7 @@ pub enum Expression {
         end_quote: Box<Character>,
     },
     Character(Token),
-    Variable(Token),
+    Identifier(Token),
     Quoted {
         opening_backtick: Token,
         expression: Box<Expression>,
@@ -286,7 +303,12 @@ pub enum Expression {
         name: Token,
         payload: Option<Box<ExpressionEnumConstructorPayload>>,
     },
-    Function(Box<Function>),
+
+    /// To be deprecated soon, due to unfamiliar syntax
+    BranchedFunction(Box<BranchedFunction>),
+
+    /// Typescript-styled function
+    ArrowFunction(Box<ArrowFunction>),
     FunctionCall(Box<FunctionCall>),
     Record {
         wildcard: Option<Token>,
@@ -321,7 +343,18 @@ pub enum Expression {
         keyword_if: Token,
         condition: Box<Expression>,
         if_true: Box<Expression>,
+        keyword_else: Token,
         if_false: Box<Expression>,
+    },
+    Switch {
+        keyword_switch: Token,
+        expression: Box<Expression>,
+        left_curly_bracket: Token,
+        cases: NonEmpty<SwitchCase>,
+        right_curly_bracket: Token,
+    },
+    Block {
+        expressions: Box<NonEmpty<Expression>>,
     },
     Promise {
         bang: Token,
@@ -330,6 +363,13 @@ pub enum Expression {
     UnsafeJavascript {
         code: Token,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct SwitchCase {
+    pub keyword_case: Token,
+    pub pattern: DestructurePattern,
+    pub body: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -392,8 +432,56 @@ pub struct FunctionCallRestArguments {
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
+pub struct BranchedFunction {
     pub branches: NonEmpty<FunctionBranch>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArrowFunction {
+    pub parameters: ArrowFunctionParameters,
+    pub return_type_annotation: Option<TypeAnnotation>,
+    pub body: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionParameters {
+    pub left_parenthesis: Token,
+    pub parameters: NonEmpty<FunctionParameter>,
+    pub right_parenthesis: Token,
+}
+
+#[derive(Debug, Clone)]
+pub enum ArrowFunctionParameters {
+    WithoutParenthesis(DestructurePattern),
+    WithParenthesis(FunctionParameters),
+}
+
+impl ArrowFunctionParameters {
+    pub fn parameters(self) -> NonEmpty<FunctionParameter> {
+        match self {
+            ArrowFunctionParameters::WithParenthesis(parameters) => parameters.parameters,
+            ArrowFunctionParameters::WithoutParenthesis(pattern) => NonEmpty {
+                head: FunctionParameter {
+                    pattern,
+                    type_annotation: Box::new(None),
+                },
+                tail: vec![],
+            },
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            ArrowFunctionParameters::WithoutParenthesis(_) => 1,
+            ArrowFunctionParameters::WithParenthesis(parameters) => parameters.parameters.len(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionParameter {
+    pub pattern: DestructurePattern,
+    pub type_annotation: Box<Option<TypeAnnotation>>,
 }
 
 #[derive(Debug, Clone)]
@@ -403,28 +491,23 @@ pub struct FunctionBranch {
     pub body: Box<Expression>,
 }
 
-#[derive(Debug, Clone)]
-pub enum FunctionParameters {
-    NoParenthesis {
-        parameter: FunctionParameter,
-    },
-    WithParenthesis {
-        left_parenthesis: Token,
-        parameters: Box<NonEmpty<FunctionParameter>>,
-        right_parenthesis: Token,
-    },
-}
+// #[derive(Debug, Clone)]
+// pub enum FunctionParameters {
+//     NoParenthesis {
+//         parameter: FunctionParameter,
+//     },
+//     WithParenthesis {
+//         left_parenthesis: Token,
+//         parameters: Box<NonEmpty<FunctionParameter>>,
+//         right_parenthesis: Token,
+//     },
+// }
 
 #[derive(Debug, Clone)]
 pub struct FunctionBranchRestArguments {
     pub left_parenthesis: Token,
     pub rest_arguments: Vec<FunctionParameter>,
     pub right_parenthesis: Token,
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionParameter {
-    pub destructure_pattern: DestructurePattern,
 }
 
 #[derive(Debug, Clone)]
@@ -454,6 +537,10 @@ impl Token {
 #[derive(Debug, Clone)]
 pub enum TokenType {
     KeywordIf,
+    KeywordElse,
+    KeywordSwitch,
+    KeywordCase,
+    KeywordFunction,
     KeywordLet,
     KeywordType,
     KeywordEnum,
