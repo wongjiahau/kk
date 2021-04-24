@@ -1,3 +1,3 @@
-import "./diamond_dependency_1.kk" { foo }
+import {foo} from "./diamond_dependency_1.kk"
 
-export let spam: Integer = 3
+export let spam = (null: Null): Integer => 3

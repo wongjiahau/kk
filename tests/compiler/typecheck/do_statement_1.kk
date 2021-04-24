@@ -1,5 +1,3 @@
-let foo
-  : | Null => Integer
-  = | null => 123
+let foo = (null: Null): Integer => 123
 
-do null.foo
+do null.foo()

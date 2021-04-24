@@ -1,10 +1,8 @@
-function foo(_: String): String
-  "Hello"
+let foo = (_: String): String => "Hello"
 
-function foo(_: Boolean): String
-  "World"
+let foo = (_: Boolean): String => "World"
 
-function main(): Integer {
+let main = (null: Null): Integer => {
   let f = x => x.foo();
   123
 }

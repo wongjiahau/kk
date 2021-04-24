@@ -1,1 +1,3 @@
-let x: [Integer] = [1 null]
+do { 
+  let x: [Integer] = [1, null]
+}

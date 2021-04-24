@@ -1,2 +1,2 @@
-# importing private symbol
-import "./import_1.kk" { spam }
+// error: cannot import private symbol
+import {spam} from "./import_1.kk"

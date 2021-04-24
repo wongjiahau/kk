@@ -1,5 +1,5 @@
-let foo 
-  : | Null => { x: Integer }
-  = | _ => {x: 123}
 
-do null.foo.x.print
+do {
+  let foo = (null) => {x: 123};
+  null.foo().x.print()
+}

@@ -245,7 +245,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example:\n\n\ttype Box<T> = { value: T }",
         TokenType::Equals => "used for declaring variables locally, for example:\n\n\tlet x = 1",
         TokenType::Period => "used for calling a function, for example:\n\n\t1.add(2)",
-        TokenType::DoublePeriod => "used for record wildcard, for example:\n\n\tlet f : |{x: Integer y: Integer} => Integer = |{..} => x.plus(y)",
+        TokenType::TriplePeriod => "used for record wildcard, for example:\n\n\tlet f : |{x: Integer y: Integer} => Integer = |{..} => x.plus(y)",
         TokenType::Comma => "used for separation",
         TokenType::Minus => "only used to represent negative numbers, for example:\n\n\t-123.4",
         TokenType::FatArrowRight | TokenType::Pipe => "only used for creating function, for example:\n\n\t| x => x.add(1)",
@@ -265,9 +265,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordSwitch => "used for pattern matching",
         TokenType::KeywordCase => "used for pattern matching",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
-        TokenType::KeywordFunction => {
-            panic!()
-        }
+        TokenType::Semicolon => "used for separating statements",
+        TokenType::KeywordFrom => "used for importing modules"
     }
 }
 
@@ -308,6 +307,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::ExpressionRecord => ParseContextDescription {
             name: "Record",
             examples: vec!["{ x: 2 y: 3 }", "let x = 1\nlet y = 2\n{ x y }"],
+        },
+        ParseContext::ExpressionBlock => ParseContextDescription {
+            name: "Block",
+            examples: vec!["{let x = 1; let y = 2; x.plus(y)}"],
         },
         ParseContext::ExpressionRecordUpdate => ParseContextDescription {
             name: "Record Update",
@@ -433,6 +436,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordTrue => "true",
         TokenType::KeywordFalse => "false",
         TokenType::KeywordImport => "import",
+        TokenType::KeywordFrom => "from",
         TokenType::KeywordExport => "export",
         TokenType::Whitespace => " ",
         TokenType::LeftCurlyBracket => "{",
@@ -448,7 +452,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::MoreThan => ">",
         TokenType::Equals => "=",
         TokenType::Period => ".",
-        TokenType::DoublePeriod => "...",
+        TokenType::TriplePeriod => "...",
         TokenType::Comma => ",",
         TokenType::Minus => "-",
         TokenType::FatArrowRight => "=>",
@@ -470,7 +474,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Other(_) => "unknown character",
         TokenType::KeywordSwitch => "switch",
         TokenType::KeywordCase => "case",
-        TokenType::KeywordFunction => "function",
+        TokenType::Semicolon => ";",
     }
 }
 
@@ -634,12 +638,12 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Unreachable case".to_string(),
             body: "This case is unreachable because all possible cases are already handled by previous branches.".to_string()
         },
-        UnifyErrorKind::NoSuchPropertyOrFunction {
+        UnifyErrorKind::NoSuchProperty {
             mut expected_keys
         } => {
             expected_keys.sort();
             StringifiedError{
-            summary: "No such property or function".to_string(),
+            summary: "No such property".to_string(),
             body: format!("Available properties:\n{}", indent_string(expected_keys.join("\n"), 2))
         } },
         UnifyErrorKind::InfiniteTypeDetected {type_variable_name, in_type} => StringifiedError {
@@ -871,6 +875,18 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::MissingParameterTypeAnnotationForFunctionTypeAnnotation => StringifiedError {
             summary: "Missing Parameter Type Annotation".to_string(),
             body: "Parameter type annotation is required for function type annotation.".to_string()
+        },
+        UnifyErrorKind::NotExpectingFunction { expected_type } => StringifiedError{
+            summary: "Not Expecting Function".to_string(),
+            body: format!("The expected type is:\n\n{}", stringify_type(expected_type, 2))
+        },
+        UnifyErrorKind::FunctionCallAtTopLevelIsNotAllowed => StringifiedError {
+            summary: "Top level function call is not allowed".to_string(),
+            body: "This is to ensure that importing a module does not has side effects".to_string()
+        },
+        UnifyErrorKind::CannotAccessPropertyOfNonRecord => StringifiedError {
+            summary: "Cannot access property of a non-record".to_string(),
+            body: "".to_string()
         }
     }
 }

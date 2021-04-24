@@ -19,12 +19,15 @@ pub fn transpile_statement(statement: TypecheckedStatement) -> String {
         TypecheckedStatement::Do { expression, .. } => {
             format!("({});", transpile_expression(expression))
         }
+        TypecheckedStatement::Expression(expression) => {
+            format!("({});", transpile_expression(expression))
+        }
         TypecheckedStatement::Let { left, right, .. } => {
-            format!(
-                "const {} = {}",
-                transpile_variable(left),
-                transpile_expression(right)
-            )
+            let TranspiledDestructurePattern {
+                bindings,
+                conditions: _, // Note: conditions can be ignored as we assume that the type checker already checked for case exhaustiveness
+            } = transpile_function_destructure_pattern(left, transpile_expression(right));
+            bindings.join(";")
         }
     }
 }
@@ -186,6 +189,16 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 transpile_expression(*condition),
                 transpile_expression(*if_true),
                 transpile_expression(*if_false),
+            )
+        }
+        TypecheckedExpression::Block {
+            statements,
+            return_value,
+        } => {
+            format!(
+                "(()=>{{{};return {}}})()",
+                transpile_statements(statements),
+                transpile_expression(*return_value)
             )
         }
     }

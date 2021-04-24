@@ -1,14 +1,12 @@
-use std::str;
-
 use crate::{non_empty::NonEmpty, tokenize::Character};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Function(Box<FunctionStatement>),
-
     /// @deprecated: to be repurposed as `const`
     Let(LetStatement),
+
+    Expression(Expression),
 
     /// This represent type alias definition.
     Type(TypeAliasStatement),
@@ -24,21 +22,17 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct FunctionStatement {
     pub keyword_export: Option<Token>,
-    pub keyword_function: Token,
     pub name: Token,
-    pub type_variables: Vec<Token>,
-    pub parameters: FunctionParameters,
-    pub return_type_annotation: Option<TypeAnnotation>,
-    pub body: Expression,
+    pub arrow_function: ArrowFunction,
 }
 
 #[derive(Debug, Clone)]
 pub struct LetStatement {
     pub keyword_export: Option<Token>,
     pub keyword_let: Token,
-    pub left: Token,
+    pub left: DestructurePattern,
     pub type_variables: Vec<Token>,
-    pub type_annotation: TypeAnnotation,
+    pub type_annotation: Option<TypeAnnotation>,
     pub right: Expression,
 }
 
@@ -91,11 +85,6 @@ pub struct EnumConstructorDefinitionPayload {
     pub left_parenthesis: Token,
     pub type_annotation: TypeAnnotation,
     pub right_parenthesis: Token,
-}
-
-#[derive(Debug, Clone)]
-pub struct TypeVariable {
-    pub token: Token,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -316,7 +305,7 @@ pub enum Expression {
         key_value_pairs: Vec<RecordKeyValue>,
         right_curly_bracket: Token,
     },
-    RecordAccessOrFunctionCall {
+    RecordAccess {
         expression: Box<Expression>,
         property_name: Token,
     },
@@ -331,6 +320,8 @@ pub enum Expression {
         elements: Vec<Expression>,
         right_square_bracket: Token,
     },
+
+    /// To be deprecated after syntax revamp
     Let {
         keyword_let: Token,
         left: Box<DestructurePattern>,
@@ -354,11 +345,9 @@ pub enum Expression {
         right_curly_bracket: Token,
     },
     Block {
-        expressions: Box<NonEmpty<Expression>>,
-    },
-    Promise {
-        bang: Token,
-        expression: Box<Expression>,
+        left_curly_bracket: Token,
+        statements: Vec<Statement>,
+        right_curly_bracket: Token,
     },
     UnsafeJavascript {
         code: Token,
@@ -438,6 +427,7 @@ pub struct BranchedFunction {
 
 #[derive(Debug, Clone)]
 pub struct ArrowFunction {
+    pub type_variables: Vec<Token>,
     pub parameters: ArrowFunctionParameters,
     pub return_type_annotation: Option<TypeAnnotation>,
     pub body: Box<Expression>,
@@ -540,7 +530,6 @@ pub enum TokenType {
     KeywordElse,
     KeywordSwitch,
     KeywordCase,
-    KeywordFunction,
     KeywordLet,
     KeywordType,
     KeywordEnum,
@@ -549,6 +538,7 @@ pub enum TokenType {
     KeywordTrue,
     KeywordFalse,
     KeywordImport,
+    KeywordFrom,
     KeywordExport,
     Whitespace,
     LeftCurlyBracket,
@@ -561,11 +551,12 @@ pub enum TokenType {
     /// Also known as Exclamation Mark (!)
     Bang,
     Colon,
+    Semicolon,
     LessThan,
     MoreThan,
     Equals,
     Period,
-    DoublePeriod,
+    TriplePeriod,
     Comma,
     Minus,
     FatArrowRight,
@@ -586,10 +577,10 @@ pub enum TokenType {
     Backtick,
     TripleBacktick,
 
-    /// Comments starts with hash (#)
+    /// Comments starts with double slash
     Comment,
 
-    /// Multiline comment starts and ends with triple hash (###)
+    /// Multiline comment starts with (/*) and ends with (*/)
     MultilineComment {
         /// Note that these characters excludeds opening and closing triple-hash
         characters: Vec<Character>,

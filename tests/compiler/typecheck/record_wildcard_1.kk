@@ -1,11 +1,9 @@
-# No error
+// No error
 type People = {
-  first_name: String
-  last_name: String
+  firstName: String,
+  lastName: String
 }
 
-let to_string
-  : | People => String
-  = | {..} => "#{first_name}, #{last_name}"
+let toString = ({ ... }: People): String => "${firstName}, ${lastName}"
 
-do {first_name: "Adam"  last_name: "Bob"}.to_string.print
+do { firstName: "Adam", lastName: "Bob" }.toString().print()

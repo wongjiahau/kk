@@ -4,5 +4,5 @@ let map
 
 do 
   let/map 0 = 123
-     # Error, non-exhaustive pattern
+     // Error, non-exhaustive pattern
   null

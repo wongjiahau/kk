@@ -1,4 +1,4 @@
 do
   let a = { x: 2 }
-  let b = a.{ x: "hi" } # expected Integer, got String
+  let b = a.{ x: "hi" } // expected Integer, got String
   null

@@ -178,82 +178,71 @@ impl Tokenizer {
                         _ => panic!("Not implemented yet"),
                     }
                 }
-                '#' => {
-                    let first_hash = character;
-                    let rest_hashes: Vec<Character> = self
-                        .characters_iterator
-                        .by_ref()
-                        .peeking_take_while(|character| character.value == '#')
-                        .collect();
+                '/' => match self.characters_iterator.next() {
+                    Some(Character { value: '/', .. }) => {
+                        let comment = self
+                            .characters_iterator
+                            .by_ref()
+                            .peeking_take_while(|character| character.value != '\n')
+                            .collect::<Vec<Character>>();
 
-                    // Then this is a multiline comments (a.k.a documentation string)
-                    if rest_hashes.len() >= 2 {
-                        let characters = {
-                            let mut documentation_characters = Vec::new();
-                            let mut closing_hash_count = 0;
-
-                            loop {
-                                if let Some(character) = self.characters_iterator.next() {
-                                    documentation_characters.push(character.clone());
-                                    if character.value == '#' {
-                                        closing_hash_count += 1;
-                                        if closing_hash_count == 3 {
-                                            break documentation_characters;
-                                        }
-                                    } else {
-                                        // reset all counts
-                                        closing_hash_count = 0;
+                        Ok(Some(Token {
+                            token_type: TokenType::Comment,
+                            position: make_position(character, comment.last()),
+                            representation: stringify(comment),
+                        }))
+                    }
+                    Some(Character { value: '*', .. }) => {
+                        let mut comment = vec![character.clone()];
+                        let mut found_asterisk = false;
+                        let comment = loop {
+                            match self.characters_iterator.next() {
+                                Some(character) => {
+                                    if found_asterisk && character.value == '/' {
+                                        comment.push(character);
+                                        break comment;
                                     }
-                                } else {
-                                    return Err(TokenizeError::UnterminatedMultilineComment {
-                                        position: make_position(
-                                            first_hash,
-                                            documentation_characters
-                                                .last()
-                                                .or_else(|| rest_hashes.last()),
+                                    found_asterisk = character.value == '*';
+                                    comment.push(character);
+                                }
+                                None => {
+                                    return Err(ParseError {
+                                        context: None,
+                                        kind: ParseErrorKind::TokenizeError(
+                                            TokenizeError::UnexpectedEof {
+                                                expected_character_value: if found_asterisk {
+                                                    '/'
+                                                } else {
+                                                    '*'
+                                                },
+                                            },
                                         ),
-                                    }
-                                    .into_parse_error());
+                                    })
                                 }
                             }
                         };
                         Ok(Some(Token {
-                            position: make_position(first_hash, characters.last()),
+                            position: make_position(character, comment.last()),
                             token_type: TokenType::MultilineComment {
-                                characters: characters[0..characters.len() - 4].to_vec(),
+                                characters: comment.clone(),
                             },
-                            representation: format!(
-                                "###{}",
-                                characters
-                                    .iter()
-                                    .map(|character| character.value.to_string())
-                                    .collect::<Vec<String>>()
-                                    .join("")
-                            ),
+                            representation: stringify(comment),
                         }))
                     }
-                    // Otherwise this is a single line comment
-                    else {
-                        let content: Vec<Character> = self
-                            .characters_iterator
-                            .by_ref()
-                            .peeking_take_while(|character| character.value != '\n')
-                            .collect();
-                        Ok(Some(Token {
-                            token_type: TokenType::Comment,
-                            representation: format!(
-                                "#{}",
-                                rest_hashes
-                                    .iter()
-                                    .chain(content.iter())
-                                    .map(|other| other.value.to_string())
-                                    .collect::<Vec<String>>()
-                                    .join("")
-                            ),
-                            position: make_position(first_hash, content.last()),
-                        }))
-                    }
-                }
+                    Some(other) => Err(ParseError {
+                        context: None,
+                        kind: ParseErrorKind::TokenizeError(TokenizeError::UnexpectedCharacter {
+                            position: make_position(other, None),
+                            expected_character_value: '/',
+                        }),
+                    }),
+                    None => Err(ParseError {
+                        context: None,
+                        kind: ParseErrorKind::TokenizeError(TokenizeError::UnexpectedEof {
+                            expected_character_value: '/',
+                        }),
+                    }),
+                },
                 '@' => {
                     let first_alias = character;
                     let _second_alias = self.eat_character('@')?;
@@ -337,7 +326,7 @@ impl Tokenizer {
                                         StartOf::Escape => (Some(character), StartOf::Nothing),
                                         _ => break Ok(character),
                                     },
-                                    '#' => (None, StartOf::StringInterpolation),
+                                    '$' => (None, StartOf::StringInterpolation),
                                     '{' => {
                                         if let StartOf::StringInterpolation = start_of {
                                             interpolated_string_sections.push(
@@ -512,13 +501,14 @@ impl Tokenizer {
                             representation: ".".to_string(),
                             position: make_position(character, None),
                         })),
-                        1 => Ok(Some(Token {
-                            token_type: TokenType::DoublePeriod,
-                            representation: "..".to_string(),
+                        2 => Ok(Some(Token {
+                            token_type: TokenType::TriplePeriod,
+                            representation: "...".to_string(),
                             position: make_position(character, dots.last()),
                         })),
                         _ => Err(TokenizeError::InvalidToken {
-                            error: "Only one dot (.) or two dots(..) are acceptable.".to_string(),
+                            error: "Only one dot (.) or three dots(...) are acceptable."
+                                .to_string(),
                             position: make_position(character, dots.last()),
                         }
                         .into_parse_error()),
@@ -574,6 +564,7 @@ impl Tokenizer {
                         '_' => TokenType::Underscore,
                         '`' => TokenType::Backtick,
                         '!' => TokenType::Bang,
+                        ';' => TokenType::Semicolon,
                         '\n' => TokenType::Newline,
                         other => TokenType::Other(other),
                     },
@@ -609,9 +600,7 @@ pub fn stringify(characters: Vec<Character>) -> String {
 }
 
 pub fn get_token_type(s: String) -> TokenType {
-    if s.eq("function") {
-        TokenType::KeywordFunction
-    } else if s.eq("switch") {
+    if s.eq("switch") {
         TokenType::KeywordSwitch
     } else if s.eq("case") {
         TokenType::KeywordCase
@@ -635,6 +624,8 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordNull
     } else if s.eq("import") {
         TokenType::KeywordImport
+    } else if s.eq("from") {
+        TokenType::KeywordFrom
     } else if s.eq("export") {
         TokenType::KeywordExport
     } else {

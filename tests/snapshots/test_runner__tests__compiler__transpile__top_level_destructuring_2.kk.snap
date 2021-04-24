@@ -6,9 +6,9 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 # Error, cannot destructure Integer
-let {x}
-  : Integer
-  = 2
+do {
+  let {x} = 2
+}
 
 ============
 EXIT CODE
@@ -24,10 +24,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/transpile/top_level_destructuring_2.kk:2:5
+  ┌─ tests/compiler/transpile/top_level_destructuring_2.kk:3:7
   │
-2 │ let {x}
-  │     ^^^ Type mismatch
+3 │   let {x} = 2
+  │       ^^^ Type mismatch
   │
   = +---------------+---------------+
     | EXPECTED TYPE |  ACTUAL TYPE  |

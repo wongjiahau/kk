@@ -1,15 +1,10 @@
-# base file for testing import
-# should have no error
-export let foo: Integer = 2
-export enum Color = Red Green
+// base file for testing import
+// should have no error
+export enum Color {Red, Green}
 export type People = {name: String}
 
-export let bomb
-  : | String => String
-  = | _  => "Hello"
+export let bomb = (_: String): String  => "Hello"
 
-export let bomb 
-  : | Boolean => String
-  = | _  => "World"
+export let bomb = (_: Boolean): String => "World"
 
-let spam: Integer = 3
+export let spam = 123

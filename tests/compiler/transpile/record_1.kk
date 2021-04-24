@@ -1,16 +1,7 @@
-let foo<A> 
-  : | A => Integer
-  = | _ => 123
+let foo = <T>(t: T): Integer => 123
 
-let z: Integer = 3
-let x: {
-  x: Integer
-  y: String
-  z: Integer
-} = {
-  x: null.foo 
-  y: "456" 
-  z
+do {
+  let z = 3;
+  let x = { x: null.foo(), y: "456", z };
+  x.print()
 }
-
-do x.print

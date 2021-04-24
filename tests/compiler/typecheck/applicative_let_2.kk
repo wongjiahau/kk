@@ -1,10 +1,14 @@
-# Expects no error
-enum Option<T> = Some(T) None
+// Expects no error
+enum Option<T> {
+  Some(T), 
+  None
+}
 
-let map<A B>
-  : | Option<A> | A => Option<B> => Option<B>
-  = | Some(x) f => x.f
-    | None _ => None
+let map = <A, B>(o: Option<A>, f: (a: A) => Option<B>): Option<B> =>
+  switch(o) {
+    case Some(o): o.f()
+    case None: None
+  }
 
 export let foo
   : | Option<{bar: String}> => Option<String>

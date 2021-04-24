@@ -1,5 +1,6 @@
-# Using Javascript's keyword as property name should not fail 
+// Using Javascript's keyword as property name should not fail 
 
-let foo: | {with: String} => String =  | {with} => with
-
-do {with: "Hello"}.foo.print
+do {
+  let foo = { with } => with;
+  { with: "Hello" }.foo().print()
+}

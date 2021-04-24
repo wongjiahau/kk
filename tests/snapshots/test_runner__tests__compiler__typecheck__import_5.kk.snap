@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-# import from non-existent path
-import "./spongbob.kk" { spam }
+// import from non-existent path
+import { spam } from "./spongbob.kk"
 
 ============
 EXIT CODE
@@ -22,9 +22,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/import_5.kk:2:8
+  ┌─ tests/compiler/typecheck/import_5.kk:2:22
   │
-2 │ import "./spongbob.kk" { spam }
-  │        ^^^^^^^^^^^^^^^ Errorneous Import Path.
+2 │ import { spam } from "./spongbob.kk"
+  │                      ^^^^^^^^^^^^^^^ Errorneous Import Path.
   │
   = No such file or directory (os error 2)

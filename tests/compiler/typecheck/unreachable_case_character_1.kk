@@ -1,5 +1,7 @@
-let foo: | Character => Integer = 
-  | 'h' => 0
-  | 'i' => 1
-  | 'i' => 1
-  | _ => 2
+let foo = (c: Character): Integer =>
+  switch(c) {
+    case 'h': 0
+    case 'i': 1
+    case 'i': 1
+    case _: 2
+  }

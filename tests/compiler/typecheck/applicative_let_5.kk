@@ -4,5 +4,5 @@ let apply
 
 do 
   let/apply x = 123
-     # Error, non-exhaustive pattern
+     // Error, non-exhaustive pattern
   null

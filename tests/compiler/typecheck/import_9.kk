@@ -1,4 +1,4 @@
-# testing import all kind of symbols
+// testing import all kind of symbols
 import "./import_1.kk" { 
   foo: bar 
   Color 

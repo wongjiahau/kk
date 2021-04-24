@@ -1,2 +1,2 @@
-# import from non-existent path
-import "./spongbob.kk" { spam }
+// import from non-existent path
+import { spam } from "./spongbob.kk"

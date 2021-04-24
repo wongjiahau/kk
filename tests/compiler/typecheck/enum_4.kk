@@ -1,3 +1,5 @@
-enum Foo = Bar(String)
+enum Foo { Bar(String) }
 
-let a: Foo = Bar
+do { 
+  let a = Bar
+}

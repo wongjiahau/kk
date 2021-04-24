@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-# Condition must be boolean
-let x: Null = if 1 2 3
+// Condition must be boolean
+let x: Null = if(1) 2 else 3
 
 ============
 EXIT CODE
@@ -24,7 +24,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/if_expression_1.kk:2:18
   │
-2 │ let x: Null = if 1 2 3
+2 │ let x: Null = if(1) 2 else 3
   │                  ^ Type mismatch
   │
   = +---------------+-------------+

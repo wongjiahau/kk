@@ -1,5 +1,3 @@
-let match<A B> 
-  : | A | A => B => B
-  = | x f => x.f
+let match = <T, U>(t: T, f: (t: T) => U): U => t.f()
 
-do { x: 2 }.match(|.{ x: 3 }).print
+do { x: 2 }.match(.{ x: 3 }).print

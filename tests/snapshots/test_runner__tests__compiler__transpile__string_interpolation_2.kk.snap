@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-# Nested interpolations
-do "I am #{"Hello #{"World"}"} years old".print
+// Nested interpolations
+do "I am ${"Hello ${"World"}"} years old".print()
 
 ============
 EXIT CODE

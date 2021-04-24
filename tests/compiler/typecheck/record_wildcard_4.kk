@@ -6,6 +6,6 @@ type People = {
 let s
   : | String String => People
   = | _ last_name => {..} 
-                    # Error: missing property first_name
+                    // Error: missing property first_name
 
 do "Adam".s("James").print

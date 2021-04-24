@@ -15,9 +15,10 @@ use crate::{
 #[derive(Debug, Clone)]
 pub enum TypecheckedStatement {
     Let {
-        left: Identifier,
+        left: TypecheckedDestructurePattern,
         right: TypecheckedExpression,
     },
+    Expression(TypecheckedExpression),
     Do {
         expression: TypecheckedExpression,
     },
@@ -79,6 +80,10 @@ pub enum TypecheckedExpression {
         if_false: Box<TypecheckedExpression>,
     },
     Promise(Box<TypecheckedExpression>),
+    Block {
+        statements: Vec<TypecheckedStatement>,
+        return_value: Box<TypecheckedExpression>,
+    },
 }
 
 #[derive(Debug, Clone)]

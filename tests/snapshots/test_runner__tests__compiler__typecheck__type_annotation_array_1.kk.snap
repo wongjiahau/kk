@@ -5,7 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x: [String] = "Hello"
+do {
+  let x: [String] = "Hello"
+}
 
 ============
 EXIT CODE
@@ -21,10 +23,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/type_annotation_array_1.kk:1:19
+  ┌─ tests/compiler/typecheck/type_annotation_array_1.kk:2:21
   │
-1 │ let x: [String] = "Hello"
-  │                   ^^^^^^^ Type mismatch
+2 │   let x: [String] = "Hello"
+  │                     ^^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

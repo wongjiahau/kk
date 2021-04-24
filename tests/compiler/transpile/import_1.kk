@@ -1,3 +1,1 @@
-export let show_me
-  : | String => Null
-  = print
+export let showMe = (s: String): Null => s.print()

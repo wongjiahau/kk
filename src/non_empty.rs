@@ -51,6 +51,23 @@ impl<T> NonEmpty<T> {
         f(&self.head) && self.tail.iter().all(|element| f(element))
     }
 
+    pub fn any<F>(&self, mut f: F) -> bool
+    where
+        F: FnMut(&T) -> bool,
+    {
+        f(&self.head) && self.tail.iter().any(|element| f(element))
+    }
+
+    pub fn find_map<F, U>(&self, mut f: F) -> Option<U>
+    where
+        F: FnMut(&T) -> Option<U>,
+    {
+        match f(&self.head) {
+            Some(u) => Some(u),
+            None => self.tail.iter().find_map(f),
+        }
+    }
+
     pub fn fold_result<E, O, F>(self, mut f: F) -> Result<NonEmpty<O>, E>
     where
         F: FnMut(T) -> Result<O, E>,

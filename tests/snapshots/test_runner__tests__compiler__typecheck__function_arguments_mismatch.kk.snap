@@ -5,10 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f
-  : | Integer => Integer
-  = | x => x
-    | _ _ => 1
+do {
+  let f : (n: Integer) => Integer = (x, y) => x
+}
 
 ============
 EXIT CODE
@@ -24,9 +23,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:4:7
+  ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:2:37
   │
-4 │     | _ _ => 1
-  │       ^^^ Function arguments length mismatch
+2 │   let f : (n: Integer) => Integer = (x, y) => x
+  │                                     ^^^^^^ Function arguments length mismatch
   │
   = Expected 1 argument only, but 2 arguments are provided.

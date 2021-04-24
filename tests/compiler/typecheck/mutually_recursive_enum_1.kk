@@ -6,4 +6,4 @@ enum Bar =
   Bar(Foo)
   NullBar
 
-do Foo(Bar(Foo(NullFoo))).print # Compile Error
+do Foo(Bar(Foo(NullFoo))).print // Compile Error

@@ -1,4 +1,4 @@
-# No error
+// No error
 type People = {
   first_name: String
   last_name: String
