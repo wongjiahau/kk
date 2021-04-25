@@ -5,12 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let s
-  : | Null => Null
-  = | null =>
-    let f = | {..} => null
-              # Error: missing type annotation
-    null
+do {
+  let f = {...} => null;
+          // Error: missing type annotation
+}
 
 ============
 EXIT CODE
@@ -26,10 +24,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_wildcard_5.kk:4:16
+  ┌─ tests/compiler/typecheck/record_wildcard_5.kk:2:12
   │
-4 │     let f = | {..} => null
-  │                ^^ Missing Type Annotation for Record Wildcard
+2 │   let f = {...} => null;
+  │            ^^^ Missing Type Annotation for Record Wildcard
   │
   = Without type annotation, the compiler cannot populate the properties automatically.
     Consider adding type annotation on the outer level to fix this problem.

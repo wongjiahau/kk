@@ -1,11 +1,7 @@
-let foo 
-  : | String => String
-  = | _ => "Hello"
+let foo = (_: String): String => "Hello"
 
-let foo 
-  : | Boolean => String
-  = | _ => "World"
+let foo = (_: Boolean): String => "World"
 
-do "test".foo.print
-do true.foo.print
-do true.foo.foo.print
+do "test".foo().print()
+do true.foo().print()
+do true.foo().foo().print()

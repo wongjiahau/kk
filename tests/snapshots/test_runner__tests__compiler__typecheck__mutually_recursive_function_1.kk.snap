@@ -5,13 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo
-  : | Integer => Integer
-  = |.bar  # Error: Expected Integer, got String
+let foo = (n: Integer): Integer => n.bar()
 
-let bar
-  : | Integer => String
-  = |.foo
+let bar = (n: Integer): String => n.foo()
+//                                ^^^^^^^ Error: expected String, got Integer
 
 ============
 EXIT CODE
@@ -27,10 +24,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/mutually_recursive_function_1.kk:3:6
+  ┌─ tests/compiler/typecheck/mutually_recursive_function_1.kk:1:36
   │
-3 │   = |.bar  # Error: Expected Integer, got String
-  │      ^^^^ Type mismatch
+1 │ let foo = (n: Integer): Integer => n.bar()
+  │                                    ^^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

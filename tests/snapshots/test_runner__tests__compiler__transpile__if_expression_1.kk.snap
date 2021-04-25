@@ -5,23 +5,25 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let more_than
-  : | Float Float => Boolean
-  = @@@ (x,y) => x > y @@@
+let more_than = (x: Float, y: Float): Boolean => @@@ _0 > _1 @@@
 
-enum Grade = A B C Failed
-let grade
-  : | Float => Grade
-  = | score =>
-    if score.more_than(80.0) A
-    if score.more_than(60.0) B
-    if score.more_than(40.0) C
+enum Grade { A, B, C, Failed }
+
+let grade = (score: Float): Grade =>
+  if score.more_than(80.0)
+    A
+  else if score.more_than(60.0)
+    B
+  else if score.more_than(40.0)
+    C
+  else
     Failed
 
-do 85.0.grade.print
-do 65.0.grade.print
-do 45.0.grade.print
-do 35.0.grade.print
+
+do 85.0.grade().print()
+do 65.0.grade().print()
+do 45.0.grade().print()
+do 35.0.grade().print()
 
 ============
 EXIT CODE

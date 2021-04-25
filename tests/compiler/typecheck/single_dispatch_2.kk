@@ -1,11 +1,8 @@
-let foo 
-  : | String => String
-  = | _ => "Hello"
+let foo = (_: String): String => "Hello"
 
-let foo 
-  : | Boolean => String
-  = | _ => "World"
+let foo = (_: Boolean): String => "World"
 
-let bar: Integer = 
-  let f = | x => x.foo
+let main = (null: Null): Integer => {
+  let f = x => x.foo();
   123
+}

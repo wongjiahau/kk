@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let apply = (x: Integer, f: (a: Integer, b: Integer) => Integer): Integer => x.f(x)
+
+do {
+  with x = 123.apply;
+    // ^ Error: expected 2 arguments but got only 1
+  null
+}
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/with_statement_5.kk:4:8
+  │
+4 │   with x = 123.apply;
+  │        ^ Function arguments length mismatch
+  │
+  = Expected 2 arguments, but only 1 argument is provided.

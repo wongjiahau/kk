@@ -7,7 +7,7 @@ INPUT
 ============
 let x
   : Integer
-  = "I am #{"Hello #{"World"}"} years old"
+  = "I am ${"Hello ${"World"}"} years old"
 
 ============
 EXIT CODE
@@ -25,7 +25,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/string_interpolation_2.kk:3:5
   │
-3 │   = "I am #{"Hello #{"World"}"} years old"
+3 │   = "I am ${"Hello ${"World"}"} years old"
   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
   │
   = +---------------+-------------+

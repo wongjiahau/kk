@@ -5,22 +5,23 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum List<Element> =
-  Nil
+enum List<Element> {
+  Nil,
   Cons({
-    current: Element
+    current: Element,
     next: List<Element>
   })
+}
 
-do
-  let foo = | Cons({
-    current: 1
+do {
+  let foo = Cons({
+    current: 1,
     next: Cons({
-      current: true
+      current: true,
       next: Nil
     })
   }) => 0
-  null
+}
 
 ============
 EXIT CODE
@@ -36,9 +37,9 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/enum_2.kk:12:16
+   ┌─ tests/compiler/typecheck/enum_2.kk:13:16
    │
-12 │       current: true
+13 │       current: true,
    │                ^^^^ Type mismatch
    │
    = +---------------+-------------+

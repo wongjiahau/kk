@@ -5,16 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-###
-This function takes anything string and output 123.
-For example:
-```
-do null.foo.print # Compile error: expected `String` but got `Null`
-```
-###
-let foo
-  : | String => Integer
-  = | _ => 123
+/**
+ * This function takes anything string and output 123.
+ * For example:
+ * ```
+ * do null.foo().print // Compile error: expected `String` but got `Null`
+ * ```
+*/
+let foo = (s: String): Integer => 123
 
 ============
 EXIT CODE
@@ -30,10 +28,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/documentation_code_snippet_1.kk:5:4
+  ┌─ tests/compiler/typecheck/documentation_code_snippet_1.kk:5:7
   │
-5 │ do null.foo.print # Compile error: expected `String` but got `Null`
-  │    ^^^^ Type mismatch
+5 │  * do null.foo().print // Compile error: expected `String` but got `Null`
+  │       ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

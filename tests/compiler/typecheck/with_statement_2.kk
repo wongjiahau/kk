@@ -1,0 +1,19 @@
+// Expects no error
+enum Option<T> {
+  Some(T),
+  None
+}
+
+let map = <A, B>(o: Option<A>, f: (a: A) => Option<B>): Option<B> =>
+  switch(o) {
+    case Some(o): o.f()
+    case None: None
+  }
+
+export let foo = (a: Option<{bar:String}>): Option<String> => {
+  with x = a.map;
+  Some(x.bar)
+}
+
+do Some({bar: "hello world"}).foo().print()
+do None.foo().print()

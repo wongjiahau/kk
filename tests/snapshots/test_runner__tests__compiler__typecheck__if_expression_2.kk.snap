@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-# Both branches type must match
-let x: Null = if true "hello" null
+// Both branches type must match
+let x = if(true) "hello" else null
 
 ============
 EXIT CODE
@@ -24,7 +24,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/if_expression_2.kk:2:31
   │
-2 │ let x: Null = if true "hello" null
+2 │ let x = if(true) "hello" else null
   │                               ^^^^ Type mismatch
   │
   = +---------------+-------------+

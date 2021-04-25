@@ -5,6 +5,8 @@ use crate::{non_empty::NonEmpty, tokenize::Character};
 pub enum Statement {
     Let(LetStatement),
 
+    Expression(Expression),
+
     /// This represent type alias definition.
     Type(TypeAliasStatement),
 
@@ -17,12 +19,19 @@ pub enum Statement {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionStatement {
+    pub keyword_export: Option<Token>,
+    pub name: Token,
+    pub arrow_function: ArrowFunction,
+}
+
+#[derive(Debug, Clone)]
 pub struct LetStatement {
     pub keyword_export: Option<Token>,
     pub keyword_let: Token,
-    pub left: Token,
+    pub left: DestructurePattern,
     pub type_variables: Vec<Token>,
-    pub type_annotation: TypeAnnotation,
+    pub type_annotation: Option<TypeAnnotation>,
     pub right: Expression,
 }
 
@@ -40,8 +49,9 @@ pub struct EnumStatement {
     pub keyword_export: Option<Token>,
     pub keyword_enum: Token,
     pub name: Token,
-    pub constructors: Vec<EnumConstructorDefinition>,
     pub type_variables: Vec<Token>,
+    pub constructors: Vec<EnumConstructorDefinition>,
+    pub right_curly_bracket: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -76,17 +86,13 @@ pub struct EnumConstructorDefinitionPayload {
     pub right_parenthesis: Token,
 }
 
-#[derive(Debug, Clone)]
-pub struct TypeVariable {
-    pub token: Token,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Underscore,
 
     /// Type variable that is declared. Cannot be substituted before instantiation.
-    /// Note that a type variable is only explicit within its own scope
+    /// Note that a type variable is only explicit within its own scope.
+    /// This is also commonly known as Rigid Type Variable.
     ExplicitTypeVariable {
         name: String,
     },
@@ -191,8 +197,7 @@ pub enum TypeAnnotation {
     },
     Underscore(Token),
     Function {
-        start_token: Token,
-        parameters_types: Box<NonEmpty<TypeAnnotation>>,
+        parameters: FunctionParameters,
         return_type: Box<TypeAnnotation>,
     },
 }
@@ -276,7 +281,7 @@ pub enum Expression {
         end_quote: Box<Character>,
     },
     Character(Token),
-    Variable(Token),
+    Identifier(Token),
     Quoted {
         opening_backtick: Token,
         expression: Box<Expression>,
@@ -286,7 +291,12 @@ pub enum Expression {
         name: Token,
         payload: Option<Box<ExpressionEnumConstructorPayload>>,
     },
-    Function(Box<Function>),
+
+    /// This cannot be constructed directly from syntax, it is only for internal usage
+    BranchedFunction(Box<BranchedFunction>),
+
+    /// Typescript-styled function
+    ArrowFunction(Box<ArrowFunction>),
     FunctionCall(Box<FunctionCall>),
     Record {
         wildcard: Option<Token>,
@@ -294,7 +304,7 @@ pub enum Expression {
         key_value_pairs: Vec<RecordKeyValue>,
         right_curly_bracket: Token,
     },
-    RecordAccessOrFunctionCall {
+    RecordAccess {
         expression: Box<Expression>,
         property_name: Token,
     },
@@ -309,33 +319,59 @@ pub enum Expression {
         elements: Vec<Expression>,
         right_square_bracket: Token,
     },
-    Let {
-        keyword_let: Token,
-        left: Box<DestructurePattern>,
-        type_annotation: Option<TypeAnnotation>,
-        right: Box<Expression>,
-        body: Box<Expression>,
-    },
-    ApplicativeLet(ApplicativeLet),
+    With(WithExpression),
     If {
         keyword_if: Token,
         condition: Box<Expression>,
         if_true: Box<Expression>,
+        keyword_else: Token,
         if_false: Box<Expression>,
     },
-    Promise {
-        bang: Token,
+    Switch {
+        keyword_switch: Token,
         expression: Box<Expression>,
+        left_curly_bracket: Token,
+        cases: Box<NonEmpty<SwitchCase>>,
+        right_curly_bracket: Token,
     },
+    Block(Block),
     UnsafeJavascript {
         code: Token,
     },
 }
 
 #[derive(Debug, Clone)]
-pub struct ApplicativeLet {
-    pub keyword_let: Token,
-    pub left_patterns: NonEmpty<DestructurePattern>,
+pub enum Block {
+    WithBrackets {
+        left_curly_bracket: Token,
+        statements: Vec<Statement>,
+        right_curly_bracket: Token,
+    },
+    WithoutBrackets {
+        statements: Box<NonEmpty<Statement>>,
+    },
+}
+
+impl Block {
+    pub fn statements(self) -> Vec<Statement> {
+        match self {
+            Block::WithBrackets { statements, .. } => statements,
+            Block::WithoutBrackets { statements } => statements.into_vector(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SwitchCase {
+    pub keyword_case: Token,
+    pub pattern: DestructurePattern,
+    pub body: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WithExpression {
+    pub keyword_with: Token,
+    pub left_patterns: Box<NonEmpty<DestructurePattern>>,
     pub binary_function_name: Token,
     pub right: Box<Expression>,
     pub body: Box<Expression>,
@@ -392,8 +428,61 @@ pub struct FunctionCallRestArguments {
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
+pub struct BranchedFunction {
     pub branches: NonEmpty<FunctionBranch>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArrowFunction {
+    pub type_variables: Vec<Token>,
+    pub parameters: ArrowFunctionParameters,
+    pub return_type_annotation: Option<TypeAnnotation>,
+    pub body: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionParameters {
+    pub left_parenthesis: Token,
+    pub parameters: Box<NonEmpty<FunctionParameter>>,
+    pub right_parenthesis: Token,
+}
+
+#[derive(Debug, Clone)]
+pub enum ArrowFunctionParameters {
+    WithoutParenthesis(DestructurePattern),
+    WithParenthesis(Box<FunctionParameters>),
+}
+
+impl ArrowFunctionParameters {
+    pub fn parameters(self) -> NonEmpty<FunctionParameter> {
+        match self {
+            ArrowFunctionParameters::WithParenthesis(parameters) => *parameters.parameters,
+            ArrowFunctionParameters::WithoutParenthesis(pattern) => NonEmpty {
+                head: FunctionParameter {
+                    pattern,
+                    type_annotation: Box::new(None),
+                },
+                tail: vec![],
+            },
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            ArrowFunctionParameters::WithoutParenthesis(_) => 1,
+            ArrowFunctionParameters::WithParenthesis(parameters) => parameters.parameters.len(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionParameter {
+    pub pattern: DestructurePattern,
+    pub type_annotation: Box<Option<TypeAnnotation>>,
 }
 
 #[derive(Debug, Clone)]
@@ -403,28 +492,23 @@ pub struct FunctionBranch {
     pub body: Box<Expression>,
 }
 
-#[derive(Debug, Clone)]
-pub enum FunctionParameters {
-    NoParenthesis {
-        parameter: FunctionParameter,
-    },
-    WithParenthesis {
-        left_parenthesis: Token,
-        parameters: Box<NonEmpty<FunctionParameter>>,
-        right_parenthesis: Token,
-    },
-}
+// #[derive(Debug, Clone)]
+// pub enum FunctionParameters {
+//     NoParenthesis {
+//         parameter: FunctionParameter,
+//     },
+//     WithParenthesis {
+//         left_parenthesis: Token,
+//         parameters: Box<NonEmpty<FunctionParameter>>,
+//         right_parenthesis: Token,
+//     },
+// }
 
 #[derive(Debug, Clone)]
 pub struct FunctionBranchRestArguments {
     pub left_parenthesis: Token,
     pub rest_arguments: Vec<FunctionParameter>,
     pub right_parenthesis: Token,
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionParameter {
-    pub destructure_pattern: DestructurePattern,
 }
 
 #[derive(Debug, Clone)]
@@ -454,6 +538,10 @@ impl Token {
 #[derive(Debug, Clone)]
 pub enum TokenType {
     KeywordIf,
+    KeywordElse,
+    KeywordSwitch,
+    KeywordCase,
+    KeywordWith,
     KeywordLet,
     KeywordType,
     KeywordEnum,
@@ -462,6 +550,7 @@ pub enum TokenType {
     KeywordTrue,
     KeywordFalse,
     KeywordImport,
+    KeywordFrom,
     KeywordExport,
     Whitespace,
     LeftCurlyBracket,
@@ -474,11 +563,12 @@ pub enum TokenType {
     /// Also known as Exclamation Mark (!)
     Bang,
     Colon,
+    Semicolon,
     LessThan,
     MoreThan,
     Equals,
     Period,
-    DoublePeriod,
+    TriplePeriod,
     Comma,
     Minus,
     FatArrowRight,
@@ -499,10 +589,10 @@ pub enum TokenType {
     Backtick,
     TripleBacktick,
 
-    /// Comments starts with hash (#)
+    /// Comments starts with double slash
     Comment,
 
-    /// Multiline comment starts and ends with triple hash (###)
+    /// Multiline comment starts with (/*) and ends with (*/)
     MultilineComment {
         /// Note that these characters excludeds opening and closing triple-hash
         characters: Vec<Character>,

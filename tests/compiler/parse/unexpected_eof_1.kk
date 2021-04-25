@@ -1,1 +1,1 @@
-let f : Integer = | x =>
+let f = (x: Integer)

@@ -1,4 +1,3 @@
-let f 
-  : | Integer => Integer
-  = | x => x
-    | _ _ => 1
+do {
+  let f : (n: Integer) => Integer = (x, y) => x
+}

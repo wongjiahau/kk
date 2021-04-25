@@ -1,4 +1,5 @@
-let hello_world: `String` = `"yoyo"`
-
-do hello_world.value.print
-do hello_world.meta.print
+do {
+  let hello_world = `"yoyo"`;
+  hello_world.value.print();
+  hello_world.meta.print()
+}

@@ -1,6 +1,6 @@
-let is_zero 
-  : | Integer => Boolean
-  = | 0 => true
-    | 1 => false
-    | _ => false
-
+let isZero = (n: Integer): Boolean =>
+  switch (n) {
+    case 0: true
+    case 1: false
+    case _: false
+  }

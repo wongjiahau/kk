@@ -1,8 +1,8 @@
-enum Option<T> = Some(T) None
-do
-  let foo = 
-    | Some(1) => Some("hi")
-    | Some(_) => Some("lol")
-    | Some(_) => None # This case is unreachable
-    | None => None
-  null
+enum Option<T> { Some(T), None }
+let foo = (o: Option<Integer>): Option<String> => 
+  switch o { 
+    case Some(1): Some("hi")
+    case Some(_): Some("lol")
+    case Some(_): None // This case is unreachable
+    case None: None
+  }

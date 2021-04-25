@@ -1,4 +1,4 @@
-let map<A B>
+let map = <A, B>(a: [A], f: (a: A) => [B]): [B] => 
   : | [A] | A => B => [B]
   = | [] _ => []
     | [head .._] f => [head.f]

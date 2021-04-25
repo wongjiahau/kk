@@ -1,11 +1,18 @@
-enum Nat = 
-  Zero
+enum Nat { 
+  Zero,
   Succ(Nat)
+} 
 
-let add
-  : | Nat Nat => Nat 
-  = | Zero n => n
-    | Succ(n) a => Succ(n.add(a))
+let add = (x: Nat, y: Nat): Nat => 
+  switch({x, y}) {
+    case {x: Zero, y: n}: 
+      n
+    case {x: Succ(n), y: a}: 
+      Succ(n.add(a))
+  }
 
-let one: Nat = Succ(Zero)
-do one.add(one).print
+
+do {
+  let one = Succ(Zero);
+  one.add(one).print()
+}

@@ -1,8 +1,6 @@
-let identity<A> 
-  : | A => A
-  = | x => x
+let identity = <A>(a: A): A => a
 
-do
-  let x = "hello".identity
-  let y: Integer = x
-  null
+do {
+  let x = "hello".identity();
+  let y: Integer = x;
+}

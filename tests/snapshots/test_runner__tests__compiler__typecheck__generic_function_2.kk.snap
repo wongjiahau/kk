@@ -5,14 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let identity<A>
-  : | A => A
-  = | x => x
+let identity = <A>(a: A): A => a
 
-do
-  let x = "hello".identity
-  let y: Integer = x
-  null
+do {
+  let x = "hello".identity();
+  let y: Integer = x;
+}
 
 ============
 EXIT CODE
@@ -28,9 +26,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/generic_function_2.kk:7:20
+  ┌─ tests/compiler/typecheck/generic_function_2.kk:5:20
   │
-7 │   let y: Integer = x
+5 │   let y: Integer = x;
   │                    ^ Type mismatch
   │
   = +---------------+-------------+

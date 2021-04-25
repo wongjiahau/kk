@@ -1,11 +1,8 @@
 type People = {
-  first_name: String
-  last_name: String
+  firstName: String,
+  lastName: String
 }
 
-let s
-  : | String String => People
-  = | _ last_name => {..} 
-                    # Error: missing property first_name
-
-do "Adam".s("James").print
+let s = (x: String, lastName: String): People => 
+  {...}
+  // Error: missing property firstName

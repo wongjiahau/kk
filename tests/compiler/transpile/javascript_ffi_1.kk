@@ -1,20 +1,13 @@
-let minus
-  : | Integer Integer => Integer 
-  = @@@ (x, y) => x - y @@@
+let minus = (x: Integer, y: Integer): Integer => @@@ _0 - _1 @@@
 
-let multiply
-  : | Integer Integer => Integer 
-  = @@@ (x, y) => x * y @@@
+let multiply = (x: Integer, y: Integer): Integer => @@@ _0 * _1 @@@
 
-let less_than
-  : | Integer Integer => Boolean
-  = @@@ (x, y) => x < y @@@
+let less_than = (x: Integer, y: Integer): Boolean => @@@ _0 < _1 @@@
 
-let factorial
-  : | Integer => Integer
-  = | n => n.less_than(2).(
-      | true => 1
-      | false => n.multiply(n.minus(1).factorial)
-    )
-
-do 21.factorial.print
+let factorial = (n: Integer): Integer =>
+  if(n.less_than(2)) 
+    1
+  else  
+    n.multiply(n.minus(1).factorial())
+  
+do 21.factorial().print()

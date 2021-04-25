@@ -1,5 +1,3 @@
-let foo<A>
-  : | A A => [A]
-  = | x y => [x y]
+let foo = <T>(x: T, y: T): [T] => [x, y]
 
-do "hello".(|.foo("world")).print
+do "hello".(.foo("world")).print()

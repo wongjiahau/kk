@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo = (_: Null) => 123
+
+let x = {
+  y: [
+    null.foo()
+  ]
+}
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/top_level_let_1.kk:5:10
+  │
+5 │     null.foo()
+  │          ^^^ Top level function call is not allowed
+  │
+  = This is to ensure that importing a module does not has side effects

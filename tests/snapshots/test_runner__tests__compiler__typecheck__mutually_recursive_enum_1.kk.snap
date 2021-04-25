@@ -5,15 +5,17 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Foo =
-  Foo(Bar)
+enum Foo {
+  Foo(Bar),
   NullFoo
+}
 
-enum Bar =
-  Bar(Foo)
+enum Bar {
+  Bar(Foo),
   NullBar
+}
 
-do Foo(Bar(Foo(NullFoo))).print # Compile Error
+do Foo(Bar(Foo(NullFoo))).print() // Compile Error
 
 ============
 EXIT CODE
@@ -29,13 +31,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/mutually_recursive_enum_1.kk:9:16
-  │
-9 │ do Foo(Bar(Foo(NullFoo))).print # Compile Error
-  │                ^^^^^^^ Type mismatch
-  │
-  = +---------------+-------------+
-    | EXPECTED TYPE | ACTUAL TYPE |
-    +---------------+-------------+
-    | - Bar         | + Foo       |
-    +---------------+-------------+
+   ┌─ tests/compiler/typecheck/mutually_recursive_enum_1.kk:11:16
+   │
+11 │ do Foo(Bar(Foo(NullFoo))).print() // Compile Error
+   │                ^^^^^^^ Type mismatch
+   │
+   = +---------------+-------------+
+     | EXPECTED TYPE | ACTUAL TYPE |
+     +---------------+-------------+
+     | - Bar         | + Foo       |
+     +---------------+-------------+

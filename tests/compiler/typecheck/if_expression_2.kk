@@ -1,2 +1,2 @@
-# Both branches type must match
-let x: Null = if true "hello" null
+// Both branches type must match
+let x = if(true) "hello" else null

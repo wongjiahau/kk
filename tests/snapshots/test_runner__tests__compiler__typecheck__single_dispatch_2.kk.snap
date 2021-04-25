@@ -5,17 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo
-  : | String => String
-  = | _ => "Hello"
+let foo = (_: String): String => "Hello"
 
-let foo
-  : | Boolean => String
-  = | _ => "World"
+let foo = (_: Boolean): String => "World"
 
-let bar: Integer =
-  let f = | x => x.foo
+let main = (null: Null): Integer => {
+  let f = x => x.foo();
   123
+}
 
 ============
 EXIT CODE
@@ -31,14 +28,14 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/single_dispatch_2.kk:10:20
-   │
-10 │   let f = | x => x.foo
-   │                    ^^^ Ambiguous Reference
-   │
-   = This function is overloaded with multiple signatures, but the first argument provided has unknown type.
-     To disambiguate, annotate the type of the first argument of this function call with any of the following types:
+  ┌─ tests/compiler/typecheck/single_dispatch_2.kk:6:18
+  │
+6 │   let f = x => x.foo();
+  │                  ^^^ Ambiguous Reference
+  │
+  = This function is overloaded with multiple signatures, but the first argument provided has unknown type.
+    To disambiguate, annotate the type of the first argument of this function call with any of the following types:
 
-       String
+      String
 
-       Boolean
+      Boolean

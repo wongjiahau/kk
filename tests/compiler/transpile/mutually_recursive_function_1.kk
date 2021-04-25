@@ -1,30 +1,50 @@
-enum Nat = Zero Succ(Nat)
+enum Nat {
+  Zero,
+  Succ(Nat)
+}
 
-let equals
-  : | Nat     Nat     => Boolean
-  = | Zero    Zero    => true
-    | Zero    Succ(_) => false
-    | Succ(_) Zero    => false
-    | Succ(a) Succ(b) => a.pred.equals(b.pred)
+let equals = (a: Nat, b: Nat): Boolean =>
+  switch ({ a, b }) {
+    case { a: Zero, b: Zero }:
+      true
+    case { a: Zero, b: Succ(_) }:
+      false
+    case { a: Succ(_), b: Zero }:
+      false
+    case { a: Succ(a), b: Succ(b) }:
+      a.pred().equals(b.pred())
+  }
 
-let pred
-  : | Nat => Nat
-  = | Zero => Zero
-    | Succ(n) => n
+let pred = (n: Nat): Nat =>
+  switch (n) {
+    case Zero:
+      Zero
+    case Succ(n):
+      n
+  }
 
-let one: Nat = Succ(Zero)
-let is_even
-  : | Nat => Boolean
-  = | Zero => true
-    | n => n.pred.is_odd
+let isEven = (n: Nat): Boolean =>
+  switch (n) {
+    case Zero:
+      true
+    case n:
+      n.pred().isOdd()
+  }
 
-let is_odd
-  : | Nat => Boolean
-  = | Zero => false
-    | n => n.pred.is_even
+let isOdd = (n: Nat): Boolean =>
+  switch (n) {
+    case Zero:
+      false
+    case n:
+      n.pred().isEven()
+  }
 
-do Zero.is_odd.print # false
-do one.is_even.print # false
-do Succ(one).is_even.print # true
-do Succ(one).is_odd.print # false
-do Succ(Succ(one)).is_odd.print # false
+do {
+  let one = Succ(Zero);
+  let two = Succ(one);
+  Zero.isOdd().print(); // false
+  one.isEven().print(); // false
+  two.isEven().print(); // true
+  two.isOdd().print(); // false
+  Succ(two).isOdd().print(); // false
+}

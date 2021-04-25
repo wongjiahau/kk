@@ -1,9 +1,11 @@
-enum Foo = 
-  Foo(Bar)
+enum Foo {
+  Foo(Bar),
   NullFoo
+}
 
-enum Bar = 
-  Bar(Foo)
+enum Bar {
+  Bar(Foo),
   NullBar
+}
 
-do Foo(Bar(Foo(NullFoo))).print # Compile Error
+do Foo(Bar(Foo(NullFoo))).print() // Compile Error

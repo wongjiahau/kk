@@ -1,0 +1,47 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let lift = (x: Integer): {x: Integer} => {x}
+
+do {
+  with x = 123.lift;
+              // Error, lift is not a satisfactory bind function
+  x.print()
+}
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/with_statement_3.kk:4:16
+  │
+4 │   with x = 123.lift;
+  │                ^^^^ Unsatifactory bind function.
+  │
+  = The bind function must satisfies all of the following conditions:
+      (1) Must be a two-parameter function
+      (2) The expected second parameter type must be type of function
+
+    But the given bind function has the following type:
+
+        (
+          Integer
+        ) =>
+          {
+            x:
+              Integer,
+          }

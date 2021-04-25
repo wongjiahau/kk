@@ -1,2 +1,2 @@
-# importing non-existing name
-import "./import_1.kk" { bar }
+// importing non-existing name
+import { bar } from "./import_1.kk"

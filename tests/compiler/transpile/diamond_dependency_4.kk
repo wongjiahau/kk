@@ -1,4 +1,4 @@
-import "./diamond_dependency_2.kk" { bar }
-import "./diamond_dependency_3.kk" { spam }
+import {bar} from "./diamond_dependency_2.kk"
+import {spam} from "./diamond_dependency_3.kk"
 
-do [bar spam].print
+do [null.bar(), null.spam()].print()

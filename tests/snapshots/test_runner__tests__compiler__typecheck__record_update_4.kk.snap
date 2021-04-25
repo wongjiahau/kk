@@ -5,14 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo
-  : | String => [String]
-  = | x => [x]
+let foo = (x: String): [String] => [x]
 
-do
-  let a = { x: 2 y: {z: 3} }
-  let b = a.{ x.foo } # expected String, got Integer
+do {
+  let a = { x: 2, y: {z: 3} };
+  let b = a.{ x.foo() }; // expected String, got Integer
   null
+}
 
 ============
 EXIT CODE
@@ -28,9 +27,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_update_4.kk:7:15
+  ┌─ tests/compiler/typecheck/record_update_4.kk:5:15
   │
-7 │   let b = a.{ x.foo } # expected String, got Integer
+5 │   let b = a.{ x.foo() }; // expected String, got Integer
   │               ^ Type mismatch
   │
   = +---------------+-------------+

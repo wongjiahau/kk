@@ -5,11 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo
-  : | Null => Integer
-  = | null => 123
+let foo = (null: Null): Integer => 123
 
-do null.foo
+do null.foo()
 
 ============
 EXIT CODE
@@ -25,10 +23,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/do_statement_1.kk:5:4
+  ┌─ tests/compiler/typecheck/do_statement_1.kk:3:4
   │
-5 │ do null.foo
-  │    ^^^^^^^^ Type Mismatch
+3 │ do null.foo()
+  │    ^^^^^^^^^^ Type Mismatch
   │
   = The body of do-expression must have the type of Null.
     But this expression has the type of:

@@ -5,11 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-export let foo
-  : | Integer => Integer
-  = | _ => 2
+export let foo = (i: Integer): Integer => 2
 
-do 2.foo(3).print
+do 2.foo(3).print()
 
 ============
 EXIT CODE
@@ -25,9 +23,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/invalid_function_arguments_length.kk:5:6
+  ┌─ tests/compiler/typecheck/invalid_function_arguments_length.kk:3:6
   │
-5 │ do 2.foo(3).print
+3 │ do 2.foo(3).print()
   │      ^^^ Function arguments length mismatch
   │
   = Expected 1 argument only, but 2 arguments are provided.

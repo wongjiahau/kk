@@ -5,14 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do
-  let x = {
-    x: 2
-    y: "hello"
-  }
+let x = {
+  x: 2,
+  y: "hello"
+}
 
-  let z: String = x.x
-  null
+let z: String = x.x
 
 ============
 EXIT CODE
@@ -28,10 +26,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_type_2.kk:7:19
+  ┌─ tests/compiler/typecheck/record_type_2.kk:6:17
   │
-7 │   let z: String = x.x
-  │                   ^^^ Type mismatch
+6 │ let z: String = x.x
+  │                 ^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

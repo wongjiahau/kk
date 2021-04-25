@@ -5,15 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo
-  : | String => String
-  = | _ => "Hello"
+let foo = (s: String): String => "Hello"
 
-let foo
-  : | Integer => String
-  = | _ => "World"
+let foo = (i: Integer): String => "World"
 
-do true.foo.print
+do true.foo().print()
+//      ^^^^^ Error: no matching overloaded function found
 
 ============
 EXIT CODE
@@ -29,9 +26,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/single_dispatch_4.kk:9:9
+  ┌─ tests/compiler/typecheck/single_dispatch_4.kk:5:9
   │
-9 │ do true.foo.print
+5 │ do true.foo().print()
   │         ^^^ No matching overload found.
   │
   =

@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-# This is a comment
-do "Hello".print
+// This is a comment
+do "Hello".print()
 
 ============
 EXIT CODE

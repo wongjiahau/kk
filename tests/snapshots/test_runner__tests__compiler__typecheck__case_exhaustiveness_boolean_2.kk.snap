@@ -5,10 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let and
-  : | Boolean Boolean => Boolean
-  = | true true => true
-    | false true => false
+let and = (x: Boolean, y: Boolean): Boolean =>
+  switch ({ x, y }) {
+    case { x: true, y: true }: true
+    case { x: false, y: true }: false
+  }
 
 ============
 EXIT CODE
@@ -24,14 +25,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_2.kk:3:5
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_2.kk:2:3
   │
-3 │     = | true true => true
-  │ ╭─────^
-4 │ │     | false true => false
-  │ ╰─────────────────────────^ Non-exhaustive cases
+2 │   switch ({ x, y }) {
+  │   ^^^^^^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      | true false => ...
-      | false false => ...
+      case { x: true, y: false }:
+      case { x: false, y: false }:

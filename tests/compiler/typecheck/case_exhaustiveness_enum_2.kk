@@ -1,9 +1,12 @@
-enum List<T> = 
-  Nil
-  Cons({current: T next: List<T>})
+enum List<T> {
+  Nil,
+  Cons({head: T, tail: List<T>})
+} 
 
-do
-  let bomb = 
-    | Nil => true
-    | Cons({current: true next: _}) => true 
-  null
+do {
+  let bomb = list => 
+    switch (list) {
+      case Nil: true
+      case Cons({head: true, tail: _}): true
+    }
+}

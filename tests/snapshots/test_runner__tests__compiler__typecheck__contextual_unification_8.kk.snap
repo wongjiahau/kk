@@ -6,9 +6,9 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo: {
-  f: | { x: Integer } => Integer
+  f:  (options: { x: Integer }) => Integer
 } = {
-  f: | o => o.y
+  f: options => options.y
 }
 
 ============
@@ -25,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_8.kk:4:15
+  ┌─ tests/compiler/typecheck/contextual_unification_8.kk:4:25
   │
-4 │   f: | o => o.y
-  │               ^ No such property or function
+4 │   f: options => options.y
+  │                         ^ No such property
   │
   = Available properties:
       x

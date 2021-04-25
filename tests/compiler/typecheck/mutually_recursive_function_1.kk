@@ -1,7 +1,4 @@
-let foo
-  : | Integer => Integer
-  = |.bar  # Error: Expected Integer, got String
+let foo = (n: Integer): Integer => n.bar()
 
-let bar
-  : | Integer => String
-  = |.foo
+let bar = (n: Integer): String => n.foo()
+//                                ^^^^^^^ Error: expected String, got Integer

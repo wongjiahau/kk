@@ -5,12 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Option<T> = Some(T) None
+enum Option<T> { Some(T), None }
 
-do
-  let is_some_some =
-    | Some(Some(_)) => true
-  null
+do {
+  let isSomeSome = x =>
+    switch x {
+      case Some(Some(_)) : true
+    }
+}
 
 ============
 EXIT CODE
@@ -28,10 +30,10 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_3.kk:5:5
   │
-5 │     | Some(Some(_)) => true
-  │     ^^^^^^^^^^^^^^^^^^^^^^^ Non-exhaustive cases
+5 │     switch x {
+  │     ^^^^^^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      | Some(None) => ...
-      | None => ...
+      case Some(None):
+      case None:

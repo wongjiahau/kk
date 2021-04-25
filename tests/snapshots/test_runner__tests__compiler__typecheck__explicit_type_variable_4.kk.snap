@@ -5,9 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo<A B>
-  : | A => B
-  = | x => x
+let foo = <A, B>(a: A): B => a
 
 ============
 EXIT CODE
@@ -23,10 +21,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/explicit_type_variable_4.kk:3:12
+  ┌─ tests/compiler/typecheck/explicit_type_variable_4.kk:1:30
   │
-3 │   = | x => x
-  │            ^ Type mismatch
+1 │ let foo = <A, B>(a: A): B => a
+  │                              ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

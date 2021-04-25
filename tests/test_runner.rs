@@ -22,8 +22,8 @@ fn run_all_tests() {
 
             if filename.ends_with(".kk") {
                 let input_filename = filename;
-                let input = fs::read_to_string(&input_filename).expect("failed to read input file");
                 print!("{}", input_filename);
+                let input = fs::read_to_string(&input_filename).expect("failed to read input file");
                 let actual_output = {
                     let output = Command::new("./target/debug/kk")
                         .arg("run")

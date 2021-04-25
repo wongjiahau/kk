@@ -5,14 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-# This is for testing:
-# Entry points should only be transpiled at entry points
+// This is for testing:
+// Entry points should only be transpiled at entry points
 
-export let foo
-  : String
-  = "Hello"
+export let foo = (null: Null): String => "Hello"
 
-do "Hello world".print
+do "Hello world".print()
 
 ============
 EXIT CODE

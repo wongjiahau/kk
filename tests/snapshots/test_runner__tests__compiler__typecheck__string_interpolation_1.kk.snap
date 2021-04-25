@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do "I am #{{my_age: [123]}} years old".print
-#          ^^^^^^ Error
+do "I am ${{my_age: [123]}} years old".print()
+//          ^^^^^^ Error
 
 ============
 EXIT CODE
@@ -24,7 +24,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/string_interpolation_1.kk:1:12
   │
-1 │ do "I am #{{my_age: [123]}} years old".print
+1 │ do "I am ${{my_age: [123]}} years old".print()
   │            ^^^^^^^^^^^^^^^ Type mismatch
   │
   = +---------------+-----------------+

@@ -1,11 +1,9 @@
-# No error
+// No error
 type People = {
-  first_name: String
-  last_name: String
+  firstName: String,
+  lastName: String
 }
 
-let s
-  : | String String => People
-  = | first_name last_name => {..}
+let s = (firstName: String, lastName: String): People => {...}
 
-do "Adam".s("James").print
+do "Adam".s("James").print()

@@ -5,12 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do
-  let and =
-    | true true => true
-    | _ _ => false
-    | _ _ => false
-  null
+let and = (x: Boolean, y: Boolean): Boolean =>
+  switch ({ x, y }) {
+    case { x: true, y: true }: true
+    case _: false
+    case _: false
+  }
 
 ============
 EXIT CODE
@@ -26,9 +26,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_1.kk:5:7
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_1.kk:5:10
   │
-5 │     | _ _ => false
-  │       ^^^ Unreachable case
+5 │     case _: false
+  │          ^ Unreachable case
   │
   = This case is unreachable because all possible cases are already handled by previous branches.

@@ -5,11 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do
-  let bomb =
-    | null => true
-    | null => false
-  null
+do {
+  let bomb = (n) =>
+    switch(n) {
+      case null: true
+      case null: false
+    }
+}
 
 ============
 EXIT CODE
@@ -25,9 +27,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_null_1.kk:4:7
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_null_1.kk:5:12
   │
-4 │     | null => false
-  │       ^^^^ Unreachable case
+5 │       case null: false
+  │            ^^^^ Unreachable case
   │
   = This case is unreachable because all possible cases are already handled by previous branches.

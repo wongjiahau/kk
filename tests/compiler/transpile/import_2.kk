@@ -1,7 +1,5 @@
-# Using prelude symbols imported from other file should not have errors
+// Using prelude symbols imported from other file should not have errors
 
-import "./import_1.kk" { 
-  show_me
-}
+import {showMe} from "./import_1.kk" 
 
-do "Hello world".show_me
+do "Hello world".showMe()

@@ -1,16 +1,17 @@
-enum List<Element> =
-  Nil
+enum List<Element> {
+  Nil,
   Cons({
-    current: Element
+    current: Element,
     next: List<Element>
   })
+}
 
-do
-  let foo = | Cons({
-    current: 1
+do {
+  let foo = Cons({
+    current: 1,
     next: Cons({
-      current: true
+      current: true,
       next: Nil
     })
   }) => 0
-  null
+}
