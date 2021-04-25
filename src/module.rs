@@ -28,7 +28,7 @@ type Substitution = HashMap<String, SubstitutionItem>;
 
 pub struct GetValueSymbolResult {
     pub symbol_uid: usize,
-    pub type_scheme: TypeScheme,
+    pub type_value: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -256,11 +256,8 @@ impl Module {
                     exported: false,
                 },
                 kind: SymbolKind::Type(TypeSymbol {
-                    type_scheme: TypeScheme {
-                        type_variables: vec![],
-                        type_value: Type::ExplicitTypeVariable {
-                            name: type_variable_name.representation.clone(),
-                        },
+                    type_value: Type::ExplicitTypeVariable {
+                        name: type_variable_name.representation.clone(),
                     },
                 }),
             },
@@ -292,10 +289,7 @@ impl Module {
                         exported: false,
                     },
                     kind: SymbolKind::Value(ValueSymbol {
-                        type_scheme: TypeScheme {
-                            type_variables: vec![],
-                            type_value: type_value.clone(),
-                        },
+                        type_value: type_value.clone(),
                     }),
                 },
             )?;
@@ -407,6 +401,10 @@ impl Module {
                     })
                     .collect(),
             },
+            Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
+                type_variables: type_scheme.type_variables.clone(),
+                type_value: self.apply_subtitution_to_type(&type_scheme.type_value),
+            })),
         }
     }
 
@@ -514,10 +512,7 @@ impl Module {
                     exported,
                 },
                 kind: SymbolKind::Value(ValueSymbol {
-                    type_scheme: TypeScheme {
-                        type_variables: vec![],
-                        type_value: type_value.clone(),
-                    },
+                    type_value: type_value.clone(),
                 }),
             },
         )?;
@@ -603,37 +598,42 @@ impl Module {
                                     if constructor.constructor_name == new_symbol.meta.name.representation => {
                                     error
                                 }
-                                SymbolKind::Value(value_symbol) => {
-                                    match &value_symbol.type_scheme.type_value {
-                                        Type::Function(function_type) => {
-                                            match &new_value_symbol.type_scheme.type_value {
-                                                Type::Function(new_function_type) => {
-                                                    if overlap(
-                                                        function_type.parameters_types.first(),
-                                                        new_function_type.parameters_types.first(),
-                                                    ) {
-                                                        Err(UnifyError {
-                                                            position: new_symbol.meta.name.position,
-                                                            kind: UnifyErrorKind::ConflictingFunctionDefinition {
-                                                                function_name: new_symbol.meta.name.representation.clone(),
-                                                                existing_first_parameter_type: function_type.parameters_types.first().clone(),
-                                                                new_first_parameter_type: new_function_type.parameters_types.first().clone(),
-                                                                first_declared_at: entry.symbol.meta.name.position,
-                                                            }
-                                                        })
-                                                    }
-                                                    else {
-                                                        Ok(())
-                                                    }
+                                SymbolKind::Value(existing_value_symbol) => {
+                                    fn extract_function_type(type_value: Type) -> Option<FunctionType> {
+                                        match type_value {
+                                            Type::Function(function_type) => Some(function_type),
+                                            Type::TypeScheme(type_scheme) => {
+                                                match &type_scheme.type_value {
+                                                    Type::Function(function_type) => Some(function_type.clone()),
+                                                    _ => None
                                                 }
-
-                                                // if the new value symbol to be inserted is not type of function
-                                                _ => error,
+                                            }
+                                            _ => None
+                                        }
+                                    }
+                                    let existing_function_type = extract_function_type(existing_value_symbol.type_value.clone());
+                                    let new_function_type = extract_function_type(new_value_symbol.type_value.clone());
+                                    match (existing_function_type, new_function_type) {
+                                        (Some(existing_function_type), Some(new_function_type)) => {
+                                            if overlap(
+                                                existing_function_type.parameters_types.first(),
+                                                new_function_type.parameters_types.first(),
+                                            ) {
+                                                Err(UnifyError {
+                                                    position: new_symbol.meta.name.position,
+                                                    kind: UnifyErrorKind::ConflictingFunctionDefinition {
+                                                        function_name: new_symbol.meta.name.representation.clone(),
+                                                        existing_first_parameter_type: existing_function_type.parameters_types.first().clone(),
+                                                        new_first_parameter_type: new_function_type.parameters_types.first().clone(),
+                                                        first_declared_at: entry.symbol.meta.name.position,
+                                                    }
+                                                })
+                                            }
+                                            else {
+                                                Ok(())
                                             }
                                         }
-
-                                        // If current entry is not type of function
-                                        _ => error,
+                                        _ => error
                                     }
                                 }
                                 _ => Ok(()),
@@ -665,7 +665,7 @@ impl Module {
                         // as they will be brought into scope by their enum name
                         SymbolKind::EnumConstructor(_) => vec![],
                         SymbolKind::Type(type_symbol) => {
-                            match type_symbol.type_scheme.type_value {
+                            match type_symbol.type_value {
                                 // When importing enum type
                                 // it's constructor will be brought into scope as well
                                 Type::Named { symbol_uid, .. } => vec![entry.clone()]
@@ -782,21 +782,27 @@ impl Module {
                 if tail.is_empty() {
                     Ok(GetValueSymbolResult {
                         symbol_uid: head.0,
-                        type_scheme: head.1.type_scheme.clone(),
+                        type_value: head.1.type_value.clone(),
                     })
                 } else {
                     let matching_function_signatures = matching_value_symbols
                         .iter()
-                        .filter_map(
-                            |(symbol_uid, symbol)| match &symbol.type_scheme.type_value {
+                        .filter_map(|(symbol_uid, symbol)| match &symbol.type_value {
+                            Type::Function(function_type) => Some(FunctionSignature {
+                                symbol_uid: *symbol_uid,
+                                type_variables: None,
+                                function_type: function_type.clone(),
+                            }),
+                            Type::TypeScheme(type_scheme) => match type_scheme.type_value.clone() {
                                 Type::Function(function_type) => Some(FunctionSignature {
                                     symbol_uid: *symbol_uid,
-                                    type_variables: symbol.type_scheme.type_variables.clone(),
-                                    function_type: function_type.clone(),
+                                    type_variables: Some(type_scheme.type_variables.clone()),
+                                    function_type,
                                 }),
                                 _ => None,
                             },
-                        )
+                            _ => None,
+                        })
                         .collect::<Vec<FunctionSignature>>();
 
                     match expected_type {
@@ -861,7 +867,7 @@ impl Module {
                                 // If found one matching function signature, return Ok
                                 Some(signature) => Ok(GetValueSymbolResult {
                                     symbol_uid: signature.symbol_uid,
-                                    type_scheme: signature.as_type_scheme(),
+                                    type_value: signature.as_type_value(),
                                 }),
                             }
                         }
@@ -965,12 +971,12 @@ pub enum SymbolKind {
 
 #[derive(Debug, Clone)]
 pub struct TypeSymbol {
-    pub type_scheme: TypeScheme,
+    pub type_value: Type,
 }
 
 #[derive(Debug, Clone)]
 pub struct ValueSymbol {
-    pub type_scheme: TypeScheme,
+    pub type_value: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -982,15 +988,18 @@ pub struct FunctionSymbol {
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
     pub symbol_uid: usize,
-    pub type_variables: Vec<String>,
+    pub type_variables: Option<NonEmpty<String>>,
     pub function_type: FunctionType,
 }
 
 impl FunctionSignature {
-    fn as_type_scheme(&self) -> TypeScheme {
-        TypeScheme {
-            type_variables: self.type_variables.clone(),
-            type_value: Type::Function(self.function_type.clone()),
+    fn as_type_value(&self) -> Type {
+        match &self.type_variables {
+            Some(type_variables) => Type::TypeScheme(Box::new(TypeScheme {
+                type_variables: type_variables.clone(),
+                type_value: Type::Function(self.function_type.clone()),
+            })),
+            None => Type::Function(self.function_type.clone()),
         }
     }
 }
@@ -1070,6 +1079,9 @@ fn overlap(a: &Type, b: &Type) -> bool {
                     .zip(type_arguments_b.iter())
                     .all(|((_, a), (_, b))| overlap(a, b))
         }
+        (Type::TypeScheme(type_scheme_a), Type::TypeScheme(type_scheme_b)) => {
+            overlap(&type_scheme_a.type_value, &type_scheme_b.type_value)
+        }
 
         // otherwise
         _ => false,
@@ -1108,8 +1120,11 @@ fn built_in_symbols() -> Vec<Symbol> {
         Symbol {
             meta: meta("print".to_string()),
             kind: SymbolKind::Value(ValueSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: vec![type_variable_name.clone()],
+                type_value: Type::TypeScheme(Box::new(TypeScheme {
+                    type_variables: NonEmpty {
+                        head: type_variable_name.clone(),
+                        tail: vec![],
+                    },
                     type_value: Type::Function(FunctionType {
                         parameters_types: Box::new(NonEmpty {
                             head: Type::ImplicitTypeVariable {
@@ -1119,62 +1134,44 @@ fn built_in_symbols() -> Vec<Symbol> {
                         }),
                         return_type: Box::new(Type::Null),
                     }),
-                },
+                })),
             }),
         },
         // built-in types
         Symbol {
             meta: meta("String".to_string()),
             kind: SymbolKind::Type(TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: vec![],
-                    type_value: Type::String,
-                },
+                type_value: Type::String,
             }),
         },
         Symbol {
             meta: meta("Character".to_string()),
             kind: SymbolKind::Type(TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: vec![],
-                    type_value: Type::Character,
-                },
+                type_value: Type::Character,
             }),
         },
         Symbol {
             meta: meta("Integer".to_string()),
             kind: SymbolKind::Type(TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: vec![],
-                    type_value: Type::Integer,
-                },
+                type_value: Type::Integer,
             }),
         },
         Symbol {
             meta: meta("Float".to_string()),
             kind: SymbolKind::Type(TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: vec![],
-                    type_value: Type::Float,
-                },
+                type_value: Type::Float,
             }),
         },
         Symbol {
             meta: meta("Null".to_string()),
             kind: SymbolKind::Type(TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: vec![],
-                    type_value: Type::Null,
-                },
+                type_value: Type::Null,
             }),
         },
         Symbol {
             meta: meta("Boolean".to_string()),
             kind: SymbolKind::Type(TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: vec![],
-                    type_value: Type::Boolean,
-                },
+                type_value: Type::Boolean,
             }),
         },
     ]

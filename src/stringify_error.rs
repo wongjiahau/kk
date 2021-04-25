@@ -854,6 +854,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::CannotAccessPropertyOfNonRecord => StringifiedError {
             summary: "Cannot access property of a non-record".to_string(),
             body: "".to_string()
+        },
+        UnifyErrorKind::NotExpectingTypeVariable => StringifiedError {
+            summary: "Not expecting type variable here".to_string(),
+            body: "".to_string()
         }
     }
 }
@@ -998,6 +1002,13 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                 indent_string(stringify_type(*function_type.return_type, 0), 2)
             );
             indent_string(result, indent_level * 2)
+        }
+        Type::TypeScheme(type_scheme) => {
+            format!(
+                "<{}>{}",
+                type_scheme.type_variables.into_vector().join(", "),
+                stringify_type(type_scheme.type_value, indent_level)
+            )
         }
     }
 }

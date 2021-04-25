@@ -120,6 +120,7 @@ pub enum Type {
         type_argument: Box<Type>,
     },
     Function(FunctionType),
+    TypeScheme(Box<TypeScheme>),
     Tuple(Box<NonEmpty<Type>>),
     Boolean,
     Float,
@@ -142,9 +143,9 @@ pub struct TagType {
     pub payload: Option<Box<Type>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeScheme {
-    pub type_variables: Vec<String>,
+    pub type_variables: NonEmpty<String>,
     pub type_value: Type,
 }
 

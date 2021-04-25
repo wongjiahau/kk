@@ -184,7 +184,7 @@ pub fn unify_statements(
     //    Similar as type symbols, we will insert them into the module first before checking their definition,
     //    this is to that mutually recursive functions can be checked.
     let function_statements = function_statements.into_iter().map(|function_statement| {
-        let type_scheme = {
+        let type_value = {
             module.run_in_new_child_scope(|module| {
                 function_statement
                     .arrow_function
@@ -193,14 +193,7 @@ pub fn unify_statements(
                     .map(|type_variable_name| module.insert_explicit_type_variable(type_variable_name))
                     .collect::<Result<Vec<usize>, UnifyError>>()?;
 
-                let type_scheme = TypeScheme {
-                    type_variables: function_statement
-                        .arrow_function
-                        .type_variables
-                        .iter()
-                        .map(|type_variable| type_variable.representation.clone())
-                        .collect(),
-                    type_value: {
+                let type_value = {
                         let parameters_types = function_statement
                             .arrow_function
                             .clone()
@@ -247,9 +240,15 @@ pub fn unify_statements(
                             }?),
                             return_type: Box::new(return_type),
                         })
-                    },
-                };
-                Ok(type_scheme)
+                    };
+
+                let type_variables = function_statement
+                        .arrow_function
+                        .type_variables
+                        .iter()
+                        .map(|type_variable| type_variable.representation.clone())
+                        .collect::<Vec<String>>();
+                Ok(try_lift_as_type_scheme(type_value, type_variables))
             })
         }?;
 
@@ -261,19 +260,7 @@ pub fn unify_statements(
                     exported: function_statement.keyword_export.is_some(),
                 },
                 kind: SymbolKind::Value(ValueSymbol {
-                    type_scheme: TypeScheme {
-                        type_variables: type_scheme.type_variables,
-                        type_value: rewrite_explicit_type_variables_as_implicit(
-                            type_scheme.type_value.clone(),
-                            &{
-                                let mut hashset = HashSet::new();
-                                for type_variable in &function_statement.arrow_function.type_variables {
-                                    hashset.insert(type_variable.representation.clone());
-                                }
-                                hashset
-                            },
-                        ),
-                    },
+                    type_value: type_value.clone(),
                 }),
             },
         )?;
@@ -281,7 +268,7 @@ pub fn unify_statements(
             uid,
             function_statement.name,
             function_statement.arrow_function,
-            type_scheme.type_value,
+            type_value,
         ))
     })
         .collect::<Result<Vec<_>, UnifyError>>()
@@ -442,6 +429,7 @@ impl UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    NotExpectingTypeVariable,
     FunctionCallAtTopLevelIsNotAllowed,
     NotExpectingFunction {
         expected_type: Type,
@@ -780,6 +768,17 @@ pub fn insert_enum_symbol(
         .map(|type_variable| type_variable.representation)
         .collect::<Vec<String>>();
 
+    let type_value = match type_variable_names.split_first() {
+        None => enum_type,
+        Some((head, tail)) => Type::TypeScheme(Box::new(TypeScheme {
+            type_variables: NonEmpty {
+                head: head.clone(),
+                tail: tail.to_vec(),
+            },
+            type_value: enum_type,
+        })),
+    };
+
     module.insert_symbol(
         Some(enum_uid),
         Symbol {
@@ -787,12 +786,7 @@ pub fn insert_enum_symbol(
                 name,
                 exported: keyword_export.is_some(),
             },
-            kind: SymbolKind::Type(TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: type_variable_names,
-                    type_value: enum_type,
-                },
-            }),
+            kind: SymbolKind::Type(TypeSymbol { type_value }),
         },
     )
 }
@@ -820,11 +814,8 @@ pub fn infer_enum_statement(
                         exported: false,
                     },
                     kind: SymbolKind::Type(TypeSymbol {
-                        type_scheme: TypeScheme {
-                            type_value: Type::ImplicitTypeVariable {
-                                name: type_variable.clone().representation,
-                            },
-                            type_variables: vec![],
+                        type_value: Type::ImplicitTypeVariable {
+                            name: type_variable.clone().representation,
                         },
                     }),
                 },
@@ -894,11 +885,8 @@ pub fn infer_type_alias_statement(
                         exported: false,
                     },
                     kind: SymbolKind::Type(TypeSymbol {
-                        type_scheme: TypeScheme {
-                            type_value: Type::ImplicitTypeVariable {
-                                name: type_variable.clone().representation,
-                            },
-                            type_variables: vec![],
+                        type_value: Type::ImplicitTypeVariable {
+                            name: type_variable.clone().representation,
                         },
                     }),
                 },
@@ -917,18 +905,31 @@ pub fn infer_type_alias_statement(
                 exported: keyword_export.is_some(),
             },
             kind: SymbolKind::Type(TypeSymbol {
-                type_scheme: TypeScheme {
-                    type_variables: type_variables
+                type_value: try_lift_as_type_scheme(
+                    type_value,
+                    type_variables
                         .iter()
                         .map(|type_variable| type_variable.representation.clone())
                         .collect(),
-                    type_value,
-                },
+                ),
             }),
         },
     )?;
 
     Ok(())
+}
+
+pub fn try_lift_as_type_scheme(type_value: Type, type_variables: Vec<String>) -> Type {
+    match type_variables.split_first() {
+        None => type_value,
+        Some((head, tail)) => Type::TypeScheme(Box::new(TypeScheme {
+            type_value,
+            type_variables: NonEmpty {
+                head: head.clone(),
+                tail: tail.to_vec(),
+            },
+        })),
+    }
 }
 
 pub fn infer_do_statement(
@@ -1039,6 +1040,13 @@ pub fn rewrite_explicit_type_variables_as_implicit(
                 explicit_type_variable_names,
             )),
         }),
+        Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
+            type_variables: type_scheme.type_variables,
+            type_value: rewrite_explicit_type_variables_as_implicit(
+                type_scheme.type_value,
+                explicit_type_variable_names,
+            ),
+        })),
     }
 }
 
@@ -1047,7 +1055,7 @@ pub fn rewrite_explicit_type_variables_as_implicit(
 pub fn generalize_type(type_value: Type) -> TypeScheme {
     let type_variables = get_free_type_variables_in_type(&type_value);
     TypeScheme {
-        type_variables: type_variables.into_iter().collect(),
+        type_variables: panic!(), // type_variables.into_iter().collect(),
         type_value,
     }
 }
@@ -1626,6 +1634,30 @@ pub fn unify_type_(
                 .collect::<Result<Vec<(String, Type)>, UnifyError>>()?;
             Ok(Type::Record { key_type_pairs })
         }
+        (Type::TypeScheme(expected_type_scheme), Type::TypeScheme(actual_type_scheme)) => {
+            // The current implementation does not consider alpha conversion
+            // TODO: compare properly using Alpha Equivalence
+            //       refer https://en.wikipedia.org/wiki/Lambda_calculus#Alpha_equivalence
+            if expected_type_scheme
+                .type_variables
+                .ne(&actual_type_scheme.type_variables)
+            {
+                Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::TypeMismatch {
+                        expected_type: Type::TypeScheme(expected_type_scheme),
+                        actual_type: Type::TypeScheme(actual_type_scheme),
+                    },
+                })
+            } else {
+                unify_type(
+                    module,
+                    &expected_type_scheme.type_value,
+                    &actual_type_scheme.type_value,
+                    position,
+                )
+            }
+        }
         _ => Err(UnifyError {
             position,
             kind: UnifyErrorKind::TypeMismatch {
@@ -1723,6 +1755,14 @@ pub fn rewrite_type_variable_in_type(
                 })
                 .collect(),
         },
+        Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
+            type_variables: type_scheme.type_variables,
+            type_value: rewrite_type_variable_in_type(
+                from_type_variable,
+                to_type,
+                type_scheme.type_value,
+            ),
+        })),
     }
 }
 
@@ -1747,47 +1787,56 @@ pub fn get_enum_type(
         .get_type_symbol_by_uid(constructor.enum_uid)
         .unwrap_or_else(|| panic!("Compiler error, cannot find enum type of a constructor"));
 
-    // initiate type variables
-    let instantiated_type_variables = {
-        match expected_type {
-            Some(Type::Named {
-                type_arguments,
-                symbol_uid,
-                ..
-            }) if symbol_uid == constructor.enum_uid => type_arguments,
-            _ => enum_type
-                .type_scheme
-                .type_variables
-                .iter()
-                .map(|type_variable_name| {
-                    (
-                        type_variable_name.clone(),
-                        Type::ImplicitTypeVariable {
-                            name: module.get_next_type_variable_name(),
-                        },
-                    )
-                })
-                .collect::<Vec<(String, Type)>>(),
+    match enum_type.type_value {
+        Type::TypeScheme(enum_type) => {
+            // initiate type variables
+            let instantiated_type_variables = {
+                match expected_type {
+                    Some(Type::Named {
+                        type_arguments,
+                        symbol_uid,
+                        ..
+                    }) if symbol_uid == constructor.enum_uid => type_arguments,
+                    _ => enum_type
+                        .type_variables
+                        .clone()
+                        .into_vector()
+                        .iter()
+                        .map(|type_variable_name| {
+                            (
+                                type_variable_name.clone(),
+                                Type::ImplicitTypeVariable {
+                                    name: module.get_next_type_variable_name(),
+                                },
+                            )
+                        })
+                        .collect::<Vec<(String, Type)>>(),
+                }
+            };
+
+            let expected_enum_type = rewrite_type_variables_in_type(
+                instantiated_type_variables.clone(),
+                enum_type.type_value,
+            );
+
+            let expected_payload_type = match &constructor.payload {
+                None => None,
+                Some(expected_payload) => Some(rewrite_type_variables_in_type(
+                    instantiated_type_variables,
+                    expected_payload.clone(),
+                )),
+            };
+
+            Ok(GetEnumTypeResult {
+                expected_enum_type,
+                expected_payload_type,
+            })
         }
-    };
-
-    let expected_enum_type = rewrite_type_variables_in_type(
-        instantiated_type_variables.clone(),
-        enum_type.type_scheme.type_value,
-    );
-
-    let expected_payload_type = match &constructor.payload {
-        None => None,
-        Some(expected_payload) => Some(rewrite_type_variables_in_type(
-            instantiated_type_variables,
-            expected_payload.clone(),
-        )),
-    };
-
-    Ok(GetEnumTypeResult {
-        expected_enum_type,
-        expected_payload_type,
-    })
+        _ => Ok(GetEnumTypeResult {
+            expected_enum_type: enum_type.type_value,
+            expected_payload_type: constructor.payload,
+        }),
+    }
 }
 
 pub struct TypeVariableSubstitution {
@@ -2021,7 +2070,12 @@ fn infer_expression_type_(
                     module.current_scope_name(),
                 )?;
                 Ok(InferExpressionResult {
-                    type_value: instantiate_type_scheme(module, result.type_scheme),
+                    type_value: match result.type_value {
+                        Type::TypeScheme(type_scheme) => {
+                            instantiate_type_scheme(module, *type_scheme)
+                        }
+                        _ => result.type_value,
+                    },
                     expression: TypecheckedExpression::Variable(Identifier {
                         uid: result.symbol_uid,
                         token: variable.clone(),
@@ -2642,12 +2696,47 @@ fn infer_arrow_function(
     expected_type: Option<Type>,
     function: ArrowFunction,
 ) -> Result<InferExpressionResult, UnifyError> {
+    let position = get_expression_position(&Expression::ArrowFunction(Box::new(function.clone())));
     let expected_function_type = match expected_type {
-        Some(Type::Function(function_type)) => Ok(function_type),
+        Some(Type::Function(function_type)) => match function.type_variables.split_first() {
+            None => Ok(function_type),
+            Some((head, tail)) => Err(UnifyError {
+                position: join_position(head.position, tail.last().unwrap_or(head).position),
+                kind: UnifyErrorKind::NotExpectingTypeVariable,
+            }),
+        },
+        Some(Type::TypeScheme(type_scheme)) => {
+            match type_scheme.type_value {
+                Type::Function(function_type) => {
+                    let type_variables = function
+                        .type_variables
+                        .iter()
+                        .map(|type_variable| type_variable.representation.clone())
+                        .collect::<Vec<String>>();
+
+                    // TODO: perform alpha conversion before checking equivalence
+                    if type_scheme.type_variables.into_vector().ne(&type_variables) {
+                        Err(UnifyError {
+                            position,
+                            kind: panic!()
+                            // UnifyErrorKind::TypeVariableMismatch {
+                            //     expected_type_variables: type_scheme.type_variables,
+                            // },
+                        })
+                    } else {
+                        Ok(function_type)
+                    }
+                }
+                other_type => Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::NotExpectingFunction {
+                        expected_type: other_type,
+                    },
+                }),
+            }
+        }
         Some(other_type) => Err(UnifyError {
-            position: get_expression_position(&Expression::ArrowFunction(Box::new(
-                function.clone(),
-            ))),
+            position,
             kind: UnifyErrorKind::NotExpectingFunction {
                 expected_type: other_type,
             },
@@ -2683,6 +2772,13 @@ fn infer_arrow_function(
         });
     };
     module.run_in_new_child_scope(|module| {
+        // Insert explicit type variables
+        function
+            .type_variables
+            .iter()
+            .map(|type_variable_name| module.insert_explicit_type_variable(type_variable_name))
+            .collect::<Result<Vec<_>, UnifyError>>()?;
+
         let function_parameters = function.parameters.clone().parameters();
         let head_parameter = {
             let expected_type = get_expected_type(
@@ -2712,13 +2808,23 @@ fn infer_arrow_function(
                 infer_destructure_pattern(module, expected_type, &parameter.pattern, false)
             })
             .collect::<Result<Vec<InferDestructurePatternResult>, UnifyError>>()?;
-        let body = infer_expression_type(
+
+        let expected_return_type = get_expected_type(
             module,
             Some(*expected_function_type.return_type.clone()),
-            &function.body,
+            function.return_type_annotation.clone(),
         )?;
+        let body = infer_expression_type(module, expected_return_type, &function.body)?;
         Ok(InferExpressionResult {
-            type_value: Type::Function(expected_function_type.clone()),
+            type_value: try_lift_as_type_scheme(
+                Type::Function(expected_function_type.clone()),
+                function
+                    .type_variables
+                    .clone()
+                    .into_iter()
+                    .map(|type_variable| type_variable.representation)
+                    .collect(),
+            ),
             expression: TypecheckedExpression::BranchedFunction(Box::new(
                 TypecheckedBranchedFunction {
                     branches: Box::new(NonEmpty {
@@ -3418,55 +3524,78 @@ pub fn type_annotation_to_type(
         TypeAnnotation::Underscore(_) => Ok(Type::Underscore),
         TypeAnnotation::Named {
             name,
-            type_arguments,
+            type_arguments: actual_type_arguments,
         } => {
-            if let Some(type_symbol) = module.get_type_symbol_by_name(&name) {
-                let type_arguments = match type_arguments {
-                    None => Ok(vec![]),
-                    Some(TypeArguments {
-                        arguments,
-                        left_angular_bracket,
-                        right_angular_bracket,
-                    }) => {
-                        if type_symbol.type_scheme.type_variables.len() != arguments.len() {
+            if let Some(expected_type_symbol) = module.get_type_symbol_by_name(&name) {
+                match (
+                    expected_type_symbol.type_value.clone(),
+                    actual_type_arguments,
+                ) {
+                    (Type::TypeScheme(expected_type_scheme), Some(actual_type_arguments)) => {
+                        if expected_type_scheme.type_variables.len()
+                            != actual_type_arguments.arguments.len()
+                        {
                             Err(UnifyError {
                                 position: join_position(
-                                    left_angular_bracket.position,
-                                    right_angular_bracket.position,
+                                    actual_type_arguments.left_angular_bracket.position,
+                                    actual_type_arguments.right_angular_bracket.position,
                                 ),
                                 kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
-                                    actual_length: arguments.len(),
-                                    expected_type_parameter_names: type_symbol
-                                        .type_scheme
+                                    actual_length: actual_type_arguments.arguments.len(),
+                                    expected_type_parameter_names: expected_type_scheme
                                         .type_variables
-                                        .clone(),
+                                        .clone()
+                                        .into_vector(),
                                 },
                             })
                         } else {
-                            arguments
+                            let type_arguments = actual_type_arguments
+                                .arguments
                                 .iter()
                                 .map(|type_value| type_annotation_to_type(module, type_value))
-                                .collect::<Result<Vec<Type>, UnifyError>>()
+                                .collect::<Result<Vec<Type>, UnifyError>>()?;
+
+                            expected_type_scheme
+                                .type_variables
+                                .into_vector()
+                                .iter()
+                                .zip(type_arguments.into_iter())
+                                .fold(
+                                    Ok(expected_type_scheme.type_value),
+                                    |result, (expected_type_variable_name, type_value)| match result
+                                    {
+                                        Err(error) => Err(error),
+                                        Ok(result) => Ok(rewrite_type_variable_in_type(
+                                            expected_type_variable_name,
+                                            &type_value,
+                                            result,
+                                        )),
+                                    },
+                                )
                         }
                     }
-                }?;
-
-                type_symbol
-                    .type_scheme
-                    .type_variables
-                    .iter()
-                    .zip(type_arguments.into_iter())
-                    .fold(
-                        Ok(type_symbol.type_scheme.type_value),
-                        |result, (expected_type_variable_name, type_value)| match result {
-                            Err(error) => Err(error),
-                            Ok(result) => Ok(rewrite_type_variable_in_type(
-                                expected_type_variable_name,
-                                &type_value,
-                                result,
-                            )),
+                    (Type::TypeScheme(expected_type_scheme), _) => Err(UnifyError {
+                        position: name.position,
+                        kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
+                            actual_length: 0,
+                            expected_type_parameter_names: expected_type_scheme
+                                .type_variables
+                                .clone()
+                                .into_vector(),
                         },
-                    )
+                    }),
+                    (_, Some(actual_type_arguments)) => Err(UnifyError {
+                        position: join_position(
+                            actual_type_arguments.left_angular_bracket.position,
+                            actual_type_arguments.right_angular_bracket.position,
+                        ),
+                        kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
+                            actual_length: actual_type_arguments.arguments.len(),
+                            expected_type_parameter_names: vec![],
+                        },
+                    }),
+                    (_, None) => Ok(expected_type_symbol.type_value),
+                }
             } else {
                 Err(UnifyError {
                     position: name.position,
@@ -3874,7 +4003,6 @@ fn substitute_type_variable_in_type(
         Type::Float => Type::Float,
         Type::Integer => Type::Integer,
         Type::Boolean => Type::Boolean,
-        Type::ExplicitTypeVariable { name } => Type::ExplicitTypeVariable { name: name.clone() },
         Type::BuiltInOneArgumentType {
             kind,
             type_argument,
@@ -3886,7 +4014,11 @@ fn substitute_type_variable_in_type(
                 type_argument.as_ref(),
             )),
         },
-        Type::ImplicitTypeVariable { name } => {
+
+        // TODO: this might have problem since we allow type variable shadowing,
+        //  For example: let f = <T>(g: <T>(t: T) => T): Integer = 123
+        // Rewriting the T of f should not rewrite the T of g, but the current implementation will.
+        Type::ExplicitTypeVariable { name } | Type::ImplicitTypeVariable { name } => {
             if *name == *from_type_variable {
                 to_type.clone()
             } else {
@@ -3938,6 +4070,14 @@ fn substitute_type_variable_in_type(
                 })
                 .collect(),
         },
+        Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
+            type_variables: type_scheme.type_variables.clone(),
+            type_value: substitute_type_variable_in_type(
+                from_type_variable,
+                to_type,
+                &type_scheme.type_value,
+            ),
+        })),
     }
 }
 
@@ -3999,13 +4139,14 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
             .map(|(_, type_value)| type_value)
             .flat_map(get_free_type_variables_in_type)
             .collect(),
+        Type::TypeScheme(type_scheme) => get_free_type_variables_in_type(&type_scheme.type_value),
     }
 }
 
 /// To check whether a type variable occur in a type.
 /// This is to prevent absurd unification.
 /// For example, the unification of A with (A -> B) should not
-/// produce the subtituion of {A = A -> B}
+/// produce the subtitution of {A = A -> B}
 fn type_variable_occurs_in_type(type_variable: &str, typ: &Type) -> bool {
     get_free_type_variables_in_type(typ).contains(type_variable)
 }
@@ -4019,14 +4160,13 @@ fn type_variable_occurs_in_type(type_variable: &str, typ: &Type) -> bool {
 pub fn instantiate_type_scheme(module: &mut Module, type_scheme: TypeScheme) -> Type {
     let type_variable_substitutions: TypeVariableSubstitutions = type_scheme
         .type_variables
-        .into_iter()
         .map(|from_type_variable| TypeVariableSubstitution {
             from_type_variable,
             to_type: Type::ImplicitTypeVariable {
                 name: module.get_next_type_variable_name(),
             },
         })
-        .collect();
+        .into_vector();
 
     type_variable_substitutions.into_iter().fold(
         type_scheme.type_value,
