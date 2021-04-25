@@ -1,7 +1,7 @@
-do
-  let foo = 
-    | 0 => 0
-    | 1 => 1
-    | 1 => 1
-    | _ => 2
-  null
+let foo = (n: Integer): Integer => 
+  switch (n) {
+    case 0: 0
+    case 1: 1
+    case 1: 1
+    case _: 2
+  }

@@ -1,11 +1,13 @@
-enum List<Of> = 
-  Nil
-  Cons({current: Of next: List<Of>})
+enum List<T> {
+  Nil,
+  Cons({head: T, tail: List<T>})
+}
 
-let list_map<From To> 
-  : | List<From> | From => To => List<To> 
-  = | Nil _ => Nil
-    | Cons({current next}) f => Cons({
-        current: current.f
-        next: Cons({current: 0 next: Nil}).list_map(f)
-    })
+let map = <T, U>(xs: List<T>, f: (t: T) => U): List<U> =>
+  switch xs { 
+    case Nil: 
+      Nil
+    case Cons({head, tail}): 
+      Cons({head: head.f(), tail: tail.map(t => {t: t.f()})})
+                              //  ^^^^^^^^^^^^^^^^^^^^^^^^^ Error: expected List<U>, but got List<{t: U}>
+  }

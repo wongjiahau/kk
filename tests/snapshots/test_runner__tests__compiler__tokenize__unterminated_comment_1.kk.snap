@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-### hello
+/* hello
 
 ============
 EXIT CODE
@@ -23,7 +23,7 @@ STDERR
 error:
   ┌─ tests/compiler/tokenize/unterminated_comment_1.kk:1:1
   │
-1 │ ### hello
-  │ ^^^^^^^^^^ Syntax error: Unterminated multiline comment
+1 │ /* hello
+  │ ^^^^^^^^^ Syntax error: Unterminated multiline comment
   │
   = Multiline comment must start and end with three hashes. Consider adding triple hash (###) at the end.

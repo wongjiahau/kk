@@ -209,12 +209,8 @@ impl Tokenizer {
                                     return Err(ParseError {
                                         context: None,
                                         kind: ParseErrorKind::TokenizeError(
-                                            TokenizeError::UnexpectedEof {
-                                                expected_character_value: if found_asterisk {
-                                                    '/'
-                                                } else {
-                                                    '*'
-                                                },
+                                            TokenizeError::UnterminatedMultilineComment {
+                                                position: make_position(character, comment.last()),
                                             },
                                         ),
                                     })
@@ -600,7 +596,9 @@ pub fn stringify(characters: Vec<Character>) -> String {
 }
 
 pub fn get_token_type(s: String) -> TokenType {
-    if s.eq("switch") {
+    if s.eq("with") {
+        TokenType::KeywordWith
+    } else if s.eq("switch") {
         TokenType::KeywordSwitch
     } else if s.eq("case") {
         TokenType::KeywordCase

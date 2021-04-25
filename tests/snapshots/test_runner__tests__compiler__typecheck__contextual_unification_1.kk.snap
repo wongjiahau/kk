@@ -5,9 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f
-  : | {foo: Float} => Float
-  = | o => o.bar
+do {
+  let f
+    : (x: {foo: Float}) => Float
+    = o => o.bar
+}
 
 ============
 EXIT CODE
@@ -23,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_1.kk:3:14
+  ┌─ tests/compiler/typecheck/contextual_unification_1.kk:4:14
   │
-3 │   = | o => o.bar
-  │              ^^^ No such property or function
+4 │     = o => o.bar
+  │              ^^^ No such property
   │
   = Available properties:
       foo

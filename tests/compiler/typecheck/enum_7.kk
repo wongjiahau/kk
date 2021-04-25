@@ -1,9 +1,7 @@
-enum Food = Nut
-enum Tool = Nut
+enum Food { Nut }
+enum Tool { Nut }
 
 let a: Tool = Nut
-let f
-  : | Food => Integer 
-  = | Nut => 123
+let f = (Nut: Food): Integer => 123
 
-do a.f
+do a.f()

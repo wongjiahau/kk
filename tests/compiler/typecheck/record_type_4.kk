@@ -1,6 +1,4 @@
-do
-  let foo = {
-    x: 2
-    x: "hello"
-  }
-  null
+let foo = {
+  x: 2,
+  x: "hello"
+}

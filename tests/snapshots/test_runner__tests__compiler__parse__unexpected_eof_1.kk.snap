@@ -35,9 +35,8 @@ error:
 
     Example #1:
 
-      | x => x.add(1)
+      x => x.add(1)
 
     Example #2:
 
-      | true true => true
-      | _ _ => false
+      (x: Boolean, y: Integer): Boolean => true

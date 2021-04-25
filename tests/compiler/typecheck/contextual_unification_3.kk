@@ -1,3 +1,1 @@
-let f 
-  : | Integer => Null
-  = | x => 2
+let f = (x: Integer): Null => 2

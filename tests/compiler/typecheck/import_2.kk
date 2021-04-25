@@ -1,4 +1,4 @@
 // name clashing
-import "./import_1.kk" { foo }
+import {foo} from "./import_1.kk"
 
 let foo: Integer = 2

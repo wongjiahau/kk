@@ -1,2 +1,2 @@
 // Unterminated string interpolation
-do "I am //{123 
+do "I am ${123 

@@ -3,7 +3,6 @@ use crate::{non_empty::NonEmpty, tokenize::Character};
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    /// @deprecated: to be repurposed as `const`
     Let(LetStatement),
 
     Expression(Expression),
@@ -293,7 +292,7 @@ pub enum Expression {
         payload: Option<Box<ExpressionEnumConstructorPayload>>,
     },
 
-    /// To be deprecated soon, due to unfamiliar syntax
+    /// This cannot be constructed directly from syntax, it is only for internal usage
     BranchedFunction(Box<BranchedFunction>),
 
     /// Typescript-styled function
@@ -320,16 +319,7 @@ pub enum Expression {
         elements: Vec<Expression>,
         right_square_bracket: Token,
     },
-
-    /// To be deprecated after syntax revamp
-    Let {
-        keyword_let: Token,
-        left: Box<DestructurePattern>,
-        type_annotation: Option<TypeAnnotation>,
-        right: Box<Expression>,
-        body: Box<Expression>,
-    },
-    ApplicativeLet(ApplicativeLet),
+    With(WithExpression),
     If {
         keyword_if: Token,
         condition: Box<Expression>,
@@ -341,17 +331,34 @@ pub enum Expression {
         keyword_switch: Token,
         expression: Box<Expression>,
         left_curly_bracket: Token,
-        cases: NonEmpty<SwitchCase>,
+        cases: Box<NonEmpty<SwitchCase>>,
         right_curly_bracket: Token,
     },
-    Block {
+    Block(Block),
+    UnsafeJavascript {
+        code: Token,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum Block {
+    WithBrackets {
         left_curly_bracket: Token,
         statements: Vec<Statement>,
         right_curly_bracket: Token,
     },
-    UnsafeJavascript {
-        code: Token,
+    WithoutBrackets {
+        statements: Box<NonEmpty<Statement>>,
     },
+}
+
+impl Block {
+    pub fn statements(self) -> Vec<Statement> {
+        match self {
+            Block::WithBrackets { statements, .. } => statements,
+            Block::WithoutBrackets { statements } => statements.into_vector(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -362,9 +369,9 @@ pub struct SwitchCase {
 }
 
 #[derive(Debug, Clone)]
-pub struct ApplicativeLet {
-    pub keyword_let: Token,
-    pub left_patterns: NonEmpty<DestructurePattern>,
+pub struct WithExpression {
+    pub keyword_with: Token,
+    pub left_patterns: Box<NonEmpty<DestructurePattern>>,
     pub binary_function_name: Token,
     pub right: Box<Expression>,
     pub body: Box<Expression>,
@@ -436,20 +443,20 @@ pub struct ArrowFunction {
 #[derive(Debug, Clone)]
 pub struct FunctionParameters {
     pub left_parenthesis: Token,
-    pub parameters: NonEmpty<FunctionParameter>,
+    pub parameters: Box<NonEmpty<FunctionParameter>>,
     pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
 pub enum ArrowFunctionParameters {
     WithoutParenthesis(DestructurePattern),
-    WithParenthesis(FunctionParameters),
+    WithParenthesis(Box<FunctionParameters>),
 }
 
 impl ArrowFunctionParameters {
     pub fn parameters(self) -> NonEmpty<FunctionParameter> {
         match self {
-            ArrowFunctionParameters::WithParenthesis(parameters) => parameters.parameters,
+            ArrowFunctionParameters::WithParenthesis(parameters) => *parameters.parameters,
             ArrowFunctionParameters::WithoutParenthesis(pattern) => NonEmpty {
                 head: FunctionParameter {
                     pattern,
@@ -458,6 +465,10 @@ impl ArrowFunctionParameters {
                 tail: vec![],
             },
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn len(&self) -> usize {
@@ -530,6 +541,7 @@ pub enum TokenType {
     KeywordElse,
     KeywordSwitch,
     KeywordCase,
+    KeywordWith,
     KeywordLet,
     KeywordType,
     KeywordEnum,

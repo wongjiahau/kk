@@ -1,5 +1,7 @@
-do
-  let bomb = 
-    | null => true
-    | null => false
-  null
+do {
+  let bomb = (n) => 
+    switch(n) {
+      case null: true
+      case null: false
+    }
+}

@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let map = (x: Integer, f: (n: Integer) => Integer): [Integer] => [x.f()]
+
+do {
+  with 0 = 123.map;
+     // Error, non-exhaustive pattern
+  null
+}
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/with_statement_4.kk:4:8
+  │
+4 │   with 0 = 123.map;
+  │        ^ Non-exhaustive cases
+  │
+  = Missing case(s):
+
+      case _:

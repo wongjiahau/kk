@@ -5,12 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do
-  let foo = {
-    x: 2
-    x: "hello"
-  }
-  null
+let foo = {
+  x: 2,
+  x: "hello"
+}
 
 ============
 EXIT CODE
@@ -26,9 +24,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_type_4.kk:4:5
+  ┌─ tests/compiler/typecheck/record_type_4.kk:3:3
   │
-4 │     x: "hello"
-  │     ^ Duplicated record key
+3 │   x: "hello"
+  │   ^ Duplicated record key
   │
   = This key is already declared before in this record. Consider removing or renaming it.

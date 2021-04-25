@@ -1,15 +1,11 @@
-let identity<A>
-  : | A => A
-  = | x => x
+let identity = <A>(a: A): A => a
 
-let constant<A> 
-  : | A => Integer
-  = | _ => 2
+let constant = <A>(_: A): Integer => 2
 
-let map<A B>
-  : | A | A => B => B
-  = | x f => x.f
+let map = <A, B>(a: A, f: (a: A) => B): B => a.f()
 
-let x: String = "hello".map(identity)
-let y: String = "hello".map(| _ => "yo")
-let z: String = "hello".map(constant)
+do {
+  let x: String = "hello".map(identity);
+  let y: String = "hello".map((_) => "yo");
+  let z: String = "hello".map(constant)
+}

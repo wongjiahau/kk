@@ -1,9 +1,6 @@
-let foo 
-  : | String => String
-  = | _ => "Hello"
+let foo = (s: String): String => "Hello"
 
-let foo
-  : | Integer => String
-  = | _ => "World"
+let foo = (i: Integer): String => "World"
 
-do true.foo.print
+do true.foo().print()
+//      ^^^^^ Error: no matching overloaded function found

@@ -176,9 +176,6 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
             )
         }
         TypecheckedExpression::Javascript { code } => code,
-        TypecheckedExpression::Promise(expression) => {
-            format!("Promise.resolve({})", transpile_expression(*expression))
-        }
         TypecheckedExpression::If {
             condition,
             if_true,

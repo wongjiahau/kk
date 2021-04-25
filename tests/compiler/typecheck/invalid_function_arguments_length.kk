@@ -1,5 +1,3 @@
-export let foo
-  : | Integer => Integer
-  = | _ => 2
+export let foo = (i: Integer): Integer => 2
 
-do 2.foo(3).print
+do 2.foo(3).print()

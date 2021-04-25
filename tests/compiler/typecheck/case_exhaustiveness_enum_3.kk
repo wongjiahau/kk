@@ -1,6 +1,8 @@
-enum Option<T> = Some(T) None
+enum Option<T> { Some(T), None }
 
-do
-  let is_some_some = 
-    | Some(Some(_)) => true
-  null
+do {
+  let isSomeSome = x =>
+    switch x {
+      case Some(Some(_)) : true
+    }
+}

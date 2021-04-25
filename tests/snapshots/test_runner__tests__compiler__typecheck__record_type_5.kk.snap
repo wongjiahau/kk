@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo: {
-  x: Integer
+  x: Integer,
   y: Integer
 } = {
   x: 1

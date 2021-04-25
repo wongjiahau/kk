@@ -5,11 +5,19 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do
-  let f = | {x y: {z}} => {x z}
-  let x = {x: "hi" y: {z: 3}}.f
-  let y = {x: 2 y: {z: 3}}.f
-  null
+do {
+  let f = {x, y: {z}} => {x, z};
+  //       ^ Initially we are not sure what is the type of x, so we assign it an implicit type variable, say T1
+
+
+  let x = {x: "hi", y: {z: 3}}.f();
+  //          ^^^^ With this, we know the type of x should be String
+
+
+  let y = {x: 2, y: {z: 3}}.f()
+  //          ^ Error: this should be String
+
+}
 
 ============
 EXIT CODE
@@ -25,13 +33,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/let_inference_1.kk:4:15
-  │
-4 │   let y = {x: 2 y: {z: 3}}.f
-  │               ^ Type mismatch
-  │
-  = +---------------+-------------+
-    | EXPECTED TYPE | ACTUAL TYPE |
-    +---------------+-------------+
-    | - String      | + Integer   |
-    +---------------+-------------+
+   ┌─ tests/compiler/typecheck/let_inference_1.kk:10:15
+   │
+10 │   let y = {x: 2, y: {z: 3}}.f()
+   │               ^ Type mismatch
+   │
+   = +---------------+-------------+
+     | EXPECTED TYPE | ACTUAL TYPE |
+     +---------------+-------------+
+     | - String      | + Integer   |
+     +---------------+-------------+

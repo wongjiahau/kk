@@ -1,4 +1,4 @@
-do
-  let x = 2
-  let f = "hi".x
-  null
+do {
+  let x = 2;
+  let f = "hi".x()
+}

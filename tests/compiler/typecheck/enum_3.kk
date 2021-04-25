@@ -1,6 +1,4 @@
-enum Option<T> = Some(T) None
+enum Option<T> { Some(T), None }
 
-do
-  let a = Some(None)
-  let x: Option<String> = a
-  null
+let a = Some(None)
+let x: Option<String> = a

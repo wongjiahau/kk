@@ -5,11 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do
-  let isFriendly =
-    | "cat" => true
-    | "tiger" => false
-  null
+let isFriendly = (s: String): Boolean =>
+  switch s {
+    case "cat": true
+    case "tiger": false
+  }
 
 ============
 EXIT CODE
@@ -25,12 +25,11 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_string_1.kk:3:5
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_string_1.kk:2:3
   │
-3 │ ╭     | "cat" => true
-4 │ │     | "tiger" => false
-  │ ╰──────────────────────^ Non-exhaustive cases
+2 │   switch s {
+  │   ^^^^^^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      | _ => ...
+      case _:

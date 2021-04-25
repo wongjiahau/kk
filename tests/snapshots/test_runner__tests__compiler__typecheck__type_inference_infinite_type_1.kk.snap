@@ -31,7 +31,7 @@ error:
   │
   = Infinite type expansion will happen when substituting `@TVAR3` into:
 
-      |
+      (
         @TVAR3
-      =>
+      ) =>
         @TVAR4

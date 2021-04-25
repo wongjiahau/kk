@@ -5,11 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let s
-  : | Null => String
-  = | null =>
-    let x = {..} # Error: missing type annotation
-    x
+let x = {...} // Error: missing type annotation
 
 ============
 EXIT CODE
@@ -25,10 +21,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_wildcard_3.kk:4:14
+  ┌─ tests/compiler/typecheck/record_wildcard_3.kk:1:10
   │
-4 │     let x = {..} # Error: missing type annotation
-  │              ^^ Missing Type Annotation for Record Wildcard
+1 │ let x = {...} // Error: missing type annotation
+  │          ^^^ Missing Type Annotation for Record Wildcard
   │
   = Without type annotation, the compiler cannot populate the properties automatically.
     Consider adding type annotation on the outer level to fix this problem.

@@ -21,13 +21,15 @@ pub enum ParseErrorKind {
     RecordWilcardCanOnlyAppearOnce {
         position: Position,
     },
+    ExpectedPattern {
+        position: Position,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ParseContext {
     // Expression
     Expression,
-    ExpressionLet,
     ExpressionFunction,
     DotExpression,
     ExpressionFunctionCall,
@@ -35,25 +37,21 @@ pub enum ParseContext {
     ExpressionRecordUpdate,
     ExpressionEnumConstructor,
     ExpressionQuoted,
-    ExpressionMonadicLet,
     ExpressionSwitch,
     ExpressionIf,
-    ExpressionBlock,
 
     // Statement
     Statement,
-    StatementFunction,
     StatementLet,
     StatementType,
     StatementEnum,
     StatementImport,
+    StatementWith,
 
     // Type annotation
     TypeAnnotationRecord,
     TypeAnnotationArray,
-    TypeAnnotationFunction,
     TypeAnnotationQuoted,
-    TypeAnnotationPromise,
 
     // Destructure pattern
     Pattern,
@@ -140,6 +138,7 @@ impl<'a> Parser<'a> {
         let mut statements = Vec::<Statement>::new();
         while let Some(token) = self.peek_next_meaningful_token()? {
             match token.token_type {
+                // This is for parsing code snippet within documentation string (i.e. multiline comment)
                 TokenType::TripleBacktick => return Ok(statements),
                 _ => {
                     statements.extend(self.parse_statement()?);
@@ -159,26 +158,30 @@ impl<'a> Parser<'a> {
             Some(token) => match token.token_type {
                 TokenType::KeywordLet => {
                     let token = self.next_meaningful_token()?.unwrap();
-                    self.parse_let_statement(keyword_export, token.clone())
+                    self.parse_let_statement(keyword_export, token)
                         .map(vectorized)
+                }
+                TokenType::KeywordWith => {
+                    let token = self.next_meaningful_token()?.unwrap();
+                    self.parse_with_statement(token).map(vectorized)
                 }
                 TokenType::KeywordType => {
                     let token = self.next_meaningful_token()?.unwrap();
-                    self.parse_type_statement(keyword_export, token.clone())
+                    self.parse_type_statement(keyword_export, token)
                         .map(vectorized)
                 }
                 TokenType::KeywordEnum => {
                     let token = self.next_meaningful_token()?.unwrap();
-                    self.parse_enum_statement(keyword_export, token.clone())
+                    self.parse_enum_statement(keyword_export, token)
                         .map(vectorized)
                 }
                 TokenType::KeywordDo => {
                     let token = self.next_meaningful_token()?.unwrap();
-                    self.parse_do_statement(token.clone()).map(vectorized)
+                    self.parse_do_statement(token).map(vectorized)
                 }
                 TokenType::KeywordImport => {
                     let token = self.next_meaningful_token()?.unwrap();
-                    self.parse_import_statement(token.clone()).map(vectorized)
+                    self.parse_import_statement(token).map(vectorized)
                 }
                 TokenType::MultilineComment { characters } => {
                     // Remove the asterisk at the first column
@@ -230,6 +233,60 @@ impl<'a> Parser<'a> {
             },
             None => Err(Parser::unexpected_eof(context)),
         }
+    }
+
+    fn parse_with_statement(&mut self, keyword_with: Token) -> Result<Statement, ParseError> {
+        let context = Some(ParseContext::StatementWith);
+        let pattern = self.parse_destructure_pattern()?;
+        self.eat_token(TokenType::Equals, context)?;
+        let (binary_function_name, right) = {
+            match self.parse_expression()? {
+                Expression::RecordAccess {
+                    expression,
+                    property_name,
+                } => Ok((property_name, expression)),
+                other => panic!(
+                    "Error, expected record access for the right of with statement but got {:#?}",
+                    other
+                ),
+            }
+        }?;
+        self.eat_token(TokenType::Semicolon, context)?;
+        let mut statements = vec![];
+        loop {
+            match self.peek_next_meaningful_token()? {
+                Some(Token {
+                    token_type: TokenType::RightCurlyBracket,
+                    ..
+                }) => break,
+                _ => {
+                    statements.extend(self.parse_statement()?);
+                    if self.try_eat_token(TokenType::Semicolon)?.is_none() {
+                        break;
+                    }
+                }
+            }
+        }
+        let statements = match statements.split_first() {
+            None => panic!("With statement need to have at least one trailing statement"),
+            Some((head, tail)) => Ok(NonEmpty {
+                head: head.clone(),
+                tail: tail.into(),
+            }),
+        }?;
+        let with_expression = Expression::With(WithExpression {
+            keyword_with,
+            left_patterns: Box::new(NonEmpty {
+                head: pattern,
+                tail: vec![],
+            }),
+            binary_function_name,
+            right,
+            body: Box::new(Expression::Block(Block::WithoutBrackets {
+                statements: Box::new(statements),
+            })),
+        });
+        Ok(Statement::Expression(with_expression))
     }
 
     fn parse_let_statement(
@@ -318,6 +375,7 @@ impl<'a> Parser<'a> {
 
     fn parse_import_statement(&mut self, keyword_import: Token) -> Result<Statement, ParseError> {
         let context = Some(ParseContext::StatementImport);
+        // TODO: parse pattern instead
         self.eat_token(TokenType::LeftCurlyBracket, context)?;
         let first_name = {
             let name = self.eat_token(TokenType::Identifier, context)?;
@@ -463,7 +521,6 @@ impl<'a> Parser<'a> {
     }
 
     fn try_parse_type_variables_declaration(&mut self) -> Result<Vec<Token>, ParseError> {
-        let context = Some(ParseContext::TypeVariablesDeclaration);
         if let Some(less_than) = self.try_eat_token(TokenType::LessThan)? {
             self.parse_type_variables_declaration(less_than)
         } else {
@@ -473,7 +530,7 @@ impl<'a> Parser<'a> {
 
     fn parse_type_variables_declaration(
         &mut self,
-        less_than_token: Token,
+        _less_than: Token,
     ) -> Result<Vec<Token>, ParseError> {
         let context = Some(ParseContext::TypeVariablesDeclaration);
         let mut type_variables = vec![];
@@ -513,46 +570,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_branched_function(
-        &mut self,
-        pipe_token: Token,
-    ) -> Result<BranchedFunction, ParseError> {
-        if let Some(period) = self.try_eat_token(TokenType::Period)? {
-            self.parse_shorthand_dot_expression(period)
-        } else {
-            // This is a normal function literal
-            let mut branches = Vec::<FunctionBranch>::new();
-            let first_branch = self.parse_function_branch(pipe_token)?;
-            while let Some(Token {
-                token_type: TokenType::Pipe,
-                ..
-            }) = self.peek_next_meaningful_token()?
-            {
-                let pipe_token = self.next_meaningful_token()?.unwrap().clone();
-                let branch = self.parse_function_branch(pipe_token)?;
-                branches.push(branch);
-            }
-            Ok(BranchedFunction {
-                branches: NonEmpty {
-                    head: first_branch,
-                    tail: branches,
-                },
-            })
-        }
-    }
-
-    fn parse_function_branch(&mut self, pipe_token: Token) -> Result<FunctionBranch, ParseError> {
-        let context = Some(ParseContext::ExpressionFunction);
-        let parameters = self.parse_function_parameters()?;
-        panic!("To be removed");
-        // self.eat_token(TokenType::FatArrowRight, context)?;
-        // let body = self.parse_expression()?;
-        // Ok(FunctionBranch {
-        //     start_token: pipe_token,
-        //     parameters,
-        //     body: Box::new(body),
-        // })
-    }
     fn parse_function_parameters(&mut self) -> Result<FunctionParameters, ParseError> {
         let context = Some(ParseContext::FunctionParameters);
         let left_parenthesis = self.eat_token(TokenType::LeftParenthesis, context)?;
@@ -606,7 +623,7 @@ impl<'a> Parser<'a> {
         };
         Ok(FunctionParameters {
             left_parenthesis,
-            parameters: (NonEmpty {
+            parameters: Box::new(NonEmpty {
                 head: first_parameter,
                 tail: tail_parameters,
             }),
@@ -684,15 +701,6 @@ impl<'a> Parser<'a> {
                         left_curly_bracket,
                         key_type_annotation_pairs,
                         right_curly_bracket,
-                    })
-                }
-                TokenType::Bang => {
-                    let bang_token = token;
-                    let context = Some(ParseContext::TypeAnnotationPromise);
-                    let type_annotation = self.parse_type_annotation(context)?;
-                    Ok(TypeAnnotation::Promise {
-                        bang_token,
-                        type_annotation: Box::new(type_annotation),
                     })
                 }
                 TokenType::LeftParenthesis => {
@@ -932,10 +940,6 @@ impl<'a> Parser<'a> {
                     let keyword_switch = self.next_meaningful_token()?.unwrap();
                     self.parse_switch_expression(keyword_switch)
                 }
-                TokenType::KeywordLet => {
-                    let let_token = self.next_meaningful_token()?.unwrap();
-                    self.parse_let_expression(let_token)
-                }
                 TokenType::JavascriptCode => Ok(Expression::UnsafeJavascript {
                     code: self.next_meaningful_token()?.unwrap(),
                 }),
@@ -948,6 +952,8 @@ impl<'a> Parser<'a> {
                         self.parse_arrow_function(type_variables, function_parameters)?,
                     )))
                 }
+
+                // In this branch we will try to pass lambda expression, i.e. `x => y` OR `(x, y) => z`
                 TokenType::LeftParenthesis => {
                     let left_parenthesis = self.next_meaningful_token()?.unwrap();
                     let expression = self.parse_expression()?;
@@ -958,96 +964,110 @@ impl<'a> Parser<'a> {
                             },
                             context: None, // TODO: add context
                         }),
-                        Some(token) => match token.token_type {
-                            TokenType::RightParenthesis => {
-                                if self.try_eat_token(TokenType::FatArrowRight)?.is_some() {
-                                    let body = self.parse_expression()?;
-                                    Ok(Expression::ArrowFunction(Box::new(ArrowFunction {
+                        Some(token) => {
+                            match token.token_type {
+                                TokenType::RightParenthesis => {
+                                    if self.try_eat_token(TokenType::FatArrowRight)?.is_some() {
+                                        let body = self.parse_expression()?;
+                                        Ok(Expression::ArrowFunction(Box::new(ArrowFunction {
                                         type_variables: vec![],
                                         return_type_annotation: None,
                                         parameters: ArrowFunctionParameters::WithParenthesis(
-                                            FunctionParameters {
-                                                left_parenthesis: left_parenthesis,
-                                                parameters: NonEmpty {
+                                            Box::new(FunctionParameters {
+                                                left_parenthesis,
+                                                parameters: Box::new(NonEmpty {
                                                     head: FunctionParameter {
                                                         type_annotation: Box::new(None),
                                                         pattern: convert_expression_to_pattern(
-                                                            expression,
+                                                            expression, Some(ParseContext::ExpressionFunction),
                                                         )?,
                                                     },
                                                     tail: vec![],
-                                                },
+                                                }),
                                                 right_parenthesis: token,
-                                            },
+                                            }),
                                         ),
                                         body: Box::new(body),
                                     })))
-                                } else if self.try_eat_token(TokenType::Colon)?.is_some() {
-                                    let return_type_annotation =
-                                        self.parse_type_annotation(None)?;
-                                    let body = self.parse_expression()?;
-                                    Ok(Expression::ArrowFunction(Box::new(ArrowFunction {
-                                        type_variables: vec![],
-                                        return_type_annotation: Some(return_type_annotation),
-                                        parameters: ArrowFunctionParameters::WithParenthesis(
-                                            FunctionParameters {
-                                                left_parenthesis: left_parenthesis,
-                                                parameters: NonEmpty {
-                                                    head: FunctionParameter {
-                                                        type_annotation: Box::new(None),
-                                                        pattern: convert_expression_to_pattern(
-                                                            expression,
-                                                        )?,
-                                                    },
-                                                    tail: vec![],
-                                                },
-                                                right_parenthesis: token,
-                                            },
-                                        ),
-                                        body: Box::new(body),
-                                    })))
-                                } else {
-                                    Ok(expression)
+                                    } else if self.try_eat_token(TokenType::Colon)?.is_some() {
+                                        let return_type_annotation =
+                                            self.parse_type_annotation(None)?;
+                                        let body = self.parse_expression()?;
+                                        Ok(Expression::ArrowFunction(Box::new(ArrowFunction {
+                                            type_variables: vec![],
+                                            return_type_annotation: Some(return_type_annotation),
+                                            parameters: ArrowFunctionParameters::WithParenthesis(
+                                                Box::new(FunctionParameters {
+                                                    left_parenthesis,
+                                                    parameters: Box::new(NonEmpty {
+                                                        head: FunctionParameter {
+                                                            type_annotation: Box::new(None),
+                                                            pattern: convert_expression_to_pattern(
+                                                                expression,
+                                                        Some(ParseContext::ExpressionFunction)
+                                                            )?,
+                                                        },
+                                                        tail: vec![],
+                                                    }),
+                                                    right_parenthesis: token,
+                                                }),
+                                            ),
+                                            body: Box::new(body),
+                                        })))
+                                    } else {
+                                        // This is not a lambda expression
+                                        // Just an expression grouped by parentheses
+                                        Ok(expression)
+                                    }
+                                }
+                                TokenType::Colon => {
+                                    let context = Some(ParseContext::ExpressionFunction);
+                                    let type_annotation = self.parse_type_annotation(context)?;
+                                    let parameters = self.parse_function_parameters_tail(
+                                        left_parenthesis,
+                                        FunctionParameter {
+                                            pattern: convert_expression_to_pattern(
+                                                expression,
+                                                Some(ParseContext::ExpressionFunction),
+                                            )?,
+                                            type_annotation: Box::new(Some(type_annotation)),
+                                        },
+                                        false,
+                                    )?;
+                                    Ok(Expression::ArrowFunction(Box::new(
+                                        self.parse_arrow_function(vec![], parameters)?,
+                                    )))
+                                }
+                                TokenType::Comma => {
+                                    let parameters = self.parse_function_parameters_tail(
+                                        left_parenthesis,
+                                        FunctionParameter {
+                                            pattern: convert_expression_to_pattern(
+                                                expression,
+                                                Some(ParseContext::ExpressionFunction),
+                                            )?,
+                                            type_annotation: Box::new(None),
+                                        },
+                                        true,
+                                    )?;
+                                    Ok(Expression::ArrowFunction(Box::new(
+                                        self.parse_arrow_function(vec![], parameters)?,
+                                    )))
+                                }
+                                other => {
+                                    panic!("Cannot handle {:?}", other)
                                 }
                             }
-                            TokenType::Colon => {
-                                let context = Some(ParseContext::ExpressionFunction);
-                                let type_annotation = self.parse_type_annotation(context)?;
-                                let parameters = self.parse_function_parameters_tail(
-                                    left_parenthesis,
-                                    FunctionParameter {
-                                        pattern: convert_expression_to_pattern(expression)?,
-                                        type_annotation: Box::new(Some(type_annotation)),
-                                    },
-                                    false,
-                                )?;
-                                Ok(Expression::ArrowFunction(Box::new(
-                                    self.parse_arrow_function(vec![], parameters)?,
-                                )))
-                            }
-                            TokenType::Comma => {
-                                let parameters = self.parse_function_parameters_tail(
-                                    left_parenthesis,
-                                    FunctionParameter {
-                                        pattern: convert_expression_to_pattern(expression)?,
-                                        type_annotation: Box::new(None),
-                                    },
-                                    true,
-                                )?;
-                                Ok(Expression::ArrowFunction(Box::new(
-                                    self.parse_arrow_function(vec![], parameters)?,
-                                )))
-                            }
-                            other => {
-                                panic!("Cannot handle {:?}", other)
-                            }
-                        },
+                        }
                     }
                 }
                 _ => {
                     let simple_expression = self.parse_simple_expression()?;
                     if self.try_eat_token(TokenType::FatArrowRight)?.is_some() {
-                        let pattern = convert_expression_to_pattern(simple_expression)?;
+                        let pattern = convert_expression_to_pattern(
+                            simple_expression,
+                            Some(ParseContext::ExpressionFunction),
+                        )?;
                         let body = self.parse_expression()?;
                         Ok(Expression::ArrowFunction(Box::new(ArrowFunction {
                             type_variables: vec![],
@@ -1077,7 +1097,7 @@ impl<'a> Parser<'a> {
         Ok(ArrowFunction {
             type_variables,
             return_type_annotation,
-            parameters: ArrowFunctionParameters::WithParenthesis(parameters),
+            parameters: ArrowFunctionParameters::WithParenthesis(Box::new(parameters)),
             body: Box::new(body),
         })
     }
@@ -1156,7 +1176,7 @@ impl<'a> Parser<'a> {
             if let Some(right_square_bracket) = self.try_eat_token(TokenType::RightSquareBracket)? {
                 break right_square_bracket;
             };
-            if elements.len() > 0 {
+            if !elements.is_empty() {
                 self.eat_token(TokenType::Comma, None)?;
             }
             elements.push(self.parse_expression()?);
@@ -1192,7 +1212,7 @@ impl<'a> Parser<'a> {
                         wildcard: Some(wildcard),
                         key_value_pairs: vec![RecordKeyValue {
                             key: key.clone(),
-                            value: Expression::Identifier(key.clone()),
+                            value: Expression::Identifier(key),
                         }],
                         right_curly_bracket,
                     });
@@ -1201,19 +1221,13 @@ impl<'a> Parser<'a> {
                         left_curly_bracket,
                         RecordKeyValue {
                             key: key.clone(),
-                            value: Expression::Identifier(key.clone()),
+                            value: Expression::Identifier(key),
                         },
                     );
                 } else {
                     self.eat_token(TokenType::Colon, context)?;
                     let value = self.parse_expression()?;
-                    return self.parse_record(
-                        left_curly_bracket,
-                        RecordKeyValue {
-                            key: key.clone(),
-                            value,
-                        },
-                    );
+                    return self.parse_record(left_curly_bracket, RecordKeyValue { key, value });
                 }
             }
         };
@@ -1286,11 +1300,11 @@ impl<'a> Parser<'a> {
                         statements.extend(self.parse_statement()?);
                     }
                 };
-                Ok(Expression::Block {
+                Ok(Expression::Block(Block::WithBrackets {
                     left_curly_bracket,
                     statements,
                     right_curly_bracket,
-                })
+                }))
             }
         }
     }
@@ -1367,7 +1381,7 @@ impl<'a> Parser<'a> {
             keyword_switch,
             expression: Box::new(expression),
             left_curly_bracket,
-            cases: NonEmpty { head, tail },
+            cases: Box::new(NonEmpty { head, tail }),
             right_curly_bracket,
         })
     }
@@ -1395,56 +1409,6 @@ impl<'a> Parser<'a> {
             if_true: Box::new(self.parse_expression()?),
             keyword_else: self.eat_token(TokenType::KeywordElse, context)?,
             if_false: Box::new(self.parse_expression()?),
-        })
-    }
-
-    fn parse_let_expression(&mut self, keyword_let: Token) -> Result<Expression, ParseError> {
-        if self.try_eat_token(TokenType::Slash)?.is_some() {
-            let context = Some(ParseContext::ExpressionMonadicLet);
-            let binary_function_name = self.eat_token(TokenType::Identifier, context)?;
-            let left_patterns = {
-                let first_left_pattern = self.parse_destructure_pattern()?;
-                let mut tail_left_patterns = vec![];
-                loop {
-                    match self.peek_next_meaningful_token()? {
-                        Some(Token {
-                            token_type: TokenType::Equals,
-                            ..
-                        }) => {
-                            break NonEmpty {
-                                head: first_left_pattern,
-                                tail: tail_left_patterns,
-                            }
-                        }
-                        _ => tail_left_patterns.push(self.parse_destructure_pattern()?),
-                    }
-                }
-            };
-            self.eat_token(TokenType::Equals, context)?;
-            return Ok(Expression::ApplicativeLet(ApplicativeLet {
-                keyword_let,
-                left_patterns,
-                binary_function_name,
-                right: Box::new(self.parse_expression()?),
-                body: Box::new(self.parse_expression()?),
-            }));
-        }
-        let context = Some(ParseContext::ExpressionLet);
-        let left = self.parse_destructure_pattern()?;
-        let type_annotation = if self.try_eat_token(TokenType::Colon)?.is_some() {
-            Some(self.parse_type_annotation(context)?)
-        } else {
-            None
-        };
-        self.eat_token(TokenType::Equals, context)?;
-        let right = self.parse_expression()?;
-        let return_value = self.parse_expression()?;
-        Ok(Expression::Let {
-            keyword_let,
-            left: Box::new(left),
-            type_annotation,
-            right: Box::new(right),
-            body: Box::new(return_value),
         })
     }
 
@@ -1597,7 +1561,10 @@ fn variant_eq(a: &TokenType, b: &TokenType) -> bool {
 /// This function is for converting an expression into a pattern.
 /// This is possible because a pattern should be a subset of an expression.  
 /// In other words, every valid pattern is also a valid expression, but not vice versa.
-fn convert_expression_to_pattern(expression: Expression) -> Result<DestructurePattern, ParseError> {
+fn convert_expression_to_pattern(
+    expression: Expression,
+    context: Option<ParseContext>,
+) -> Result<DestructurePattern, ParseError> {
     match expression {
         Expression::Identifier(token) => match token.representation.as_str() {
             "_" => Ok(DestructurePattern::Underscore(token)),
@@ -1618,11 +1585,61 @@ fn convert_expression_to_pattern(expression: Expression) -> Result<DestructurePa
                 .map(|pair| {
                     Ok(DestructuredRecordKeyValue {
                         key: pair.key,
-                        as_value: Some(convert_expression_to_pattern(pair.value)?),
+                        as_value: Some(convert_expression_to_pattern(
+                            pair.value,
+                            Some(ParseContext::ExpressionFunction),
+                        )?),
                     })
                 })
                 .collect::<Result<Vec<DestructuredRecordKeyValue>, ParseError>>()?,
         }),
-        other => panic!("Uncovered = {:?}", other),
+        Expression::EnumConstructor { name, payload } => Ok(DestructurePattern::EnumConstructor {
+            name,
+            payload: match payload {
+                None => None,
+                Some(payload) => Some(Box::new(DestructurePatternEnumConstructorPayload {
+                    left_parenthesis: payload.left_parenthesis,
+                    pattern: convert_expression_to_pattern(
+                        payload.expression,
+                        Some(ParseContext::ExpressionFunction),
+                    )?,
+                    right_parenthesis: payload.right_parenthesis,
+                })),
+            },
+        }),
+        Expression::Boolean { token, value } => Ok(DestructurePattern::Boolean { token, value }),
+        Expression::Integer(token) => Ok(DestructurePattern::Infinite {
+            token,
+            kind: InfinitePatternKind::Integer,
+        }),
+        Expression::String(token) => Ok(DestructurePattern::Infinite {
+            token,
+            kind: InfinitePatternKind::String,
+        }),
+        Expression::Character(token) => Ok(DestructurePattern::Infinite {
+            token,
+            kind: InfinitePatternKind::Character,
+        }),
+        Expression::Float(_)
+        | Expression::InterpolatedString { .. }
+        | Expression::Quoted { .. }
+        | Expression::BranchedFunction(_)
+        | Expression::ArrowFunction(_)
+        | Expression::FunctionCall(_)
+        | Expression::RecordAccess { .. }
+        | Expression::RecordUpdate { .. }
+        | Expression::With(_)
+        | Expression::If { .. }
+        | Expression::Switch { .. }
+        | Expression::Block(_)
+        | Expression::UnsafeJavascript { .. } => Err(ParseError {
+            context,
+            kind: ParseErrorKind::ExpectedPattern {
+                position: get_expression_position(&expression),
+            },
+        }),
+        Expression::Array { .. } => {
+            panic!("Not sure how to handle yet")
+        }
     }
 }

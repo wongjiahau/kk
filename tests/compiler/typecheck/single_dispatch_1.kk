@@ -1,6 +1,2 @@
-let foo
-  : | String => String
-  = | _ => "hello"
-let foo<T> 
-  : | T => String
-  = | _ => "hello"
+let foo = (s: String): String => "Hello"
+let foo = <T>(t: T): String => "hello"

@@ -79,7 +79,6 @@ pub enum TypecheckedExpression {
         if_true: Box<TypecheckedExpression>,
         if_false: Box<TypecheckedExpression>,
     },
-    Promise(Box<TypecheckedExpression>),
     Block {
         statements: Vec<TypecheckedStatement>,
         return_value: Box<TypecheckedExpression>,

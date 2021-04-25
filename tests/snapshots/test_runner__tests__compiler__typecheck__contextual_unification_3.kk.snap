@@ -5,9 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let f
-  : | Integer => Null
-  = | x => 2
+let f = (x: Integer): Null => 2
 
 ============
 EXIT CODE
@@ -23,10 +21,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_3.kk:3:12
+  ┌─ tests/compiler/typecheck/contextual_unification_3.kk:1:31
   │
-3 │   = | x => 2
-  │            ^ Type mismatch
+1 │ let f = (x: Integer): Null => 2
+  │                               ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

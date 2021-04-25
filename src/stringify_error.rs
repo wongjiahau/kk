@@ -212,6 +212,17 @@ pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
             };
             (range, error)
         }
+        ParseErrorKind::ExpectedPattern { position } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            let error = StringifiedError {
+                summary: "Expected pattern here".to_string(),
+                body: "Unable to convert this expression into a destructure pattern.".to_string(),
+            };
+            (range, error)
+        }
         ParseErrorKind::TokenizeError(tokenize_error) => get_tokenize_error(tokenize_error),
     };
     print_error(module_meta, range, error)
@@ -266,7 +277,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordCase => "used for pattern matching",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
         TokenType::Semicolon => "used for separating statements",
-        TokenType::KeywordFrom => "used for importing modules"
+        TokenType::KeywordFrom => "used for importing modules",
+        TokenType::KeywordWith => "used for with statement"
     }
 }
 
@@ -276,13 +288,9 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Expression",
             examples: vec!["123", "\"hello world\"", "{ x: 3 }", "[ 2 ]", "Some(true)"],
         },
-        ParseContext::ExpressionLet => ParseContextDescription {
-            name: "Let Expression",
-            examples: vec!["let x = 1\nlet y = 2\nx.add(y)"],
-        },
         ParseContext::ExpressionFunction => ParseContextDescription {
             name: "Function",
-            examples: vec!["| x => x.add(1)", "| true true => true\n| _ _ => false"],
+            examples: vec!["x => x.add(1)", "(x: Boolean, y: Integer): Boolean => true"],
         },
         ParseContext::ExpressionSwitch => ParseContextDescription {
             name: "Switch Expression",
@@ -307,10 +315,6 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::ExpressionRecord => ParseContextDescription {
             name: "Record",
             examples: vec!["{ x: 2 y: 3 }", "let x = 1\nlet y = 2\n{ x y }"],
-        },
-        ParseContext::ExpressionBlock => ParseContextDescription {
-            name: "Block",
-            examples: vec!["{let x = 1; let y = 2; x.plus(y)}"],
         },
         ParseContext::ExpressionRecordUpdate => ParseContextDescription {
             name: "Record Update",
@@ -366,21 +370,13 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Record Type Annotation",
             examples: vec!["{ x: String  y: { z: Integer } }"],
         },
-        ParseContext::TypeAnnotationFunction => ParseContextDescription {
-            name: "Function Type Annotation",
-            examples: vec!["| Boolean => Boolean", "| Integer Integer => Integer"],
-        },
-        ParseContext::TypeAnnotationPromise => ParseContextDescription {
-            name: "Promise Type Annotation",
-            examples: vec!["!Integer", "!Result<Integer String>"],
-        },
         ParseContext::TypeAnnotationQuoted => ParseContextDescription {
             name: "Quoted Type Annotation",
             examples: vec!["`String`", "`{name: String}`"],
         },
         ParseContext::Pattern => ParseContextDescription {
             name: "Pattern",
-            examples: vec!["1", "\"hello world\"", "true", "Some(x)", "[]", "{ x y }"],
+            examples: vec!["1", "\"hello world\"", "true", "Some(x)", "[]", "{ x, y }"],
         },
         ParseContext::PatternArray => ParseContextDescription {
             name: "Array Pattern",
@@ -392,7 +388,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::PatternRecord => ParseContextDescription {
             name: "Record Pattern",
-            examples: vec!["{ x y }", "{ x: true y: Nil }"],
+            examples: vec!["{ x, y }", "{ x: true, y: Nil }"],
         },
         ParseContext::TypeArguments => ParseContextDescription {
             name: "Type Arguments",
@@ -404,19 +400,16 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::TypeVariablesDeclaration => ParseContextDescription {
             name: "Type Variables Declaration",
-            examples: vec!["<T>", "<T U>"],
-        },
-        ParseContext::ExpressionMonadicLet => ParseContextDescription {
-            name: "Monadic Let Expression",
-            examples: vec!["let/map x = Some(2)\nSome([x])"],
+            examples: vec!["<T>", "<T, U>"],
         },
         ParseContext::DocumentationCodeSnippet => ParseContextDescription {
             name: "Documentation Code Snippet",
             examples: vec!["```\"Hello world\".print```"],
         },
-        ParseContext::StatementFunction => {
-            panic!("")
-        }
+        ParseContext::StatementWith => ParseContextDescription {
+            name: "With Statement",
+            examples: vec!["{ with x = [1, 2, 3].map; x + 1 }"],
+        },
         ParseContext::FunctionParameters => ParseContextDescription {
             name: "Function Parameters",
             examples: vec!["(a: string, b: number)"],
@@ -429,6 +422,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordIf => "if",
         TokenType::KeywordElse => "else",
         TokenType::KeywordLet => "let",
+        TokenType::KeywordWith => "with",
         TokenType::KeywordType => "type",
         TokenType::KeywordEnum => "enum",
         TokenType::KeywordDo => "do",
@@ -671,14 +665,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 indent_string(expected_type_parameter_names.join("\n"), 2 )
             )
         },
-        UnifyErrorKind::UnnecessaryTypeAnnotation {expected_type} => StringifiedError {
-            summary: "Unnecessary type annotation".to_string(),
-            body: format!("{}{}\n\n{}",
-                "Based on higher level type annotations, we already know that the expected type is:\n\n", 
-                stringify_type(expected_type, 1),
-                "Remove this type annotation to fix this error."
-            )
-        },
         UnifyErrorKind::RecordExtraneousKey {
             mut expected_keys
         } => StringifiedError {
@@ -817,26 +803,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 )
             )
         },
-        UnifyErrorKind::PropertyNameClashWithFunctionName{ name} => {
-            let example = format!("x.{}", name);
-            StringifiedError {
-                summary: "Clashed with first parameter property name.".to_string(),
-                body: format!(
-                    "{} '{}'.\n{}\n    {}\n\n{}{}{}{}{}\n{}",
-                    "The first parameter type of this function is a record that has a property also named",
-                    name,
-                    "Suppose we have an expression x that has the first paramter type, then the expression below is ambiguous:\n",
-                    example,
-                    "This is ambiguous because we will not know if it meant to call the '",
-                    name,
-                    "' function or to access the property '",
-                    name,
-                    "'.",
-                    "Therefore, to prevent such ambiguity, such function definition is disallowed.",
-                )
-            }
-        }
-        UnifyErrorKind::ApplicativeLetExpressionBindFunctionConditionNotMet { actual_type } => StringifiedError {
+        UnifyErrorKind::WithExpressionBindFunctionConditionNotMet { actual_type } => StringifiedError {
             summary: "Unsatifactory bind function.".to_string(),
             body: format!("The bind function must satisfies all of the following conditions:\n{}\n\n{}\n\n{}", 
                 vec![
@@ -1022,12 +989,12 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         }
         Type::Function(function_type) => {
             let result = format!(
-                "|\n{}\n=>\n{}",
+                "(\n{}\n) =>\n{}",
                 function_type
                     .parameters_types
                     .map(|argument_type| { indent_string(stringify_type(argument_type, 0), 2) })
                     .into_vector()
-                    .join("\n"),
+                    .join(",\n"),
                 indent_string(stringify_type(*function_type.return_type, 0), 2)
             );
             indent_string(result, indent_level * 2)

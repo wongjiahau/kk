@@ -1,5 +1,6 @@
-let foo 
-  : | Character => Boolean
-  = | 'a' => true
-    | 'b' => false
+let foo = (c: Character): Boolean =>
+  switch (c) {
+    case 'a': true
+    case 'b': false
+  }
 

@@ -5,12 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo
-  : | String => Integer
-  = | "hi" => 0
-    | "hey" => 1
-    | "hey" => 1
-    | _ => 2
+let foo = (s: String): Integer =>
+  switch s {
+    case "hi": 0
+    case "hey": 1
+    case "hey": 1
+    case _: 2
+  }
 
 ============
 EXIT CODE
@@ -26,9 +27,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_string_1.kk:5:7
+  ┌─ tests/compiler/typecheck/unreachable_case_string_1.kk:5:10
   │
-5 │     | "hey" => 1
-  │       ^^^^^ Unreachable case
+5 │     case "hey": 1
+  │          ^^^^^ Unreachable case
   │
   = This case is unreachable because all possible cases are already handled by previous branches.

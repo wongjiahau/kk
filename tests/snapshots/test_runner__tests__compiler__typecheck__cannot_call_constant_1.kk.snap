@@ -1,0 +1,31 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let pi = 3.142
+
+do null.pi() // Error: pi is not a function
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/cannot_call_constant_1.kk:3:9
+  │
+3 │ do null.pi() // Error: pi is not a function
+  │         ^^ Cannot call a non-function
+  │
+  = The type of this expression is not function, so you cannot call it.

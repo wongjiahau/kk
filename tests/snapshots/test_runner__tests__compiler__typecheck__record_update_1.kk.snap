@@ -7,7 +7,7 @@ INPUT
 ============
 do {
   let a = { x: 2, y: { z: 3 } };
-  let b = a.{ b: 3 }; # 'b' is a non-existing property
+  let b = a.{ b: 3 }; // 'b' is a non-existing property
 }
 
 ============
@@ -26,8 +26,8 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_update_1.kk:3:15
   │
-3 │   let b = a.{ b: 3 }; # 'b' is a non-existing property
-  │               ^ No such property or function
+3 │   let b = a.{ b: 3 }; // 'b' is a non-existing property
+  │               ^ No such property
   │
   = Available properties:
       x

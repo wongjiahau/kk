@@ -473,11 +473,21 @@ impl Module {
         }
     }
 
-    pub fn step_into_new_child_scope(&mut self) {
+    pub fn run_in_new_child_scope<F, A, E>(&mut self, mut f: F) -> Result<A, E>
+    where
+        F: FnMut(&mut Self) -> Result<A, E>,
+    {
+        self.step_into_new_child_scope();
+        let result = f(self);
+        self.step_out_to_parent_scope();
+        result
+    }
+
+    fn step_into_new_child_scope(&mut self) {
         self.scope.step_into_new_child_scope()
     }
 
-    pub fn step_out_to_parent_scope(&mut self) {
+    fn step_out_to_parent_scope(&mut self) {
         self.scope.step_out_to_parent_scope()
     }
 

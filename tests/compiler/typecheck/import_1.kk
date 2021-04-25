@@ -7,4 +7,5 @@ export let bomb = (_: String): String  => "Hello"
 
 export let bomb = (_: Boolean): String => "World"
 
-export let spam = 123
+export let foo = 123
+let spam = 123

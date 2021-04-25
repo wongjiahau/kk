@@ -1,5 +1,5 @@
 let foo: {
-  x: Integer
+  x: Integer,
   y: Integer
 } = {
   x: 1

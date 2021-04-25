@@ -6,16 +6,13 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 type People = {
-  first_name: String
-  last_name: String
+  firstName: String,
+  lastName: String
 }
 
-let s
-  : | String String => People
-  = | _ last_name => {..}
-                    # Error: missing property first_name
-
-do "Adam".s("James").print
+let s = (x: String, lastName: String): People =>
+  {...}
+  // Error: missing property firstName
 
 ============
 EXIT CODE
@@ -31,9 +28,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_wildcard_4.kk:8:23
+  ┌─ tests/compiler/typecheck/record_wildcard_4.kk:7:4
   │
-8 │   = | _ last_name => {..}
-  │                       ^^ Unknown variable `first_name`
+7 │   {...}
+  │    ^^^ Unknown variable `firstName`
   │
   = Cannot find this value symbol in the current scope
