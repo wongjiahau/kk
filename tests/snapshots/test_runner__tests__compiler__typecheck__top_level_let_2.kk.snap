@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// Top level destructuring
+let {x, y} = {
+  x: (i: Integer): String => "Hello",
+  y: (b: Boolean): String => "World"
+}
+
+do 1.x().print()
+do true.y().print()
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+Hello
+World
+
+============
+STDERR
+============
