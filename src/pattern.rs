@@ -219,7 +219,7 @@ pub fn expand_pattern(module: &Module, type_value: &Type) -> Vec<ExpandablePatte
             type_arguments,
             ..
         } => module
-            .get_enum_constructors(*symbol_uid)
+            .get_enum_constructors(symbol_uid.clone())
             .into_iter()
             .map(|constructor_symbol| {
                 let constructor_name = constructor_symbol.constructor_name.clone();

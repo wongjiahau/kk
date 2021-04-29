@@ -9,14 +9,15 @@ use crate::ast::*;
 use crate::module::*;
 use crate::pattern::*;
 use crate::typechecked_ast::*;
+use indexmap::IndexMap;
 use relative_path::RelativePath;
+use std::fs;
 use std::iter;
-use std::{collections::HashMap, fs};
 use std::{collections::HashSet, path::Path};
 
 pub struct UnifyProgramResult {
-    pub statements: Vec<TypecheckedStatement>,
-    pub module: Module,
+    /// The entrypoint module
+    pub entrypoint: TypecheckedModule,
 
     // This is for memoization.
     // By doing this we can prevent duplicated efforts to typecheck the same module again.
@@ -32,11 +33,9 @@ pub struct UnifyProgramResult {
     pub imported_modules: ImportedModules,
 }
 
-/// `starting_symbol_uid` is needed to make sure each symbol has a UID that is unique across different modules
 pub fn unify_statements(
     module_meta: ModuleMeta,
     statements: Vec<Statement>,
-    starting_symbol_uid: usize,
     imported_modules: &ImportedModules,
     is_entry_point: bool,
 ) -> Result<UnifyProgramResult, CompileError> {
@@ -104,7 +103,7 @@ pub fn unify_statements(
 
     // 2. Infer import statements (to include every imported symbols into the current module)
 
-    let mut module: Module = Module::new(module_meta, starting_symbol_uid);
+    let mut module: Module = Module::new(module_meta);
 
     let init: (Vec<TypecheckedStatement>, _) = (vec![], imported_modules.clone());
 
@@ -117,7 +116,15 @@ pub fn unify_statements(
                     let current =
                         infer_import_statement(&mut module, &imported_modules, import_statement)?;
 
-                    statements.extend(current.statements.into_iter());
+                    statements.extend(
+                        current
+                            .import_statements
+                            .into_iter()
+                            .map(|import_statement| {
+                                TypecheckedStatement::ImportStatement(import_statement)
+                            })
+                            .collect::<Vec<TypecheckedStatement>>(),
+                    );
 
                     imported_modules.extend(current.imported_modules);
 
@@ -134,7 +141,7 @@ pub fn unify_statements(
             let enum_uid = insert_enum_symbol(&mut module, enum_statement.clone())?;
             Ok((enum_uid, enum_statement))
         })
-        .collect::<Result<Vec<(usize, EnumStatement)>, UnifyError>>()
+        .collect::<Result<Vec<(SymbolUid, EnumStatement)>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     type_statements
@@ -146,7 +153,7 @@ pub fn unify_statements(
     enum_statements
         .into_iter()
         .map(|(enum_uid, enum_statement)| {
-            infer_enum_statement(&mut module, enum_uid, enum_statement)
+            infer_enum_statement(&mut module, &enum_uid, enum_statement)
         })
         .collect::<Result<Vec<()>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
@@ -172,6 +179,7 @@ pub fn unify_statements(
                     let_statement.keyword_export.is_some(),
                 )?;
                 Ok(TypecheckedStatement::Let {
+                    exported: let_statement.keyword_export.is_some(),
                     left: left.destructure_pattern,
                     right: right.expression,
                 })
@@ -191,7 +199,7 @@ pub fn unify_statements(
                     .type_variables
                     .iter()
                     .map(|type_variable_name| module.insert_explicit_type_variable(type_variable_name))
-                    .collect::<Result<Vec<usize>, UnifyError>>()?;
+                    .collect::<Result<Vec<SymbolUid>, UnifyError>>()?;
 
                 let type_value = {
                         let parameters_types = function_statement
@@ -265,6 +273,7 @@ pub fn unify_statements(
             },
         )?;
         Ok((
+            function_statement.keyword_export.is_some(),
             uid,
             function_statement.name,
             function_statement.arrow_function,
@@ -276,7 +285,7 @@ pub fn unify_statements(
 
     let typechecked_function_statements = function_statements
         .into_iter()
-        .map(|(uid, name, arrow_function, expected_type)| {
+        .map(|(exported, uid, name, arrow_function, expected_type)| {
             module.run_in_new_child_scope(|module| {
                 // Populate type variables
                 arrow_function
@@ -285,7 +294,7 @@ pub fn unify_statements(
                     .map(|type_variable_name| {
                         module.insert_explicit_type_variable(type_variable_name)
                     })
-                    .collect::<Result<Vec<usize>, UnifyError>>()?;
+                    .collect::<Result<Vec<SymbolUid>, UnifyError>>()?;
 
                 let result = infer_arrow_function(
                     module,
@@ -294,8 +303,9 @@ pub fn unify_statements(
                 )?;
                 // Return the typechecked statement, which is needed for transpilation
                 Ok(TypecheckedStatement::Let {
+                    exported,
                     left: TypecheckedDestructurePattern::Identifier(Box::new(Identifier {
-                        uid,
+                        uid: uid.clone(),
                         token: name.clone(),
                     })),
                     right: result.expression,
@@ -316,15 +326,17 @@ pub fn unify_statements(
         )
         .collect::<Result<Vec<TypecheckedStatement>, CompileError>>()?;
     Ok(UnifyProgramResult {
-        statements: {
-            let mut statements = Vec::new();
-            statements.extend(typechecked_import_statements);
-            statements.extend(typechecked_let_statements);
-            statements.extend(typechecked_function_statements);
-            statements.extend(typechecked_do_statements);
-            statements
+        entrypoint: TypecheckedModule {
+            module,
+            statements: {
+                let mut statements = Vec::new();
+                statements.extend(typechecked_import_statements);
+                statements.extend(typechecked_let_statements);
+                statements.extend(typechecked_function_statements);
+                statements.extend(typechecked_do_statements);
+                statements
+            },
         },
-        module,
         imported_modules,
     })
 }
@@ -527,9 +539,19 @@ pub enum UnifyErrorKind {
     },
 }
 
-type ImportedModules = HashMap<ModuleUid, Module>;
-pub struct InferStatementResult {
+/// We use IndexMap instead of HashMap for storing imported modules because we need to preserve the insertion order,
+/// in order for the transpiled code to work (i.e. to prevent referencing variable that is not yet declared).
+/// Of course, this only work if the dependency graph contains no cycle,
+/// fortunately, this language do not allow cyclic imports.
+type ImportedModules = IndexMap<ModuleUid, TypecheckedModule>;
+
+#[derive(Debug, Clone)]
+pub struct TypecheckedModule {
+    pub module: Module,
     pub statements: Vec<TypecheckedStatement>,
+}
+pub struct InferImportStatementResult {
+    pub import_statements: Vec<TypecheckedImportStatement>,
     pub imported_modules: ImportedModules,
 }
 
@@ -537,11 +559,9 @@ pub fn infer_import_statement(
     module: &mut Module,
     imported_modules: &ImportedModules,
     ImportStatement {
-        url,
-        imported_names,
-        ..
+        url, import_type, ..
     }: ImportStatement,
-) -> Result<InferStatementResult, CompileError> {
+) -> Result<InferImportStatementResult, CompileError> {
     let importer_path = module.uid().string_value();
     let import_path = url.representation.trim_matches('"');
     let path = RelativePath::new(&importer_path)
@@ -581,9 +601,8 @@ pub fn infer_import_statement(
         Some(module) => {
             println!("Compile cache hit: {}", uid.string_value());
             UnifyProgramResult {
-                module: module.clone(),
-                statements: vec![],
-                imported_modules: HashMap::new(),
+                entrypoint: module.clone(),
+                imported_modules: IndexMap::new(),
             }
         }
         None => {
@@ -612,13 +631,7 @@ pub fn infer_import_statement(
                     }?;
 
                     // Typecheck the imported module
-                    unify_statements(
-                        module_meta,
-                        statements,
-                        module.get_next_symbol_uid(),
-                        imported_modules,
-                        false,
-                    )?
+                    unify_statements(module_meta, statements, imported_modules, false)?
                 }
                 Err(error) => {
                     return Err(UnifyError {
@@ -634,101 +647,108 @@ pub fn infer_import_statement(
     };
 
     // Check whether each imported name exists and is exported in this program
-    let statements = imported_names
-        .into_vector()
-        .into_iter()
-        .map(|imported_name| {
-            let matching_symbol_entries = imported
+    let matching_symbol_entries: Vec<(SymbolEntry, Option<Token>)> = {
+        match import_type {
+            ImportType::All { asterisk } => imported
+                .entrypoint
                 .module
-                .get_all_matching_symbols(&imported_name.name);
+                .get_all_exported_symbols()
+                .into_iter()
+                .map(|entry| {
+                    let name = entry.symbol.meta.name.clone();
+                    (
+                        entry,
+                        Some(Token {
+                            position: asterisk.position,
+                            ..name
+                        }),
+                    )
+                })
+                .collect(),
+            ImportType::Selected { imported_names } => imported_names
+                .into_vector()
+                .into_iter()
+                .map(|imported_name| {
+                    let matching_symbol_entries = imported
+                        .entrypoint
+                        .module
+                        .get_all_matching_symbols(&imported_name.name);
 
-            if matching_symbol_entries.is_empty() {
-                Err(UnifyError {
-                    position: imported_name.name.position,
-                    kind: UnifyErrorKind::UnknownImportedName,
-                }
-                .into_compile_error(module.meta.clone()))
-            } else {
-                let name = match &imported_name.alias_as {
-                    Some(name) => name,
-                    None => &imported_name.name,
-                };
-
-                // Insert the matching value symbol into the current module
-                let statements = matching_symbol_entries
-                    .iter()
-                    .map(|entry| {
-                        if !entry.symbol.meta.exported {
-                            return Err(UnifyError {
-                                position: imported_name.name.position,
-                                kind: UnifyErrorKind::CannotImportPrivateSymbol,
-                            }
-                            .into_compile_error(module.meta.clone()));
+                    if matching_symbol_entries.is_empty() {
+                        Err(UnifyError {
+                            position: imported_name.name.position,
+                            kind: UnifyErrorKind::UnknownImportedName,
                         }
-                        match module.insert_symbol(
-                            Some(entry.uid),
-                            Symbol {
-                                meta: SymbolMeta {
-                                    name: name.clone(),
-                                    ..entry.symbol.meta
-                                },
-                                kind: entry.symbol.kind.clone(),
-                            },
-                        ) {
-                            Ok(uid) => {
-                                // only insert new typechecked statement if import alias is defined
-                                match imported_name.clone().alias_as {
-                                    Some(alias_as) => match entry.symbol.kind {
-                                        SymbolKind::Value(_) => {
-                                            Ok(vec![TypecheckedStatement::Let {
-                                                left: TypecheckedDestructurePattern::Identifier(
-                                                    Box::new(Identifier {
-                                                        uid,
-                                                        token: alias_as,
-                                                    }),
-                                                ),
-                                                right: TypecheckedExpression::Variable(
-                                                    Identifier {
-                                                        uid: entry.uid,
-                                                        token: entry.symbol.meta.name.clone(),
-                                                    },
-                                                ),
-                                            }])
-                                        }
-                                        _ => Ok(vec![]),
-                                    },
-                                    None => Ok(vec![]),
+                        .into_compile_error(module.meta.clone()))
+                    } else {
+                        Ok(matching_symbol_entries
+                            .into_iter()
+                            .map(|entry| {
+                                if !entry.symbol.meta.exported {
+                                    Err(UnifyError {
+                                        position: imported_name.name.position,
+                                        kind: UnifyErrorKind::CannotImportPrivateSymbol,
+                                    }
+                                    .into_compile_error(module.meta.clone()))
+                                } else {
+                                    Ok((entry, imported_name.alias_as.clone()))
                                 }
-                            }
-                            Err(unify_error) => {
-                                Err(unify_error.into_compile_error(module.meta.clone()))
-                            }
-                        }
-                    })
-                    .collect::<Result<Vec<Vec<TypecheckedStatement>>, CompileError>>()?;
+                            })
+                            .collect::<Result<Vec<(SymbolEntry, Option<Token>)>, CompileError>>()?)
+                    }
+                })
+                .collect::<Result<Vec<Vec<(SymbolEntry, Option<Token>)>>, CompileError>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
+        }
+    };
 
-                Ok(statements)
+    let import_statements = matching_symbol_entries
+        .into_iter()
+        .map(|(entry, alias_as)| {
+            let alias_as = alias_as.unwrap_or_else(|| entry.symbol.meta.name.clone());
+            match module.insert_symbol(
+                Some(entry.uid.clone()),
+                Symbol {
+                    meta: SymbolMeta {
+                        name: alias_as.clone(),
+                        exported: false,
+                    },
+                    kind: entry.symbol.kind.clone(),
+                },
+            ) {
+                Ok(uid) => {
+                    // only insert import statement if the imported symbol is a value (i.e. not type)
+                    match entry.symbol.kind {
+                        SymbolKind::Value(_) => Ok(vec![TypecheckedImportStatement {
+                            module_uid: imported.entrypoint.module.uid(),
+                            imported_name: Identifier {
+                                uid: entry.uid.clone(),
+                                token: entry.symbol.meta.name,
+                            },
+                            imported_as: Identifier {
+                                uid,
+                                token: alias_as,
+                            },
+                        }]),
+                        _ => Ok(vec![]),
+                    }
+                }
+                Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
             }
         })
-        .collect::<Result<Vec<Vec<Vec<TypecheckedStatement>>>, CompileError>>()?;
+        .collect::<Result<Vec<Vec<TypecheckedImportStatement>>, CompileError>>()?
+        .into_iter()
+        .flatten()
+        .collect();
 
-    // After importing, we need to increment the `current_uid` of the currrent module
-    // to the biggest `current_uid` of the imported module
-    // so that UID uniqueness can be maintained across different modules
-    // this uniquenss is important for transpilation, so that the generated code
-    // will not contain both variables with the same name
-    module.set_current_uid(imported.module.get_current_uid());
-
-    Ok(InferStatementResult {
-        statements: imported
-            .statements
-            .into_iter()
-            .chain(statements.into_iter().flatten().flatten())
-            .collect(),
+    Ok(InferImportStatementResult {
+        import_statements,
         imported_modules: {
             let mut imported_modules = imported.imported_modules;
-            let uid = imported.module.uid();
-            imported_modules.insert(uid, imported.module);
+            let uid = imported.entrypoint.module.uid();
+            imported_modules.insert(uid, imported.entrypoint);
             imported_modules
         },
     })
@@ -744,11 +764,11 @@ pub fn insert_enum_symbol(
         keyword_export,
         ..
     }: EnumStatement,
-) -> Result<usize, UnifyError> {
+) -> Result<SymbolUid, UnifyError> {
     let enum_uid = module.get_next_symbol_uid();
     let enum_name = name.representation.clone();
     let enum_type = Type::Named {
-        symbol_uid: enum_uid,
+        symbol_uid: enum_uid.clone(),
         name: enum_name,
         type_arguments: type_variables
             .clone()
@@ -794,7 +814,7 @@ pub fn insert_enum_symbol(
 /// Validate the body of an enum statement and insert the constructors into the current module
 pub fn infer_enum_statement(
     module: &mut Module,
-    enum_uid: usize,
+    enum_uid: &SymbolUid,
     EnumStatement {
         name,
         constructors,
@@ -831,7 +851,7 @@ pub fn infer_enum_statement(
                         exported: keyword_export.is_some(),
                     },
                     kind: SymbolKind::EnumConstructor(EnumConstructorSymbol {
-                        enum_uid,
+                        enum_uid: enum_uid.clone(),
                         enum_name: name.representation.clone(),
                         constructor_name: constructor.name.representation.clone(),
                         type_variables: type_variables
@@ -955,98 +975,6 @@ pub fn infer_do_statement(
                 actual_type: type_value,
             },
         }),
-    }
-}
-
-pub fn rewrite_explicit_type_variables_as_implicit(
-    type_value: Type,
-    explicit_type_variable_names: &HashSet<String>,
-) -> Type {
-    match type_value {
-        Type::ExplicitTypeVariable { name } => {
-            if explicit_type_variable_names.get(&name).is_some() {
-                Type::ImplicitTypeVariable { name }
-            } else {
-                Type::ExplicitTypeVariable { name }
-            }
-        }
-        t @ Type::Underscore => t,
-        t @ Type::Float => t,
-        t @ Type::Integer => t,
-        t @ Type::Null => t,
-        t @ Type::Boolean => t,
-        t @ Type::String => t,
-        t @ Type::Character => t,
-        Type::ImplicitTypeVariable { name } => Type::ImplicitTypeVariable { name },
-        Type::Tuple(types) => Type::Tuple(Box::new(types.map(|type_value| {
-            rewrite_explicit_type_variables_as_implicit(type_value, explicit_type_variable_names)
-        }))),
-        Type::BuiltInOneArgumentType {
-            kind,
-            type_argument: argument,
-        } => Type::BuiltInOneArgumentType {
-            kind,
-            type_argument: Box::new(rewrite_explicit_type_variables_as_implicit(
-                *argument,
-                explicit_type_variable_names,
-            )),
-        },
-        Type::Named {
-            name,
-            symbol_uid,
-            type_arguments,
-        } => Type::Named {
-            name,
-            symbol_uid,
-            type_arguments: type_arguments
-                .into_iter()
-                .map(|(name, type_value)| {
-                    (
-                        name,
-                        rewrite_explicit_type_variables_as_implicit(
-                            type_value,
-                            explicit_type_variable_names,
-                        ),
-                    )
-                })
-                .collect(),
-        },
-        Type::Record { key_type_pairs } => Type::Record {
-            key_type_pairs: key_type_pairs
-                .into_iter()
-                .map(|(key, type_value)| {
-                    (
-                        key,
-                        rewrite_explicit_type_variables_as_implicit(
-                            type_value,
-                            explicit_type_variable_names,
-                        ),
-                    )
-                })
-                .collect(),
-        },
-        Type::Function(FunctionType {
-            parameters_types: arguments_types,
-            return_type,
-        }) => Type::Function(FunctionType {
-            parameters_types: Box::new(arguments_types.map(|type_value| {
-                rewrite_explicit_type_variables_as_implicit(
-                    type_value,
-                    explicit_type_variable_names,
-                )
-            })),
-            return_type: Box::new(rewrite_explicit_type_variables_as_implicit(
-                *return_type,
-                explicit_type_variable_names,
-            )),
-        }),
-        Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
-            type_variables: type_scheme.type_variables,
-            type_value: rewrite_explicit_type_variables_as_implicit(
-                type_scheme.type_value,
-                explicit_type_variable_names,
-            ),
-        })),
     }
 }
 
@@ -1777,14 +1705,14 @@ pub fn get_enum_type(
     token: &Token,
 ) -> Result<GetEnumTypeResult, UnifyError> {
     let expected_enum_uid = match &expected_type {
-        Some(Type::Named { symbol_uid, .. }) => Some(*symbol_uid),
+        Some(Type::Named { symbol_uid, .. }) => Some(symbol_uid.clone()),
         _ => None,
     };
     // Look up constructor
     let constructor = module.get_constructor_symbol(expected_enum_uid, &token)?;
 
     let enum_type = module
-        .get_type_symbol_by_uid(constructor.enum_uid)
+        .get_type_symbol_by_uid(&constructor.enum_uid)
         .unwrap_or_else(|| panic!("Compiler error, cannot find enum type of a constructor"));
 
     match enum_type.type_value {
@@ -2870,7 +2798,7 @@ fn infer_block_level_statements(
     }
 }
 
-/// Returns the typechecked statement, the type value of the statement, and step count
+/// Returns the typechecked statement, the type value of the statement
 fn infer_block_level_statement(
     module: &mut Module,
     expected_type: Option<Type>,
@@ -2909,6 +2837,7 @@ fn infer_block_level_statement(
             ) {
                 Ok(_) => Ok((
                     TypecheckedStatement::Let {
+                        exported: false,
                         left: typechecked_left.destructure_pattern,
                         right: typechecked_right.expression,
                     },
@@ -4059,7 +3988,7 @@ fn substitute_type_variable_in_type(
             type_arguments: arguments,
         } => Type::Named {
             name: name.to_string(),
-            symbol_uid: *symbol_uid,
+            symbol_uid: symbol_uid.clone(),
             type_arguments: arguments
                 .iter()
                 .map(|(key, type_value)| {

@@ -1,17 +1,92 @@
 //! This file is temporarily disabled in favour of transpile_cps.rs
 //! We are just keeping this file in case we don't want CPS anymore in the future.
-use crate::typechecked_ast::*;
+use crate::{
+    typechecked_ast::*,
+    unify::{TypecheckedModule, UnifyProgramResult},
+};
 
-pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
+const KK_MODULE: &str = "KK_MODULE";
+
+pub fn transpile_program(unify_project_result: UnifyProgramResult) -> String {
+    // TODO: move this to a file
     let built_in_library = "
         const print_0 = (x) => console.log(x)
         "
     .to_string();
-    let user_defined = statements
+    let imported_modules = unify_project_result
+        .imported_modules
+        .into_iter()
+        .map(|(_, module)| transpile_module(module))
+        .collect::<Vec<String>>()
+        .join(";");
+
+    let entry_module = transpile_module(unify_project_result.entrypoint);
+    format!(
+        "{};\nvar KK_MODULE={{}};\n{};\n{}",
+        built_in_library, imported_modules, entry_module
+    )
+}
+
+pub fn transpile_module(module: TypecheckedModule) -> String {
+    let module_uid = format!("\"{}\"", module.module.meta.uid.string_value());
+    let statements = transpile_statements(module.statements.clone());
+    let exported_symbols = module
+        .statements
+        .iter()
+        .flat_map(|statement| match statement {
+            TypecheckedStatement::Let { exported, left, .. } if *exported => {
+                get_destructure_pattern_bindings(left.clone())
+            }
+            _ => vec![],
+        })
+        .map(transpile_identifier)
+        .collect::<Vec<String>>();
+
+    format!(
+        "{}[{}] = (() => {{{};return {{{}}}}})()",
+        KK_MODULE,
+        module_uid,
+        statements,
+        exported_symbols.join(",")
+    )
+}
+
+pub fn get_destructure_pattern_bindings(
+    destructure_pattern: TypecheckedDestructurePattern,
+) -> Vec<Identifier> {
+    match destructure_pattern {
+        TypecheckedDestructurePattern::Infinite { .. }
+        | TypecheckedDestructurePattern::Boolean { .. }
+        | TypecheckedDestructurePattern::Null(_)
+        | TypecheckedDestructurePattern::Underscore(_) => vec![],
+        TypecheckedDestructurePattern::Identifier(name) => vec![*name],
+        TypecheckedDestructurePattern::EnumConstructor { payload, .. } => match payload {
+            None => vec![],
+            Some(payload) => get_destructure_pattern_bindings(*payload.pattern),
+        },
+        TypecheckedDestructurePattern::Record {
+            key_pattern_pairs, ..
+        } => key_pattern_pairs
+            .into_iter()
+            .flat_map(|(_, pattern)| get_destructure_pattern_bindings(pattern))
+            .collect(),
+        TypecheckedDestructurePattern::Array { .. } => {
+            panic!("")
+        }
+        TypecheckedDestructurePattern::Tuple { values } => values
+            .into_vector()
+            .into_iter()
+            .flat_map(get_destructure_pattern_bindings)
+            .collect(),
+    }
+}
+
+pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
+    statements
         .into_iter()
         .map(transpile_statement)
-        .collect::<Vec<String>>();
-    format!("{};{}", built_in_library, user_defined.join(";"))
+        .collect::<Vec<String>>()
+        .join(";")
 }
 
 pub fn transpile_statement(statement: TypecheckedStatement) -> String {
@@ -26,14 +101,31 @@ pub fn transpile_statement(statement: TypecheckedStatement) -> String {
             let TranspiledDestructurePattern {
                 bindings,
                 conditions: _, // Note: conditions can be ignored as we assume that the type checker already checked for case exhaustiveness
-            } = transpile_function_destructure_pattern(left, transpile_expression(right));
+            } = transpile_destructure_pattern(left, transpile_expression(right));
             bindings.join(";")
+        }
+        TypecheckedStatement::ImportStatement(TypecheckedImportStatement {
+            module_uid,
+            imported_name,
+            imported_as,
+        }) => {
+            format!(
+                "let {} = {}[\"{}\"].{}",
+                transpile_identifier(imported_as),
+                KK_MODULE,
+                module_uid.string_value(),
+                transpile_identifier(imported_name),
+            )
         }
     }
 }
 
-fn transpile_variable(variable: Identifier) -> String {
-    format!("{}_{}", variable.token.representation, variable.uid)
+fn transpile_identifier(identifier: Identifier) -> String {
+    // Note that when we transpile identifier, we omit the module_uid and only use the index
+    format!(
+        "{}_{}",
+        identifier.token.representation, identifier.uid.index
+    )
 }
 
 pub fn transpile_expression(expression: TypecheckedExpression) -> String {
@@ -69,7 +161,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                     .join("+")
             )
         }
-        TypecheckedExpression::Variable(variable) => transpile_variable(variable),
+        TypecheckedExpression::Variable(variable) => transpile_identifier(variable),
         TypecheckedExpression::EnumConstructor {
             constructor_name,
             payload,
@@ -211,9 +303,7 @@ pub fn transpile_function_branch(function_branch: TypecheckedFunctionBranch) -> 
         .into_vector()
         .into_iter()
         .enumerate()
-        .map(|(index, pattern)| {
-            transpile_function_destructure_pattern(pattern, format!("_{}", index))
-        })
+        .map(|(index, pattern)| transpile_destructure_pattern(pattern, format!("_{}", index)))
         .fold(
             TranspiledDestructurePattern {
                 conditions: vec![],
@@ -252,7 +342,7 @@ pub struct TranspiledDestructurePattern {
     bindings: Vec<String>,
 }
 
-pub fn transpile_function_destructure_pattern(
+pub fn transpile_destructure_pattern(
     destructure_pattern: TypecheckedDestructurePattern,
     from_expression: String,
 ) -> TranspiledDestructurePattern {
@@ -287,11 +377,11 @@ pub fn transpile_function_destructure_pattern(
                     conditions: vec![format!("{}.length > 0", from_expression)],
                     bindings: vec![],
                 },
-                transpile_function_destructure_pattern(
+                transpile_destructure_pattern(
                     *spread.first_element,
                     format!("{}[0]", from_expression),
                 ),
-                transpile_function_destructure_pattern(
+                transpile_destructure_pattern(
                     *spread.rest_elements,
                     format!("{}.slice(1)", from_expression),
                 ),
@@ -301,7 +391,7 @@ pub fn transpile_function_destructure_pattern(
             conditions: vec![],
             bindings: vec![format!(
                 "var {} = {}",
-                transpile_variable(*variable),
+                transpile_identifier(*variable),
                 from_expression
             )],
         },
@@ -319,7 +409,7 @@ pub fn transpile_function_destructure_pattern(
             };
             let rest = match payload {
                 None => None,
-                Some(payload) => Some(transpile_function_destructure_pattern(
+                Some(payload) => Some(transpile_destructure_pattern(
                     *payload.pattern,
                     format!("{}._", from_expression),
                 )),
@@ -339,7 +429,7 @@ pub fn transpile_function_destructure_pattern(
             |result, (key, destructure_pattern)| {
                 join_transpiled_destructure_pattern(
                     result,
-                    transpile_function_destructure_pattern(
+                    transpile_destructure_pattern(
                         destructure_pattern,
                         format!("{}.{}", from_expression, transpile_property_name(key)),
                     ),

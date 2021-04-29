@@ -1,7 +1,9 @@
-use std::{collections::HashMap, process};
+use std::process;
+
+use indexmap::IndexMap;
 
 use crate::tokenize::Tokenizer;
-use crate::transpile::transpile_statements;
+use crate::transpile::transpile_program;
 use crate::unify::unify_statements;
 use crate::unify::UnifyError;
 use crate::{module::ModuleMeta, stringify_error::print_parse_error};
@@ -21,11 +23,11 @@ pub fn compile(module_meta: ModuleMeta) {
     match Parser::parse(&mut tokenizer) {
         Err(parse_error) => print_parse_error(module_meta, parse_error),
         Ok(statements) => {
-            match unify_statements(module_meta, statements, 0, &HashMap::new(), true) {
+            match unify_statements(module_meta, statements, &IndexMap::new(), true) {
                 Err(compile_error) => print_compile_error(compile_error),
                 Ok(result) => {
                     use std::process::Command;
-                    let javascript = transpile_statements(result.statements);
+                    let javascript = transpile_program(result);
                     // println!("{}", javascript);
                     let output = Command::new("node")
                         .arg("-e")

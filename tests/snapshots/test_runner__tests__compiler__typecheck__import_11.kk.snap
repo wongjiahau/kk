@@ -5,10 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// name clashing
-import {foo} from "./import_1.kk"
-
-let foo: Integer = 2
+import * from "./import_1.kk"
+import * from "./import_12.kk"
+//     ^ Error: import all clashing with symbols declared in this module
 
 ============
 EXIT CODE
@@ -24,9 +23,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/import_2.kk:4:5
+  ┌─ tests/compiler/typecheck/import_11.kk:2:8
   │
-4 │ let foo: Integer = 2
-  │     ^^^ Duplicated name
+2 │ import * from "./import_12.kk"
+  │        ^ Duplicated name
   │
   = This variable `foo` is already declared before in this module.

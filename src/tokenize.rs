@@ -561,6 +561,7 @@ impl Tokenizer {
                         '`' => TokenType::Backtick,
                         '!' => TokenType::Bang,
                         ';' => TokenType::Semicolon,
+                        '*' => TokenType::Asterisk,
                         '\n' => TokenType::Newline,
                         other => TokenType::Other(other),
                     },
@@ -624,6 +625,8 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordImport
     } else if s.eq("from") {
         TokenType::KeywordFrom
+    } else if s.eq("as") {
+        TokenType::KeywordAs
     } else if s.eq("export") {
         TokenType::KeywordExport
     } else {

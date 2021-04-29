@@ -373,56 +373,57 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    fn parse_imported_name(
+        &mut self,
+        context: Option<ParseContext>,
+    ) -> Result<ImportedName, ParseError> {
+        let name = self.eat_token(TokenType::Identifier, context)?;
+        Ok(if self.try_eat_token(TokenType::KeywordAs)?.is_some() {
+            let alias_as = self.eat_token(TokenType::Identifier, context)?;
+            ImportedName {
+                name,
+                alias_as: Some(alias_as),
+            }
+        } else {
+            ImportedName {
+                name,
+                alias_as: None,
+            }
+        })
+    }
+
     fn parse_import_statement(&mut self, keyword_import: Token) -> Result<Statement, ParseError> {
         let context = Some(ParseContext::StatementImport);
-        // TODO: parse pattern instead
-        self.eat_token(TokenType::LeftCurlyBracket, context)?;
-        let first_name = {
-            let name = self.eat_token(TokenType::Identifier, context)?;
-            if self.try_eat_token(TokenType::Colon)?.is_some() {
-                let alias_as = self.eat_token(TokenType::Identifier, context)?;
-                ImportedName {
-                    name,
-                    alias_as: Some(alias_as),
-                }
-            } else {
-                ImportedName {
-                    name,
-                    alias_as: None,
-                }
-            }
-        };
-        let other_names = {
-            let mut other_names = Vec::new();
-            loop {
-                if let Some(name) = self.try_eat_token(TokenType::Identifier)? {
-                    if self.try_eat_token(TokenType::Colon)?.is_some() {
-                        let alias_as = self.eat_token(TokenType::Identifier, context)?;
-                        other_names.push(ImportedName {
-                            name,
-                            alias_as: Some(alias_as),
-                        })
-                    } else {
-                        other_names.push(ImportedName {
-                            name,
-                            alias_as: None,
-                        })
+
+        let import_type = if let Some(asterisk) = self.try_eat_token(TokenType::Asterisk)? {
+            ImportType::All { asterisk }
+        } else {
+            self.eat_token(TokenType::LeftCurlyBracket, context)?;
+
+            let first_name = self.parse_imported_name(context)?;
+            let other_names = {
+                let mut other_names = Vec::new();
+                loop {
+                    if self.try_eat_token(TokenType::RightCurlyBracket)?.is_some() {
+                        break other_names;
+                    } else if self.try_eat_token(TokenType::Comma)?.is_some() {
+                        other_names.push(self.parse_imported_name(context)?)
                     }
-                } else {
-                    break other_names;
                 }
+            };
+            ImportType::Selected {
+                imported_names: NonEmpty {
+                    head: first_name,
+                    tail: other_names,
+                },
             }
         };
-        self.eat_token(TokenType::RightCurlyBracket, context)?;
         self.eat_token(TokenType::KeywordFrom, context)?;
         let url = self.eat_token(TokenType::String, context)?;
         Ok(Statement::Import(ImportStatement {
             keyword_import,
             url,
-            imported_names: NonEmpty {
-                head: first_name,
-                tail: other_names,
-            },
+            import_type,
         }))
     }
 

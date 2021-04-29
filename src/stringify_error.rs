@@ -278,7 +278,9 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
         TokenType::Semicolon => "used for separating statements",
         TokenType::KeywordFrom => "used for importing modules",
-        TokenType::KeywordWith => "used for with statement"
+        TokenType::KeywordWith => "used for with statement",
+        TokenType::KeywordAs => "used for aliasing imported symbols",
+        TokenType::Asterisk => "used for glob import"
     }
 }
 
@@ -294,7 +296,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::ExpressionSwitch => ParseContextDescription {
             name: "Switch Expression",
-            examples: vec!["switch x {case true: \"Yes\" case false: \"No\"}"],
+            examples: vec!["switch(x) {case true: \"Yes\" case false: \"No\"}"],
         },
         ParseContext::ExpressionIf => ParseContextDescription {
             name: "If Expression",
@@ -306,23 +308,19 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::ExpressionFunctionCall => ParseContextDescription {
             name: "Function call",
-            examples: vec![
-                "\"Hello world\".print",
-                "x.add(y)",
-                "is_big.(| true => \"big\" | false => \"small\")",
-            ],
+            examples: vec!["\"Hello world\".print()", "x.add(y)"],
         },
         ParseContext::ExpressionRecord => ParseContextDescription {
             name: "Record",
-            examples: vec!["{ x: 2 y: 3 }", "let x = 1\nlet y = 2\n{ x y }"],
+            examples: vec!["{ x: 2, y: 3 }"],
         },
         ParseContext::ExpressionRecordUpdate => ParseContextDescription {
             name: "Record Update",
-            examples: vec!["a.{ x: 2 }", "a.{ x.add(1) }", "a.{ x: 2 y.square() }"],
+            examples: vec!["a.{ x: 2 }", "a.{ x.add(1) }", "a.{ x: 2, y.square() }"],
         },
         ParseContext::ExpressionEnumConstructor => ParseContextDescription {
             name: "Enum Constructor",
-            examples: vec!["None()", "Some(0)"],
+            examples: vec!["None", "Some(0)"],
         },
         ParseContext::ExpressionQuoted => ParseContextDescription {
             name: "Quoted Expression",
@@ -333,23 +331,20 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             examples: vec![
                 "let x = 1",
                 "type People = { name: String }",
-                "do \"hello world\".print",
-                "enum Color = Red Green",
+                "do \"hello world\".print()",
+                "enum Color { Red, Green }",
             ],
         },
         ParseContext::StatementImport => ParseContextDescription {
             name: "Import Statement",
             examples: vec![
-                "import \"./foo.kk\" { bar }",
-                "import \"./foo.kk\" { bar: spam baz }",
+                "import { bar } from \"./foo.kk\"",
+                "import { bar as spam, baz } from \"./foo.kk\"",
             ],
         },
         ParseContext::StatementLet => ParseContextDescription {
             name: "Let Statement",
-            examples: vec![
-                "let x : Integer = 1",
-                "let identity<T> : | T => T = | x => x",
-            ],
+            examples: vec!["let x : Integer = 1", "let identity = <T>(t: T): T => t"],
         },
         ParseContext::StatementType => ParseContextDescription {
             name: "Type Statement",
@@ -358,8 +353,8 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::StatementEnum => ParseContextDescription {
             name: "Enum Statement",
             examples: vec![
-                "enum Color = Red Green",
-                "enum List<A> = Nil() Cons({current: A next: List<A A>})",
+                "enum Color { Red, Green }",
+                "enum List<A> { Nil, Cons({head: A, tail: List<A>}) }",
             ],
         },
         ParseContext::TypeAnnotationArray => ParseContextDescription {
@@ -368,7 +363,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::TypeAnnotationRecord => ParseContextDescription {
             name: "Record Type Annotation",
-            examples: vec!["{ x: String  y: { z: Integer } }"],
+            examples: vec!["{ x: String,  y: { z: Integer } }"],
         },
         ParseContext::TypeAnnotationQuoted => ParseContextDescription {
             name: "Quoted Type Annotation",
@@ -392,7 +387,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::TypeArguments => ParseContextDescription {
             name: "Type Arguments",
-            examples: vec!["<Element = number>"],
+            examples: vec!["<Element>"],
         },
         ParseContext::EnumConstructorDefinition => ParseContextDescription {
             name: "Enum Constructor Definition",
@@ -404,7 +399,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::DocumentationCodeSnippet => ParseContextDescription {
             name: "Documentation Code Snippet",
-            examples: vec!["```\"Hello world\".print```"],
+            examples: vec!["```\"Hello world\".print()```"],
         },
         ParseContext::StatementWith => ParseContextDescription {
             name: "With Statement",
@@ -469,6 +464,8 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordSwitch => "switch",
         TokenType::KeywordCase => "case",
         TokenType::Semicolon => ";",
+        TokenType::KeywordAs => "as",
+        TokenType::Asterisk => "*",
     }
 }
 
@@ -684,10 +681,11 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             }
         },
         UnifyErrorKind::DuplicatedIdentifier {
+            name,
             ..
         } => StringifiedError {
             summary: "Duplicated name".to_string(),
-            body: "This variable is already declared before in this namespace.".to_string()
+            body: format!("This variable `{}` is already declared before in this module.", name)
         },
         UnifyErrorKind::ConflictingFunctionDefinition {
             function_name,

@@ -27,7 +27,7 @@ pub struct ModuleMeta {
 type Substitution = HashMap<String, SubstitutionItem>;
 
 pub struct GetValueSymbolResult {
-    pub symbol_uid: usize,
+    pub symbol_uid: SymbolUid,
     pub type_value: Type,
 }
 
@@ -127,14 +127,23 @@ pub struct SymbolId {
 pub struct SymbolEntry {
     /// This is needed for single dispatch disambiguation during transpilation  
     /// Also needed for importing symbols
-    /// This value should be unique across different modules
-    pub uid: usize,
+    pub uid: SymbolUid,
 
     /// Represents in which scope this symbol is declared.
     /// Needed to allow variable shadowing.
     pub scope_name: usize,
 
     pub symbol: Symbol,
+}
+
+/// This value should be unique across modules
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolUid {
+    /// This value is only unique within each module
+    pub index: usize,
+
+    /// This is needed for uniquely identify enum type across different modules
+    pub module_uid: ModuleUid,
 }
 
 /// This represents the meta data of a symbol
@@ -191,7 +200,7 @@ enum SubstitutionItem {
 }
 
 impl Module {
-    pub fn new(module_meta: ModuleMeta, starting_symbol_uid: usize) -> Module {
+    pub fn new(module_meta: ModuleMeta) -> Module {
         let mut result = Module {
             symbol_entries: Vec::new(),
             type_variable_substitutions: (HashMap::new()),
@@ -207,22 +216,12 @@ impl Module {
         built_in_symbols
             .into_iter()
             .map(|symbol| result.insert_symbol(None, symbol))
-            .collect::<Result<Vec<usize>, UnifyError>>()
+            .collect::<Result<Vec<SymbolUid>, UnifyError>>()
             .expect("Compiler error: built-in symbols should not have conflict");
 
-        result
-            .current_uid
-            .set(built_in_symbols_length + starting_symbol_uid);
+        result.current_uid.set(built_in_symbols_length);
 
         result
-    }
-
-    pub fn get_current_uid(&self) -> usize {
-        self.current_uid.get()
-    }
-
-    pub fn set_current_uid(&mut self, new_uid: usize) {
-        self.current_uid.set(new_uid)
     }
 
     pub fn uid(&self) -> ModuleUid {
@@ -247,7 +246,7 @@ impl Module {
     pub fn insert_explicit_type_variable(
         &mut self,
         type_variable_name: &Token,
-    ) -> Result<usize, UnifyError> {
+    ) -> Result<SymbolUid, UnifyError> {
         self.insert_symbol(
             None,
             Symbol {
@@ -265,10 +264,13 @@ impl Module {
     }
 
     /// Get the next symbol UID
-    pub fn get_next_symbol_uid(&mut self) -> usize {
+    pub fn get_next_symbol_uid(&mut self) -> SymbolUid {
         let result = self.current_uid.get();
         self.current_uid.set(result + 1);
-        result
+        SymbolUid {
+            index: result,
+            module_uid: self.uid(),
+        }
     }
 
     pub fn introduce_implicit_type_variable(
@@ -392,7 +394,7 @@ impl Module {
                 name,
                 type_arguments,
             } => Type::Named {
-                symbol_uid: *symbol_uid,
+                symbol_uid: symbol_uid.clone(),
                 name: name.clone(),
                 type_arguments: type_arguments
                     .iter()
@@ -497,7 +499,7 @@ impl Module {
         variable_name: &Token,
         type_value: Option<Type>,
         exported: bool,
-    ) -> Result<(/*uid*/ usize, Type), UnifyError> {
+    ) -> Result<(SymbolUid, Type), UnifyError> {
         let type_value = match type_value {
             None => Type::ImplicitTypeVariable {
                 name: self.get_next_type_variable_name(),
@@ -531,9 +533,9 @@ impl Module {
     /// Returns the UID of the new_symbol upon successful insertion.
     pub fn insert_symbol(
         &mut self,
-        uid: Option<usize>,
+        uid: Option<SymbolUid>,
         new_symbol: Symbol,
-    ) -> Result<usize, UnifyError> {
+    ) -> Result<SymbolUid, UnifyError> {
         let name = new_symbol.meta.name.representation.clone();
         let scope_name = self.current_scope_name();
         match &new_symbol.kind {
@@ -648,11 +650,24 @@ impl Module {
 
         let uid = uid.unwrap_or_else(|| self.get_next_symbol_uid());
         self.symbol_entries.push(SymbolEntry {
-            uid,
+            uid: uid.clone(),
             scope_name: self.current_scope_name(),
             symbol: new_symbol,
         });
         Ok(uid)
+    }
+
+    pub fn get_all_exported_symbols(&self) -> Vec<SymbolEntry> {
+        self.symbol_entries
+            .iter()
+            .filter_map(|entry| {
+                if entry.symbol.meta.exported {
+                    Some(entry.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn get_all_matching_symbols(&self, symbol_name: &Token) -> Vec<SymbolEntry> {
@@ -665,7 +680,7 @@ impl Module {
                         // as they will be brought into scope by their enum name
                         SymbolKind::EnumConstructor(_) => vec![],
                         SymbolKind::Type(type_symbol) => {
-                            match type_symbol.type_value {
+                            match &type_symbol.type_value {
                                 // When importing enum type
                                 // it's constructor will be brought into scope as well
                                 Type::Named { symbol_uid, .. } => vec![entry.clone()]
@@ -674,7 +689,9 @@ impl Module {
                                         match &entry.symbol.kind {
                                             SymbolKind::EnumConstructor(
                                                 enum_constructor_symbol,
-                                            ) if enum_constructor_symbol.enum_uid == symbol_uid => {
+                                            ) if enum_constructor_symbol.enum_uid
+                                                == *symbol_uid =>
+                                            {
                                                 Some(entry.clone())
                                             }
                                             _ => None,
@@ -693,7 +710,7 @@ impl Module {
             .collect()
     }
 
-    pub fn get_enum_constructors(&self, enum_uid: usize) -> Vec<EnumConstructorSymbol> {
+    pub fn get_enum_constructors(&self, enum_uid: SymbolUid) -> Vec<EnumConstructorSymbol> {
         self.symbol_entries
             .iter()
             .filter_map(|entry| match &entry.symbol.kind {
@@ -730,11 +747,11 @@ impl Module {
         }
     }
 
-    pub fn get_type_symbol_by_uid(&self, symbol_uid: usize) -> Option<TypeSymbol> {
+    pub fn get_type_symbol_by_uid(&self, symbol_uid: &SymbolUid) -> Option<TypeSymbol> {
         self.symbol_entries
             .iter()
             .filter_map(|entry| {
-                if entry.uid == symbol_uid {
+                if entry.uid == *symbol_uid {
                     match &entry.symbol.kind {
                         SymbolKind::Type(type_symbol) => Some(type_symbol.clone()),
                         _ => panic!("Compiler error, {:?}", entry.symbol.meta),
@@ -763,11 +780,11 @@ impl Module {
                     if entry.scope_name == scope_name
                         && entry.symbol.meta.name.representation == symbol_name.representation =>
                 {
-                    Some((entry.uid, value_symbol.clone()))
+                    Some((entry.uid.clone(), value_symbol.clone()))
                 }
                 _ => None,
             })
-            .collect::<Vec<(usize, ValueSymbol)>>();
+            .collect::<Vec<(SymbolUid, ValueSymbol)>>();
         match matching_value_symbols.split_first() {
             None => match self.scope.get_parent_scope_name(scope_name) {
                 None => Err(UnifyError {
@@ -781,7 +798,7 @@ impl Module {
             Some((head, tail)) => {
                 if tail.is_empty() {
                     Ok(GetValueSymbolResult {
-                        symbol_uid: head.0,
+                        symbol_uid: head.0.clone(),
                         type_value: head.1.type_value.clone(),
                     })
                 } else {
@@ -789,13 +806,13 @@ impl Module {
                         .iter()
                         .filter_map(|(symbol_uid, symbol)| match &symbol.type_value {
                             Type::Function(function_type) => Some(FunctionSignature {
-                                symbol_uid: *symbol_uid,
+                                symbol_uid: symbol_uid.clone(),
                                 type_variables: None,
                                 function_type: function_type.clone(),
                             }),
                             Type::TypeScheme(type_scheme) => match type_scheme.type_value.clone() {
                                 Type::Function(function_type) => Some(FunctionSignature {
-                                    symbol_uid: *symbol_uid,
+                                    symbol_uid: symbol_uid.clone(),
                                     type_variables: Some(type_scheme.type_variables.clone()),
                                     function_type,
                                 }),
@@ -866,7 +883,7 @@ impl Module {
 
                                 // If found one matching function signature, return Ok
                                 Some(signature) => Ok(GetValueSymbolResult {
-                                    symbol_uid: signature.symbol_uid,
+                                    symbol_uid: signature.symbol_uid.clone(),
                                     type_value: signature.as_type_value(),
                                 }),
                             }
@@ -900,7 +917,7 @@ impl Module {
     ///     This is for disambiguating constructors with the same name that belongs to different enums
     pub fn get_constructor_symbol(
         &self,
-        expected_enum_uid: Option<usize>,
+        expected_enum_uid: Option<SymbolUid>,
         constructor_name: &Token,
     ) -> Result<EnumConstructorSymbol, UnifyError> {
         let matching_constructors = self
@@ -987,7 +1004,7 @@ pub struct FunctionSymbol {
 
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
-    pub symbol_uid: usize,
+    pub symbol_uid: SymbolUid,
     pub type_variables: Option<NonEmpty<String>>,
     pub function_type: FunctionType,
 }
@@ -1091,7 +1108,7 @@ fn overlap(a: &Type, b: &Type) -> bool {
 #[derive(Debug, Clone)]
 pub struct EnumConstructorSymbol {
     /// Refers to the UID of the enum that contains this constructor
-    pub enum_uid: usize,
+    pub enum_uid: SymbolUid,
     pub enum_name: String,
     pub constructor_name: String,
     pub type_variables: Vec<String>,

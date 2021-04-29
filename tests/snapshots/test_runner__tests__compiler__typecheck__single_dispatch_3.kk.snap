@@ -27,4 +27,4 @@ error:
 2 │ let foo = (_: String): String => "Hello"
   │     ^^^ Duplicated name
   │
-  = This variable is already declared before in this namespace.
+  = This variable `foo` is already declared before in this module.

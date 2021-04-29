@@ -5,10 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// testing import all kind of symbols
-import {foo as bar, Color, bomb} from "./import_1.kk"
+// import all
+import * from "./import_1.kk"
 
-do bar.print()
+do foo.print()
 
 let x: Color = Red
 do x.print()

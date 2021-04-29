@@ -1,5 +1,6 @@
 use crate::{
     ast::{InfinitePatternKind, Position, Token},
+    module::{ModuleUid, SymbolUid},
     non_empty::NonEmpty,
     unify::join_position,
 };
@@ -14,7 +15,9 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum TypecheckedStatement {
+    ImportStatement(TypecheckedImportStatement),
     Let {
+        exported: bool,
         left: TypecheckedDestructurePattern,
         right: TypecheckedExpression,
     },
@@ -25,9 +28,20 @@ pub enum TypecheckedStatement {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypecheckedImportStatement {
+    pub module_uid: ModuleUid,
+
+    /// The name of the symbol being imported
+    pub imported_name: Identifier,
+
+    /// The name of the symbol being imported as
+    pub imported_as: Identifier,
+}
+/// Identifier is also known as variable
+#[derive(Debug, Clone)]
 pub struct Identifier {
     /// This is needed for disambiguating overloaded functions
-    pub uid: usize,
+    pub uid: SymbolUid,
     pub token: Token,
 }
 

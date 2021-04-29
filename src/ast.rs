@@ -1,4 +1,4 @@
-use crate::{non_empty::NonEmpty, tokenize::Character};
+use crate::{module::SymbolUid, non_empty::NonEmpty, tokenize::Character};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -58,7 +58,18 @@ pub struct EnumStatement {
 pub struct ImportStatement {
     pub keyword_import: Token,
     pub url: Token,
-    pub imported_names: NonEmpty<ImportedName>,
+    pub import_type: ImportType,
+}
+
+#[derive(Debug, Clone)]
+pub enum ImportType {
+    /// This means import selected exported symbols
+    Selected {
+        imported_names: NonEmpty<ImportedName>,
+    },
+
+    /// This means to import all exported symbols
+    All { asterisk: Token },
 }
 
 #[derive(Debug, Clone)]
@@ -111,7 +122,7 @@ pub enum Type {
         /// This is needed to differentiate two named types that has the same name
         ///  which are declared in different modules
         /// Also needed for looking up constructors for this type
-        symbol_uid: usize,
+        symbol_uid: SymbolUid,
         name: String,
         type_arguments: Vec<(String, Type)>,
     },
@@ -552,6 +563,7 @@ pub enum TokenType {
     KeywordFalse,
     KeywordImport,
     KeywordFrom,
+    KeywordAs,
     KeywordExport,
     Whitespace,
     LeftCurlyBracket,
@@ -600,6 +612,7 @@ pub enum TokenType {
     },
 
     JavascriptCode,
+    Asterisk,
     Other(char),
 }
 
