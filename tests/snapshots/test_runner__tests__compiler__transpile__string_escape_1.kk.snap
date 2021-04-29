@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do "\"Hello world\"".print()
-do "\\Hello world\\".print()
+"\"Hello world\"".print()
+"\\Hello world\\".print()
 
 ============
 EXIT CODE

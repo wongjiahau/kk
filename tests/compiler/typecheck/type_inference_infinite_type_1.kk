@@ -1,4 +1,4 @@
 let x: Integer = {
-  let f = x => x.x();
-  123;
+  let f = x => x.x()
+  123
 }

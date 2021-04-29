@@ -9,7 +9,7 @@ let foo = <T>(a: T, b: T): {a: T, b: T} => {a, b}
 
 let match = <A, B>(a: A, f: (a: A) => B): B => a.f()
 
-do "hello".match(.foo(2)).print()
+"hello".match(.foo(2)).print()
 
 ============
 EXIT CODE
@@ -25,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/shorthand_function_call_1.kk:5:23
+  ┌─ tests/compiler/typecheck/shorthand_function_call_1.kk:5:20
   │
-5 │ do "hello".match(.foo(2)).print()
-  │                       ^ Type mismatch
+5 │ "hello".match(.foo(2)).print()
+  │                    ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

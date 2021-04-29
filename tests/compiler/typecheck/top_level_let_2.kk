@@ -4,5 +4,5 @@ let {x, y} = {
   y: (b: Boolean): String => "World"
 }
 
-do 1.x().print()
-do true.y().print()
+1.x().print()
+true.y().print()

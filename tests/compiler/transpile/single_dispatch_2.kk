@@ -4,5 +4,5 @@ let foo = (_: Boolean): String => "World"
 
 let map = <A, B>(x: A, f: (a: A) => B): B => x.f()
 
-do true.map(foo).print()
-do true.map(foo).map(x => x.foo()).print()
+true.map(foo).print()
+true.map(foo).map(x => x.foo()).print()

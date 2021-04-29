@@ -8,4 +8,4 @@ enum Bar {
   NullBar
 }
 
-do Foo(Bar(Foo(NullFoo))).print() // Compile Error
+Foo(Bar(Foo(NullFoo))).print() // Compile Error

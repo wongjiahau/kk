@@ -1,8 +1,8 @@
 let foo = (s: String): String => "Hello"
 
-do {
-  let foo = x => "World";
+{
+  let foo = x => "World"
   "x".foo().print()
 }
 
-do "x".foo().print()
+"x".foo().print()

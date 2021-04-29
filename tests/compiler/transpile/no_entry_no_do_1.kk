@@ -3,4 +3,4 @@
 
 import {foo} from "./no_entry_no_do_2.kk"
 
-do "World".print()
+"World".print()

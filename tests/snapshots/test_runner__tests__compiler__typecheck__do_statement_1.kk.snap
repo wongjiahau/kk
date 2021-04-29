@@ -7,7 +7,7 @@ INPUT
 ============
 let foo = (null: Null): Integer => 123
 
-do null.foo()
+null.foo()
 
 ============
 EXIT CODE
@@ -23,12 +23,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/do_statement_1.kk:3:4
+  ┌─ tests/compiler/typecheck/do_statement_1.kk:3:1
   │
-3 │ do null.foo()
-  │    ^^^^^^^^^^ Type Mismatch
+3 │ null.foo()
+  │ ^^^^^^^^^^ Type mismatch
   │
-  = The body of do-expression must have the type of Null.
-    But this expression has the type of:
-
-        Integer
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - Null        | + Integer   |
+    +---------------+-------------+

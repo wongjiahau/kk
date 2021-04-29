@@ -7,8 +7,8 @@ INPUT
 ============
 let lift = (x: Integer): {x: Integer} => {x}
 
-do {
-  with x = 123.lift;
+{
+  with x = 123.lift
               // Error, lift is not a satisfactory bind function
   x.print()
 }
@@ -29,7 +29,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/with_statement_3.kk:4:16
   │
-4 │   with x = 123.lift;
+4 │   with x = 123.lift
   │                ^^^^ Unsatifactory bind function.
   │
   = The bind function must satisfies all of the following conditions:

@@ -7,9 +7,9 @@ INPUT
 ============
 let identity = <A>(a: A): A => a
 
-do {
-  let x = "hello".identity();
-  let y: Integer = x;
+{
+  let x = "hello".identity()
+  let y: Integer = x
 }
 
 ============
@@ -28,7 +28,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/generic_function_2.kk:5:20
   │
-5 │   let y: Integer = x;
+5 │   let y: Integer = x
   │                    ^ Type mismatch
   │
   = +---------------+-------------+

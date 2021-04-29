@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do "I am ${{my_age: [123]}} years old".print()
+"I am ${{my_age: [123]}} years old".print()
 //          ^^^^^^ Error
 
 ============
@@ -22,10 +22,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/string_interpolation_1.kk:1:12
+  ┌─ tests/compiler/typecheck/string_interpolation_1.kk:1:9
   │
-1 │ do "I am ${{my_age: [123]}} years old".print()
-  │            ^^^^^^^^^^^^^^^ Type mismatch
+1 │ "I am ${{my_age: [123]}} years old".print()
+  │         ^^^^^^^^^^^^^^^ Type mismatch
   │
   = +---------------+-----------------+
     | EXPECTED TYPE |   ACTUAL TYPE   |

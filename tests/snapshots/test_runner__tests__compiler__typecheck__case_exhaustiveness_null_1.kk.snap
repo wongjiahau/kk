@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do {
+{
   let bomb = (n) =>
     switch(n) {
       case null: true

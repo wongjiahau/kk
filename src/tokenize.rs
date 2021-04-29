@@ -560,7 +560,6 @@ impl Tokenizer {
                         '_' => TokenType::Underscore,
                         '`' => TokenType::Backtick,
                         '!' => TokenType::Bang,
-                        ';' => TokenType::Semicolon,
                         '*' => TokenType::Asterisk,
                         '\n' => TokenType::Newline,
                         other => TokenType::Other(other),

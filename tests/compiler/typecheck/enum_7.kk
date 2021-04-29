@@ -4,4 +4,4 @@ enum Tool { Nut }
 let a: Tool = Nut
 let f = (Nut: Food): Integer => 123
 
-do a.f()
+a.f()

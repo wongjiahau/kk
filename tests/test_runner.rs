@@ -25,7 +25,7 @@ fn run_all_tests() {
                 print!("{}", input_filename);
                 let input = fs::read_to_string(&input_filename).expect("failed to read input file");
                 let actual_output = {
-                    let output = Command::new("./target/debug/kk")
+                    let output = Command::new("./target/release/kk")
                         .arg("run")
                         .arg(&input_filename)
                         .output()

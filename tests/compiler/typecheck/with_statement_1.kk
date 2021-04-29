@@ -12,12 +12,12 @@ let map = <A, B>(this: Option<A>, f: (a: A) => Option<B>): Option<B> => {
 }
 
 export let sum = (a: Option<Integer>, b: Option<Integer>): Option<{ a: Integer, b: Integer }> => {
-  with a = a.map;
-  with b = b.map;
+  with a = a.map
+  with b = b.map
   Some({ a, b })
 }
 
-do Some(1).sum(Some(2)).print()
-do None.sum(Some(2)).print()
-do Some(1).sum(None).print()
-do None.sum(None).print()
+Some(1).sum(Some(2)).print()
+None.sum(Some(2)).print()
+Some(1).sum(None).print()
+None.sum(None).print()

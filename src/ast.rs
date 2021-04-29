@@ -5,6 +5,8 @@ use crate::{module::SymbolUid, non_empty::NonEmpty, tokenize::Character};
 pub enum Statement {
     Let(LetStatement),
 
+    /// This represents the entry points of a module.
+    /// Will be ignored for imported modules.
     Expression(Expression),
 
     /// This represent type alias definition.
@@ -13,8 +15,6 @@ pub enum Statement {
     /// This represents named sum types (a.k.a tagged union).
     Enum(EnumStatement),
 
-    /// This represents the entry points of a module.
-    Do(DoStatement),
     Import(ImportStatement),
 }
 
@@ -70,12 +70,6 @@ pub enum ImportType {
 
     /// This means to import all exported symbols
     All { asterisk: Token },
-}
-
-#[derive(Debug, Clone)]
-pub struct DoStatement {
-    pub keyword_do: Token,
-    pub expression: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -576,7 +570,6 @@ pub enum TokenType {
     /// Also known as Exclamation Mark (!)
     Bang,
     Colon,
-    Semicolon,
     LessThan,
     MoreThan,
     Equals,

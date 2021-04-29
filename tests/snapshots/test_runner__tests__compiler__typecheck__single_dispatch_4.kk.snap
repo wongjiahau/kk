@@ -9,7 +9,7 @@ let foo = (s: String): String => "Hello"
 
 let foo = (i: Integer): String => "World"
 
-do true.foo().print()
+true.foo().print()
 //      ^^^^^ Error: no matching overloaded function found
 
 ============
@@ -26,10 +26,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/single_dispatch_4.kk:5:9
+  ┌─ tests/compiler/typecheck/single_dispatch_4.kk:5:6
   │
-5 │ do true.foo().print()
-  │         ^^^ No matching overload found.
+5 │ true.foo().print()
+  │      ^^^ No matching overload found.
   │
   =
     I cannot find a version of this function that takes the following type as first argument:

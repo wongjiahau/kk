@@ -276,7 +276,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordSwitch => "used for pattern matching",
         TokenType::KeywordCase => "used for pattern matching",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
-        TokenType::Semicolon => "used for separating statements",
         TokenType::KeywordFrom => "used for importing modules",
         TokenType::KeywordWith => "used for with statement",
         TokenType::KeywordAs => "used for aliasing imported symbols",
@@ -463,7 +462,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Other(_) => "unknown character",
         TokenType::KeywordSwitch => "switch",
         TokenType::KeywordCase => "case",
-        TokenType::Semicolon => ";",
         TokenType::KeywordAs => "as",
         TokenType::Asterisk => "*",
     }
@@ -728,14 +726,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                     .join("\n\n"),
                     2
                 ),
-            )
-        },
-        UnifyErrorKind::DoBodyMustHaveNullType { actual_type} => StringifiedError {
-            summary: "Type Mismatch".to_string(),
-            body: format!(
-                "The body of do-expression must have the type of Null.\n{}\n\n{}",
-                "But this expression has the type of:",
-                stringify_type(actual_type, 2)
             )
         },
         UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload => StringifiedError {

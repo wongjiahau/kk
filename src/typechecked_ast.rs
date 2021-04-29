@@ -22,9 +22,6 @@ pub enum TypecheckedStatement {
         right: TypecheckedExpression,
     },
     Expression(TypecheckedExpression),
-    Do {
-        expression: TypecheckedExpression,
-    },
 }
 
 #[derive(Debug, Clone)]

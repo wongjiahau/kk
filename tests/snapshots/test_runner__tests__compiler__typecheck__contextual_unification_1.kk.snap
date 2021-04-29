@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do {
+{
   let f
     : (x: {foo: Float}) => Float
     = o => o.bar

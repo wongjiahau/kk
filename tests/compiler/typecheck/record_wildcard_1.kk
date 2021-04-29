@@ -6,4 +6,4 @@ type People = {
 
 let toString = ({ ... }: People): String => "${firstName}, ${lastName}"
 
-do { firstName: "Adam", lastName: "Bob" }.toString().print()
+{ firstName: "Adam", lastName: "Bob" }.toString().print()

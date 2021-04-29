@@ -1,4 +1,4 @@
-do {
+{
   let id
     : (a: Integer) => Integer 
     = <T>(t: T): T => t

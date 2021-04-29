@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 // Unterminated string interpolation
-do "I am ${123
+"I am ${123
 
 ============
 EXIT CODE
@@ -22,9 +22,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/tokenize/string_interpolation_1.kk:2:15
+  ┌─ tests/compiler/tokenize/string_interpolation_1.kk:2:12
   │
-2 │ do "I am ${123
-  │               ^ Syntax error: unexpected EOF (end of file)
+2 │ "I am ${123
+  │            ^ Syntax error: unexpected EOF (end of file)
   │
   = The expected token here is `}`.

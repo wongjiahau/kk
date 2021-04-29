@@ -91,9 +91,6 @@ pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
 
 pub fn transpile_statement(statement: TypecheckedStatement) -> String {
     match statement {
-        TypecheckedStatement::Do { expression, .. } => {
-            format!("({});", transpile_expression(expression))
-        }
         TypecheckedStatement::Expression(expression) => {
             format!("({});", transpile_expression(expression))
         }

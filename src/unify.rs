@@ -45,14 +45,14 @@ pub fn unify_statements(
         type_statements,
         enum_statements,
         let_statements,
-        do_statements,
+        top_level_expressions,
         function_statements,
     ) = {
         let mut import_statements = Vec::new();
         let mut type_statements = Vec::new();
         let mut enum_statements = Vec::new();
         let mut let_statements = Vec::new();
-        let mut do_statements = Vec::new();
+        let mut top_level_expressions = Vec::new();
         let mut function_statements = Vec::new();
         for statement in statements {
             match statement {
@@ -80,14 +80,11 @@ pub fn unify_statements(
                         }
                     }
                 }
-                Statement::Do(do_statement) => {
-                    // Do statements will only be compiled on entrypoint file
+                Statement::Expression(expression) => {
+                    // Top level expressions will only be compiled on entrypoint file
                     if is_entry_point {
-                        do_statements.push(do_statement);
+                        top_level_expressions.push(expression);
                     }
-                }
-                Statement::Expression(_) => {
-                    panic!()
                 }
             }
         }
@@ -96,7 +93,7 @@ pub fn unify_statements(
             type_statements,
             enum_statements,
             let_statements,
-            do_statements,
+            top_level_expressions,
             function_statements,
         )
     };
@@ -316,11 +313,11 @@ pub fn unify_statements(
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     // 6. Lastly we will infer do statements
-    let typechecked_do_statements = do_statements
+    let typechecked_top_level_expressions_statements = top_level_expressions
         .into_iter()
         .map(
-            |do_statement| match infer_do_statement(&mut module, do_statement) {
-                Ok(statement) => Ok(statement),
+            |expression| match infer_expression_type(&mut module, Some(Type::Null), &expression) {
+                Ok(result) => Ok(TypecheckedStatement::Expression(result.expression)),
                 Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
             },
         )
@@ -333,7 +330,7 @@ pub fn unify_statements(
                 statements.extend(typechecked_import_statements);
                 statements.extend(typechecked_let_statements);
                 statements.extend(typechecked_function_statements);
-                statements.extend(typechecked_do_statements);
+                statements.extend(typechecked_top_level_expressions_statements);
                 statements
             },
         },
@@ -409,16 +406,11 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
                 .statements()
                 .iter()
                 .find_map(|statement| match statement {
-                    Statement::Do(do_statement) => {
-                        has_direct_function_call(&do_statement.expression)
-                    }
                     Statement::Let(let_statement) => has_direct_function_call(&let_statement.right),
                     Statement::Expression(expression) => has_direct_function_call(expression),
                     Statement::Type(_) => None,
                     Statement::Enum(_) => None,
-                    Statement::Import(_) => {
-                        panic!("")
-                    }
+                    Statement::Import(_) => None,
                 })
         }
     }
@@ -489,9 +481,6 @@ pub enum UnifyErrorKind {
     InfiniteTypeDetected {
         type_variable_name: String,
         in_type: Type,
-    },
-    DoBodyMustHaveNullType {
-        actual_type: Type,
     },
     CannotAccessPropertyOfNonRecord,
     NoSuchProperty {
@@ -952,32 +941,6 @@ pub fn try_lift_as_type_scheme(type_value: Type, type_variables: Vec<String>) ->
     }
 }
 
-pub fn infer_do_statement(
-    module: &mut Module,
-    do_statement: DoStatement,
-) -> Result<TypecheckedStatement, UnifyError> {
-    match infer_expression_type(
-        module,
-        // NOTE: we could have pass in Some(Type::Null) instead of None here.
-        //       The reason is because we want to provide better error message with context.
-        //       So instead of saying expected type is null, we tell the user
-        //       that the body of a `do` statement must be null
-        None,
-        &do_statement.expression,
-    )? {
-        InferExpressionResult {
-            expression,
-            type_value: Type::Null,
-        } => Ok(TypecheckedStatement::Do { expression }),
-        InferExpressionResult { type_value, .. } => Err(UnifyError {
-            position: get_expression_position(&do_statement.expression),
-            kind: UnifyErrorKind::DoBodyMustHaveNullType {
-                actual_type: type_value,
-            },
-        }),
-    }
-}
-
 /// @deprecated
 /// This function is left here: for reference purpose
 pub fn generalize_type(type_value: Type) -> TypeScheme {
@@ -1194,10 +1157,6 @@ fn get_statement_position(statement: &Statement) -> Position {
         Statement::Enum(enum_statement) => join_position(
             enum_statement.keyword_enum.position,
             enum_statement.right_curly_bracket.position,
-        ),
-        Statement::Do(do_statement) => join_position(
-            do_statement.keyword_do.position,
-            get_expression_position(&do_statement.expression),
         ),
         Statement::Import(import_statement) => join_position(
             import_statement.keyword_import.position,
@@ -2787,7 +2746,7 @@ fn infer_block_level_statements(
             let expected_type = if tail.is_empty() {
                 expected_final_type.clone()
             } else {
-                None
+                Some(Type::Null)
             };
             let mut result = vec![infer_block_level_statement(module, expected_type, head)?];
             let tail =

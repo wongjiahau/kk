@@ -9,10 +9,10 @@ let {id} = {
   id: <T>(t: T): T => t
 }
 
-do {
-  let x: String = "Hello".id(); // No error
-  let y: Integer = 123.id(); // No error
-  let z: String = 123.id();
+{
+  let x: String = "Hello".id() // No error
+  let y: Integer = 123.id() // No error
+  let z: String = 123.id()
   //              ^^^^^^^^ Error: expected String, got Integer
 }
 
@@ -32,7 +32,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/higher_rank_polymorphism_1.kk:8:19
   │
-8 │   let z: String = 123.id();
+8 │   let z: String = 123.id()
   │                   ^^^^^^^^ Type mismatch
   │
   = +---------------+-------------+

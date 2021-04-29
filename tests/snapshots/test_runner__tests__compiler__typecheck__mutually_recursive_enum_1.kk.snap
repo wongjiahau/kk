@@ -15,7 +15,7 @@ enum Bar {
   NullBar
 }
 
-do Foo(Bar(Foo(NullFoo))).print() // Compile Error
+Foo(Bar(Foo(NullFoo))).print() // Compile Error
 
 ============
 EXIT CODE
@@ -31,10 +31,10 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/mutually_recursive_enum_1.kk:11:16
+   ┌─ tests/compiler/typecheck/mutually_recursive_enum_1.kk:11:13
    │
-11 │ do Foo(Bar(Foo(NullFoo))).print() // Compile Error
-   │                ^^^^^^^ Type mismatch
+11 │ Foo(Bar(Foo(NullFoo))).print() // Compile Error
+   │             ^^^^^^^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |

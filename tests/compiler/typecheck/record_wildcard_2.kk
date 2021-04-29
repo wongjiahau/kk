@@ -6,4 +6,4 @@ type People = {
 
 let s = (firstName: String, lastName: String): People => {...}
 
-do "Adam".s("James").print()
+"Adam".s("James").print()

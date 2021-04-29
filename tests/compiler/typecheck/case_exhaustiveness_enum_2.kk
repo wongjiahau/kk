@@ -3,7 +3,7 @@ enum List<T> {
   Cons({head: T, tail: List<T>})
 } 
 
-do {
+{
   let bomb = list => 
     switch (list) {
       case Nil: true

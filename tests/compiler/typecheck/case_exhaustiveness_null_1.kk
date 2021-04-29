@@ -1,4 +1,4 @@
-do {
+{
   let bomb = (n) => 
     switch(n) {
       case null: true

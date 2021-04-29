@@ -6,7 +6,7 @@ enum List<Element> {
   })
 }
 
-do {
+{
   let foo = Cons({
     current: 1,
     next: Cons({

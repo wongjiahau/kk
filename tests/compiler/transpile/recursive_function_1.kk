@@ -12,7 +12,7 @@ let add = (x: Nat, y: Nat): Nat =>
   }
 
 
-do {
-  let one = Succ(Zero);
+{
+  let one = Succ(Zero)
   one.add(one).print()
 }

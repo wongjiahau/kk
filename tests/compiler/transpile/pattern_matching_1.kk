@@ -5,7 +5,7 @@ let and = (x: Boolean, y: Boolean): Boolean =>
   }
 
 
-do true.and(true).print()
-do true.and(false).print()
-do false.and(true).print()
-do false.and(false).print()
+true.and(true).print()
+true.and(false).print()
+false.and(true).print()
+false.and(false).print()

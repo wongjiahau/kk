@@ -5,13 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Food { Nut }
-enum Tool { Nut }
+let foo = (null: Null): Integer => 123
 
-let a: Tool = Nut
-let f = (Nut: Food): Integer => 123
-
-a.f()
+null.foo()
+// Error: expected Null but got Integer
 
 ============
 EXIT CODE
@@ -27,13 +24,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/enum_7.kk:7:1
+  ┌─ tests/compiler/typecheck/top_level_expression_1.kk:3:1
   │
-7 │ a.f()
-  │ ^ Type mismatch
+3 │ null.foo()
+  │ ^^^^^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Food        | + Tool      |
+    | - Null        | + Integer   |
     +---------------+-------------+

@@ -1,6 +1,6 @@
 let identity = <A>(a: A): A => a
 
-do {
-  let x = "hello".identity();
-  let y: Integer = x;
+{
+  let x = "hello".identity()
+  let y: Integer = x
 }

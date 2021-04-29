@@ -10,7 +10,7 @@ let foo = (_: String): String => "Hello"
 let foo = (_: Boolean): String => "World"
 
 let main = (null: Null): Integer => {
-  let f = x => x.foo();
+  let f = x => x.foo()
   123
 }
 
@@ -30,7 +30,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/single_dispatch_2.kk:6:18
   │
-6 │   let f = x => x.foo();
+6 │   let f = x => x.foo()
   │                  ^^^ Ambiguous Reference
   │
   = This function is overloaded with multiple signatures, but the first argument provided has unknown type.

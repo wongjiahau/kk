@@ -6,8 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let x: Integer = {
-  let f = x => x.x();
-  123;
+  let f = x => x.x()
+  123
 }
 
 ============
@@ -26,7 +26,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/type_inference_infinite_type_1.kk:2:16
   │
-2 │   let f = x => x.x();
+2 │   let f = x => x.x()
   │                ^^^^^ Infinite type
   │
   = Infinite type expansion will happen when substituting `@TVAR3` into:

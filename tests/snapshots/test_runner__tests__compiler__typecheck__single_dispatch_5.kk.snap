@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do true.foo().print()
+true.foo().print()
 
 ============
 EXIT CODE
@@ -21,9 +21,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/single_dispatch_5.kk:1:9
+  ┌─ tests/compiler/typecheck/single_dispatch_5.kk:1:6
   │
-1 │ do true.foo().print()
-  │         ^^^ Unknown variable `foo`
+1 │ true.foo().print()
+  │      ^^^ Unknown variable `foo`
   │
   = Cannot find this value symbol in the current scope

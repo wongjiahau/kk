@@ -175,10 +175,6 @@ impl<'a> Parser<'a> {
                     self.parse_enum_statement(keyword_export, token)
                         .map(vectorized)
                 }
-                TokenType::KeywordDo => {
-                    let token = self.next_meaningful_token()?.unwrap();
-                    self.parse_do_statement(token).map(vectorized)
-                }
                 TokenType::KeywordImport => {
                     let token = self.next_meaningful_token()?.unwrap();
                     self.parse_import_statement(token).map(vectorized)
@@ -251,7 +247,6 @@ impl<'a> Parser<'a> {
                 ),
             }
         }?;
-        self.eat_token(TokenType::Semicolon, context)?;
         let mut statements = vec![];
         loop {
             match self.peek_next_meaningful_token()? {
@@ -261,9 +256,6 @@ impl<'a> Parser<'a> {
                 }) => break,
                 _ => {
                     statements.extend(self.parse_statement()?);
-                    if self.try_eat_token(TokenType::Semicolon)?.is_none() {
-                        break;
-                    }
                 }
             }
         }
@@ -362,14 +354,6 @@ impl<'a> Parser<'a> {
             type_variables,
             constructors,
             right_curly_bracket,
-        }))
-    }
-
-    fn parse_do_statement(&mut self, keyword_do: Token) -> Result<Statement, ParseError> {
-        let expression = self.parse_expression()?;
-        Ok(Statement::Do(DoStatement {
-            keyword_do,
-            expression,
         }))
     }
 
@@ -1281,7 +1265,6 @@ impl<'a> Parser<'a> {
                 })
             }
             _ => {
-                let context = Some(ParseContext::Statement);
                 let mut statements = statements;
                 let right_curly_bracket = loop {
                     if let Some(right_curly_bracket) =
@@ -1289,15 +1272,6 @@ impl<'a> Parser<'a> {
                     {
                         break right_curly_bracket;
                     } else {
-                        self.eat_token(TokenType::Semicolon, context)?;
-
-                        // This is to allow trailing semicolon
-                        if let Some(right_curly_bracket) =
-                            self.try_eat_token(TokenType::RightCurlyBracket)?
-                        {
-                            break right_curly_bracket;
-                        }
-
                         statements.extend(self.parse_statement()?);
                     }
                 };

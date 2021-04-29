@@ -1,2 +1,2 @@
-do "\"Hello world\"".print()
-do "\\Hello world\\".print()
+"\"Hello world\"".print()
+"\\Hello world\\".print()

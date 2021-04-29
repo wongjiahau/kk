@@ -10,4 +10,4 @@ let factorial = (n: Integer): Integer =>
   else  
     n.multiply(n.minus(1).factorial())
   
-do 21.factorial().print()
+21.factorial().print()

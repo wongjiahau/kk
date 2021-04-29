@@ -39,12 +39,12 @@ let isOdd = (n: Nat): Boolean =>
       n.pred().isEven()
   }
 
-do {
-  let one = Succ(Zero);
-  let two = Succ(one);
-  Zero.isOdd().print(); // false
-  one.isEven().print(); // false
-  two.isEven().print(); // true
-  two.isOdd().print(); // false
-  Succ(two).isOdd().print(); // false
+{
+  let one = Succ(Zero)
+  let two = Succ(one)
+  Zero.isOdd().print() // false
+  one.isEven().print() // false
+  two.isEven().print() // true
+  two.isOdd().print() // false
+  Succ(two).isOdd().print() // false
 }

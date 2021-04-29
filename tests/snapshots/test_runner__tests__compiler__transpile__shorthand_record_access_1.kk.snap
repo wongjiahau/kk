@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do { x: 2 }.(.x).print()
+{ x: 2 }.(.x).print()
 
 ============
 EXIT CODE

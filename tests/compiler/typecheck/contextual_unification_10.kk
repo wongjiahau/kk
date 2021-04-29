@@ -1,4 +1,4 @@
 let bar = (null: Null): Integer => {
-  let x = "Hello";
+  let x = "Hello"
   x
 }

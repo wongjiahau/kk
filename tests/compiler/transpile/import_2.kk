@@ -2,4 +2,4 @@
 
 import {showMe} from "./import_1.kk" 
 
-do "Hello world".showMe()
+"Hello world".showMe()

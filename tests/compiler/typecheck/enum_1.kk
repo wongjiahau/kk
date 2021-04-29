@@ -10,6 +10,6 @@ let xs: Integer = {
       current: true,
       next: Nil
     })
-  });
+  })
   123
 }

@@ -18,12 +18,12 @@ let map = <A, B>(o: Option<A>, f: (a: A) => Option<B>): Option<B> =>
   }
 
 export let foo = (a: Option<{bar:String}>): Option<String> => {
-  with x = a.map;
+  with x = a.map
   Some(x.bar)
 }
 
-do Some({bar: "hello world"}).foo().print()
-do None.foo().print()
+Some({bar: "hello world"}).foo().print()
+None.foo().print()
 
 ============
 EXIT CODE

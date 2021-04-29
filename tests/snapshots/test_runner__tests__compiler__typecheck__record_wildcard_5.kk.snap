@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-do {
-  let f = {...} => null;
+{
+  let f = {...} => null
           // Error: missing type annotation
 }
 
@@ -26,7 +26,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_wildcard_5.kk:2:12
   │
-2 │   let f = {...} => null;
+2 │   let f = {...} => null
   │            ^^^ Missing Type Annotation for Record Wildcard
   │
   = Without type annotation, the compiler cannot populate the properties automatically.

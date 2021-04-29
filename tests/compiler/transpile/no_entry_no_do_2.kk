@@ -3,4 +3,4 @@
 
 export let foo = (null: Null): String => "Hello"
 
-do "Hello world".print()
+"Hello world".print()

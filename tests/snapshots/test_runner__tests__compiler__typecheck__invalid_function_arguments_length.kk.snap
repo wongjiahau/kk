@@ -7,7 +7,7 @@ INPUT
 ============
 export let foo = (i: Integer): Integer => 2
 
-do 2.foo(3).print()
+2.foo(3).print()
 
 ============
 EXIT CODE
@@ -23,9 +23,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/invalid_function_arguments_length.kk:3:6
+  ┌─ tests/compiler/typecheck/invalid_function_arguments_length.kk:3:3
   │
-3 │ do 2.foo(3).print()
-  │      ^^^ Function arguments length mismatch
+3 │ 2.foo(3).print()
+  │   ^^^ Function arguments length mismatch
   │
   = Expected 1 argument only, but 2 arguments are provided.

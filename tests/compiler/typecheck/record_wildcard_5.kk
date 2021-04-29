@@ -1,4 +1,4 @@
-do {
-  let f = {...} => null;
+{
+  let f = {...} => null
           // Error: missing type annotation
 }
