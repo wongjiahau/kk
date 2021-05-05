@@ -210,7 +210,7 @@ pub fn unify_statements(
                                 match *parameter.type_annotation {
                                     None => {
                                         Err(UnifyError {
-                                            position: get_destructure_pattern_position(&parameter.pattern),
+                                            position: parameter.pattern.position(),
                                             kind: UnifyErrorKind::MissingParameterTypeAnnotationForTopLevelFunction
                                         })
                                     }
@@ -226,7 +226,7 @@ pub fn unify_statements(
                             None => Err(UnifyError {
                                 position: match &function_statement.arrow_function.parameters {
                                     ArrowFunctionParameters::WithoutParenthesis(pattern) => {
-                                        get_destructure_pattern_position(pattern)
+                                        pattern.position()
                                     }
                                     ArrowFunctionParameters::WithParenthesis(parameters) => {
                                         parameters.right_parenthesis.position
@@ -351,9 +351,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::String(_)
         | Expression::BranchedFunction(_)
         | Expression::ArrowFunction(_) => None,
-        Expression::FunctionCall(function_call) => {
-            Some(get_expression_position(&function_call.function))
-        }
+        Expression::FunctionCall(function_call) => Some(function_call.function.position()),
         Expression::With(with_expression) => Some(with_expression.binary_function_name.position),
         Expression::UnsafeJavascript { code } => Some(code.position),
         Expression::InterpolatedString { sections, .. } => {
@@ -382,9 +380,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         } => has_direct_function_call(&expression).or_else(|| {
             updates.iter().find_map(|update| match update {
                 RecordUpdate::ValueUpdate { new_value, .. } => has_direct_function_call(new_value),
-                RecordUpdate::FunctionalUpdate { function, .. } => {
-                    Some(get_expression_position(function))
-                }
+                RecordUpdate::FunctionalUpdate { function, .. } => Some(function.position()),
             })
         }),
         Expression::Array { elements, .. } => elements.iter().find_map(has_direct_function_call),
@@ -951,217 +947,237 @@ pub fn generalize_type(type_value: Type) -> TypeScheme {
     }
 }
 
-pub fn get_type_annotation_position(type_annotation: &TypeAnnotation) -> Position {
-    match type_annotation {
-        TypeAnnotation::Underscore(token) => token.position,
-        TypeAnnotation::Function {
-            parameters,
-            return_type,
-            ..
-        } => join_position(
-            parameters.left_parenthesis.position,
-            get_type_annotation_position(return_type.as_ref()),
-        ),
-        TypeAnnotation::Array {
-            left_square_bracket,
-            right_square_bracket,
-            ..
-        } => join_position(left_square_bracket.position, right_square_bracket.position),
-        TypeAnnotation::Record {
-            left_curly_bracket,
-            right_curly_bracket,
-            ..
-        } => join_position(left_curly_bracket.position, right_curly_bracket.position),
-        TypeAnnotation::Named {
-            name,
-            type_arguments,
-        } => match type_arguments {
-            None => join_position(name.position, name.position),
-            Some(TypeArguments {
-                right_angular_bracket,
+impl Positionable for TypeAnnotation {
+    fn position(&self) -> Position {
+        match self {
+            TypeAnnotation::Underscore(token) => token.position,
+            TypeAnnotation::Function {
+                parameters,
+                return_type,
                 ..
-            }) => join_position(name.position, right_angular_bracket.position),
-        },
-        TypeAnnotation::Quoted {
-            opening_backtick,
-            closing_backtick,
-            ..
-        } => join_position(opening_backtick.position, closing_backtick.position),
-        TypeAnnotation::Promise {
-            bang_token,
-            type_annotation,
-        } => join_position(
-            bang_token.position,
-            get_type_annotation_position(type_annotation),
-        ),
-    }
-}
-
-pub fn join_position(start_position: Position, end_position: Position) -> Position {
-    Position {
-        line_start: start_position.line_start,
-        column_start: start_position.column_start,
-        line_end: end_position.line_end,
-        column_end: end_position.column_end,
-        character_index_start: start_position.character_index_start,
-        character_index_end: end_position.character_index_end,
-    }
-}
-
-pub fn get_destructure_pattern_position(destructure_pattern: &DestructurePattern) -> Position {
-    match destructure_pattern {
-        DestructurePattern::Infinite { token, .. }
-        | DestructurePattern::Identifier(token)
-        | DestructurePattern::Underscore(token)
-        | DestructurePattern::Boolean { token, .. }
-        | DestructurePattern::Null(token) => token.position,
-        DestructurePattern::EnumConstructor { name, payload, .. } => match payload {
-            None => name.position,
-            Some(payload) => join_position(name.position, payload.right_parenthesis.position),
-        },
-        DestructurePattern::Record {
-            left_curly_bracket,
-            right_curly_bracket,
-            ..
-        } => join_position(left_curly_bracket.position, right_curly_bracket.position),
-        DestructurePattern::Array {
-            left_square_bracket,
-            right_square_bracket,
-            ..
-        } => join_position(left_square_bracket.position, right_square_bracket.position),
-        DestructurePattern::Tuple(tuple) => match &tuple.parentheses {
-            Some((left, right)) => join_position(left.position, right.position),
-            None => join_position(
-                get_destructure_pattern_position(tuple.values.first()),
-                get_destructure_pattern_position(tuple.values.last()),
-            ),
-        },
-    }
-}
-
-pub fn get_expression_position(expression_value: &Expression) -> Position {
-    match expression_value {
-        Expression::Array {
-            left_square_bracket,
-            right_square_bracket,
-            ..
-        } => join_position(left_square_bracket.position, right_square_bracket.position),
-        Expression::String(token)
-        | Expression::Character(token)
-        | Expression::Float(token)
-        | Expression::Integer(token)
-        | Expression::Identifier(token)
-        | Expression::Null(token)
-        | Expression::Boolean { token, .. } => token.position,
-        Expression::InterpolatedString {
-            start_quote,
-            end_quote,
-            ..
-        } => join_position(start_quote.position(), end_quote.position()),
-        Expression::Quoted {
-            opening_backtick,
-            closing_backtick,
-            ..
-        } => join_position(opening_backtick.position, closing_backtick.position),
-        Expression::EnumConstructor { name, payload, .. } => match payload {
-            None => name.position,
-            Some(payload) => join_position(name.position, payload.right_parenthesis.position),
-        },
-        Expression::RecordAccess {
-            expression,
-            property_name,
-        } => join_position(get_expression_position(&expression), property_name.position),
-        Expression::Record {
-            left_curly_bracket,
-            right_curly_bracket,
-            ..
-        } => join_position(left_curly_bracket.position, right_curly_bracket.position),
-        Expression::RecordUpdate {
-            expression,
-            right_curly_bracket,
-            ..
-        } => join_position(
-            get_expression_position(expression.as_ref()),
-            right_curly_bracket.position,
-        ),
-        Expression::FunctionCall(function_call) => {
-            let first_argument = function_call.first_argument.as_ref();
-            let start_position = get_expression_position(&first_argument);
-            let end_position = match &function_call.rest_arguments {
-                Some(FunctionCallRestArguments {
-                    right_parenthesis, ..
-                }) => right_parenthesis.position,
-                None => get_expression_position(&function_call.function),
-            };
-            join_position(start_position, end_position)
-        }
-        Expression::BranchedFunction(function) => {
-            let start_position = function.branches.first().start_token.position;
-            let end_position = get_expression_position(&function.branches.last().body);
-            join_position(start_position, end_position)
-        }
-        Expression::UnsafeJavascript { code } => code.position,
-        Expression::With(with_expression) => join_position(
-            with_expression.keyword_with.position,
-            get_expression_position(&with_expression.body),
-        ),
-        Expression::If {
-            keyword_if,
-            if_false,
-            ..
-        } => join_position(keyword_if.position, get_expression_position(if_false)),
-        Expression::Switch {
-            keyword_switch,
-            right_curly_bracket,
-            ..
-        } => join_position(keyword_switch.position, right_curly_bracket.position),
-        Expression::ArrowFunction(new_function) => {
-            let start_position = match &new_function.parameters {
-                ArrowFunctionParameters::WithoutParenthesis(pattern) => {
-                    get_destructure_pattern_position(&pattern)
-                }
-                ArrowFunctionParameters::WithParenthesis(parameters) => {
-                    parameters.left_parenthesis.position
-                }
-            };
-            join_position(
-                start_position,
-                get_expression_position(new_function.body.as_ref()),
-            )
-        }
-        Expression::Block(block) => match block {
-            Block::WithBrackets {
+            } => parameters
+                .left_parenthesis
+                .position
+                .join(return_type.as_ref().position()),
+            TypeAnnotation::Array {
+                left_square_bracket,
+                right_square_bracket,
+                ..
+            } => left_square_bracket
+                .position
+                .join(right_square_bracket.position),
+            TypeAnnotation::Record {
                 left_curly_bracket,
                 right_curly_bracket,
                 ..
-            } => join_position(left_curly_bracket.position, right_curly_bracket.position),
-            Block::WithoutBrackets { statements } => join_position(
-                get_statement_position(statements.first()),
-                get_statement_position(statements.last()),
-            ),
-        },
+            } => left_curly_bracket
+                .position
+                .join(right_curly_bracket.position),
+            TypeAnnotation::Named {
+                name,
+                type_arguments,
+            } => match type_arguments {
+                None => name.position.join(name.position),
+                Some(TypeArguments {
+                    right_angular_bracket,
+                    ..
+                }) => name.position.join(right_angular_bracket.position),
+            },
+            TypeAnnotation::Quoted {
+                opening_backtick,
+                closing_backtick,
+                ..
+            } => opening_backtick.position.join(closing_backtick.position),
+        }
     }
 }
 
-fn get_statement_position(statement: &Statement) -> Position {
-    match statement {
-        Statement::Let(let_statement) => join_position(
-            let_statement.keyword_let.position,
-            get_expression_position(&let_statement.right),
-        ),
-        Statement::Expression(expression) => get_expression_position(expression),
-        Statement::Type(type_statement) => join_position(
-            type_statement.keyword_type.position,
-            get_type_annotation_position(&type_statement.right),
-        ),
-        Statement::Enum(enum_statement) => join_position(
-            enum_statement.keyword_enum.position,
-            enum_statement.right_curly_bracket.position,
-        ),
-        Statement::Import(import_statement) => join_position(
-            import_statement.keyword_import.position,
-            import_statement.url.position,
-        ),
+impl Positionable for DestructurePattern {
+    fn position(&self) -> Position {
+        match self {
+            DestructurePattern::Infinite { token, .. }
+            | DestructurePattern::Identifier(token)
+            | DestructurePattern::Underscore(token)
+            | DestructurePattern::Boolean { token, .. }
+            | DestructurePattern::Null(token) => token.position,
+            DestructurePattern::EnumConstructor { name, payload, .. } => match payload {
+                None => name.position,
+                Some(payload) => name.position.join(payload.right_parenthesis.position),
+            },
+            DestructurePattern::Record {
+                left_curly_bracket,
+                right_curly_bracket,
+                ..
+            } => left_curly_bracket
+                .position
+                .join(right_curly_bracket.position),
+            DestructurePattern::Array {
+                left_square_bracket,
+                right_square_bracket,
+                ..
+            } => left_square_bracket
+                .position
+                .join(right_square_bracket.position),
+            DestructurePattern::Tuple(tuple) => match &tuple.parentheses {
+                Some((left, right)) => left.position.join(right.position),
+                None => tuple.values.position(),
+            },
+        }
+    }
+}
+
+impl Position {
+    pub fn join(self, other: Position) -> Position {
+        let start_position = self;
+        let end_position = other;
+        Position {
+            line_start: start_position.line_start,
+            column_start: start_position.column_start,
+            line_end: end_position.line_end,
+            column_end: end_position.column_end,
+            character_index_start: start_position.character_index_start,
+            character_index_end: end_position.character_index_end,
+        }
+    }
+}
+
+impl Positionable for Expression {
+    fn position(&self) -> Position {
+        match self {
+            Expression::Array {
+                left_square_bracket,
+                right_square_bracket,
+                ..
+            } => left_square_bracket
+                .position
+                .join(right_square_bracket.position),
+            Expression::String(token)
+            | Expression::Character(token)
+            | Expression::Float(token)
+            | Expression::Integer(token)
+            | Expression::Identifier(token)
+            | Expression::Null(token)
+            | Expression::Boolean { token, .. } => token.position,
+            Expression::InterpolatedString {
+                start_quote,
+                end_quote,
+                ..
+            } => start_quote.position().join(end_quote.position()),
+            Expression::Quoted {
+                opening_backtick,
+                closing_backtick,
+                ..
+            } => opening_backtick.position.join(closing_backtick.position),
+            Expression::EnumConstructor { name, payload, .. } => match payload {
+                None => name.position,
+                Some(payload) => name.position.join(payload.right_parenthesis.position),
+            },
+            Expression::RecordAccess {
+                expression,
+                property_name,
+            } => expression.position().join(property_name.position),
+            Expression::Record {
+                left_curly_bracket,
+                right_curly_bracket,
+                ..
+            } => left_curly_bracket
+                .position
+                .join(right_curly_bracket.position),
+            Expression::RecordUpdate {
+                expression,
+                right_curly_bracket,
+                ..
+            } => expression
+                .as_ref()
+                .position()
+                .join(right_curly_bracket.position),
+            Expression::FunctionCall(function_call) => {
+                let first_argument = function_call.first_argument.as_ref();
+                let start_position = first_argument.position();
+                let end_position = match &function_call.rest_arguments {
+                    Some(FunctionCallRestArguments {
+                        right_parenthesis, ..
+                    }) => right_parenthesis.position,
+                    None => function_call.function.position(),
+                };
+
+                start_position.join(end_position)
+            }
+            Expression::BranchedFunction(function) => {
+                let start_position = function.branches.first().start_token.position;
+                let end_position = function.branches.last().body.position();
+                start_position.join(end_position)
+            }
+            Expression::UnsafeJavascript { code } => code.position,
+            Expression::With(with_expression) => with_expression
+                .keyword_with
+                .position
+                .join(with_expression.body.position()),
+            Expression::If {
+                keyword_if,
+                if_false,
+                ..
+            } => keyword_if.position.join(if_false.position()),
+            Expression::Switch {
+                keyword_switch,
+                right_curly_bracket,
+                ..
+            } => keyword_switch.position.join(right_curly_bracket.position),
+            Expression::ArrowFunction(new_function) => {
+                let start_position = match &new_function.parameters {
+                    ArrowFunctionParameters::WithoutParenthesis(pattern) => pattern.position(),
+                    ArrowFunctionParameters::WithParenthesis(parameters) => {
+                        parameters.left_parenthesis.position
+                    }
+                };
+                start_position.join(new_function.body.as_ref().position())
+            }
+            Expression::Block(block) => match block {
+                Block::WithBrackets {
+                    left_curly_bracket,
+                    right_curly_bracket,
+                    ..
+                } => left_curly_bracket
+                    .position
+                    .join(right_curly_bracket.position),
+                Block::WithoutBrackets { statements } => statements.position(),
+            },
+        }
+    }
+}
+
+pub trait Positionable {
+    fn position(&self) -> Position;
+}
+
+impl<T: Positionable> NonEmpty<T> {
+    pub fn position(&self) -> Position {
+        self.first().position().join(self.last().position())
+    }
+}
+
+impl Positionable for Statement {
+    fn position(&self) -> Position {
+        match self {
+            Statement::Let(let_statement) => let_statement
+                .keyword_let
+                .position
+                .join(let_statement.right.position()),
+
+            Statement::Expression(expression) => expression.position(),
+            Statement::Type(type_statement) => type_statement
+                .keyword_type
+                .position
+                .join(type_statement.right.position()),
+            Statement::Enum(enum_statement) => enum_statement
+                .keyword_enum
+                .position
+                .join(enum_statement.right_curly_bracket.position),
+            Statement::Import(import_statement) => import_statement
+                .keyword_import
+                .position
+                .join(import_statement.url.position),
+        }
     }
 }
 
@@ -1752,7 +1768,7 @@ fn infer_expression_type(
         module,
         expected_type,
         &result.type_value,
-        get_expression_position(expression),
+        expression.position(),
     )?;
 
     Ok(InferExpressionResult {
@@ -1829,7 +1845,7 @@ fn infer_expression_type_(
             opening_backtick,
             closing_backtick,
         } => {
-            let position = join_position(opening_backtick.position, closing_backtick.position);
+            let position = opening_backtick.position.join(closing_backtick.position);
             let expected_type = match expected_type {
                 Some(Type::BuiltInOneArgumentType {
                     kind: BuiltInOneArgumentTypeKind::Quoted,
@@ -1914,7 +1930,7 @@ fn infer_expression_type_(
                     },
                 }),
                 (None, Some(payload)) => Err(UnifyError {
-                    position: get_expression_position(&payload.expression),
+                    position: payload.expression.position(),
                     kind: UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
@@ -2132,7 +2148,7 @@ fn infer_expression_type_(
                     })
                 }
                 other_type => Err(UnifyError {
-                    position: get_expression_position(expression.as_ref()),
+                    position: expression.as_ref().position(),
                     kind: UnifyErrorKind::CannotPerformRecordUpdateOnNonRecord {
                         actual_type: other_type.clone(),
                     },
@@ -2204,7 +2220,7 @@ fn infer_expression_type_(
                         };
                         if actual_arguments_length != expected_arguments_length {
                             return Err(UnifyError {
-                                position: get_expression_position(function_call.function.as_ref()),
+                                position: function_call.function.as_ref().position(),
                                 kind: UnifyErrorKind::InvalidFunctionArgumentLength {
                                     actual_length: actual_arguments_length,
                                     expected_length: expected_arguments_length,
@@ -2261,8 +2277,7 @@ fn infer_expression_type_(
                         name: module.get_next_type_variable_name(),
                     };
 
-                    let position =
-                        get_expression_position(&Expression::FunctionCall(function_call.clone()));
+                    let position = Expression::FunctionCall(function_call.clone()).position();
 
                     unify_type(
                         module,
@@ -2319,7 +2334,7 @@ fn infer_expression_type_(
                     })
                 }
                 other => Err(UnifyError {
-                    position: get_expression_position(&function_call.function),
+                    position: function_call.function.position(),
                     kind: UnifyErrorKind::CannotInvokeNonFunction { actual_type: other },
                 }),
             }
@@ -2348,8 +2363,9 @@ fn infer_expression_type_(
                 }
             }
 
-            let record_position =
-                join_position(left_curly_bracket.position, right_curly_bracket.position);
+            let record_position = left_curly_bracket
+                .position
+                .join(right_curly_bracket.position);
 
             let key_value_pairs = match wildcard {
                 None => Ok(key_value_pairs.clone()),
@@ -2583,12 +2599,12 @@ fn infer_arrow_function(
     expected_type: Option<Type>,
     function: ArrowFunction,
 ) -> Result<InferExpressionResult, UnifyError> {
-    let position = get_expression_position(&Expression::ArrowFunction(Box::new(function.clone())));
+    let position = Expression::ArrowFunction(Box::new(function.clone())).position();
     let expected_function_type = match expected_type {
         Some(Type::Function(function_type)) => match function.type_variables.split_first() {
             None => Ok(function_type),
             Some((head, tail)) => Err(UnifyError {
-                position: join_position(head.position, tail.last().unwrap_or(head).position),
+                position: head.position.join(tail.last().unwrap_or(head).position),
                 kind: UnifyErrorKind::NotExpectingTypeVariable,
             }),
         },
@@ -2644,13 +2660,13 @@ fn infer_arrow_function(
     if expected_function_type.parameters_types.len() != function.parameters.len() {
         return Err(UnifyError {
             position: match &function.parameters {
-                ArrowFunctionParameters::WithoutParenthesis(pattern) => {
-                    get_destructure_pattern_position(&pattern)
+                ArrowFunctionParameters::WithoutParenthesis(pattern) => pattern.position(),
+                ArrowFunctionParameters::WithParenthesis(function_parameters) => {
+                    function_parameters
+                        .left_parenthesis
+                        .position
+                        .join(function_parameters.right_parenthesis.position)
                 }
-                ArrowFunctionParameters::WithParenthesis(function_parameters) => join_position(
-                    function_parameters.left_parenthesis.position,
-                    function_parameters.right_parenthesis.position,
-                ),
             },
             kind: UnifyErrorKind::InvalidFunctionArgumentLength {
                 expected_length: expected_function_type.parameters_types.len(),
@@ -2792,7 +2808,7 @@ fn infer_block_level_statement(
                     head: typechecked_left.destructure_pattern.clone(),
                     tail: vec![],
                 },
-                get_destructure_pattern_position(&left),
+                left.position(),
             ) {
                 Ok(_) => Ok((
                     TypecheckedStatement::Let {
@@ -2872,15 +2888,12 @@ fn infer_with_expression_type(
                 module,
                 bind_function_type.parameters_types.first(),
                 &typechecked_right.type_value,
-                get_expression_position(right),
+                right.position(),
             )?;
             let rest_parameters_types = bind_function_type.parameters_types.tail();
             match rest_parameters_types.split_first() {
                 Some((Type::Function(function_type), [])) => {
-                    let function_arguments_position = join_position(
-                        get_destructure_pattern_position(left_patterns.first()),
-                        get_destructure_pattern_position(left_patterns.last()),
-                    );
+                    let function_arguments_position = left_patterns.position();
                     if function_type.parameters_types.len() != left_patterns.len() {
                         return Err(UnifyError {
                             position: function_arguments_position,
@@ -3130,7 +3143,7 @@ fn infer_function(
         module,
         expected_type,
         actual_patterns,
-        get_expression_position(&Expression::BranchedFunction(Box::new(function.clone()))),
+        Expression::BranchedFunction(Box::new(function.clone())).position(),
     )?;
 
     Ok(InferFunctionResult {
@@ -3310,12 +3323,7 @@ fn infer_function_branch(
                     let actual_parameters = function_branch.parameters.clone();
                     if expected_function_type.parameters_types.len() != actual_parameters.len() {
                         Err(UnifyError {
-                            position: join_position(
-                                get_destructure_pattern_position(
-                                    function_branch.parameters.first(),
-                                ),
-                                get_destructure_pattern_position(function_branch.parameters.last()),
-                            ),
+                            position: function_branch.parameters.position(),
                             kind: UnifyErrorKind::InvalidFunctionArgumentLength {
                                 expected_length: expected_function_type.parameters_types.len(),
                                 actual_length: actual_parameters.len(),
@@ -3387,7 +3395,7 @@ pub fn get_expected_type(
                 module,
                 &expected_type,
                 &actual_type,
-                get_type_annotation_position(&type_annotation),
+                type_annotation.position(),
             )?;
             Ok(Some(actual_type))
         }
@@ -3424,10 +3432,10 @@ pub fn type_annotation_to_type(
                             != actual_type_arguments.arguments.len()
                         {
                             Err(UnifyError {
-                                position: join_position(
-                                    actual_type_arguments.left_angular_bracket.position,
-                                    actual_type_arguments.right_angular_bracket.position,
-                                ),
+                                position: actual_type_arguments
+                                    .left_angular_bracket
+                                    .position
+                                    .join(actual_type_arguments.right_angular_bracket.position),
                                 kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
                                     actual_length: actual_type_arguments.arguments.len(),
                                     expected_type_parameter_names: expected_type_scheme
@@ -3473,10 +3481,10 @@ pub fn type_annotation_to_type(
                         },
                     }),
                     (_, Some(actual_type_arguments)) => Err(UnifyError {
-                        position: join_position(
-                            actual_type_arguments.left_angular_bracket.position,
-                            actual_type_arguments.right_angular_bracket.position,
-                        ),
+                        position: actual_type_arguments
+                            .left_angular_bracket
+                            .position
+                            .join(actual_type_arguments.right_angular_bracket.position),
                         kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
                             actual_length: actual_type_arguments.arguments.len(),
                             expected_type_parameter_names: vec![],
@@ -3514,12 +3522,6 @@ pub fn type_annotation_to_type(
             kind: BuiltInOneArgumentTypeKind::Quoted,
             type_argument: Box::new(type_annotation_to_type(module, type_annotation.as_ref())?),
         }),
-        TypeAnnotation::Promise {
-            type_annotation, ..
-        } => Ok(Type::BuiltInOneArgumentType {
-            kind: BuiltInOneArgumentTypeKind::Promise,
-            type_argument: Box::new(type_annotation_to_type(module, type_annotation.as_ref())?),
-        }),
         TypeAnnotation::Function {
             parameters,
             return_type,
@@ -3529,7 +3531,7 @@ pub fn type_annotation_to_type(
                 match *parameter.type_annotation {
                     Some(parameter_type) => type_annotation_to_type(module, &parameter_type),
                     None => Err(UnifyError {
-                        position: get_destructure_pattern_position(&parameter.pattern),
+                        position: parameter.pattern.position(),
                         kind:
                             UnifyErrorKind::MissingParameterTypeAnnotationForFunctionTypeAnnotation,
                     }),
@@ -3559,7 +3561,7 @@ fn infer_destructure_pattern(
         module,
         expected_type,
         &result.type_value,
-        get_destructure_pattern_position(destructure_pattern),
+        destructure_pattern.position(),
     )?;
 
     Ok(InferDestructurePatternResult {
@@ -3656,7 +3658,7 @@ fn infer_destructure_pattern_(
                     },
                 }),
                 (None, Some(payload)) => Err(UnifyError {
-                    position: get_destructure_pattern_position(&payload.pattern),
+                    position: payload.pattern.position(),
                     kind: UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {

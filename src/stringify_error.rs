@@ -926,9 +926,6 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
             BuiltInOneArgumentTypeKind::Quoted => {
                 format!("`{}`", stringify_type(*type_argument, indent_level))
             }
-            BuiltInOneArgumentTypeKind::Promise => {
-                format!("!{}", stringify_type(*type_argument, indent_level))
-            }
         },
         Type::Named {
             name,

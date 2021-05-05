@@ -138,7 +138,6 @@ pub enum Type {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuiltInOneArgumentTypeKind {
     Quoted,
-    Promise,
     Array,
 }
 
@@ -196,10 +195,6 @@ pub enum TypeAnnotation {
         left_square_bracket: Token,
         element_type: Box<TypeAnnotation>,
         right_square_bracket: Token,
-    },
-    Promise {
-        bang_token: Token,
-        type_annotation: Box<TypeAnnotation>,
     },
     Underscore(Token),
     Function {

@@ -2,7 +2,6 @@ use crate::{
     ast::{InfinitePatternKind, Position, Token},
     module::{ModuleUid, SymbolUid},
     non_empty::NonEmpty,
-    unify::join_position,
 };
 /// The syntax tree here represents the syntax tree that is type-checked
 /// Which contain information necessary for the transpilation
@@ -188,23 +187,26 @@ impl TypecheckedDestructurePattern {
                 ..
             } => match payload {
                 None => constructor_name.position,
-                Some(payload) => join_position(
-                    constructor_name.position,
-                    payload.right_parenthesis.position,
-                ),
+                Some(payload) => constructor_name
+                    .position
+                    .join(payload.right_parenthesis.position),
             },
             TypecheckedDestructurePattern::Record {
                 left_curly_bracket,
                 right_curly_bracket,
                 ..
-            } => join_position(left_curly_bracket.position, right_curly_bracket.position),
+            } => left_curly_bracket
+                .position
+                .join(right_curly_bracket.position),
             TypecheckedDestructurePattern::Array {
                 left_square_bracket,
                 right_square_bracket,
                 ..
-            } => join_position(left_square_bracket.position, right_square_bracket.position),
+            } => left_square_bracket
+                .position
+                .join(right_square_bracket.position),
             TypecheckedDestructurePattern::Tuple { values } => {
-                join_position(values.first().position(), values.last().position())
+                values.first().position().join(values.last().position())
             }
         }
     }

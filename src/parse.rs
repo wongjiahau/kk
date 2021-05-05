@@ -1,6 +1,5 @@
-use crate::unify::get_expression_position;
 use crate::{ast::*, tokenize::TokenizeError};
-use crate::{non_empty::NonEmpty, tokenize::Tokenizer};
+use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
 
 #[derive(Debug)]
 pub struct ParseError {
@@ -1610,7 +1609,7 @@ fn convert_expression_to_pattern(
         | Expression::UnsafeJavascript { .. } => Err(ParseError {
             context,
             kind: ParseErrorKind::ExpectedPattern {
-                position: get_expression_position(&expression),
+                position: expression.position(),
             },
         }),
         Expression::Array { .. } => {
