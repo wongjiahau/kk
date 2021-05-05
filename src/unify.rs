@@ -2441,12 +2441,12 @@ fn infer_expression_type_(
             ..
         } => {
             let condition = infer_expression_type(module, Some(Type::Boolean), condition)?;
-            let return_type = module.introduce_implicit_type_variable(None)?;
-            let if_true = infer_expression_type(module, Some(return_type.clone()), if_true)?;
-            let if_false = infer_expression_type(module, Some(return_type.clone()), if_false)?;
+            let if_true = infer_expression_type(module, expected_type, if_true)?;
+            let if_false =
+                infer_expression_type(module, Some(if_true.type_value.clone()), if_false)?;
 
             Ok(InferExpressionResult {
-                type_value: module.apply_subtitution_to_type(&return_type),
+                type_value: if_true.type_value,
                 expression: TypecheckedExpression::If {
                     condition: Box::new(condition.expression),
                     if_true: Box::new(if_true.expression),
