@@ -557,7 +557,7 @@ impl<'a> Parser<'a> {
     fn parse_function_parameters(&mut self) -> Result<FunctionParameters, ParseError> {
         let context = Some(ParseContext::FunctionParameters);
         let left_parenthesis = self.eat_token(TokenType::LeftParenthesis, context)?;
-        if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+        if self.try_eat_token(TokenType::RightParenthesis)?.is_some() {
             panic!("Still pending design decision")
         } else {
             let first_parameter = FunctionParameter {
@@ -1387,15 +1387,38 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_destructure_pattern(&mut self) -> Result<DestructurePattern, ParseError> {
+        let simple_pattern = self.parse_simple_destructure_pattern()?;
+        let mut tail_patterns = vec![];
+        let tail_patterns = loop {
+            if self.try_eat_token(TokenType::Pipe)?.is_some() {
+                tail_patterns.push(self.parse_simple_destructure_pattern()?)
+            } else {
+                break tail_patterns;
+            }
+        };
+
+        if tail_patterns.is_empty() {
+            Ok(simple_pattern)
+        } else {
+            Ok(DestructurePattern::Or(Box::new(NonEmpty {
+                head: simple_pattern,
+                tail: tail_patterns,
+            })))
+        }
+    }
+
+    /// Simple destructure pattern means all kinds of destructure pattern except for OR patterns
+    /// OR patterns means `P1 | P2 | P3`
+    fn parse_simple_destructure_pattern(&mut self) -> Result<DestructurePattern, ParseError> {
         if let Some(token) = self.next_meaningful_token()? {
-            match &token.token_type {
+            match token.token_type {
                 TokenType::Identifier => match self.peek_next_meaningful_token()? {
                     Some(Token {
                         token_type: TokenType::LeftParenthesis,
                         ..
                     }) => {
                         let context = Some(ParseContext::PatternEnum);
-                        let name = token.clone();
+                        let name = token;
                         let left_parenthesis =
                             self.eat_token(TokenType::LeftParenthesis, context)?;
                         let pattern = self.parse_destructure_pattern()?;
@@ -1410,9 +1433,9 @@ impl<'a> Parser<'a> {
                             })),
                         })
                     }
-                    _ => Ok(DestructurePattern::Identifier(token.clone())),
+                    _ => Ok(DestructurePattern::Identifier(token)),
                 },
-                TokenType::Underscore => Ok(DestructurePattern::Underscore(token.clone())),
+                TokenType::Underscore => Ok(DestructurePattern::Underscore(token)),
                 TokenType::LeftCurlyBracket => {
                     let context = Some(ParseContext::PatternRecord);
                     let mut wildcard = None;
@@ -1454,35 +1477,32 @@ impl<'a> Parser<'a> {
                     };
                     Ok(DestructurePattern::Record {
                         wildcard,
-                        left_curly_bracket: token.clone(),
+                        left_curly_bracket: token,
                         key_value_pairs,
                         right_curly_bracket,
                     })
                 }
                 TokenType::Integer => Ok(DestructurePattern::Infinite {
-                    token: token.clone(),
+                    token,
                     kind: InfinitePatternKind::Integer,
                 }),
                 TokenType::String => Ok(DestructurePattern::Infinite {
-                    token: token.clone(),
+                    token,
                     kind: InfinitePatternKind::String,
                 }),
                 TokenType::Character => Ok(DestructurePattern::Infinite {
-                    token: token.clone(),
+                    token,
                     kind: InfinitePatternKind::Character,
                 }),
-                TokenType::KeywordTrue => Ok(DestructurePattern::Boolean {
-                    token: token.clone(),
-                    value: true,
-                }),
+                TokenType::KeywordTrue => Ok(DestructurePattern::Boolean { token, value: true }),
                 TokenType::KeywordFalse => Ok(DestructurePattern::Boolean {
-                    token: token.clone(),
+                    token,
                     value: false,
                 }),
-                TokenType::KeywordNull => Ok(DestructurePattern::Null(token.clone())),
+                TokenType::KeywordNull => Ok(DestructurePattern::Null(token)),
                 TokenType::LeftSquareBracket => {
                     let context = Some(ParseContext::PatternArray);
-                    let left_square_bracket = token.clone();
+                    let left_square_bracket = token;
                     if let Some(right_square_bracket) =
                         self.try_eat_token(TokenType::RightSquareBracket)?
                     {
@@ -1508,10 +1528,7 @@ impl<'a> Parser<'a> {
                         })
                     }
                 }
-                _ => Err(Parser::invalid_token(
-                    token.clone(),
-                    Some(ParseContext::Pattern),
-                )),
+                _ => Err(Parser::invalid_token(token, Some(ParseContext::Pattern))),
             }
         } else {
             Err(Parser::unexpected_eof(Some(ParseContext::Pattern)))

@@ -32,4 +32,4 @@ error:
 5 │       case null: false
   │            ^^^^ Unreachable case
   │
-  = This case is unreachable because all possible cases are already handled by previous branches.
+  = This case is unreachable as it is already handled by previous cases.

@@ -1,7 +1,132 @@
-use crate::ast::*;
-use crate::unify::rewrite_type_variables_in_type;
-use crate::{module::*, typechecked_ast::TypecheckedDestructurePattern};
+use crate::{ast::*, typechecked_ast::Identifier, unify::Positionable};
+use crate::{module::*, typechecked_ast::PropertyName};
+use crate::{non_empty::NonEmpty, unify::rewrite_type_variables_in_type};
 use std::collections::HashSet;
+
+/// Why can't we just use the TypecheckedDestructurePatternKind enum?
+/// This is because when checking for case exhaustiveness, we want to assume that there is no OR patterns.
+/// In other words, to check the case exhaustiveness of list of TypecheckedDestructurePatternKind,
+/// its OR patterns must be expanded first, for example:
+///     
+///     {x: A | B, y: C | D}
+///
+/// should be expanded into:
+///
+///     {x: A, y: C}
+///     {x: A, y: D}
+///     {x: B, y: C}
+///     {x: B, y: D}
+#[derive(Debug, Clone)]
+pub struct CheckablePattern {
+    /// If this is true, it means that this pattern is a result of expanding OR-patterns
+    ///
+    /// In other words, this pattern is not a direct pattern,
+    /// but rather an expanded pattern.
+    ///
+    /// This property allow us to report errors differently between direct patterns and expanded patterns.
+    ///
+    /// Glossary:
+    ///  * direct pattern = pattern that is written down by user verbatim
+    ///  * expanded pattern = pattern that is not verbatimly written down by user, but rather a result of expanding OR-patterns
+    ///
+    /// For example, suppose user written down the following cases:
+    /// ```
+    ///     case A:
+    ///     case B(C | D):
+    /// ```
+    /// After expanding the OR-patterns, we will get:
+    /// ```
+    ///     case A:
+    ///     case B(C):
+    ///     case B(D):
+    /// ```
+    /// In this example, `A` is a *direct* pattern, while `B(C)` and `B(D)` are both *expanded* patterns.
+    pub is_result_of_expansion: bool,
+    pub kind: CheckablePatternKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum CheckablePatternKind {
+    Infinite {
+        kind: InfinitePatternKind,
+        token: Token,
+    },
+    Boolean {
+        token: Token,
+        value: bool,
+    },
+    Null(Token),
+    Underscore(Token),
+    Identifier(Box<Identifier>),
+    EnumConstructor {
+        constructor_name: Token,
+        payload: Option<CheckablePatternEnumConstructorPayload>,
+    },
+    Record {
+        left_curly_bracket: Token,
+        key_pattern_pairs: Vec<(PropertyName, CheckablePattern)>,
+        right_curly_bracket: Token,
+    },
+    Tuple {
+        patterns: Box<NonEmpty<CheckablePatternKind>>,
+    },
+    Array {
+        left_square_bracket: Token,
+        spread: Option<CheckablePatternArraySpread>,
+        right_square_bracket: Token,
+    },
+}
+
+impl Positionable for CheckablePatternKind {
+    fn position(&self) -> Position {
+        match self {
+            CheckablePatternKind::Infinite { token, .. }
+            | CheckablePatternKind::Boolean { token, .. }
+            | CheckablePatternKind::Null(token)
+            | CheckablePatternKind::Underscore(token) => token.position,
+            CheckablePatternKind::Identifier(identifier) => identifier.token.position,
+            CheckablePatternKind::EnumConstructor {
+                constructor_name,
+                payload,
+            } => match payload {
+                Some(payload) => constructor_name
+                    .position
+                    .join(payload.right_parenthesis.position),
+                None => constructor_name.position,
+            },
+            CheckablePatternKind::Record {
+                left_curly_bracket,
+                right_curly_bracket,
+                ..
+            } => left_curly_bracket
+                .position
+                .join(right_curly_bracket.position),
+            CheckablePatternKind::Tuple { .. } => {
+                panic!("")
+            }
+            CheckablePatternKind::Array {
+                left_square_bracket,
+                right_square_bracket,
+                ..
+            } => left_square_bracket
+                .position
+                .join(right_square_bracket.position),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckablePatternArraySpread {
+    first_element: Box<CheckablePatternKind>,
+    rest_elements: Box<CheckablePatternKind>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckablePatternEnumConstructorPayload {
+    pub pattern: Box<CheckablePattern>,
+    pub left_parenthesis: Token,
+    pub right_parenthesis: Token,
+}
 
 #[derive(Debug)]
 pub enum MatchPatternResult {
@@ -27,7 +152,7 @@ enum PatternMatrix {
 
 struct PatternPair {
     expected_pattern: ExpandablePattern,
-    actual_pattern: TypecheckedDestructurePattern,
+    actual_pattern: CheckablePatternKind,
 }
 
 fn match_pattern_matrix(module: &Module, pattern_matrix: PatternMatrix) -> MatchPatternResult {
@@ -39,7 +164,7 @@ fn match_pattern_matrix(module: &Module, pattern_matrix: PatternMatrix) -> Match
 
     struct RawPatternMatrix {
         key: String,
-        actual_pattern: TypecheckedDestructurePattern,
+        actual_pattern: CheckablePatternKind,
         expected_pattern: ExpandablePattern,
     }
 
@@ -76,7 +201,7 @@ fn match_pattern_matrix(module: &Module, pattern_matrix: PatternMatrix) -> Match
         }
 
         MatchPatternResult::PartiallyMatched {
-            expanded_patterns: expand_pattern_matrix(
+            expanded_patterns: cartesian_product(
                 pattern_matrices
                     .into_iter()
                     .map(|((key, expected_pattern), match_pattern_result)| {
@@ -251,40 +376,74 @@ pub fn expand_pattern(module: &Module, type_value: &Type) -> Vec<ExpandablePatte
     }
 }
 
-/// Permutate possible patterns.
+/// Return the n-ary Cartesian Product of a given list of inputs.
 ///
 /// Example
 /// ```
-/// Input = [[0, 1], [A, B, C]]
-/// Output = [
-///     [0, A], [0, B], [0, C],
-///     [1, A], [1, B], [1, C],
-/// ]
+/// Input = [[("a", 1), ("b", 2)], [("c", 3), ("d", 4)]]
+/// Output =
+///     [
+///         [("a", 1), ("c", 3)],
+///         [("a", 1), ("d", 4)],
+///         [("b", 2), ("c", 3)],
+///         [("b", 2), ("d", 4)]
+///     ]
 /// ```
-pub fn expand_pattern_matrix(
-    types: Vec<Vec<(/*key*/ String, /*pattern*/ ExpandablePattern)>>,
-) -> Vec<Vec<(/*key*/ String, /*pattern*/ ExpandablePattern)>> {
-    match types.split_first() {
+/// The resulting dimensions depends on the input length.  
+/// For example, if 3 groups are given, then the result will be an list of triples.
+/// Refer https://en.wikipedia.org/wiki/Cartesian_product
+pub fn cartesian_product<Key: Clone, Value: Clone>(
+    items: Vec<Vec<(Key, Value)>>,
+) -> Vec<Vec<(Key, Value)>> {
+    match items.split_first() {
         None => vec![],
         Some((head, tail)) => head
             .iter()
-            .flat_map(|(key, expandable_pattern)| {
-                let tail = expand_pattern_matrix(tail.to_vec());
+            .flat_map(|(key, value)| {
+                let tail = cartesian_product(tail.to_vec());
                 if tail.is_empty() {
-                    vec![vec![(key.clone(), expandable_pattern.clone())]]
+                    vec![vec![(key.clone(), value.clone())]]
                 } else {
                     tail.into_iter()
                         .map(|patterns| {
-                            vec![(key.clone(), expandable_pattern.clone())]
+                            vec![(key.clone(), value.clone())]
                                 .into_iter()
                                 .chain(patterns.into_iter())
                                 .collect()
                         })
-                        .collect::<Vec<Vec<(String, ExpandablePattern)>>>()
+                        .collect::<Vec<Vec<(Key, Value)>>>()
                 }
             })
-            .collect::<Vec<Vec<(String, ExpandablePattern)>>>(),
+            .collect::<Vec<Vec<(Key, Value)>>>(),
     }
+}
+
+#[test]
+fn test_cartesian_product() {
+    assert_eq!(
+        cartesian_product(vec![vec![("a", 1), ("b", 2)], vec![("c", 3), ("d", 4)],]),
+        vec![
+            vec![("a", 1), ("c", 3)],
+            vec![("a", 1), ("d", 4)],
+            vec![("b", 2), ("c", 3)],
+            vec![("b", 2), ("d", 4)]
+        ]
+    );
+
+    // Resulting dimension depends on input length
+    // If the input has 3 groups
+    // Then the result will have the dimensions of N x 3, where N is the number of possible permutations
+    assert_eq!(
+        cartesian_product(vec![
+            vec![("a", 1)],
+            vec![("b", 2)],
+            vec![("c", 3), ("d", 4)],
+        ]),
+        vec![
+            vec![("a", 1), ("b", 2), ("c", 3)],
+            vec![("a", 1), ("b", 2), ("d", 4)]
+        ]
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -324,7 +483,7 @@ pub enum ExpandablePattern {
 
 pub fn match_patterns(
     module: &Module,
-    actual_pattern: &TypecheckedDestructurePattern,
+    actual_pattern: &CheckablePatternKind,
     expected_patterns: Vec<ExpandablePattern>,
 ) -> Vec<ExpandablePattern> {
     expected_patterns
@@ -343,17 +502,17 @@ pub fn match_patterns(
 
 pub fn match_pattern(
     module: &Module,
-    actual_pattern: &TypecheckedDestructurePattern,
+    actual_pattern: &CheckablePatternKind,
     expected_pattern: &ExpandablePattern,
 ) -> MatchPatternResult {
     match (actual_pattern, expected_pattern) {
-        (TypecheckedDestructurePattern::Underscore(_), _) => MatchPatternResult::Matched,
-        (TypecheckedDestructurePattern::Identifier(identifier), _) => {
+        (CheckablePatternKind::Underscore(_), _) => MatchPatternResult::Matched,
+        (CheckablePatternKind::Identifier(identifier), _) => {
             // check if identifier matches any enum constructor
             if module.matches_some_enum_constructor(&identifier.token.representation) {
                 match_pattern(
                     module,
-                    &TypecheckedDestructurePattern::EnumConstructor {
+                    &CheckablePatternKind::EnumConstructor {
                         constructor_name: identifier.token.clone(),
                         payload: None,
                     },
@@ -363,16 +522,14 @@ pub fn match_pattern(
                 MatchPatternResult::Matched
             }
         }
+        (CheckablePatternKind::Boolean { value: true, .. }, ExpandablePattern::Boolean(true)) => {
+            MatchPatternResult::Matched
+        }
+        (CheckablePatternKind::Boolean { value: false, .. }, ExpandablePattern::Boolean(false)) => {
+            MatchPatternResult::Matched
+        }
         (
-            TypecheckedDestructurePattern::Boolean { value: true, .. },
-            ExpandablePattern::Boolean(true),
-        ) => MatchPatternResult::Matched,
-        (
-            TypecheckedDestructurePattern::Boolean { value: false, .. },
-            ExpandablePattern::Boolean(false),
-        ) => MatchPatternResult::Matched,
-        (
-            TypecheckedDestructurePattern::Infinite { token, .. },
+            CheckablePatternKind::Infinite { token, .. },
             ExpandablePattern::Infinite {
                 handled_cases,
                 kind,
@@ -395,7 +552,7 @@ pub fn match_pattern(
             }
         }
         (
-            TypecheckedDestructurePattern::EnumConstructor {
+            CheckablePatternKind::EnumConstructor {
                 constructor_name: actual_name,
                 payload: None,
                 ..
@@ -413,7 +570,7 @@ pub fn match_pattern(
             }
         }
         (
-            TypecheckedDestructurePattern::EnumConstructor {
+            CheckablePatternKind::EnumConstructor {
                 constructor_name: actual_name,
                 payload: Some(actual_payload),
                 ..
@@ -426,7 +583,7 @@ pub fn match_pattern(
             if actual_name.representation != *expected_name {
                 MatchPatternResult::NotMatched
             } else {
-                match match_pattern(module, &actual_payload.pattern, expected_payload) {
+                match match_pattern(module, &actual_payload.pattern.kind, expected_payload) {
                     MatchPatternResult::Matched => MatchPatternResult::Matched,
                     MatchPatternResult::NotMatched => MatchPatternResult::NotMatched,
                     MatchPatternResult::PartiallyMatched { expanded_patterns } => {
@@ -444,10 +601,13 @@ pub fn match_pattern(
             }
         }
         (
-            TypecheckedDestructurePattern::Tuple { values },
+            CheckablePatternKind::Tuple {
+                patterns: actual_patterns,
+                ..
+            },
             ExpandablePattern::Tuple(expected_patterns),
         ) => {
-            let actual_patterns = values.clone();
+            let actual_patterns = actual_patterns.clone();
             if actual_patterns.len() != expected_patterns.len() {
                 MatchPatternResult::NotMatched
             } else {
@@ -465,7 +625,7 @@ pub fn match_pattern(
             }
         }
         (
-            TypecheckedDestructurePattern::Record {
+            CheckablePatternKind::Record {
                 key_pattern_pairs: actual_key_pattern_pairs,
                 ..
             },
@@ -499,7 +659,7 @@ pub fn match_pattern(
                     (
                         key.0.representation,
                         PatternPair {
-                            actual_pattern: as_value,
+                            actual_pattern: as_value.kind,
                             expected_pattern,
                         },
                     )
@@ -509,7 +669,7 @@ pub fn match_pattern(
             match_pattern_matrix(module, PatternMatrix::Record { key_pattern_pairs })
         }
         (
-            TypecheckedDestructurePattern::Array { .. },
+            CheckablePatternKind::Array { .. },
             ExpandablePattern::Any {
                 type_value:
                     Type::BuiltInOneArgumentType {
@@ -533,12 +693,11 @@ pub fn match_pattern(
                 },
             ],
         },
+        (CheckablePatternKind::Array { spread: None, .. }, ExpandablePattern::EmptyArray) => {
+            MatchPatternResult::Matched
+        }
         (
-            TypecheckedDestructurePattern::Array { spread: None, .. },
-            ExpandablePattern::EmptyArray,
-        ) => MatchPatternResult::Matched,
-        (
-            TypecheckedDestructurePattern::Array {
+            CheckablePatternKind::Array {
                 spread: Some(spread),
                 ..
             },
@@ -560,7 +719,7 @@ pub fn match_pattern(
             },
         ),
         (
-            TypecheckedDestructurePattern::Null(_),
+            CheckablePatternKind::Null(_),
             ExpandablePattern::Any {
                 type_value: Type::Null,
             },
@@ -569,33 +728,6 @@ pub fn match_pattern(
             // as long as there is one branch matching for null
             MatchPatternResult::Matched
         }
-        // (
-        //     TypecheckedDestructurePattern::Integer(_),
-        //     TypedTypecheckedDestructurePattern::Any {
-        //         type_value: Type::Integer,
-        //     },
-        // ) => {
-        //     // always return NotMatched because there are infinite possible combination of numbers
-        //     MatchPatternResult::NotMatched
-        // }
-        // (
-        //     TypecheckedDestructurePattern::String(_),
-        //     TypedTypecheckedDestructurePattern::Any {
-        //         type_value: Type::String,
-        //     },
-        // ) => {
-        //     // always return NotMatched because there are infinite possible combination of string
-        //     MatchPatternResult::NotMatched
-        // }
-        // (
-        //     TypecheckedDestructurePattern::Character(_),
-        //     TypedTypecheckedDestructurePattern::Any {
-        //         type_value: Type::Character,
-        //     },
-        // ) => {
-        //     // always return NotMatched because there are infinite possible combination of string
-        //     MatchPatternResult::NotMatched
-        // }
         (_, ExpandablePattern::Any { type_value }) => MatchPatternResult::PartiallyMatched {
             expanded_patterns: expand_pattern(module, type_value),
         },

@@ -212,6 +212,7 @@ pub enum InfinitePatternKind {
 
 #[derive(Debug, Clone)]
 pub enum DestructurePattern {
+    Or(Box<NonEmpty<DestructurePattern>>),
     Infinite {
         kind: InfinitePatternKind,
         token: Token,

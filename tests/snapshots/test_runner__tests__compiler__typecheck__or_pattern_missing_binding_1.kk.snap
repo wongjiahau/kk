@@ -1,0 +1,40 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Foo {
+  A({x: String, y: String}),
+  Bala
+}
+
+switch(Bala) {
+  case A({x, y}) | Bala: true
+        //    ^^^^ Error: missing binding `x`
+}
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/or_pattern_missing_binding_1.kk:8:20
+  │
+8 │   case A({x, y}) | Bala: true
+  │                    ^^^^ Missing bindings
+  │
+  = Every pattern in an OR pattern must have the same set of bindings, however this pattern is missing the following binding(s) which are found in preceding pattern(s):
+
+        x
+        y

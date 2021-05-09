@@ -1,0 +1,26 @@
+enum Continuation<State, Answer> {
+  Continue(State),
+  Break(Answer)
+}
+
+export let loop = <State, Answer>(state: State, f: (state: State) => Continuation<State, Answer>) => 
+  unsafe {
+    let mutable result = state
+
+    loop {
+      switch result.f() {
+        case Continue(newState): {
+          set result = newState
+        }
+        case Break(answer): {
+          break answer
+        }
+      }
+    }
+  }
+
+let map = <A, B>(xs: A[], f: (a: A) => B): B[] => 
+  unsafe {
+    let mutable result = []
+
+  }

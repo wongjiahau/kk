@@ -177,7 +177,7 @@ pub fn unify_statements(
                 )?;
                 Ok(TypecheckedStatement::Let {
                     exported: let_statement.keyword_export.is_some(),
-                    left: left.destructure_pattern,
+                    left,
                     right: right.expression,
                 })
             }
@@ -301,10 +301,13 @@ pub fn unify_statements(
                 // Return the typechecked statement, which is needed for transpilation
                 Ok(TypecheckedStatement::Let {
                     exported,
-                    left: TypecheckedDestructurePattern::Identifier(Box::new(Identifier {
-                        uid: uid.clone(),
-                        token: name.clone(),
-                    })),
+                    left: TypecheckedDestructurePattern {
+                        type_value: expected_type.clone(),
+                        kind: TypecheckedDestructurePatternKind::Identifier(Box::new(Identifier {
+                            uid: uid.clone(),
+                            token: name.clone(),
+                        })),
+                    },
                     right: result.expression,
                 })
             })
@@ -429,6 +432,13 @@ impl UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    ExtraneousBinding {
+        extraneous_binding: Binding,
+        expected_bindings: Vec<Binding>,
+    },
+    MissingBindings {
+        missing_expected_bindings: NonEmpty<Binding>,
+    },
     NotExpectingTypeVariable,
     FunctionCallAtTopLevelIsNotAllowed,
     NotExpectingFunction {
@@ -491,6 +501,9 @@ pub enum UnifyErrorKind {
         payload_type: Type,
     },
     UnreachableCase,
+    PartiallyUnreachableCase {
+        redundant_expanded_pattern: CheckablePatternKind,
+    },
     TypeArgumentsLengthMismatch {
         actual_length: usize,
         expected_type_parameter_names: Vec<String>,
@@ -1022,6 +1035,7 @@ impl Positionable for DestructurePattern {
                 Some((left, right)) => left.position.join(right.position),
                 None => tuple.values.position(),
             },
+            DestructurePattern::Or(patterns) => patterns.position(),
         }
     }
 }
@@ -2511,16 +2525,16 @@ fn infer_expression_type_(
                         Ok((pattern, body))
                     })
                 })
-                .collect::<Result<Vec<(InferDestructurePatternResult, InferExpressionResult)>, _>>(
+                .collect::<Result<Vec<(TypecheckedDestructurePattern, InferExpressionResult)>, _>>(
                 )?;
             check_exhaustiveness(
                 module,
                 typechecked_first_case.0.type_value.clone(),
                 NonEmpty {
-                    head: typechecked_first_case.0.destructure_pattern.clone(),
+                    head: typechecked_first_case.0.kind.clone(),
                     tail: typechecked_rest_cases
                         .iter()
-                        .map(|(result, _)| result.destructure_pattern.clone())
+                        .map(|(result, _)| result.kind.clone())
                         .collect(),
                 },
                 keyword_switch.position,
@@ -2534,7 +2548,7 @@ fn infer_expression_type_(
                                 branches: Box::new(NonEmpty {
                                     head: TypecheckedFunctionBranch {
                                         parameters: Box::new(NonEmpty {
-                                            head: typechecked_first_case.0.destructure_pattern,
+                                            head: typechecked_first_case.0,
                                             tail: vec![],
                                         }),
                                         body: Box::new(typechecked_first_case.1.expression),
@@ -2543,7 +2557,7 @@ fn infer_expression_type_(
                                         .iter()
                                         .map(|case| TypecheckedFunctionBranch {
                                             parameters: Box::new(NonEmpty {
-                                                head: case.0.destructure_pattern.clone(),
+                                                head: case.0.clone(),
                                                 tail: vec![],
                                             }),
                                             body: Box::new(case.1.expression.clone()),
@@ -2592,6 +2606,12 @@ fn infer_expression_type_(
         type_value: module.apply_subtitution_to_type(&result.type_value),
         expression: result.expression,
     })
+}
+
+impl Positionable for TypecheckedDestructurePattern {
+    fn position(&self) -> Position {
+        self.kind.position()
+    }
 }
 
 fn infer_arrow_function(
@@ -2710,7 +2730,7 @@ fn infer_arrow_function(
                 )?;
                 infer_destructure_pattern(module, expected_type, &parameter.pattern, false)
             })
-            .collect::<Result<Vec<InferDestructurePatternResult>, UnifyError>>()?;
+            .collect::<Result<Vec<TypecheckedDestructurePattern>, UnifyError>>()?;
 
         let expected_return_type = get_expected_type(
             module,
@@ -2733,11 +2753,8 @@ fn infer_arrow_function(
                     branches: Box::new(NonEmpty {
                         head: TypecheckedFunctionBranch {
                             parameters: Box::new(NonEmpty {
-                                head: head_parameter.destructure_pattern,
-                                tail: tail_parameters
-                                    .into_iter()
-                                    .map(|parameter| parameter.destructure_pattern)
-                                    .collect(),
+                                head: head_parameter,
+                                tail: tail_parameters,
                             }),
                             body: Box::new(body.expression),
                         },
@@ -2805,7 +2822,7 @@ fn infer_block_level_statement(
                 module,
                 typechecked_left.type_value.clone(),
                 NonEmpty {
-                    head: typechecked_left.destructure_pattern.clone(),
+                    head: typechecked_left.kind.clone(),
                     tail: vec![],
                 },
                 left.position(),
@@ -2813,7 +2830,7 @@ fn infer_block_level_statement(
                 Ok(_) => Ok((
                     TypecheckedStatement::Let {
                         exported: false,
-                        left: typechecked_left.destructure_pattern,
+                        left: typechecked_left,
                         right: typechecked_right.expression,
                     },
                     Type::Null,
@@ -2923,22 +2940,17 @@ fn infer_with_expression_type(
                                     false,
                                 )
                             })
-                            .collect::<Result<Vec<InferDestructurePatternResult>, UnifyError>>()?;
+                            .collect::<Result<Vec<TypecheckedDestructurePattern>, UnifyError>>()?;
 
                         // Check for pattern refutability
                         check_exhaustiveness(
                             module,
                             Type::Tuple(function_type.parameters_types.clone()),
                             NonEmpty {
-                                head: TypecheckedDestructurePattern::Tuple {
-                                    values: Box::new(NonEmpty {
-                                        head: typechecked_left_first_pattern
-                                            .destructure_pattern
-                                            .clone(),
-                                        tail: typechecked_left_tail_patterns
-                                            .iter()
-                                            .map(|pattern| pattern.destructure_pattern.clone())
-                                            .collect(),
+                                head: TypecheckedDestructurePatternKind::Tuple {
+                                    patterns: Box::new(NonEmpty {
+                                        head: typechecked_left_first_pattern.clone(),
+                                        tail: typechecked_left_tail_patterns.clone(),
                                     }),
                                 },
                                 tail: vec![],
@@ -2962,14 +2974,8 @@ fn infer_with_expression_type(
                                             branches: Box::new(NonEmpty {
                                                 head: TypecheckedFunctionBranch {
                                                     parameters: Box::new(NonEmpty {
-                                                        head: typechecked_left_first_pattern
-                                                            .destructure_pattern,
-                                                        tail: typechecked_left_tail_patterns
-                                                            .into_iter()
-                                                            .map(|result| {
-                                                                result.destructure_pattern
-                                                            })
-                                                            .collect(),
+                                                        head: typechecked_left_first_pattern,
+                                                        tail: typechecked_left_tail_patterns,
                                                     }),
                                                     body: Box::new(body.expression),
                                                 },
@@ -3162,16 +3168,16 @@ fn infer_function(
 
 pub fn function_branch_parameters_to_tuple(
     function_branch: &TypecheckedFunctionBranch,
-) -> TypecheckedDestructurePattern {
-    TypecheckedDestructurePattern::Tuple {
-        values: function_branch.parameters.clone(),
+) -> TypecheckedDestructurePatternKind {
+    TypecheckedDestructurePatternKind::Tuple {
+        patterns: function_branch.parameters.clone(),
     }
 }
 
 pub fn check_exhaustiveness(
     module: &Module,
     expected_type: Type,
-    actual_patterns: NonEmpty<TypecheckedDestructurePattern>,
+    actual_patterns: NonEmpty<TypecheckedDestructurePatternKind>,
     position: Position,
 ) -> Result<(), UnifyError> {
     check_exhaustiveness_(
@@ -3187,44 +3193,53 @@ pub fn check_exhaustiveness(
 pub fn check_exhaustiveness_(
     module: &Module,
     expected_patterns: Vec<ExpandablePattern>,
-    actual_patterns: NonEmpty<TypecheckedDestructurePattern>,
+    actual_patterns: NonEmpty<TypecheckedDestructurePatternKind>,
     position: Position,
 ) -> Result<(), UnifyError> {
     // println!("expected_patterns = {:#?}", expected_patterns);
     // println!("actual_patterns = {:#?}", actual_patterns);
-    let remaining_expected_patterns = actual_patterns.into_vector().into_iter().fold(
-        Ok(expected_patterns),
-        |expected_patterns, actual_pattern| match expected_patterns {
-            Err(error) => Err(error),
-            Ok(expected_patterns) => {
-                // println!("actual_pattern = {:?}", actual_pattern);
-                // println!("expected_patterns = {:?}", expected_patterns);
-                if expected_patterns.is_empty() {
+    let remaining_expected_patterns = actual_patterns
+        .into_vector()
+        .iter()
+        .flat_map(|pattern| to_checkable_pattern(pattern, false))
+        .fold(
+            Ok(expected_patterns),
+            |expected_patterns, actual_pattern| match expected_patterns {
+                Err(error) => Err(error),
+                Ok(expected_patterns) => {
+                    // println!("actual_pattern = {:?}", actual_pattern);
+                    // println!("expected_patterns = {:?}", expected_patterns);
+
+                    let new_expanded_patterns =
+                        match_patterns(module, &actual_pattern.kind, expected_patterns.clone());
+
+                    if
                     // If there are still remaning actual_patterns but expected_patterns already exhausted
                     // Then this actual_pattern is an unreachable case
-                    Err(UnifyError {
-                        position: actual_pattern.position(),
-                        kind: UnifyErrorKind::UnreachableCase,
-                    })
-                } else {
-                    let new_patterns =
-                        match_patterns(module, &actual_pattern, expected_patterns.clone());
+                    expected_patterns.is_empty()
 
-                    if new_patterns.eq(&expected_patterns) {
-                        // If new_patterns equals to the current expected_patterns
-                        // Then this actual_pattern is also an unreachable case
-                        //  as it does not remove any patterns from expected_patterns
+                    ||
+                    // If new_patterns equals to the current expected_patterns
+                    // Then this actual_pattern is also an unreachable case
+                    //  as it does not remove any patterns from expected_patterns
+                    new_expanded_patterns.eq(&expected_patterns)
+                    {
                         Err(UnifyError {
-                            position: actual_pattern.position(),
-                            kind: UnifyErrorKind::UnreachableCase,
+                            position: actual_pattern.kind.position(),
+                            kind: if actual_pattern.is_result_of_expansion {
+                                UnifyErrorKind::PartiallyUnreachableCase {
+                                    redundant_expanded_pattern: actual_pattern.kind,
+                                }
+                            } else {
+                                UnifyErrorKind::UnreachableCase
+                            },
                         })
                     } else {
-                        Ok(new_patterns)
+                        Ok(new_expanded_patterns)
                     }
                 }
-            }
-        },
-    )?;
+            },
+        )?;
     if remaining_expected_patterns.is_empty() {
         Ok(())
     } else {
@@ -3233,6 +3248,157 @@ pub fn check_exhaustiveness_(
             position,
             kind: UnifyErrorKind::MissingCases(remaining_expected_patterns),
         })
+    }
+}
+
+/// This function will expand the OR pattern of TypecheckedDestructurePatternKind
+/// into a list of CheckablePattern (which does not contains OR pattern)
+pub fn to_checkable_pattern(
+    pattern: &TypecheckedDestructurePatternKind,
+    is_result_of_expansion: bool,
+) -> Vec<CheckablePattern> {
+    match pattern {
+        TypecheckedDestructurePatternKind::EnumConstructor {
+            constructor_name,
+            payload,
+        } => match &payload {
+            Some(payload) => to_checkable_pattern(&payload.pattern.kind, is_result_of_expansion)
+                .into_iter()
+                .map(|pattern| CheckablePattern {
+                    is_result_of_expansion: pattern.is_result_of_expansion,
+                    kind: CheckablePatternKind::EnumConstructor {
+                        constructor_name: constructor_name.clone(),
+                        payload: Some(CheckablePatternEnumConstructorPayload {
+                            pattern: Box::new(pattern),
+                            left_parenthesis: payload.left_parenthesis.clone(),
+                            right_parenthesis: payload.right_parenthesis.clone(),
+                        }),
+                    },
+                })
+                .collect(),
+            None => {
+                vec![CheckablePattern {
+                    is_result_of_expansion,
+                    kind: CheckablePatternKind::EnumConstructor {
+                        constructor_name: constructor_name.clone(),
+                        payload: None,
+                    },
+                }]
+            }
+        },
+        TypecheckedDestructurePatternKind::Record {
+            left_curly_bracket,
+            key_pattern_pairs,
+            right_curly_bracket,
+        } => {
+            let expanded_key_pattern_pairs = key_pattern_pairs
+                .iter()
+                .map(|(property, pattern)| {
+                    to_checkable_pattern(&pattern.kind, is_result_of_expansion)
+                        .into_iter()
+                        .map(|checkable_pattern| (property.clone(), checkable_pattern))
+                        .collect::<Vec<(PropertyName, CheckablePattern)>>()
+                })
+                .collect::<Vec<Vec<(PropertyName, CheckablePattern)>>>();
+
+            cartesian_product(expanded_key_pattern_pairs)
+                .into_iter()
+                .map(|key_pattern_pairs| CheckablePattern {
+                    is_result_of_expansion: key_pattern_pairs
+                        .iter()
+                        .any(|(_, pattern)| pattern.is_result_of_expansion),
+                    kind: CheckablePatternKind::Record {
+                        left_curly_bracket: left_curly_bracket.clone(),
+                        right_curly_bracket: right_curly_bracket.clone(),
+                        key_pattern_pairs,
+                    },
+                })
+                .collect()
+        }
+
+        TypecheckedDestructurePatternKind::Tuple { patterns } => {
+            let expanded_patterns = patterns
+                .clone()
+                .into_vector()
+                .into_iter()
+                .enumerate()
+                .map(|(index, pattern)| {
+                    to_checkable_pattern(&pattern.kind, is_result_of_expansion)
+                        .into_iter()
+                        .map(|checkable_pattern| (index, checkable_pattern))
+                        .collect::<Vec<(usize, CheckablePattern)>>()
+                })
+                .collect::<Vec<Vec<(usize, CheckablePattern)>>>();
+
+            cartesian_product(expanded_patterns)
+                .into_iter()
+                .map(|index_pattern_pairs| CheckablePattern {
+                    is_result_of_expansion: index_pattern_pairs
+                        .iter()
+                        .any(|(_, pattern)| pattern.is_result_of_expansion),
+                    kind: CheckablePatternKind::Tuple {
+                        patterns: {
+                            let patterns = index_pattern_pairs
+                                .iter()
+                                .map(|(_, pattern)| pattern.kind.clone())
+                                .collect::<Vec<CheckablePatternKind>>();
+
+                            let (head, tail) = patterns.split_first().unwrap();
+
+                            Box::new(NonEmpty {
+                                head: head.clone(),
+                                tail: tail.to_vec(),
+                            })
+                        },
+                    },
+                })
+                .collect()
+        }
+        TypecheckedDestructurePatternKind::Array { .. } => {
+            panic!()
+        }
+        TypecheckedDestructurePatternKind::Or { patterns } => patterns
+            .clone()
+            .into_vector()
+            .into_iter()
+            .flat_map(|pattern| to_checkable_pattern(&pattern.kind, true))
+            .collect(),
+        TypecheckedDestructurePatternKind::Infinite { kind, token } => {
+            vec![CheckablePattern {
+                is_result_of_expansion,
+                kind: CheckablePatternKind::Infinite {
+                    kind: kind.clone(),
+                    token: token.clone(),
+                },
+            }]
+        }
+        TypecheckedDestructurePatternKind::Boolean { token, value } => {
+            vec![CheckablePattern {
+                is_result_of_expansion,
+                kind: CheckablePatternKind::Boolean {
+                    token: token.clone(),
+                    value: *value,
+                },
+            }]
+        }
+        TypecheckedDestructurePatternKind::Null(token) => {
+            vec![CheckablePattern {
+                is_result_of_expansion,
+                kind: CheckablePatternKind::Null(token.clone()),
+            }]
+        }
+        TypecheckedDestructurePatternKind::Underscore(token) => {
+            vec![CheckablePattern {
+                is_result_of_expansion,
+                kind: CheckablePatternKind::Underscore(token.clone()),
+            }]
+        }
+        TypecheckedDestructurePatternKind::Identifier(identifier) => {
+            vec![CheckablePattern {
+                is_result_of_expansion,
+                kind: CheckablePatternKind::Identifier(identifier.clone()),
+            }]
+        }
     }
 }
 
@@ -3369,9 +3535,7 @@ fn infer_function_branch(
         Ok(InferFunctionBranchResult {
             function_type: module.apply_subtitution_to_function_type(&result_type),
             function_branch: TypecheckedFunctionBranch {
-                parameters: Box::new(
-                    typechecked_parameters.map(|argument| argument.destructure_pattern),
-                ),
+                parameters: Box::new(typechecked_parameters),
                 body: Box::new(typechecked_body.expression),
             },
         })
@@ -3542,17 +3706,14 @@ pub fn type_annotation_to_type(
     }
 }
 
-#[derive(Clone)]
-struct InferDestructurePatternResult {
-    destructure_pattern: TypecheckedDestructurePattern,
-    type_value: Type,
-}
+/// This function is not pure, it will mutate the `module`, namely
+/// when we encounter a variable binding (e.g. `x`), then `x` will be put in the environment of `module`
 fn infer_destructure_pattern(
     module: &mut Module,
     expected_type: Option<Type>,
     destructure_pattern: &DestructurePattern,
     exported: bool,
-) -> Result<InferDestructurePatternResult, UnifyError> {
+) -> Result<TypecheckedDestructurePattern, UnifyError> {
     // Same story as infer_expression_type
     let result =
         infer_destructure_pattern_(module, expected_type.clone(), destructure_pattern, exported)?;
@@ -3564,8 +3725,8 @@ fn infer_destructure_pattern(
         destructure_pattern.position(),
     )?;
 
-    Ok(InferDestructurePatternResult {
-        destructure_pattern: result.destructure_pattern,
+    Ok(TypecheckedDestructurePattern {
+        kind: result.kind,
         type_value,
     })
 }
@@ -3575,33 +3736,33 @@ fn infer_destructure_pattern_(
     expected_type: Option<Type>,
     destructure_pattern: &DestructurePattern,
     exported: bool,
-) -> Result<InferDestructurePatternResult, UnifyError> {
+) -> Result<TypecheckedDestructurePattern, UnifyError> {
     match destructure_pattern {
-        DestructurePattern::Infinite { token, kind } => Ok(InferDestructurePatternResult {
+        DestructurePattern::Infinite { token, kind } => Ok(TypecheckedDestructurePattern {
             type_value: match &kind {
                 InfinitePatternKind::Character => Type::Character,
                 InfinitePatternKind::String => Type::String,
                 InfinitePatternKind::Integer => Type::Integer,
             },
-            destructure_pattern: TypecheckedDestructurePattern::Infinite {
+            kind: TypecheckedDestructurePatternKind::Infinite {
                 kind: kind.clone(),
                 token: token.clone(),
             },
         }),
-        DestructurePattern::Null(token) => Ok(InferDestructurePatternResult {
+        DestructurePattern::Null(token) => Ok(TypecheckedDestructurePattern {
             type_value: Type::Null,
-            destructure_pattern: TypecheckedDestructurePattern::Null(token.clone()),
+            kind: TypecheckedDestructurePatternKind::Null(token.clone()),
         }),
-        DestructurePattern::Boolean { value, token } => Ok(InferDestructurePatternResult {
+        DestructurePattern::Boolean { value, token } => Ok(TypecheckedDestructurePattern {
             type_value: Type::Boolean,
-            destructure_pattern: TypecheckedDestructurePattern::Boolean {
+            kind: TypecheckedDestructurePatternKind::Boolean {
                 value: *value,
                 token: token.clone(),
             },
         }),
-        DestructurePattern::Underscore(token) => Ok(InferDestructurePatternResult {
+        DestructurePattern::Underscore(token) => Ok(TypecheckedDestructurePattern {
             type_value: module.introduce_implicit_type_variable(None)?,
-            destructure_pattern: TypecheckedDestructurePattern::Underscore(token.clone()),
+            kind: TypecheckedDestructurePatternKind::Underscore(token.clone()),
         }),
         DestructurePattern::Identifier(identifier) => {
             // If this identifier matches any enum constructor,
@@ -3614,7 +3775,7 @@ fn infer_destructure_pattern_(
                         name: identifier.clone(),
                         payload: None,
                     },
-                    false,
+                    exported,
                 )
             }
             // If this identifier does not match any enum constructor
@@ -3622,37 +3783,35 @@ fn infer_destructure_pattern_(
             else {
                 let (uid, type_value) =
                     module.insert_value_symbol_with_type(identifier, expected_type, exported)?;
-                Ok(InferDestructurePatternResult {
+                Ok(TypecheckedDestructurePattern {
                     type_value,
-                    destructure_pattern: TypecheckedDestructurePattern::Identifier(Box::new(
-                        Identifier {
-                            uid,
-                            token: identifier.clone(),
-                        },
-                    )),
+                    kind: TypecheckedDestructurePatternKind::Identifier(Box::new(Identifier {
+                        uid,
+                        token: identifier.clone(),
+                    })),
                 })
             }
         }
         DestructurePattern::Tuple(tuple) => {
             let typechecked_values = tuple.values.clone().fold_result(|destructure_pattern| {
                 // TODO: pass in expected_type
-                infer_destructure_pattern(module, None, &destructure_pattern, false)
+                infer_destructure_pattern(module, None, &destructure_pattern, exported)
             })?;
-            Ok(InferDestructurePatternResult {
+            Ok(TypecheckedDestructurePattern {
                 type_value: Type::Tuple(Box::new(
                     typechecked_values.clone().map(|value| value.type_value),
                 )),
-                destructure_pattern: TypecheckedDestructurePattern::Tuple {
-                    values: Box::new(typechecked_values.map(|value| value.destructure_pattern)),
+                kind: TypecheckedDestructurePatternKind::Tuple {
+                    patterns: Box::new(typechecked_values),
                 },
             })
         }
         DestructurePattern::EnumConstructor { name, payload, .. } => {
             let result = get_enum_type(module, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
-                (None, None) => Ok(InferDestructurePatternResult {
+                (None, None) => Ok(TypecheckedDestructurePattern {
                     type_value: result.expected_enum_type,
-                    destructure_pattern: TypecheckedDestructurePattern::EnumConstructor {
+                    kind: TypecheckedDestructurePatternKind::EnumConstructor {
                         constructor_name: name.clone(),
                         payload: None,
                     },
@@ -3672,16 +3831,16 @@ fn infer_destructure_pattern_(
                         module,
                         Some(expected_payload_type),
                         &payload.pattern,
-                        false,
+                        exported,
                     )?;
-                    Ok(InferDestructurePatternResult {
+                    Ok(TypecheckedDestructurePattern {
                         type_value: result.expected_enum_type,
-                        destructure_pattern: TypecheckedDestructurePattern::EnumConstructor {
+                        kind: TypecheckedDestructurePatternKind::EnumConstructor {
                             constructor_name: name.clone(),
                             payload: Some(TypecheckedDestructurePatternEnumConstructorPayload {
                                 right_parenthesis: payload.right_parenthesis,
                                 left_parenthesis: payload.left_parenthesis,
-                                pattern: Box::new(typechecked_payload.destructure_pattern),
+                                pattern: Box::new(typechecked_payload),
                             }),
                         },
                     })
@@ -3692,14 +3851,14 @@ fn infer_destructure_pattern_(
             spread: None,
             left_square_bracket,
             right_square_bracket,
-        } => Ok(InferDestructurePatternResult {
+        } => Ok(TypecheckedDestructurePattern {
             type_value: Type::BuiltInOneArgumentType {
                 kind: BuiltInOneArgumentTypeKind::Array,
                 type_argument: Box::new(Type::ImplicitTypeVariable {
                     name: module.get_next_type_variable_name(),
                 }),
             },
-            destructure_pattern: TypecheckedDestructurePattern::Array {
+            kind: TypecheckedDestructurePatternKind::Array {
                 spread: None,
                 left_square_bracket: left_square_bracket.clone(),
                 right_square_bracket: right_square_bracket.clone(),
@@ -3725,7 +3884,7 @@ fn infer_destructure_pattern_(
                 module,
                 Some(expected_element_type.clone()),
                 &spread.first_element,
-                false,
+                exported,
             )?;
 
             let expected_array_type = Type::BuiltInOneArgumentType {
@@ -3736,17 +3895,17 @@ fn infer_destructure_pattern_(
                 module,
                 Some(expected_array_type.clone()),
                 &spread.rest_elements,
-                false,
+                exported,
             )?;
 
-            Ok(InferDestructurePatternResult {
+            Ok(TypecheckedDestructurePattern {
                 type_value: module.apply_subtitution_to_type(&expected_array_type),
-                destructure_pattern: TypecheckedDestructurePattern::Array {
+                kind: TypecheckedDestructurePatternKind::Array {
                     left_square_bracket: left_square_bracket.clone(),
                     right_square_bracket: right_square_bracket.clone(),
                     spread: Some(TypecheckedDesturcturePatternArraySpread {
-                        first_element: Box::new(typechecked_first_element.destructure_pattern),
-                        rest_elements: Box::new(typechecked_rest_elements.destructure_pattern),
+                        first_element: Box::new(typechecked_first_element),
+                        rest_elements: Box::new(typechecked_rest_elements),
                     }),
                 },
             })
@@ -3829,32 +3988,35 @@ fn infer_destructure_pattern_(
                                 module,
                                 expected_type,
                                 destructure_pattern,
-                                false,
+                                exported,
                             )?;
 
                             Ok((actual_key, typechecked_destructure_pattern))
                         }
                         None => {
-                            let (uid, type_value) =
-                                module.insert_value_symbol_with_type(key, expected_type, false)?;
+                            let (uid, type_value) = module.insert_value_symbol_with_type(
+                                key,
+                                expected_type,
+                                exported,
+                            )?;
                             Ok((
                                 actual_key.clone(),
-                                InferDestructurePatternResult {
+                                TypecheckedDestructurePattern {
                                     type_value,
-                                    destructure_pattern: TypecheckedDestructurePattern::Identifier(
-                                        Box::new(Identifier {
+                                    kind: TypecheckedDestructurePatternKind::Identifier(Box::new(
+                                        Identifier {
                                             uid,
                                             token: actual_key,
-                                        }),
-                                    ),
+                                        },
+                                    )),
                                 },
                             ))
                         }
                     }
                 })
-                .collect::<Result<Vec<(Token, InferDestructurePatternResult)>, UnifyError>>()?;
+                .collect::<Result<Vec<(Token, TypecheckedDestructurePattern)>, UnifyError>>()?;
 
-            Ok(InferDestructurePatternResult {
+            Ok(TypecheckedDestructurePattern {
                 type_value: Type::Record {
                     key_type_pairs: typechecked_key_pattern_pairs
                         .iter()
@@ -3863,20 +4025,302 @@ fn infer_destructure_pattern_(
                         })
                         .collect(),
                 },
-                destructure_pattern: TypecheckedDestructurePattern::Record {
+                kind: TypecheckedDestructurePatternKind::Record {
                     left_curly_bracket: left_curly_bracket.clone(),
                     right_curly_bracket: right_curly_bracket.clone(),
                     key_pattern_pairs: typechecked_key_pattern_pairs
                         .iter()
-                        .map(|(key, pattern)| {
-                            (
-                                PropertyName(key.clone()),
-                                pattern.destructure_pattern.clone(),
-                            )
-                        })
+                        .map(|(key, pattern)| (PropertyName(key.clone()), pattern.clone()))
                         .collect(),
                 },
             })
+        }
+        DestructurePattern::Or(patterns) => {
+            // 1. Check that all the patterns has the same type
+            let first_pattern = infer_destructure_pattern(
+                module,
+                expected_type.clone(),
+                &patterns.first(),
+                exported,
+            )?;
+
+            let tail_patterns = patterns
+                .tail()
+                .iter()
+                .map(|pattern| {
+                    // We have to infer each trailing pattern in different scope
+                    // So that we will not get the duplicated binding errors in patterns like:
+                    //  Pa(x) | Pb(x)
+                    module.run_in_new_child_scope(|module| {
+                        infer_destructure_pattern(
+                            module,
+                            // Note the each trailing pattern should has the type of the first pattern
+                            Some(first_pattern.type_value.clone()),
+                            &pattern,
+                            exported,
+                        )
+                    })
+                })
+                .collect::<Result<Vec<TypecheckedDestructurePattern>, UnifyError>>()?;
+
+            // 2. Check that all the patterns has the equivalent bindings.
+
+            // 3. Update the SymbolUid of each bindings in tail_patterns to follow that of first_pattern.
+            // This is necessary because we infer the type of each pattern in different scope,
+            // which will cause them to have different SymbolUid even though they have the same name.
+            // For example, when we infer the pattern `Pa(x) | Pb(x)`
+            // The `x` in `Pa(x)` and the `x` in `Pb(x)` will have different SymbolUid.
+            // For the transpilation to work, we have to update the `x` in `Pb(x)` to use the same SymbolUid
+            // as the `x` in `Pa(x)`
+
+            // Note that 2. and 3. are done together in the following code using the `match_bindings` function.
+            let first_bindings = first_pattern.bindings();
+            let tail_patterns = tail_patterns
+                .into_iter()
+                .map(|pattern| {
+                    let result = match_bindings(module, pattern.clone(), first_bindings.clone())?;
+                    match result.remaining_expected_bindings.split_first() {
+                        None => Ok(result.pattern),
+                        Some((head, tail)) => Err(UnifyError {
+                            position: pattern.position(),
+                            kind: UnifyErrorKind::MissingBindings {
+                                missing_expected_bindings: NonEmpty {
+                                    head: head.clone(),
+                                    tail: tail.to_vec(),
+                                },
+                            },
+                        }),
+                    }
+                })
+                .collect::<Result<Vec<TypecheckedDestructurePattern>, UnifyError>>()?;
+
+            Ok(TypecheckedDestructurePattern {
+                type_value: first_pattern.type_value.clone(),
+                kind: TypecheckedDestructurePatternKind::Or {
+                    patterns: Box::new(NonEmpty {
+                        head: first_pattern,
+                        tail: tail_patterns,
+                    }),
+                },
+            })
+        }
+    }
+}
+
+struct MatchingBindingResult {
+    pattern: TypecheckedDestructurePattern,
+    /// Bindings that were not matched at all
+    remaining_expected_bindings: Vec<Binding>,
+}
+
+/// This function ensure that the `source` has **equivalent** bindings as `expected_bindings`.  
+///
+/// Namely,
+/// 1. `source` has the same number of bindings as `expected_bindings`
+/// 2. Each binding of `source` exists in `expected_bindings` (this is done by returning a non-empty remaining_expected_bindings)
+/// 3. Each matching bindings between `source` and `expected_bindings` must have unifiable type
+///
+/// This function also update the SymbolUid of each bindings of `source` to match the
+/// SymbolUid of each bindings of `expected_bindings`.  
+///
+/// Suppose in `A@n`, `A` means the identifier name, and `n` means its corresponding SymbolUid.  
+///
+/// For example, if `source` is `A@0` and `expected_bindings` is `A@1`,  
+/// Then the result should be `A@1`.
+fn match_bindings(
+    module: &mut Module,
+    source: TypecheckedDestructurePattern,
+    expected_bindings: Vec<Binding>,
+) -> Result<MatchingBindingResult, UnifyError> {
+    match source.kind {
+        kind @ TypecheckedDestructurePatternKind::Infinite { .. } => Ok(MatchingBindingResult {
+            remaining_expected_bindings: expected_bindings,
+            pattern: TypecheckedDestructurePattern { kind, ..source },
+        }),
+        kind @ TypecheckedDestructurePatternKind::Boolean { .. } => Ok(MatchingBindingResult {
+            remaining_expected_bindings: expected_bindings,
+            pattern: TypecheckedDestructurePattern { kind, ..source },
+        }),
+        kind @ TypecheckedDestructurePatternKind::Null(_) => Ok(MatchingBindingResult {
+            remaining_expected_bindings: expected_bindings,
+            pattern: TypecheckedDestructurePattern { kind, ..source },
+        }),
+        kind @ TypecheckedDestructurePatternKind::Underscore(_) => Ok(MatchingBindingResult {
+            remaining_expected_bindings: expected_bindings,
+            pattern: TypecheckedDestructurePattern { kind, ..source },
+        }),
+        TypecheckedDestructurePatternKind::Identifier(identifier) => {
+            // Look for matching bindings
+            let (matching_bindings, remaining_expected_bindings): (Vec<Binding>, Vec<Binding>) =
+                expected_bindings.into_iter().partition(|binding| {
+                    identifier.token.representation == binding.identifier.token.representation
+                });
+            match matching_bindings.first() {
+                // If no matching binding found, it means that this identifier is an extraneous binding in the OR patterns
+                None => Err(UnifyError {
+                    position: identifier.token.position,
+                    kind: UnifyErrorKind::ExtraneousBinding {
+                        extraneous_binding: Binding {
+                            type_value: source.type_value,
+                            identifier: *identifier.clone(),
+                        },
+                        expected_bindings: remaining_expected_bindings,
+                    },
+                }),
+                Some(matching_binding) => {
+                    // If matching binding found, then unify the type of this identifier and that of matching_binding
+                    unify_type(
+                        module,
+                        &matching_binding.type_value,
+                        &source.type_value,
+                        identifier.token.position,
+                    )?;
+
+                    Ok(MatchingBindingResult {
+                        remaining_expected_bindings,
+                        pattern: TypecheckedDestructurePattern {
+                            type_value: matching_binding.type_value.clone(),
+                            kind: TypecheckedDestructurePatternKind::Identifier(Box::new(
+                                Identifier {
+                                    // Note that we use the SymbolUid of matching_binding
+                                    uid: matching_binding.identifier.uid.clone(),
+                                    token: identifier.token,
+                                },
+                            )),
+                        },
+                    })
+                }
+            }
+        }
+        TypecheckedDestructurePatternKind::EnumConstructor {
+            constructor_name,
+            payload,
+        } => match payload {
+            None => Ok(MatchingBindingResult {
+                remaining_expected_bindings: expected_bindings,
+                pattern: TypecheckedDestructurePattern {
+                    type_value: source.type_value,
+                    kind: TypecheckedDestructurePatternKind::EnumConstructor {
+                        constructor_name,
+                        payload: None,
+                    },
+                },
+            }),
+            Some(payload) => {
+                let result = match_bindings(module, *payload.pattern.clone(), expected_bindings)?;
+                Ok(MatchingBindingResult {
+                    remaining_expected_bindings: result.remaining_expected_bindings,
+                    pattern: TypecheckedDestructurePattern {
+                        type_value: source.type_value,
+                        kind: TypecheckedDestructurePatternKind::EnumConstructor {
+                            constructor_name,
+                            payload: Some(TypecheckedDestructurePatternEnumConstructorPayload {
+                                pattern: Box::new(result.pattern),
+                                ..payload
+                            }),
+                        },
+                    },
+                })
+            }
+        },
+        TypecheckedDestructurePatternKind::Record {
+            left_curly_bracket,
+            key_pattern_pairs,
+            right_curly_bracket,
+        } => {
+            // We use fold instead of map because we need to exhaust expected_bindings with each iteration
+            let init = Ok((vec![], expected_bindings));
+            let (key_pattern_pairs, remaining_expected_bindings) = key_pattern_pairs
+                .into_iter()
+                .fold(init, |result, (property, pattern)| match result {
+                    Err(error) => Err(error),
+                    Ok((key_pattern_pairs, remaining_expected_bindings)) => {
+                        let result = match_bindings(module, pattern, remaining_expected_bindings)?;
+                        Ok((
+                            key_pattern_pairs
+                                .into_iter()
+                                .chain(vec![(property, result.pattern)])
+                                .collect(),
+                            result.remaining_expected_bindings,
+                        ))
+                    }
+                })?;
+            Ok(MatchingBindingResult {
+                remaining_expected_bindings,
+                pattern: TypecheckedDestructurePattern {
+                    type_value: source.type_value,
+                    kind: TypecheckedDestructurePatternKind::Record {
+                        left_curly_bracket,
+                        key_pattern_pairs,
+                        right_curly_bracket,
+                    },
+                },
+            })
+        }
+        TypecheckedDestructurePatternKind::Array { .. } => {
+            panic!();
+        }
+        TypecheckedDestructurePatternKind::Tuple { .. } => {
+            // We use fold instead of map because we need to exhaust expected_bindings wit
+            panic!()
+        }
+        TypecheckedDestructurePatternKind::Or { patterns } => {
+            // Note that we use `map` instead of `fold` here, because the expected bindings
+            // should remain the same after each iteration
+            // because all patterns in an OR-pattern is expected to have the same set of bindings
+            let results = patterns.fold_result(|pattern| {
+                match_bindings(module, pattern, expected_bindings.clone())
+            })?;
+            Ok(MatchingBindingResult {
+                remaining_expected_bindings: results.head.remaining_expected_bindings.clone(),
+                pattern: TypecheckedDestructurePattern {
+                    type_value: source.type_value,
+                    kind: TypecheckedDestructurePatternKind::Or {
+                        patterns: Box::new(results.map(|result| result.pattern)),
+                    },
+                },
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Binding {
+    pub identifier: Identifier,
+    pub type_value: Type,
+}
+
+impl TypecheckedDestructurePattern {
+    fn bindings(&self) -> Vec<Binding> {
+        match &self.kind {
+            TypecheckedDestructurePatternKind::Infinite { .. }
+            | TypecheckedDestructurePatternKind::Boolean { .. }
+            | TypecheckedDestructurePatternKind::Null(_)
+            | TypecheckedDestructurePatternKind::Underscore(_) => vec![],
+            TypecheckedDestructurePatternKind::Identifier(identifier) => vec![Binding {
+                identifier: *identifier.clone(),
+                type_value: self.type_value.clone(),
+            }],
+            TypecheckedDestructurePatternKind::EnumConstructor { payload, .. } => match payload {
+                Some(payload) => payload.pattern.bindings(),
+                None => vec![],
+            },
+            TypecheckedDestructurePatternKind::Record {
+                key_pattern_pairs, ..
+            } => key_pattern_pairs
+                .iter()
+                .flat_map(|(_, pattern)| pattern.bindings())
+                .collect(),
+            TypecheckedDestructurePatternKind::Array { .. } => {
+                panic!("Array pattern is still pending design")
+            }
+            TypecheckedDestructurePatternKind::Tuple { patterns }
+            | TypecheckedDestructurePatternKind::Or { patterns } => patterns
+                .clone()
+                .into_vector()
+                .into_iter()
+                .flat_map(|pattern| pattern.bindings())
+                .collect(),
         }
     }
 }

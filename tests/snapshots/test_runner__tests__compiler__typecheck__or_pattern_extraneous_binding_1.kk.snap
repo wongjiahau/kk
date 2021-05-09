@@ -1,0 +1,39 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Foo {
+  A({x: String, y: String}),
+  B({x: String, y: String, z: String})
+}
+
+switch(A({x: "hi", y: "bye"})) {
+  case A({x, y}) | B({x, y, z}): true
+        //               ^ Error: extraneous binding `z`
+}
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/or_pattern_extraneous_binding_1.kk:8:29
+  │
+8 │   case A({x, y}) | B({x, y, z}): true
+  │                             ^ Extraneous Binding
+  │
+  = All preceding patterns does not have this binding, namely `z`.
+    Note that every patterns in an OR pattern must have the same set of bindings.
+    In this case:

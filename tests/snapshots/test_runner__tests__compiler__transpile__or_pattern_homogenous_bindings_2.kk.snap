@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Foo {
+  A(String),
+  B({hello: String})
+}
+
+let toString = (foo: Foo): String =>
+  switch foo {
+    case A(x) | B({hello: x}): x
+  }
+
+
+A("Spongebob").toString().print()
+B({hello: "Squarepants"}).toString().print()
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+Spongebob
+Squarepants
+
+============
+STDERR
+============

@@ -1,5 +1,5 @@
 use crate::{
-    ast::{InfinitePatternKind, Position, Token},
+    ast::{InfinitePatternKind, Position, Token, Type},
     module::{ModuleUid, SymbolUid},
     non_empty::NonEmpty,
 };
@@ -135,7 +135,13 @@ pub struct TypecheckedFunctionBranch {
 }
 
 #[derive(Debug, Clone)]
-pub enum TypecheckedDestructurePattern {
+pub struct TypecheckedDestructurePattern {
+    pub type_value: Type,
+    pub kind: TypecheckedDestructurePatternKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum TypecheckedDestructurePatternKind {
     Infinite {
         kind: InfinitePatternKind,
         token: Token,
@@ -162,7 +168,10 @@ pub enum TypecheckedDestructurePattern {
         right_square_bracket: Token,
     },
     Tuple {
-        values: Box<NonEmpty<TypecheckedDestructurePattern>>,
+        patterns: Box<NonEmpty<TypecheckedDestructurePattern>>,
+    },
+    Or {
+        patterns: Box<NonEmpty<TypecheckedDestructurePattern>>,
     },
 }
 
@@ -173,15 +182,15 @@ pub struct TypecheckedDestructurePatternEnumConstructorPayload {
     pub right_parenthesis: Token,
 }
 
-impl TypecheckedDestructurePattern {
+impl TypecheckedDestructurePatternKind {
     pub fn position(&self) -> Position {
         match self {
-            TypecheckedDestructurePattern::Infinite { token, .. }
-            | TypecheckedDestructurePattern::Boolean { token, .. }
-            | TypecheckedDestructurePattern::Null(token)
-            | TypecheckedDestructurePattern::Underscore(token) => token.position,
-            TypecheckedDestructurePattern::Identifier(identifier) => identifier.token.position,
-            TypecheckedDestructurePattern::EnumConstructor {
+            TypecheckedDestructurePatternKind::Infinite { token, .. }
+            | TypecheckedDestructurePatternKind::Boolean { token, .. }
+            | TypecheckedDestructurePatternKind::Null(token)
+            | TypecheckedDestructurePatternKind::Underscore(token) => token.position,
+            TypecheckedDestructurePatternKind::Identifier(identifier) => identifier.token.position,
+            TypecheckedDestructurePatternKind::EnumConstructor {
                 constructor_name,
                 payload,
                 ..
@@ -191,23 +200,22 @@ impl TypecheckedDestructurePattern {
                     .position
                     .join(payload.right_parenthesis.position),
             },
-            TypecheckedDestructurePattern::Record {
+            TypecheckedDestructurePatternKind::Record {
                 left_curly_bracket,
                 right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
                 .join(right_curly_bracket.position),
-            TypecheckedDestructurePattern::Array {
+            TypecheckedDestructurePatternKind::Array {
                 left_square_bracket,
                 right_square_bracket,
                 ..
             } => left_square_bracket
                 .position
                 .join(right_square_bracket.position),
-            TypecheckedDestructurePattern::Tuple { values } => {
-                values.first().position().join(values.last().position())
-            }
+            TypecheckedDestructurePatternKind::Tuple { patterns }
+            | TypecheckedDestructurePatternKind::Or { patterns } => patterns.position(),
         }
     }
 }

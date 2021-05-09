@@ -1,11 +1,14 @@
 use crate::tokenize::TokenizeError;
-use crate::unify::{UnifyError, UnifyErrorKind};
 use crate::{ast::*, compile::CompileError};
 use crate::{
     compile::CompileErrorKind,
     parse::{ParseContext, ParseError, ParseErrorKind},
 };
 use crate::{module::ModuleMeta, pattern::ExpandablePattern};
+use crate::{
+    pattern::CheckablePatternKind,
+    unify::{UnifyError, UnifyErrorKind},
+};
 use colored::*;
 use prettytable::{format::Alignment, Cell, Row, Table};
 use std::ops::Range;
@@ -623,9 +626,19 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                     .join("\n")
             ),
         },
+        UnifyErrorKind::PartiallyUnreachableCase {redundant_expanded_pattern: redundant_pattern} => StringifiedError {
+            summary: "Partially unreachable case".to_string(),
+            body: format!(
+                "This case is partially unreachable because it contains a redundant pattern that is already handled by previous cases.\nNamely:\n\n{}",
+                indent_string(
+                    redundant_pattern.to_string(),
+                    4
+                )
+            )
+        },
         UnifyErrorKind::UnreachableCase => StringifiedError {
             summary: "Unreachable case".to_string(),
-            body: "This case is unreachable because all possible cases are already handled by previous branches.".to_string()
+            body: "This case is unreachable as it is already handled by previous cases.".to_string()
         },
         UnifyErrorKind::NoSuchProperty {
             mut expected_keys
@@ -846,6 +859,29 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::NotExpectingTypeVariable => StringifiedError {
             summary: "Not expecting type variable here".to_string(),
             body: "".to_string()
+        },
+        UnifyErrorKind::MissingBindings { missing_expected_bindings } => StringifiedError {
+            summary:"Missing bindings".to_string(),
+            body: format!(
+                "{}\n\n{}", 
+                "Every pattern in an OR pattern must have the same set of bindings, however this pattern is missing the following binding(s) which are found in preceding pattern(s):",
+                    missing_expected_bindings.map(|binding| indent_string(binding.identifier.token.representation, 4))
+                    .into_vector().join("\n")
+            )
+        },
+        UnifyErrorKind::ExtraneousBinding {extraneous_binding ,expected_bindings} => StringifiedError {
+            summary: "Extraneous Binding".to_string(),
+            body: format!(
+                "All preceding patterns does not have this binding, namely `{}`.\n{}\n{}\n\n{}",
+                extraneous_binding.identifier.token.representation,
+                "Note that every patterns in an OR pattern must have the same set of bindings.",
+                "In this case:",
+                expected_bindings.into_iter().map(|binding|
+                    indent_string(binding.identifier.token.representation, 4)
+                )
+                .collect::<Vec<String>>()
+                .join("\n")
+            )
         }
     }
 }
@@ -994,6 +1030,55 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                 type_scheme.type_variables.into_vector().join(", "),
                 stringify_type(type_scheme.type_value, indent_level)
             )
+        }
+    }
+}
+
+impl CheckablePatternKind {
+    pub fn to_string(&self) -> String {
+        match self {
+            CheckablePatternKind::Infinite { kind, token } => match kind {
+                InfinitePatternKind::String => format!("\"{}\"", token.representation),
+                InfinitePatternKind::Character => format!("'{}'", token.representation),
+                InfinitePatternKind::Integer => token.representation.clone(),
+            },
+            CheckablePatternKind::Boolean { token, .. } => token.representation.clone(),
+            CheckablePatternKind::Null(_) => "null".to_string(),
+            CheckablePatternKind::Underscore(_) => "_".to_string(),
+            CheckablePatternKind::Identifier(identifier) => identifier.token.representation.clone(),
+            CheckablePatternKind::EnumConstructor {
+                constructor_name,
+                payload,
+            } => match payload {
+                Some(payload) => {
+                    format!(
+                        "{}({})",
+                        constructor_name.representation,
+                        payload.pattern.kind.to_string()
+                    )
+                }
+                None => constructor_name.representation.clone(),
+            },
+            CheckablePatternKind::Record {
+                key_pattern_pairs, ..
+            } => format!(
+                "{{{}}}",
+                key_pattern_pairs
+                    .iter()
+                    .map(|(property_name, pattern)| format!(
+                        "{}: {}",
+                        property_name.0.representation,
+                        pattern.kind.to_string()
+                    ))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            CheckablePatternKind::Array { .. } => {
+                panic!()
+            }
+            CheckablePatternKind::Tuple { .. } => {
+                panic!()
+            }
         }
     }
 }

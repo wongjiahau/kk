@@ -1,0 +1,42 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Foo {
+  A(String),
+  B(Boolean)
+}
+
+let get = (foo: Foo): Boolean =>
+  switch(foo) {
+    case A(x) | B(x): true
+            //    ^ Error: expected `String` got `Boolean`
+  }
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/or_pattern_heterogenous_bindings_1.kk:8:19
+  │
+8 │     case A(x) | B(x): true
+  │                   ^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - String      | + Boolean   |
+    +---------------+-------------+

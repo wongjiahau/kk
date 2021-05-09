@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+enum Foo {
+  A({a: Foo, b: Foo}),
+  B
+}
+
+switch(B) {
+  case A({a: A(x), b: x}): true
+        //            ^ Error: duplicated binding `x`
+}
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/pattern_conflicting_bindings_1.kk:8:23
+  │
+8 │   case A({a: A(x), b: x}): true
+  │                       ^ Duplicated name
+  │
+  = This variable `x` is already declared before in this module.

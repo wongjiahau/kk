@@ -33,4 +33,4 @@ error:
 6 │     case Some(_): None // This case is unreachable
   │          ^^^^^^^ Unreachable case
   │
-  = This case is unreachable because all possible cases are already handled by previous branches.
+  = This case is unreachable as it is already handled by previous cases.

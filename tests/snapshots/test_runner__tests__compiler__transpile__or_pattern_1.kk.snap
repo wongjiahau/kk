@@ -1,0 +1,44 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// Subpatterns
+let isVowel = (c: Character): Boolean =>
+  switch (c) {
+    case 'a' | 'e' | 'i' | 'o' | 'u':
+      true
+    case _:
+      false
+  }
+
+'a'.isVowel().print()
+'e'.isVowel().print()
+'i'.isVowel().print()
+'o'.isVowel().print()
+'u'.isVowel().print()
+
+'b'.isVowel().print()
+'z'.isVowel().print()
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+true
+true
+true
+true
+true
+false
+false
+
+============
+STDERR
+============
