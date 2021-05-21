@@ -46,6 +46,8 @@ pub enum ParseContext {
     StatementEnum,
     StatementImport,
     StatementWith,
+    StatementInterface,
+    StatementImplements,
 
     // Type annotation
     TypeAnnotationRecord,
@@ -178,6 +180,16 @@ impl<'a> Parser<'a> {
                     let token = self.next_meaningful_token()?.unwrap();
                     self.parse_import_statement(token).map(vectorized)
                 }
+                TokenType::KeywordInterface => {
+                    let keyword_interface = self.next_meaningful_token()?.unwrap();
+                    self.parse_interface_statement(keyword_export, keyword_interface)
+                        .map(vectorized)
+                }
+                TokenType::KeywordImplements => {
+                    let keyword_implements = self.next_meaningful_token()?.unwrap();
+                    self.parse_implements_statement(keyword_export, keyword_implements)
+                        .map(vectorized)
+                }
                 TokenType::MultilineComment { characters } => {
                     // Remove the asterisk at the first column
                     // This is because multiline comments looks like the following
@@ -228,6 +240,84 @@ impl<'a> Parser<'a> {
             },
             None => Err(Parser::unexpected_eof(context)),
         }
+    }
+
+    fn parse_implements_statement(
+        &mut self,
+        keyword_export: Option<Token>,
+        keyword_implements: Token,
+    ) -> Result<Statement, ParseError> {
+        let context = Some(ParseContext::StatementImplements);
+        let interface_name = self.eat_token(TokenType::Identifier, context)?;
+        let less_than = self.eat_token(TokenType::LessThan, context)?;
+        let for_types = self.parse_type_arguments(less_than, context)?;
+        let left_curly_bracket = self.eat_token(TokenType::LeftCurlyBracket, context)?;
+        let mut definitions = vec![];
+        let (definitions, right_curly_bracket) = loop {
+            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
+                break (definitions, right_curly_bracket);
+            } else {
+                let keyword_let = self.eat_token(TokenType::KeywordLet, context)?;
+                let name = self.eat_token(TokenType::Identifier, context)?;
+                self.eat_token(TokenType::Equals, context)?;
+                let expression = self.parse_expression()?;
+                definitions.push(ImplementDefinition {
+                    keyword_let,
+                    name,
+                    expression,
+                })
+            }
+        };
+        Ok(Statement::Implement(ImplementStatement {
+            keyword_export,
+            keyword_implements,
+            interface_name,
+            for_types,
+            left_curly_bracket,
+            definitions,
+            right_curly_bracket,
+        }))
+    }
+
+    fn parse_interface_statement(
+        &mut self,
+        keyword_export: Option<Token>,
+        keyword_interface: Token,
+    ) -> Result<Statement, ParseError> {
+        let context = Some(ParseContext::StatementInterface);
+        let name = self.eat_token(TokenType::Identifier, context)?;
+        let less_than = self.eat_token(TokenType::LessThan, context)?;
+        let type_variables = NonEmpty {
+            head: self.eat_token(TokenType::Identifier, context)?,
+            tail: self.parse_type_variables_declaration(less_than)?,
+        };
+        let left_curly_bracket = self.eat_token(TokenType::LeftCurlyBracket, context)?;
+
+        let mut definitions = vec![];
+        let (definitions, right_curly_bracket) = loop {
+            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
+                break (definitions, right_curly_bracket);
+            } else {
+                let keyword_let = self.eat_token(TokenType::KeywordLet, context)?;
+                let name = self.eat_token(TokenType::Identifier, context)?;
+                self.eat_token(TokenType::Colon, context)?;
+                let type_annotation = self.parse_type_annotation(context)?;
+                definitions.push(InterfaceDefinition {
+                    keyword_let,
+                    name,
+                    type_annotation,
+                })
+            }
+        };
+        Ok(Statement::Interface(InterfaceStatement {
+            keyword_export,
+            keyword_interface,
+            name,
+            type_variables,
+            left_curly_bracket,
+            definitions,
+            right_curly_bracket,
+        }))
     }
 
     fn parse_with_statement(&mut self, keyword_with: Token) -> Result<Statement, ParseError> {
@@ -464,19 +554,31 @@ impl<'a> Parser<'a> {
     fn try_parse_type_arguments(&mut self) -> Result<Option<TypeArguments>, ParseError> {
         let context = Some(ParseContext::TypeArguments);
         if let Some(left_angular_bracket) = self.try_eat_token(TokenType::LessThan)? {
-            let mut arguments = Vec::new();
-            loop {
-                arguments.push(self.parse_type_annotation(context)?);
-                if let Some(right_angular_bracket) = self.try_eat_token(TokenType::MoreThan)? {
-                    return Ok(Some(TypeArguments {
-                        left_angular_bracket,
-                        arguments,
-                        right_angular_bracket,
-                    }));
-                }
-            }
+            Ok(Some(
+                self.parse_type_arguments(left_angular_bracket, context)?,
+            ))
         } else {
             Ok(None)
+        }
+    }
+
+    fn parse_type_arguments(
+        &mut self,
+        left_angular_bracket: Token,
+        context: Option<ParseContext>,
+    ) -> Result<TypeArguments, ParseError> {
+        let head = self.parse_type_annotation(context)?;
+        let mut tail = Vec::new();
+        loop {
+            if let Some(right_angular_bracket) = self.try_eat_token(TokenType::MoreThan)? {
+                return Ok(TypeArguments {
+                    left_angular_bracket,
+                    type_annotations: Box::new(NonEmpty { head, tail }),
+                    right_angular_bracket,
+                });
+            } else {
+                tail.push(self.parse_type_annotation(context)?);
+            }
         }
     }
 
@@ -519,10 +621,11 @@ impl<'a> Parser<'a> {
         let context = Some(ParseContext::TypeVariablesDeclaration);
         let mut type_variables = vec![];
         loop {
-            type_variables.push(self.eat_token(TokenType::Identifier, context)?);
             if self.try_eat_token(TokenType::Comma)?.is_none() {
                 self.try_eat_token(TokenType::MoreThan)?;
                 break Ok(type_variables);
+            } else {
+                type_variables.push(self.eat_token(TokenType::Identifier, context)?);
             }
         }
     }

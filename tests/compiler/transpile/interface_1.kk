@@ -1,0 +1,24 @@
+// Simplest example of interface
+
+interface Equatable<T> {
+  let equals: (left: T, right: T) => Boolean
+}
+
+enum Grade { A, B, C }
+
+implements Equatable<Grade> {
+  let equals = (left, right) =>
+    switch ({left, right}) {
+      case {left: A, right: A}: true
+      case {left: B, right: B}: true
+      case {left: C, right: C}: true
+      case _: false
+    }
+}
+
+A.equals(A).print() // true 
+B.equals(B).print() // true
+C.equals(C).print() // true
+A.equals(B).print() // false
+B.equals(C).print() // false
+C.equals(A).print() // false

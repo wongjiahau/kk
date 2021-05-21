@@ -628,6 +628,10 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordAs
     } else if s.eq("export") {
         TokenType::KeywordExport
+    } else if s.eq("interface") {
+        TokenType::KeywordInterface
+    } else if s.eq("implements") {
+        TokenType::KeywordImplements
     } else {
         TokenType::Identifier
     }

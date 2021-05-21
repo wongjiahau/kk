@@ -3,6 +3,8 @@ use crate::{module::SymbolUid, non_empty::NonEmpty, tokenize::Character};
 
 #[derive(Debug, Clone)]
 pub enum Statement {
+    Interface(InterfaceStatement),
+    Implement(ImplementStatement),
     Let(LetStatement),
 
     /// This represents the entry points of a module.
@@ -16,6 +18,52 @@ pub enum Statement {
     Enum(EnumStatement),
 
     Import(ImportStatement),
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplementStatement {
+    pub keyword_export: Option<Token>,
+    pub keyword_implements: Token,
+    pub interface_name: Token,
+
+    /// The type where we are implementing the interface for.    
+    /// For example, in `implements Foo<Bar>`, `Bar` is the considered the subject type
+    pub for_types: TypeArguments,
+    pub left_curly_bracket: Token,
+    pub definitions: Vec<ImplementDefinition>,
+    pub right_curly_bracket: Token,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplementDefinition {
+    pub keyword_let: Token,
+    pub name: Token,
+    pub expression: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct InterfaceStatement {
+    pub keyword_export: Option<Token>,
+    pub keyword_interface: Token,
+    pub name: Token,
+    pub type_variables: NonEmpty<Token>,
+    pub left_curly_bracket: Token,
+    pub definitions: Vec<InterfaceDefinition>,
+    pub right_curly_bracket: Token,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeVariables {
+    pub left_angular_bracket: Token,
+    pub type_variables: NonEmpty<Token>,
+    pub right_angular_bracket: Token,
+}
+
+#[derive(Debug, Clone)]
+pub struct InterfaceDefinition {
+    pub keyword_let: Token,
+    pub name: Token,
+    pub type_annotation: TypeAnnotation,
 }
 
 #[derive(Debug, Clone)]
@@ -91,27 +139,45 @@ pub struct EnumConstructorDefinitionPayload {
     pub right_parenthesis: Token,
 }
 
+/// Example of constraint:
+/// ```
+/// Equatable<A, B>
+/// Printable<A>
+/// ```
+/// `Equatable` is the interface name, while `A` or/and `B` are the type variables.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Constraint {
+    pub interface_uid: SymbolUid,
+
+    /// Note that the order of these type variables matters.  
+    /// For example, `Equatable<A, B>` is not always the same as `Equatable<B, A>`.
+    pub type_variables: NonEmpty<TypeVariable>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeVariable {
+    pub name: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Underscore,
 
-    /// Type variable that is declared. Cannot be substituted before instantiation.
+    /// Type variable that is declared (a.k.a quantified). Cannot be substituted before instantiation.
     /// Note that a type variable is only explicit within its own scope.
-    /// This is also commonly known as Rigid Type Variable.
-    ExplicitTypeVariable {
-        name: String,
-    },
+    /// This is also commonly known as Rigid Type Variable.  
+    ///
+    /// See https://stackoverflow.com/a/12719617/6587634
+    ExplicitTypeVariable(TypeVariable),
 
-    /// Type variable that is implicitly created  for unification.
-    ImplicitTypeVariable {
-        name: String,
-    },
+    /// Type variable that is implicitly created for unification.
+    /// Also known as Fresh Type Variables.
+    ImplicitTypeVariable(TypeVariable),
     Record {
         key_type_pairs: Vec<(String, Type)>,
     },
 
-    /// Also known as enum type  
-    /// Also known as nominal type
+    /// Also known as enum type or nominal type.
     Named {
         /// This is needed to differentiate two named types that has the same name
         ///  which are declared in different modules
@@ -147,10 +213,27 @@ pub struct TagType {
     pub payload: Option<Box<Type>>,
 }
 
+/// Type scheme means a type that is quantified over some type variables.  
+/// In theoretical term, it means universal quantification.  
+///
+/// For example, the type scheme `<A> List<A>` means that for all type `A` we can have a type `List<A>`,
+/// it further means that `A` can be substituted with any type value, say `String`, then we will have `List<String>`.
+///
+/// A type scheme might also be bounded by some constraints, which limits the set of types that can
+/// be substituted with the quanitified type variables.
+///
+/// For example, if we have a type scheme `<A> List<A> where Printable<A>`,
+/// it means that `A` can only be substituted if an implementation of `Printable<A>` exists.  
+///
+/// For more info, refer https://course.ccs.neu.edu/cs4410sp20/lec_type-inference_notes.html
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeScheme {
-    pub type_variables: NonEmpty<String>,
+    pub type_variables: NonEmpty<TypeVariable>,
     pub type_value: Type,
+
+    /// List of constraints that is bounded to this type scheme.  
+    /// The order of constraints does not matter.
+    pub constraints: Vec<Constraint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -418,7 +501,7 @@ pub struct FunctionCall {
 #[derive(Debug, Clone)]
 pub struct TypeArguments {
     pub left_angular_bracket: Token,
-    pub arguments: Vec<TypeAnnotation>,
+    pub type_annotations: Box<NonEmpty<TypeAnnotation>>,
     pub right_angular_bracket: Token,
 }
 
@@ -539,6 +622,8 @@ impl Token {
 
 #[derive(Debug, Clone)]
 pub enum TokenType {
+    KeywordInterface,
+    KeywordImplements,
     KeywordIf,
     KeywordElse,
     KeywordSwitch,

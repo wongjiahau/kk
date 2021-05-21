@@ -1,5 +1,5 @@
 use crate::{
-    ast::{InfinitePatternKind, Position, Token, Type},
+    ast::{Constraint, InfinitePatternKind, Position, Token, Type},
     module::{ModuleUid, SymbolUid},
     non_empty::NonEmpty,
 };
@@ -61,6 +61,12 @@ pub enum TypecheckedExpression {
         representation: String,
     },
     Variable(Identifier),
+
+    /// This should be replace with a dictionary during the constraint resolvation.
+    ConstrainedVariable {
+        identifier: Identifier,
+        constraints: NonEmpty<Constraint>,
+    },
     EnumConstructor {
         constructor_name: String,
         payload: Option<Box<TypecheckedExpression>>,

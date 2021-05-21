@@ -1,7 +1,7 @@
-use crate::ast::*;
 use crate::non_empty::NonEmpty;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
+use crate::{ast::*, typechecked_ast::TypecheckedExpression};
 use std::cell::Cell;
 use std::collections::HashMap;
 
@@ -184,6 +184,9 @@ pub struct Module {
     /// List of symbols in this module
     symbol_entries: Vec<SymbolEntry>,
 
+    /// List of interface-implementations
+    implementations: Vec<TypecheckedImplementation>,
+
     /// This is used for Hindley-Milner type inference algorithm
     type_variable_substitutions: Substitution,
     type_variable_index: Cell<usize>,
@@ -194,7 +197,7 @@ pub struct Module {
 
 #[derive(Debug, Clone)]
 enum SubstitutionItem {
-    ImplicitTypeVariable(String),
+    ImplicitTypeVariable(TypeVariable),
     Type(Type),
     NotSubstituted,
 }
@@ -205,6 +208,7 @@ impl Module {
             symbol_entries: Vec::new(),
             type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
+            implementations: Vec::new(),
             scope: Scope::new(),
             current_uid: Cell::new(0),
             meta: module_meta,
@@ -243,6 +247,7 @@ impl Module {
         name
     }
 
+    /// Insert a rigid type variable into the current scope
     pub fn insert_explicit_type_variable(
         &mut self,
         type_variable_name: &Token,
@@ -255,15 +260,16 @@ impl Module {
                     exported: false,
                 },
                 kind: SymbolKind::Type(TypeSymbol {
-                    type_value: Type::ExplicitTypeVariable {
+                    type_value: Type::ExplicitTypeVariable(TypeVariable {
                         name: type_variable_name.representation.clone(),
-                    },
+                    }),
                 }),
             },
         )
     }
 
-    /// Get the next symbol UID
+    /// Get the next symbol UID.  
+    /// This will mutate the `current_uid` of this module.
     pub fn get_next_symbol_uid(&mut self) -> SymbolUid {
         let result = self.current_uid.get();
         self.current_uid.set(result + 1);
@@ -278,9 +284,9 @@ impl Module {
         variable_name: Option<&Token>,
     ) -> Result<Type, UnifyError> {
         let new_type_variable_name = self.get_next_type_variable_name();
-        let type_value = Type::ImplicitTypeVariable {
+        let type_value = Type::ImplicitTypeVariable(TypeVariable {
             name: new_type_variable_name.clone(),
-        };
+        });
 
         if let Some(variable_name) = variable_name {
             self.insert_symbol(
@@ -303,41 +309,45 @@ impl Module {
         Ok(type_value)
     }
 
+    /// Try to substitute the given `type_variable` with the given `type_value`.  
+    ///
+    /// Will fail if `type_variable` was already substituted with another type, say `T2`,
+    /// and `T2` is not unifiable with `type_value`.
     pub fn update_substitution(
         &mut self,
-        type_variable_name: String,
+        type_variable: TypeVariable,
         type_value: Type,
         position: Position,
     ) -> Result<(), UnifyError> {
-        match self.get_type_variable_terminal_type(type_variable_name.clone()) {
+        match self.get_type_variable_terminal_type(type_variable.name.clone()) {
             Some(terminal_type) => match type_value {
-                Type::ImplicitTypeVariable { name } => {
-                    self.update_substitution(name, terminal_type, position)
+                Type::ImplicitTypeVariable(type_variable) => {
+                    self.update_substitution(type_variable, terminal_type, position)
                 }
                 _ => {
                     let unified_type = unify_type(self, &terminal_type, &type_value, position)?;
 
                     let substitution_item = match unified_type {
-                        Type::ImplicitTypeVariable { name } => {
-                            SubstitutionItem::ImplicitTypeVariable(name)
+                        Type::ImplicitTypeVariable(type_variable) => {
+                            SubstitutionItem::ImplicitTypeVariable(type_variable)
                         }
                         other => SubstitutionItem::Type(other),
                     };
 
                     self.type_variable_substitutions
-                        .insert(type_variable_name, substitution_item);
+                        .insert(type_variable.name, substitution_item);
                     Ok(())
                 }
             },
             None => {
                 let substitution_item = match type_value {
-                    Type::ImplicitTypeVariable { name } => {
-                        SubstitutionItem::ImplicitTypeVariable(name)
+                    Type::ImplicitTypeVariable(type_variable) => {
+                        Ok(SubstitutionItem::ImplicitTypeVariable(type_variable))
                     }
-                    other => SubstitutionItem::Type(other),
-                };
+                    other => Ok(SubstitutionItem::Type(other)),
+                }?;
                 self.type_variable_substitutions
-                    .insert(type_variable_name, substitution_item);
+                    .insert(type_variable.name, substitution_item);
                 Ok(())
             }
         }
@@ -356,8 +366,8 @@ impl Module {
             Type::String => Type::String,
             Type::Character => Type::Character,
             Type::Null => Type::Null,
-            Type::ExplicitTypeVariable { name } => {
-                Type::ExplicitTypeVariable { name: name.clone() }
+            Type::ExplicitTypeVariable(type_variable) => {
+                Type::ExplicitTypeVariable(type_variable.clone())
             }
             Type::BuiltInOneArgumentType {
                 kind,
@@ -371,10 +381,10 @@ impl Module {
                     .clone()
                     .map(|type_value| self.apply_subtitution_to_type(&type_value)),
             )),
-            Type::ImplicitTypeVariable { name } => {
-                match self.get_type_variable_terminal_type(name.clone()) {
+            Type::ImplicitTypeVariable(type_variable) => {
+                match self.get_type_variable_terminal_type(type_variable.name.clone()) {
                     Some(type_value) => self.apply_subtitution_to_type(&type_value),
-                    None => Type::ImplicitTypeVariable { name: name.clone() },
+                    None => Type::ImplicitTypeVariable(type_variable.clone()),
                 }
             }
             Type::Function(function_type) => {
@@ -404,6 +414,7 @@ impl Module {
                     .collect(),
             },
             Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
+                constraints: type_scheme.constraints.clone(),
                 type_variables: type_scheme.type_variables.clone(),
                 type_value: self.apply_subtitution_to_type(&type_scheme.type_value),
             })),
@@ -427,6 +438,17 @@ impl Module {
         }
     }
 
+    /// Find the terminal type substitution for the given type variable.
+    ///
+    /// For example, suppose we have the following substitutions (where lowercase letter represents type variable):
+    ///
+    ///     a -> b
+    ///     b -> c
+    ///     c -> Integer
+    ///     d -> e
+    ///
+    /// Then, the terminal type for type variable `a` is `Integer`.  
+    /// And the terminal type of type variable `d` is type variable `e`.
     pub fn get_type_variable_terminal_type(&self, type_variable_name: String) -> Option<Type> {
         self.get_type_variable_terminal_type_(
             type_variable_name.clone(),
@@ -435,7 +457,7 @@ impl Module {
         )
     }
 
-    /// Terminal means non-type variable type
+    /// Terminal means non-type-variable type
     ///
     /// `initial_type_variable_name`:  
     ///     This variable is needed for breaking infinite recursion (i.e. circular reference)
@@ -445,26 +467,24 @@ impl Module {
     fn get_type_variable_terminal_type_(
         &self,
         initial_type_variable_name: String,
-        previous_type_variable: String,
+        previous_type_variable_name: String,
         type_variable_name: String,
     ) -> Option<Type> {
         match self.type_variable_substitutions.get(&type_variable_name) {
             Some(SubstitutionItem::Type(type_value)) => Some(type_value.clone()),
-            Some(SubstitutionItem::ImplicitTypeVariable(type_variable_name)) => {
-                if *type_variable_name == initial_type_variable_name
-                    || *type_variable_name == previous_type_variable
+            Some(SubstitutionItem::ImplicitTypeVariable(type_variable)) => {
+                if *type_variable.name == initial_type_variable_name
+                    || *type_variable.name == previous_type_variable_name
                 {
                     None
                 } else {
                     match self.get_type_variable_terminal_type_(
                         initial_type_variable_name,
-                        type_variable_name.clone(),
-                        type_variable_name.clone(),
+                        type_variable.name.clone(),
+                        type_variable.name.clone(),
                     ) {
                         Some(type_value) => Some(type_value),
-                        None => Some(Type::ImplicitTypeVariable {
-                            name: type_variable_name.clone(),
-                        }),
+                        None => Some(Type::ImplicitTypeVariable(type_variable.clone())),
                     }
                 }
             }
@@ -473,6 +493,8 @@ impl Module {
         }
     }
 
+    /// Run a function in a new child scope.
+    /// When the function ends, the scope will be returned to the original scope
     pub fn run_in_new_child_scope<F, A, E>(&mut self, mut f: F) -> Result<A, E>
     where
         F: FnMut(&mut Self) -> Result<A, E>,
@@ -501,9 +523,9 @@ impl Module {
         exported: bool,
     ) -> Result<(SymbolUid, Type), UnifyError> {
         let type_value = match type_value {
-            None => Type::ImplicitTypeVariable {
+            None => Type::ImplicitTypeVariable(TypeVariable {
                 name: self.get_next_type_variable_name(),
-            },
+            }),
             Some(type_value) => type_value,
         };
         let uid = self.insert_symbol(
@@ -526,6 +548,38 @@ impl Module {
         Ok(())
     }
 
+    pub fn insert_implementation(
+        &mut self,
+        new_implementation: TypecheckedImplementation,
+    ) -> Result<(), UnifyError> {
+        // check for overlapping implementations
+        let overlapped_implementation = self.implementations.iter().find(|implementation| {
+            implementation
+                .for_types
+                .clone()
+                .into_vector()
+                .iter()
+                .zip(new_implementation.for_types.clone().into_vector().iter())
+                .any(|(existing_implementation_type, new_implementation_type)| {
+                    overlap(&existing_implementation_type, &new_implementation_type)
+                })
+        });
+
+        match overlapped_implementation {
+            Some(overlapped_implementation) => Err(UnifyError {
+                position: new_implementation.declared_at.clone(),
+                kind: UnifyErrorKind::OverlappingImplementation {
+                    new_implementation,
+                    existing_implementation: overlapped_implementation.clone(),
+                },
+            }),
+            None => {
+                self.implementations.push(new_implementation);
+                Ok(())
+            }
+        }
+    }
+
     /// Inserts a new symbol into this module.  
     /// `uid` should be `None` under normal circumstances.
     ///     It should only be defined when for example we want to allow recursive definition.
@@ -539,7 +593,7 @@ impl Module {
         let name = new_symbol.meta.name.representation.clone();
         let scope_name = self.current_scope_name();
         match &new_symbol.kind {
-            SymbolKind::Type(_) => {
+            SymbolKind::Interface(_) | SymbolKind::Type(_) => {
                 if let Some(conflicting_entry) = self.symbol_entries.iter().find(|entry| {
                     entry.scope_name == scope_name
                         && entry.symbol.meta.name.representation == name
@@ -725,14 +779,25 @@ impl Module {
     }
 
     fn get_symbol_entry(&self, symbol_name: &Token, scope_name: usize) -> Option<SymbolEntry> {
-        match self.symbol_entries.iter().find(|entry| {
-            entry.symbol.meta.name.representation == symbol_name.representation
-                && entry.scope_name == scope_name
-        }) {
+        self.get_symbol_entry_by(
+            |entry| entry.symbol.meta.name.representation == symbol_name.representation,
+            scope_name,
+        )
+    }
+
+    fn get_symbol_entry_by<P>(&self, predicate: P, scope_name: usize) -> Option<SymbolEntry>
+    where
+        P: Fn(&SymbolEntry) -> bool,
+    {
+        match self
+            .symbol_entries
+            .iter()
+            .find(|entry| predicate(entry) && entry.scope_name == scope_name)
+        {
             Some(entry) => Some(entry.clone()),
             None => match self.scope.get_parent_scope_name(scope_name) {
                 None => None,
-                Some(scope_name) => self.get_symbol_entry(symbol_name, scope_name),
+                Some(scope_name) => self.get_symbol_entry_by(predicate, scope_name),
             },
         }
     }
@@ -742,6 +807,67 @@ impl Module {
             None => None,
             Some(entry) => match entry.symbol.kind {
                 SymbolKind::Type(type_symbol) => Some(type_symbol),
+                _ => None,
+            },
+        }
+    }
+
+    pub fn find_matching_implementation(
+        &self,
+        constraint: Constraint,
+    ) -> Result<TypecheckedImplementation, UnifyError> {
+        let interface = self
+            .get_interface_symbol_by_uid(&constraint.interface_uid)
+            .expect("Compile error, cannot find interface");
+
+        let substituted_types = constraint.type_variables.clone().map(|type_variable| {
+            match self.get_type_variable_terminal_type(type_variable.name.clone()) {
+                Some(type_value) => type_value,
+                None => Type::ImplicitTypeVariable(type_variable),
+            }
+        });
+
+        match self.implementations.iter().find(|implementation| {
+            implementation.interface_uid.eq(&constraint.interface_uid)
+                && implementation.for_types.eq(&substituted_types)
+        }) {
+            Some(implementation) => Ok(implementation.clone()),
+            None => Err(UnifyError {
+                // TODO: need to get the position from the types
+                position: panic!(),
+                kind: UnifyErrorKind::NoImplementationFound {
+                    interface_name: interface.0.name.representation,
+                    for_types: substituted_types,
+                },
+            }),
+        }
+    }
+
+    pub fn get_interface_symbol_by_uid(
+        &self,
+        uid: &SymbolUid,
+    ) -> Option<(SymbolMeta, InterfaceSymbol)> {
+        match self.get_symbol_entry_by(|entry| entry.uid.eq(uid), self.current_scope_name()) {
+            None => None,
+            Some(entry) => match entry.symbol.kind {
+                SymbolKind::Interface(interface_symbol) => {
+                    Some((entry.symbol.meta, interface_symbol))
+                }
+                _ => None,
+            },
+        }
+    }
+
+    pub fn get_interface_symbol_by_name(
+        &self,
+        symbol_name: &Token,
+    ) -> Option<(SymbolUid, InterfaceSymbol)> {
+        match self.get_symbol_entry(symbol_name, self.current_scope_name()) {
+            None => None,
+            Some(entry) => match entry.symbol.kind {
+                SymbolKind::Interface(interface_symbol) => {
+                    Some((entry.uid.clone(), interface_symbol))
+                }
                 _ => None,
             },
         }
@@ -772,6 +898,7 @@ impl Module {
         expected_type: &Option<Type>,
         scope_name: usize,
     ) -> Result<GetValueSymbolResult, UnifyError> {
+        // 1. Search for normal value symbols
         let matching_value_symbols = self
             .symbol_entries
             .iter()
@@ -806,12 +933,14 @@ impl Module {
                         .iter()
                         .filter_map(|(symbol_uid, symbol)| match &symbol.type_value {
                             Type::Function(function_type) => Some(FunctionSignature {
+                                constraints: vec![],
                                 symbol_uid: symbol_uid.clone(),
                                 type_variables: None,
                                 function_type: function_type.clone(),
                             }),
                             Type::TypeScheme(type_scheme) => match type_scheme.type_value.clone() {
                                 Type::Function(function_type) => Some(FunctionSignature {
+                                    constraints: type_scheme.constraints.clone(),
                                     symbol_uid: symbol_uid.clone(),
                                     type_variables: Some(type_scheme.type_variables.clone()),
                                     function_type,
@@ -975,6 +1104,7 @@ impl Module {
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
+    /// Meta holds value such as name of this symbol
     pub meta: SymbolMeta,
     pub kind: SymbolKind,
 }
@@ -984,6 +1114,36 @@ pub enum SymbolKind {
     Value(ValueSymbol),
     Type(TypeSymbol),
     EnumConstructor(EnumConstructorSymbol),
+    Interface(InterfaceSymbol),
+}
+
+#[derive(Debug, Clone)]
+pub struct TypecheckedImplementation {
+    // TODO: allow interface to have type variables
+    // type_variables: Vec<Token>,
+    /// The UID of this implementation.
+    /// Used for transpiling dictionary passing.
+    pub uid: SymbolUid,
+    pub declared_at: Position,
+    pub interface_uid: SymbolUid,
+    pub for_types: NonEmpty<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypecheckedImplementationDefinition {
+    pub name: Token,
+    pub expression: TypecheckedExpression,
+}
+
+#[derive(Debug, Clone)]
+pub struct InterfaceSymbol {
+    pub type_variables: NonEmpty<TypeVariable>,
+    pub definitions: Vec<TypecheckedInterfaceDefinition>,
+}
+#[derive(Debug, Clone)]
+pub struct TypecheckedInterfaceDefinition {
+    pub name: Token,
+    pub type_value: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -1005,14 +1165,16 @@ pub struct FunctionSymbol {
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
     pub symbol_uid: SymbolUid,
-    pub type_variables: Option<NonEmpty<String>>,
+    pub type_variables: Option<NonEmpty<TypeVariable>>,
     pub function_type: FunctionType,
+    pub constraints: Vec<Constraint>,
 }
 
 impl FunctionSignature {
     fn as_type_value(&self) -> Type {
         match &self.type_variables {
             Some(type_variables) => Type::TypeScheme(Box::new(TypeScheme {
+                constraints: self.constraints.clone(),
                 type_variables: type_variables.clone(),
                 type_value: Type::Function(self.function_type.clone()),
             })),
@@ -1131,22 +1293,23 @@ fn built_in_symbols() -> Vec<Symbol> {
             },
         }
     }
-    let type_variable_name = "T".to_string();
+    let type_variable = TypeVariable {
+        name: "T".to_string(),
+    };
     vec![
         // build-in values
         Symbol {
             meta: meta("print".to_string()),
             kind: SymbolKind::Value(ValueSymbol {
                 type_value: Type::TypeScheme(Box::new(TypeScheme {
+                    constraints: vec![],
                     type_variables: NonEmpty {
-                        head: type_variable_name.clone(),
+                        head: type_variable.clone(),
                         tail: vec![],
                     },
                     type_value: Type::Function(FunctionType {
                         parameters_types: Box::new(NonEmpty {
-                            head: Type::ImplicitTypeVariable {
-                                name: type_variable_name,
-                            },
+                            head: Type::ImplicitTypeVariable(type_variable),
                             tail: vec![],
                         }),
                         return_type: Box::new(Type::Null),

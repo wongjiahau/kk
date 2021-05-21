@@ -282,7 +282,9 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordFrom => "used for importing modules",
         TokenType::KeywordWith => "used for with statement",
         TokenType::KeywordAs => "used for aliasing imported symbols",
-        TokenType::Asterisk => "used for glob import"
+        TokenType::Asterisk => "used for glob import",
+        TokenType::KeywordInterface => "used for declaring interface",
+        TokenType::KeywordImplements => "used for implementing an interface"
     }
 }
 
@@ -411,6 +413,14 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Function Parameters",
             examples: vec!["(a: string, b: number)"],
         },
+        ParseContext::StatementInterface => ParseContextDescription {
+            name: "Interface Statement",
+            examples: vec!["interface Equatable<T> { let equals: (a: T, b: T) => Boolean }"],
+        },
+        ParseContext::StatementImplements => ParseContextDescription {
+            name: "Implements Statement",
+            examples: vec!["implements Equatable<MyType> { let equals  = (_, _) => true }"],
+        },
     }
 }
 
@@ -467,6 +477,8 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordCase => "case",
         TokenType::KeywordAs => "as",
         TokenType::Asterisk => "*",
+        TokenType::KeywordInterface => "interface",
+        TokenType::KeywordImplements => "implements",
     }
 }
 
@@ -683,10 +695,11 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             }
         },
         UnifyErrorKind::RecordMissingKeys {
-            mut missing_keys
+            missing_keys
         } => StringifiedError {
             summary: "Missing properties".to_string(),
             body: {
+                let mut missing_keys = missing_keys.into_vector();
                 missing_keys.sort();
                 format!("The missing properties are:\n{}", indent_string(missing_keys.join("\n"), 2))
             }
@@ -882,6 +895,45 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 .collect::<Vec<String>>()
                 .join("\n")
             )
+        },
+        UnifyErrorKind::UnknownInterfaceSymbol {
+            unknown_interface_name
+        } => StringifiedError{
+            summary: "Unknown Interface".to_string(),
+            body: format!("No interface in the current module has the name of {}", unknown_interface_name)
+        },
+        UnifyErrorKind::ExtraneousImplementationDefinition { .. } => StringifiedError {
+           summary: "Extraneous definitions".to_string(),
+            body: "This interface does not require this definition.".to_string()
+        },
+        UnifyErrorKind::MissingImplementationDefinition { missing_definition_names } => StringifiedError {
+            summary: "Missing definitions".to_string(),
+            body: format!(
+                "Some definitions of this interface are not implemented, namely:\n\n{}",
+                missing_definition_names
+                    .map(|missing_definition_name| indent_string(missing_definition_name.representation, 4))
+                    .into_vector()
+                    .join("\n")
+            )
+        },
+        UnifyErrorKind::OverlappingImplementation {..} => StringifiedError{
+            summary: "Overlapping implementation".to_string(),
+            // TODO: show the existing implementation position
+            body: format!(
+                "This implementation overlapped with an existing implementation"
+            )
+        },
+        UnifyErrorKind::NoImplementationFound { interface_name, for_types } => StringifiedError {
+            summary: "Missing implementation".to_string(),
+            body: format!(
+                "The following implementation is needed:\n\n{}<{}>",
+                indent_string(interface_name, 4),
+                for_types
+                    .into_vector()
+                    .into_iter()
+                    .map(|for_type| stringify_type(for_type, 2))
+                    .collect::<Vec<String>>().join(",")
+            )
         }
     }
 }
@@ -990,8 +1042,9 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                 .into_vector()
                 .join(",\n")
         ),
-        Type::ImplicitTypeVariable { name } | Type::ExplicitTypeVariable { name } => {
-            indent_string(name, indent_level * 2)
+        Type::ImplicitTypeVariable(type_variable) | Type::ExplicitTypeVariable(type_variable) => {
+            // TODO: print constraint also
+            indent_string(type_variable.name, indent_level * 2)
         }
         Type::Underscore => "_".to_string(),
         Type::Record { mut key_type_pairs } => {
@@ -1027,7 +1080,13 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::TypeScheme(type_scheme) => {
             format!(
                 "<{}>{}",
-                type_scheme.type_variables.into_vector().join(", "),
+                type_scheme
+                    .type_variables
+                    .into_vector()
+                    .into_iter()
+                    .map(|type_variable| type_variable.name)
+                    .collect::<Vec<String>>()
+                    .join(", "),
                 stringify_type(type_scheme.type_value, indent_level)
             )
         }

@@ -366,8 +366,8 @@ pub fn expand_pattern(module: &Module, type_value: &Type) -> Vec<ExpandablePatte
                 }
             })
             .collect(),
-        Type::ImplicitTypeVariable { name } => {
-            match module.get_type_variable_terminal_type(name.clone()) {
+        Type::ImplicitTypeVariable(type_variable) => {
+            match module.get_type_variable_terminal_type(type_variable.name.clone()) {
                 Some(type_value) => expand_pattern(module, &type_value),
                 None => vec![],
             }
