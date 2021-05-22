@@ -46,17 +46,26 @@ pub struct InterfaceStatement {
     pub keyword_export: Option<Token>,
     pub keyword_interface: Token,
     pub name: Token,
-    pub type_variables: NonEmpty<Token>,
+    pub type_variables_declartion: TypeVariablesDeclaration,
     pub left_curly_bracket: Token,
     pub definitions: Vec<InterfaceDefinition>,
     pub right_curly_bracket: Token,
 }
 
 #[derive(Debug, Clone)]
-pub struct TypeVariables {
+pub struct TypeVariablesDeclaration {
     pub left_angular_bracket: Token,
     pub type_variables: NonEmpty<Token>,
     pub right_angular_bracket: Token,
+
+    /// List of constraints that the declared type variables must satisfy
+    pub constraints: Vec<TypeVariableConstraint>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeVariableConstraint {
+    pub interface_name: Token,
+    pub type_variables: NonEmpty<Token>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +87,6 @@ pub struct LetStatement {
     pub keyword_export: Option<Token>,
     pub keyword_let: Token,
     pub left: DestructurePattern,
-    pub type_variables: Vec<Token>,
     pub type_annotation: Option<TypeAnnotation>,
     pub right: Expression,
 }
@@ -89,7 +97,7 @@ pub struct TypeAliasStatement {
     pub keyword_type: Token,
     pub left: Token,
     pub right: TypeAnnotation,
-    pub type_variables: Vec<Token>,
+    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,9 +105,15 @@ pub struct EnumStatement {
     pub keyword_export: Option<Token>,
     pub keyword_enum: Token,
     pub name: Token,
-    pub type_variables: Vec<Token>,
+    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
     pub constructors: Vec<EnumConstructorDefinition>,
     pub right_curly_bracket: Token,
+}
+
+impl EnumStatement {
+    pub fn type_variables(&self) -> Vec<Token> {
+        get_type_variables(&self.type_variables_declaration)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -146,12 +160,15 @@ pub struct EnumConstructorDefinitionPayload {
 /// ```
 /// `Equatable` is the interface name, while `A` or/and `B` are the type variables.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Constraint {
+pub struct TypecheckedConstraint {
     pub interface_uid: SymbolUid,
 
     /// Note that the order of these type variables matters.  
     /// For example, `Equatable<A, B>` is not always the same as `Equatable<B, A>`.
     pub type_variables: NonEmpty<TypeVariable>,
+
+    /// Variable that is bounded by this contraint should be parameterised using `injected_parameter_uid`
+    pub injected_parameter_uid: SymbolUid,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,7 +250,7 @@ pub struct TypeScheme {
 
     /// List of constraints that is bounded to this type scheme.  
     /// The order of constraints does not matter.
-    pub constraints: Vec<Constraint>,
+    pub constraints: Vec<TypecheckedConstraint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -519,10 +536,23 @@ pub struct BranchedFunction {
 
 #[derive(Debug, Clone)]
 pub struct ArrowFunction {
-    pub type_variables: Vec<Token>,
+    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
     pub parameters: ArrowFunctionParameters,
     pub return_type_annotation: Option<TypeAnnotation>,
     pub body: Box<Expression>,
+}
+
+impl ArrowFunction {
+    pub fn type_variables(&self) -> Vec<Token> {
+        get_type_variables(&self.type_variables_declaration)
+    }
+}
+
+fn get_type_variables(type_variables_declaration: &Option<TypeVariablesDeclaration>) -> Vec<Token> {
+    match type_variables_declaration {
+        Some(declaration) => declaration.type_variables.clone().into_vector(),
+        None => vec![],
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -604,6 +634,9 @@ pub struct Token {
 }
 
 impl Token {
+    pub fn dummy() -> Token {
+        Token::dummy_identifier("".to_string())
+    }
     pub fn dummy_identifier(representation: String) -> Token {
         Token {
             token_type: TokenType::Identifier,
@@ -622,6 +655,7 @@ impl Token {
 
 #[derive(Debug, Clone)]
 pub enum TokenType {
+    KeywordWhere,
     KeywordInterface,
     KeywordImplements,
     KeywordIf,
@@ -651,7 +685,11 @@ pub enum TokenType {
     /// Also known as Exclamation Mark (!)
     Bang,
     Colon,
+
+    /// Also known as Left Angular Bracket (<)
     LessThan,
+
+    /// Also known as Right Angular Bracket (>)
     MoreThan,
     Equals,
     Period,

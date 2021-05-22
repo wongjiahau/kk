@@ -1,0 +1,29 @@
+interface Equatable<T> {
+  let equals: (left: T, right: T) => Boolean
+}
+
+enum Grade { A, B }
+
+implements Equatable<Grade> {
+  let equals = (left, right) =>
+    switch ({left, right}) {
+      case {left: A, right: A}: true
+      case {left: B, right: B}: true
+      case _: false
+    }
+}
+
+// Specifying constraints on type variable
+let notEquals = <T> where Equatable<T> (left: T, right: T): Boolean => 
+  left.equals(right).not()
+
+let not = (b: Boolean): Boolean => 
+  switch b {
+    case true: false
+    case false: true
+  }
+
+A.equals(A).print() // true
+
+A.notEquals(B).print() // true
+A.equals(B).print() // false

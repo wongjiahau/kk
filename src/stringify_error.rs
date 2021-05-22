@@ -284,7 +284,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordAs => "used for aliasing imported symbols",
         TokenType::Asterisk => "used for glob import",
         TokenType::KeywordInterface => "used for declaring interface",
-        TokenType::KeywordImplements => "used for implementing an interface"
+        TokenType::KeywordImplements => "used for implementing an interface",
+        TokenType::KeywordWhere => "used for defining type variable constraints"
     }
 }
 
@@ -421,6 +422,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Implements Statement",
             examples: vec!["implements Equatable<MyType> { let equals  = (_, _) => true }"],
         },
+        ParseContext::TypeVariableConstraint => ParseContextDescription {
+            name: "Type Variable Constraint",
+            examples: vec!["Equatable<A>"],
+        },
     }
 }
 
@@ -479,6 +484,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Asterisk => "*",
         TokenType::KeywordInterface => "interface",
         TokenType::KeywordImplements => "implements",
+        TokenType::KeywordWhere => "where",
     }
 }
 
@@ -916,24 +922,32 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                     .join("\n")
             )
         },
-        UnifyErrorKind::OverlappingImplementation {..} => StringifiedError{
+        UnifyErrorKind::OverlappingImplementation {existing_implementation, ..} => StringifiedError{
             summary: "Overlapping implementation".to_string(),
             // TODO: show the existing implementation position
             body: format!(
-                "This implementation overlapped with an existing implementation"
+                "This implementation overlapped with an existing implementation:\n{}",
+                    existing_implementation.for_types
+                        .map(|type_value| stringify_type(type_value, 1))
+                        .into_vector()
+                        .join("\n")
             )
         },
-        UnifyErrorKind::NoImplementationFound { interface_name, for_types } => StringifiedError {
-            summary: "Missing implementation".to_string(),
+        UnifyErrorKind::ConstraintUnsatisfied { interface_name, for_types } => StringifiedError {
+            summary: "Constraint unsatisfied".to_string(),
             body: format!(
-                "The following implementation is needed:\n\n{}<{}>",
+                "The following implementation is needed:\n\n{}<\n{}\n>",
                 indent_string(interface_name, 4),
                 for_types
                     .into_vector()
                     .into_iter()
-                    .map(|for_type| stringify_type(for_type, 2))
+                    .map(|for_type| stringify_type(for_type, 3))
                     .collect::<Vec<String>>().join(",")
             )
+        },
+        UnifyErrorKind::UnknownTypeVariable { unknown_type_variable_name } => StringifiedError {
+            summary: "Unknown type variable".to_string(),
+            body: format!("No type variable has the name of {} in this scope.", unknown_type_variable_name)
         }
     }
 }

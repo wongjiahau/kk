@@ -66,6 +66,7 @@ pub enum ParseContext {
     TypeVariablesDeclaration,
     DocumentationCodeSnippet,
     FunctionParameters,
+    TypeVariableConstraint,
 }
 
 pub struct Parser<'a> {
@@ -287,10 +288,7 @@ impl<'a> Parser<'a> {
         let context = Some(ParseContext::StatementInterface);
         let name = self.eat_token(TokenType::Identifier, context)?;
         let less_than = self.eat_token(TokenType::LessThan, context)?;
-        let type_variables = NonEmpty {
-            head: self.eat_token(TokenType::Identifier, context)?,
-            tail: self.parse_type_variables_declaration(less_than)?,
-        };
+        let type_variables = self.parse_type_variables_declaration(less_than)?;
         let left_curly_bracket = self.eat_token(TokenType::LeftCurlyBracket, context)?;
 
         let mut definitions = vec![];
@@ -313,7 +311,7 @@ impl<'a> Parser<'a> {
             keyword_export,
             keyword_interface,
             name,
-            type_variables,
+            type_variables_declartion: type_variables,
             left_curly_bracket,
             definitions,
             right_curly_bracket,
@@ -377,7 +375,6 @@ impl<'a> Parser<'a> {
     ) -> Result<Statement, ParseError> {
         let context = Some(ParseContext::StatementLet);
         let left = self.parse_destructure_pattern()?;
-        let type_variables = self.try_parse_type_variables_declaration()?;
         let type_annotation = self.try_parse_type_annotation()?;
         self.eat_token(TokenType::Equals, context)?;
         let right = self.parse_expression()?;
@@ -386,7 +383,6 @@ impl<'a> Parser<'a> {
             keyword_let,
             left,
             right,
-            type_variables,
             type_annotation,
         }))
     }
@@ -405,7 +401,7 @@ impl<'a> Parser<'a> {
             keyword_export,
             keyword_type,
             left,
-            type_variables,
+            type_variables_declaration: type_variables,
             right,
         }))
     }
@@ -440,7 +436,7 @@ impl<'a> Parser<'a> {
             keyword_export,
             keyword_enum,
             name,
-            type_variables,
+            type_variables_declaration: type_variables,
             constructors,
             right_curly_bracket,
         }))
@@ -606,28 +602,84 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn try_parse_type_variables_declaration(&mut self) -> Result<Vec<Token>, ParseError> {
+    fn try_parse_type_variables_declaration(
+        &mut self,
+    ) -> Result<Option<TypeVariablesDeclaration>, ParseError> {
         if let Some(less_than) = self.try_eat_token(TokenType::LessThan)? {
-            self.parse_type_variables_declaration(less_than)
+            Ok(Some(self.parse_type_variables_declaration(less_than)?))
         } else {
-            Ok(Vec::new())
+            Ok(None)
         }
     }
 
     fn parse_type_variables_declaration(
         &mut self,
-        _less_than: Token,
-    ) -> Result<Vec<Token>, ParseError> {
+        left_angular_bracket: Token,
+    ) -> Result<TypeVariablesDeclaration, ParseError> {
         let context = Some(ParseContext::TypeVariablesDeclaration);
-        let mut type_variables = vec![];
+        let head = self.eat_token(TokenType::Identifier, context)?;
+        let mut tail = vec![];
         loop {
             if self.try_eat_token(TokenType::Comma)?.is_none() {
-                self.try_eat_token(TokenType::MoreThan)?;
-                break Ok(type_variables);
+                if let Some(right_angular_bracket) = self.try_eat_token(TokenType::MoreThan)? {
+                    break Ok(TypeVariablesDeclaration {
+                        left_angular_bracket,
+                        type_variables: NonEmpty { head, tail },
+                        right_angular_bracket,
+                        constraints: {
+                            if self.try_eat_token(TokenType::KeywordWhere)?.is_some() {
+                                let mut constraints = vec![];
+                                loop {
+                                    if let Some(interface_name) =
+                                        self.try_eat_token(TokenType::Identifier)?
+                                    {
+                                        constraints.push(
+                                            self.parse_type_variable_constraint(interface_name)?,
+                                        );
+                                        if self.try_eat_token(TokenType::Comma)?.is_none() {
+                                            break constraints;
+                                        }
+                                    } else {
+                                        break constraints;
+                                    }
+                                }
+                            } else {
+                                vec![]
+                            }
+                        },
+                    });
+                }
             } else {
-                type_variables.push(self.eat_token(TokenType::Identifier, context)?);
+                tail.push(self.eat_token(TokenType::Identifier, context)?);
             }
         }
+    }
+
+    fn parse_type_variable_constraint(
+        &mut self,
+        interface_name: Token,
+    ) -> Result<TypeVariableConstraint, ParseError> {
+        let context = Some(ParseContext::TypeVariableConstraint);
+        let type_variables = {
+            self.eat_token(TokenType::LessThan, context)?;
+            let first_type_variable = self.eat_token(TokenType::Identifier, context)?;
+            let mut tail_type_variables = vec![];
+            loop {
+                if self.try_eat_token(TokenType::MoreThan)?.is_some() {
+                    break NonEmpty {
+                        head: first_type_variable,
+                        tail: tail_type_variables,
+                    };
+                } else {
+                    self.eat_token(TokenType::Comma, context)?;
+                    tail_type_variables.push(self.eat_token(TokenType::Identifier, context)?)
+                }
+            }
+        };
+        Ok(TypeVariableConstraint {
+            interface_name,
+            type_variables,
+        })
     }
 
     fn parse_shorthand_dot_expression(
@@ -1031,12 +1083,13 @@ impl<'a> Parser<'a> {
                     code: self.next_meaningful_token()?.unwrap(),
                 }),
                 TokenType::LessThan => {
-                    let less_than_token = self.next_meaningful_token()?.unwrap();
-                    let type_variables = self.parse_type_variables_declaration(less_than_token)?;
+                    let left_angular_bracket = self.next_meaningful_token()?.unwrap();
+                    let type_variables =
+                        self.parse_type_variables_declaration(left_angular_bracket)?;
                     let function_parameters = self.parse_function_parameters()?;
 
                     Ok(Expression::ArrowFunction(Box::new(
-                        self.parse_arrow_function(type_variables, function_parameters)?,
+                        self.parse_arrow_function(Some(type_variables), function_parameters)?,
                     )))
                 }
 
@@ -1057,7 +1110,7 @@ impl<'a> Parser<'a> {
                                     if self.try_eat_token(TokenType::FatArrowRight)?.is_some() {
                                         let body = self.parse_expression()?;
                                         Ok(Expression::ArrowFunction(Box::new(ArrowFunction {
-                                        type_variables: vec![],
+                                        type_variables_declaration: None,
                                         return_type_annotation: None,
                                         parameters: ArrowFunctionParameters::WithParenthesis(
                                             Box::new(FunctionParameters {
@@ -1081,7 +1134,7 @@ impl<'a> Parser<'a> {
                                             self.parse_type_annotation(None)?;
                                         let body = self.parse_expression()?;
                                         Ok(Expression::ArrowFunction(Box::new(ArrowFunction {
-                                            type_variables: vec![],
+                                            type_variables_declaration: None,
                                             return_type_annotation: Some(return_type_annotation),
                                             parameters: ArrowFunctionParameters::WithParenthesis(
                                                 Box::new(FunctionParameters {
@@ -1122,7 +1175,7 @@ impl<'a> Parser<'a> {
                                         false,
                                     )?;
                                     Ok(Expression::ArrowFunction(Box::new(
-                                        self.parse_arrow_function(vec![], parameters)?,
+                                        self.parse_arrow_function(None, parameters)?,
                                     )))
                                 }
                                 TokenType::Comma => {
@@ -1138,7 +1191,7 @@ impl<'a> Parser<'a> {
                                         true,
                                     )?;
                                     Ok(Expression::ArrowFunction(Box::new(
-                                        self.parse_arrow_function(vec![], parameters)?,
+                                        self.parse_arrow_function(None, parameters)?,
                                     )))
                                 }
                                 other => {
@@ -1157,7 +1210,7 @@ impl<'a> Parser<'a> {
                         )?;
                         let body = self.parse_expression()?;
                         Ok(Expression::ArrowFunction(Box::new(ArrowFunction {
-                            type_variables: vec![],
+                            type_variables_declaration: None,
                             parameters: ArrowFunctionParameters::WithoutParenthesis(pattern),
                             return_type_annotation: None,
                             body: Box::new(body),
@@ -1174,7 +1227,7 @@ impl<'a> Parser<'a> {
 
     fn parse_arrow_function(
         &mut self,
-        type_variables: Vec<Token>,
+        type_variables: Option<TypeVariablesDeclaration>,
         parameters: FunctionParameters,
     ) -> Result<ArrowFunction, ParseError> {
         let context = Some(ParseContext::ExpressionFunction);
@@ -1182,7 +1235,7 @@ impl<'a> Parser<'a> {
         self.eat_token(TokenType::FatArrowRight, context)?;
         let body = self.parse_expression()?;
         Ok(ArrowFunction {
-            type_variables,
+            type_variables_declaration: type_variables,
             return_type_annotation,
             parameters: ArrowFunctionParameters::WithParenthesis(Box::new(parameters)),
             body: Box::new(body),

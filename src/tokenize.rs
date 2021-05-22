@@ -632,6 +632,8 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordInterface
     } else if s.eq("implements") {
         TokenType::KeywordImplements
+    } else if s.eq("where") {
+        TokenType::KeywordWhere
     } else {
         TokenType::Identifier
     }

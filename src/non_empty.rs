@@ -55,7 +55,7 @@ impl<T> NonEmpty<T> {
     where
         F: FnMut(&T) -> bool,
     {
-        f(&self.head) && self.tail.iter().any(|element| f(element))
+        f(&self.head) || self.tail.iter().any(|element| f(element))
     }
 
     pub fn find_map<F, U>(&self, mut f: F) -> Option<U>

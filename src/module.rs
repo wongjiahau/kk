@@ -552,32 +552,46 @@ impl Module {
         &mut self,
         new_implementation: TypecheckedImplementation,
     ) -> Result<(), UnifyError> {
-        // check for overlapping implementations
-        let overlapped_implementation = self.implementations.iter().find(|implementation| {
-            implementation
-                .for_types
-                .clone()
-                .into_vector()
-                .iter()
-                .zip(new_implementation.for_types.clone().into_vector().iter())
-                .any(|(existing_implementation_type, new_implementation_type)| {
-                    overlap(&existing_implementation_type, &new_implementation_type)
-                })
-        });
+        // If the `new_implementation` is a Provided implemenation,
+        // then check for overlapping implementations
+        match &new_implementation.kind {
+            TypecheckedImplementationKind::Required => Ok(()),
+            TypecheckedImplementationKind::Provided => {
+                let overlapped_implementation = self
+                    .implementations
+                    .iter()
+                    // Only check for overlapping against Provided implementations
+                    .filter(|implementation| match implementation.kind {
+                        TypecheckedImplementationKind::Provided => true,
+                        TypecheckedImplementationKind::Required => false,
+                    })
+                    .find(|implementation| {
+                        implementation
+                            .for_types
+                            .clone()
+                            .into_vector()
+                            .iter()
+                            .zip(new_implementation.for_types.clone().into_vector().iter())
+                            .any(|(existing_implementation_type, new_implementation_type)| {
+                                overlap(&existing_implementation_type, &new_implementation_type)
+                            })
+                    });
 
-        match overlapped_implementation {
-            Some(overlapped_implementation) => Err(UnifyError {
-                position: new_implementation.declared_at.clone(),
-                kind: UnifyErrorKind::OverlappingImplementation {
-                    new_implementation,
-                    existing_implementation: overlapped_implementation.clone(),
-                },
-            }),
-            None => {
-                self.implementations.push(new_implementation);
-                Ok(())
+                match overlapped_implementation {
+                    Some(overlapped_implementation) => Err(UnifyError {
+                        position: new_implementation.declared_at.clone(),
+                        kind: UnifyErrorKind::OverlappingImplementation {
+                            new_implementation: new_implementation.clone(),
+                            existing_implementation: overlapped_implementation.clone(),
+                        },
+                    }),
+                    None => Ok(()),
+                }
             }
-        }
+        }?;
+
+        self.implementations.push(new_implementation);
+        Ok(())
     }
 
     /// Inserts a new symbol into this module.  
@@ -812,14 +826,43 @@ impl Module {
         }
     }
 
+    pub fn get_explicit_type_variable_in_current_scope(
+        &self,
+        type_variable_name: &Token,
+    ) -> Result<Type, UnifyError> {
+        let current_scope_name = self.current_scope_name();
+        match self.symbol_entries.iter().find_map(|entry| {
+            if entry.scope_name.eq(&current_scope_name) {
+                match &entry.symbol.kind {
+                    SymbolKind::Type(type_symbol) => match &type_symbol.type_value {
+                        Type::ExplicitTypeVariable(type_variable)
+                            if type_variable.name.eq(&type_variable_name.representation) =>
+                        {
+                            Some(Type::ExplicitTypeVariable(type_variable.clone()))
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }) {
+            Some(type_value) => Ok(type_value),
+            None => Err(UnifyError {
+                position: type_variable_name.position,
+                kind: UnifyErrorKind::UnknownTypeVariable {
+                    unknown_type_variable_name: type_variable_name.representation.clone(),
+                },
+            }),
+        }
+    }
+
     pub fn find_matching_implementation(
         &self,
-        constraint: Constraint,
+        constraint: TypecheckedConstraint,
+        position: Position,
     ) -> Result<TypecheckedImplementation, UnifyError> {
-        let interface = self
-            .get_interface_symbol_by_uid(&constraint.interface_uid)
-            .expect("Compile error, cannot find interface");
-
         let substituted_types = constraint.type_variables.clone().map(|type_variable| {
             match self.get_type_variable_terminal_type(type_variable.name.clone()) {
                 Some(type_value) => type_value,
@@ -832,14 +875,19 @@ impl Module {
                 && implementation.for_types.eq(&substituted_types)
         }) {
             Some(implementation) => Ok(implementation.clone()),
-            None => Err(UnifyError {
-                // TODO: need to get the position from the types
-                position: panic!(),
-                kind: UnifyErrorKind::NoImplementationFound {
-                    interface_name: interface.0.name.representation,
-                    for_types: substituted_types,
-                },
-            }),
+            None => {
+                let interface = self
+                    .get_interface_symbol_by_uid(&constraint.interface_uid)
+                    .expect("Compile error, cannot find interface");
+
+                Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::ConstraintUnsatisfied {
+                        interface_name: interface.0.name.representation,
+                        for_types: substituted_types,
+                    },
+                })
+            }
         }
     }
 
@@ -861,14 +909,20 @@ impl Module {
     pub fn get_interface_symbol_by_name(
         &self,
         symbol_name: &Token,
-    ) -> Option<(SymbolUid, InterfaceSymbol)> {
+    ) -> Result<(SymbolUid, InterfaceSymbol), UnifyError> {
+        let error = Err(UnifyError {
+            position: symbol_name.position,
+            kind: UnifyErrorKind::UnknownInterfaceSymbol {
+                unknown_interface_name: symbol_name.representation.clone(),
+            },
+        });
         match self.get_symbol_entry(symbol_name, self.current_scope_name()) {
-            None => None,
+            None => error,
             Some(entry) => match entry.symbol.kind {
                 SymbolKind::Interface(interface_symbol) => {
-                    Some((entry.uid.clone(), interface_symbol))
+                    Ok((entry.uid.clone(), interface_symbol))
                 }
-                _ => None,
+                _ => error,
             },
         }
     }
@@ -1127,6 +1181,31 @@ pub struct TypecheckedImplementation {
     pub declared_at: Position,
     pub interface_uid: SymbolUid,
     pub for_types: NonEmpty<Type>,
+    pub kind: TypecheckedImplementationKind,
+}
+
+/// There are two kinds of implementation:  
+/// 1. Required
+/// 2. Provided
+///
+/// Suppose we have the code below:
+///
+/// ```
+/// interface Equatable<T> {  }
+///
+/// interface Equatable<String> {}
+///        // ^^^^^^^^^^^^^^^^^ Provided implementation
+///
+/// let notEquals = <T> where Equatable<T>(a: T, b: T): Boolean => {
+///                        // ^^^^^^^^^^^^ Required implementation
+/// }
+/// ```
+///
+/// In this example, required implementation should be passed as an extra dictionary parameter to the `notEquals` function.
+#[derive(Debug, Clone)]
+pub enum TypecheckedImplementationKind {
+    Provided,
+    Required,
 }
 
 #[derive(Debug, Clone)]
@@ -1167,7 +1246,7 @@ pub struct FunctionSignature {
     pub symbol_uid: SymbolUid,
     pub type_variables: Option<NonEmpty<TypeVariable>>,
     pub function_type: FunctionType,
-    pub constraints: Vec<Constraint>,
+    pub constraints: Vec<TypecheckedConstraint>,
 }
 
 impl FunctionSignature {
