@@ -232,7 +232,7 @@ pub fn unify_statements(
                         .type_variables
                         .clone()
                         .map(|type_variable| TypeVariable {
-                            name: type_variable.representation.clone(),
+                            name: type_variable.representation,
                         });
 
                     let injected_parameter_uid = module.get_next_symbol_uid();
@@ -885,13 +885,11 @@ fn populate_explicit_type_variables(
                         })?;
                         Ok(TypecheckedConstraint {
                             interface_uid,
-                            type_variables: constraint
-                                .type_variables
-                                .clone()
-                                .map(|type_variable| TypeVariable {
+                            type_variables: constraint.type_variables.clone().map(
+                                |type_variable| TypeVariable {
                                     name: type_variable.representation,
-                                })
-                                .clone(),
+                                },
+                            ),
                             injected_parameter_uid,
                         })
                     })
@@ -1422,7 +1420,6 @@ pub fn infer_enum_statement(
                         constructor_name: constructor.name.representation.clone(),
                         type_variables: enum_statement
                             .type_variables()
-                            .clone()
                             .into_iter()
                             .map(|type_variable| type_variable.representation)
                             .collect(),
@@ -2130,7 +2127,7 @@ where
     use itertools::{Either, Itertools};
 
     let (zipped, missing_expected_keys): (Vec<(A, B)>, Vec<ExpectedKey>) =
-        expected_pairs.into_iter().partition_map(|expected_pair| {
+        expected_pairs.iter().partition_map(|expected_pair| {
             let expected_pair_key = get_expected_pair_key(expected_pair);
             let matching_actual_pair = actual_pairs.iter().find(|actual_pair| {
                 compare_key(expected_pair_key, get_actual_pair_key(actual_pair))
@@ -2146,7 +2143,7 @@ where
     match missing_expected_keys.split_first() {
         Some((head, tail)) => Err(MatchKeyValueError::MissingKeys(NonEmpty {
             head: head.clone(),
-            tail: tail.iter().cloned().collect(),
+            tail: tail.to_vec(),
         })),
         None => Ok(()),
     }?;
@@ -2355,12 +2352,6 @@ pub fn get_enum_type(
         }),
     }
 }
-
-pub struct TypeVariableSubstitution {
-    pub from_type_variable: String,
-    pub to_type: Type,
-}
-type TypeVariableSubstitutions = Vec<TypeVariableSubstitution>;
 
 #[derive(Debug)]
 struct InferExpressionResult {
@@ -3425,7 +3416,6 @@ fn infer_arrow_function(
                 Type::Function(expected_function_type.clone()),
                 arrow_function
                     .type_variables()
-                    .clone()
                     .into_iter()
                     .map(|type_variable| TypeVariable {
                         name: type_variable.representation,
@@ -3680,7 +3670,7 @@ fn infer_with_expression_type(
 fn infer_record_type(
     module: &mut Module,
     expected_key_type_pairs: Option<Vec<(String, Type)>>,
-    mut actual_key_value_pairs: Vec<RecordKeyValue>,
+    actual_key_value_pairs: Vec<RecordKeyValue>,
     record_position: Position,
 ) -> Result<InferExpressionResult, UnifyError> {
     let zipped = match expected_key_type_pairs {
@@ -3723,11 +3713,9 @@ fn infer_record_type(
     let typechecked_key_value_pairs = zipped
         .into_iter()
         .map(|(expected_key_type_pair, RecordKeyValue { key, value })| {
-            let expected_type = expected_key_type_pair
-                .clone()
-                .map(|(_, type_value)| type_value);
+            let expected_type = expected_key_type_pair.map(|(_, type_value)| type_value);
             let value_type = infer_expression_type(module, expected_type, &value)?;
-            Ok((key.clone(), value_type))
+            Ok((key, value_type))
         })
         .collect::<Result<Vec<(Token, InferExpressionResult)>, UnifyError>>()?;
 

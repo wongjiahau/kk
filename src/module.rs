@@ -826,38 +826,6 @@ impl Module {
         }
     }
 
-    pub fn get_explicit_type_variable_in_current_scope(
-        &self,
-        type_variable_name: &Token,
-    ) -> Result<Type, UnifyError> {
-        let current_scope_name = self.current_scope_name();
-        match self.symbol_entries.iter().find_map(|entry| {
-            if entry.scope_name.eq(&current_scope_name) {
-                match &entry.symbol.kind {
-                    SymbolKind::Type(type_symbol) => match &type_symbol.type_value {
-                        Type::ExplicitTypeVariable(type_variable)
-                            if type_variable.name.eq(&type_variable_name.representation) =>
-                        {
-                            Some(Type::ExplicitTypeVariable(type_variable.clone()))
-                        }
-                        _ => None,
-                    },
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        }) {
-            Some(type_value) => Ok(type_value),
-            None => Err(UnifyError {
-                position: type_variable_name.position,
-                kind: UnifyErrorKind::UnknownTypeVariable {
-                    unknown_type_variable_name: type_variable_name.representation.clone(),
-                },
-            }),
-        }
-    }
-
     pub fn find_matching_implementation(
         &self,
         constraint: TypecheckedConstraint,

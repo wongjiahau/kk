@@ -568,12 +568,10 @@ impl<'a> Parser<'a> {
         let right_angular_bracket = loop {
             if let Some(right_angular_bracket) = self.try_eat_token(TokenType::MoreThan)? {
                 break right_angular_bracket;
+            } else if self.try_eat_token(TokenType::Comma)?.is_some() {
+                tail.push(self.parse_type_annotation(context)?);
             } else {
-                if self.try_eat_token(TokenType::Comma)?.is_some() {
-                    tail.push(self.parse_type_annotation(context)?);
-                } else {
-                    break self.eat_token(TokenType::MoreThan, context)?;
-                }
+                break self.eat_token(TokenType::MoreThan, context)?;
             }
         };
         Ok(TypeArguments {
