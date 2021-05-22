@@ -1,0 +1,38 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+interface Equatable<T> {
+  let equals: (left: T, right: T) => Boolean
+}
+
+enum Grade { A, B, C }
+
+A.equals(A).print()
+// Error, missing implementation
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/interface_1.kk:7:3
+  │
+7 │ A.equals(A).print()
+  │   ^^^^^^ Constraint unsatisfied
+  │
+  = The following implementation is needed:
+
+        Equatable<Grade>

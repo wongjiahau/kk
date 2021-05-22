@@ -572,14 +572,14 @@ impl Module {
                             .into_vector()
                             .iter()
                             .zip(new_implementation.for_types.clone().into_vector().iter())
-                            .any(|(existing_implementation_type, new_implementation_type)| {
+                            .all(|(existing_implementation_type, new_implementation_type)| {
                                 overlap(&existing_implementation_type, &new_implementation_type)
                             })
                     });
 
                 match overlapped_implementation {
                     Some(overlapped_implementation) => Err(UnifyError {
-                        position: new_implementation.declared_at.clone(),
+                        position: new_implementation.declared_at,
                         kind: UnifyErrorKind::OverlappingImplementation {
                             new_implementation: new_implementation.clone(),
                             existing_implementation: overlapped_implementation.clone(),

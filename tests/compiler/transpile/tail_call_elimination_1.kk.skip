@@ -1,0 +1,13 @@
+let minus = (a: Integer, b: Integer): Integer => @@@  _0 - _1 @@@
+let equals = (a: Integer, b: Integer): Boolean => @@@ _0 === _1 @@@
+
+let loopDown = (n: Integer): Integer => {
+  if n.equals(0)
+    0
+  else
+    n.minus(1).loopDown()
+}
+
+// This will result in stack overflow if loopDown don't have tail call elimination
+// Last tested, any number above 5964 will trigger stack overflow
+5999.loopDown().print()

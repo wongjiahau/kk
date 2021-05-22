@@ -519,7 +519,12 @@ pub fn unify_statements(
             let uid = module.get_next_symbol_uid();
             module.insert_implementation(TypecheckedImplementation {
                 uid: uid.clone(),
-                declared_at: implementation_statement.keyword_implements.position,
+                declared_at: implementation_statement.interface_name.position.join(
+                    implementation_statement
+                        .for_types
+                        .right_angular_bracket
+                        .position,
+                ),
                 interface_uid,
                 for_types: subject_types,
                 kind: TypecheckedImplementationKind::Provided,

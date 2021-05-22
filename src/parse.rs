@@ -565,17 +565,22 @@ impl<'a> Parser<'a> {
     ) -> Result<TypeArguments, ParseError> {
         let head = self.parse_type_annotation(context)?;
         let mut tail = Vec::new();
-        loop {
+        let right_angular_bracket = loop {
             if let Some(right_angular_bracket) = self.try_eat_token(TokenType::MoreThan)? {
-                return Ok(TypeArguments {
-                    left_angular_bracket,
-                    type_annotations: Box::new(NonEmpty { head, tail }),
-                    right_angular_bracket,
-                });
+                break right_angular_bracket;
             } else {
-                tail.push(self.parse_type_annotation(context)?);
+                if self.try_eat_token(TokenType::Comma)?.is_some() {
+                    tail.push(self.parse_type_annotation(context)?);
+                } else {
+                    break self.eat_token(TokenType::MoreThan, context)?;
+                }
             }
-        }
+        };
+        Ok(TypeArguments {
+            left_angular_bracket,
+            type_annotations: Box::new(NonEmpty { head, tail }),
+            right_angular_bracket,
+        })
     }
 
     fn parse_enum_constructor_definition(

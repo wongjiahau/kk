@@ -5,8 +5,6 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// Specifying constraints on type variable
-
 interface Equatable<T> {
   let equals: (left: T, right: T) => Boolean
 }
@@ -22,6 +20,7 @@ implements Equatable<Grade> {
     }
 }
 
+// Specifying constraints on type variable
 let notEquals = <T> where Equatable<T> (left: T, right: T): Boolean =>
   left.equals(right).not()
 

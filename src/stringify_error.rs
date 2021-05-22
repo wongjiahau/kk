@@ -936,12 +936,12 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::ConstraintUnsatisfied { interface_name, for_types } => StringifiedError {
             summary: "Constraint unsatisfied".to_string(),
             body: format!(
-                "The following implementation is needed:\n\n{}<\n{}\n>",
+                "The following implementation is needed:\n\n{}<{}>",
                 indent_string(interface_name, 4),
                 for_types
                     .into_vector()
                     .into_iter()
-                    .map(|for_type| stringify_type(for_type, 3))
+                    .map(|for_type| stringify_type(for_type, 0))
                     .collect::<Vec<String>>().join(",")
             )
         },

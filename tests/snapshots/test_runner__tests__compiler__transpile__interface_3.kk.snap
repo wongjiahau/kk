@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// Multi-parameter inteface
+interface Convertible<From, To> {
+  let convert: (left: From, right: To) => String
+}
+
+implements Convertible<String, Integer> {
+  let convert = (_, _) => "Converting String to Integer"
+}
+
+implements Convertible<String, Float> {
+  let convert = (_, _) => "Converting String to Float"
+}
+
+"123".convert(123).print() // "Converting String to Integer"
+"123".convert(123.0).print() // "Convert String to Float"
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+Converting String to Integer
+Converting String to Float
+
+============
+STDERR
+============
