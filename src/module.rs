@@ -1,11 +1,9 @@
-use itertools::Itertools;
-
-use crate::non_empty::NonEmpty;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
 use crate::{ast::*, typechecked_ast::TypecheckedExpression};
+use crate::{non_empty::NonEmpty, unify::PopulatedTypeVariables};
+use std::cell::Cell;
 use std::collections::HashMap;
-use std::{cell::Cell, cmp::Ordering};
 
 #[derive(Debug, Clone)]
 pub struct ImportRelation {
@@ -199,7 +197,7 @@ pub struct Module {
 
 #[derive(Debug, Clone)]
 enum SubstitutionItem {
-    ImplicitTypeVariable(TypeVariable),
+    ImplicitTypeVariable(ImplicitTypeVariable),
     Type(Type),
     NotSubstituted,
 }
@@ -262,7 +260,7 @@ impl Module {
                     exported: false,
                 },
                 kind: SymbolKind::Type(TypeSymbol {
-                    type_value: Type::ExplicitTypeVariable(TypeVariable {
+                    type_value: Type::ExplicitTypeVariable(ExplicitTypeVariable {
                         name: type_variable_name.representation.clone(),
                     }),
                 }),
@@ -286,7 +284,7 @@ impl Module {
         variable_name: Option<&Token>,
     ) -> Result<Type, UnifyError> {
         let new_type_variable_name = self.get_next_type_variable_name();
-        let type_value = Type::ImplicitTypeVariable(TypeVariable {
+        let type_value = Type::ImplicitTypeVariable(ImplicitTypeVariable {
             name: new_type_variable_name.clone(),
         });
 
@@ -317,7 +315,7 @@ impl Module {
     /// and `T2` is not unifiable with `type_value`.
     pub fn update_substitution(
         &mut self,
-        type_variable: TypeVariable,
+        type_variable: ImplicitTypeVariable,
         type_value: Type,
         position: Position,
     ) -> Result<(), UnifyError> {
@@ -525,7 +523,7 @@ impl Module {
         exported: bool,
     ) -> Result<(SymbolUid, Type), UnifyError> {
         let type_value = match type_value {
-            None => Type::ImplicitTypeVariable(TypeVariable {
+            None => Type::ImplicitTypeVariable(ImplicitTypeVariable {
                 name: self.get_next_type_variable_name(),
             }),
             Some(type_value) => type_value,
@@ -567,6 +565,7 @@ impl Module {
                 types_overlap(
                     existing_implementation.for_types.clone().into_vector(),
                     new_implementation.for_types.clone().into_vector(),
+                    true,
                 )
             });
 
@@ -679,6 +678,7 @@ impl Module {
                                             if overlap(
                                                 existing_function_type.parameters_types.first(),
                                                 new_function_type.parameters_types.first(),
+                                                true
                                             ) {
                                                 Err(UnifyError {
                                                     position: new_symbol.meta.name.position,
@@ -820,12 +820,14 @@ impl Module {
     /// Find a matching implementation that satisfies the given `constraint`.
     ///
     /// `scope_name` is required such that `Required` implementation will not be wrongly selected.
+    ///
+    /// Returns the substituted types and the matching implementation.
     pub fn find_matching_implementation(
         &self,
-        constraint: TypecheckedConstraint,
+        constraint: InstantiatedConstraint,
         position: Position,
         scope_name: usize,
-    ) -> Result<TypecheckedImplementation, UnifyError> {
+    ) -> Result<(NonEmpty<Type>, TypecheckedImplementation), UnifyError> {
         let substituted_types = constraint.type_variables.clone().map(|type_variable| {
             match self.get_type_variable_terminal_type(type_variable.name.clone()) {
                 Some(type_value) => type_value,
@@ -834,11 +836,17 @@ impl Module {
         });
 
         let matching_implementation = match self.implementations.iter().find(|implementation| {
+            // If the implementation is Required, then `T` only overlaps with `T`, not other types
+            let explicit_type_variable_overlaps_with_any_type = match implementation.kind {
+                TypecheckedImplementationKind::Provided { .. } => true,
+                TypecheckedImplementationKind::Required => false,
+            };
             implementation.scope_name.eq(&scope_name)
                 && implementation.interface_uid.eq(&constraint.interface_uid)
                 && types_overlap(
                     implementation.for_types.clone().into_vector(),
                     substituted_types.clone().into_vector(),
+                    explicit_type_variable_overlaps_with_any_type,
                 )
         }) {
             Some(implementation) => Some(implementation.clone()),
@@ -846,7 +854,7 @@ impl Module {
         };
 
         match matching_implementation {
-            Some(implementation) => Ok(implementation),
+            Some(implementation) => Ok((substituted_types, implementation)),
             None => match self.scope.get_parent_scope_name(scope_name) {
                 Some(scope_name) => {
                     self.find_matching_implementation(constraint, position, scope_name)
@@ -1003,6 +1011,7 @@ impl Module {
                                     overlap(
                                         signature.function_type.parameters_types.first(),
                                         expected_function_type.parameters_types.first(),
+                                        true,
                                     )
                                 });
 
@@ -1149,9 +1158,6 @@ pub enum SymbolKind {
 
 #[derive(Debug, Clone)]
 pub struct TypecheckedImplementation {
-    // TODO: allow interface to have type variables
-    // type_variables: Vec<Token>,
-    /// The UID of this implementation.
     /// Used for transpiling dictionary passing.
     pub uid: SymbolUid,
 
@@ -1188,7 +1194,10 @@ pub struct TypecheckedImplementation {
 /// In this example, required implementation should be passed as an extra dictionary parameter to the `notEquals` function.
 #[derive(Debug, Clone)]
 pub enum TypecheckedImplementationKind {
-    Provided,
+    Provided {
+        /// Provided implementation can have type variabes and constraints
+        populated_type_variables: Option<PopulatedTypeVariables>,
+    },
     Required,
 }
 
@@ -1200,7 +1209,7 @@ pub struct TypecheckedImplementationDefinition {
 
 #[derive(Debug, Clone)]
 pub struct InterfaceSymbol {
-    pub type_variables: NonEmpty<TypeVariable>,
+    pub type_variables: NonEmpty<ExplicitTypeVariable>,
     pub definitions: Vec<TypecheckedInterfaceDefinition>,
 }
 #[derive(Debug, Clone)]
@@ -1228,7 +1237,7 @@ pub struct FunctionSymbol {
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
     pub symbol_uid: SymbolUid,
-    pub type_variables: Option<NonEmpty<TypeVariable>>,
+    pub type_variables: Option<NonEmpty<ExplicitTypeVariable>>,
     pub function_type: FunctionType,
     pub constraints: Vec<TypecheckedConstraint>,
 }
@@ -1246,22 +1255,40 @@ impl FunctionSignature {
     }
 }
 
-fn types_overlap(xs: Vec<Type>, ys: Vec<Type>) -> bool {
+fn types_overlap(
+    xs: Vec<Type>,
+    ys: Vec<Type>,
+    explicit_type_variable_overlaps_with_any_type: bool,
+) -> bool {
     if xs.len().ne(&ys.len()) {
         false
     } else {
-        xs.iter().zip(ys.iter()).all(|(x, y)| overlap(x, y))
+        xs.iter()
+            .zip(ys.iter())
+            .all(|(x, y)| overlap(x, y, explicit_type_variable_overlaps_with_any_type))
     }
 }
 
 /// To check whether the given pair of types overlapped
 /// This is used to prevent user from overloading a function that is
 /// indistinguishable from some existing function
-fn overlap(a: &Type, b: &Type) -> bool {
+fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bool) -> bool {
     match (a, b) {
-        // Type variables overlap with any type
-        // This is because KK does not support specialization
-        (Type::ExplicitTypeVariable { .. }, _) | (_, Type::ExplicitTypeVariable { .. }) => true,
+        (Type::ExplicitTypeVariable(explicit_type_variable), other_type)
+        | (other_type, Type::ExplicitTypeVariable(explicit_type_variable)) => {
+            // Since KK does not support specialization,
+            if explicit_type_variable_overlaps_with_any_type {
+                true
+            } else {
+                match other_type {
+                    Type::ExplicitTypeVariable(other_type_variable) => {
+                        explicit_type_variable.name.eq(&other_type_variable.name)
+                    }
+                    _ => false,
+                }
+            }
+        }
+
         (Type::ImplicitTypeVariable { .. }, _) | (_, Type::ImplicitTypeVariable { .. }) => true,
         (Type::Null, Type::Null) => true,
         (Type::String, Type::String) => true,
@@ -1269,7 +1296,11 @@ fn overlap(a: &Type, b: &Type) -> bool {
         (Type::Integer, Type::Integer) => true,
         (Type::Float, Type::Float) => true,
         (Type::Tuple(xs), Type::Tuple(ys)) => {
-            xs.len() == ys.len() && xs.clone().zip(*ys.clone()).all(|(a, b)| overlap(a, b))
+            xs.len() == ys.len()
+                && xs
+                    .clone()
+                    .zip(*ys.clone())
+                    .all(|(a, b)| overlap(a, b, explicit_type_variable_overlaps_with_any_type))
         }
         (Type::Record { key_type_pairs: a }, Type::Record { key_type_pairs: b }) => {
             let mut a = a.clone();
@@ -1280,7 +1311,12 @@ fn overlap(a: &Type, b: &Type) -> bool {
                 && a.iter()
                     .zip(b.iter())
                     .all(|((key_a, type_a), (key_b, type_b))| {
-                        key_a == key_b && overlap(type_a, type_b)
+                        key_a == key_b
+                            && overlap(
+                                type_a,
+                                type_b,
+                                explicit_type_variable_overlaps_with_any_type,
+                            )
                     })
         }
         (Type::Function(a), Type::Function(b)) => {
@@ -1289,8 +1325,12 @@ fn overlap(a: &Type, b: &Type) -> bool {
                     .parameters_types
                     .clone()
                     .zip(*b.parameters_types.clone())
-                    .all(|(a, b)| overlap(a, b))
-                    && overlap(a.return_type.as_ref(), b.return_type.as_ref()))
+                    .all(|(a, b)| overlap(a, b, explicit_type_variable_overlaps_with_any_type))
+                    && overlap(
+                        a.return_type.as_ref(),
+                        b.return_type.as_ref(),
+                        explicit_type_variable_overlaps_with_any_type,
+                    ))
         }
         (
             Type::BuiltInOneArgumentType {
@@ -1308,6 +1348,7 @@ fn overlap(a: &Type, b: &Type) -> bool {
                 overlap(
                     expected_type_argument.as_ref(),
                     actual_type_argument.as_ref(),
+                    explicit_type_variable_overlaps_with_any_type,
                 )
             }
         }
@@ -1327,11 +1368,15 @@ fn overlap(a: &Type, b: &Type) -> bool {
                 && type_arguments_a
                     .iter()
                     .zip(type_arguments_b.iter())
-                    .all(|((_, a), (_, b))| overlap(a, b))
+                    .all(|((_, a), (_, b))| {
+                        overlap(a, b, explicit_type_variable_overlaps_with_any_type)
+                    })
         }
-        (Type::TypeScheme(type_scheme_a), Type::TypeScheme(type_scheme_b)) => {
-            overlap(&type_scheme_a.type_value, &type_scheme_b.type_value)
-        }
+        (Type::TypeScheme(type_scheme_a), Type::TypeScheme(type_scheme_b)) => overlap(
+            &type_scheme_a.type_value,
+            &type_scheme_b.type_value,
+            explicit_type_variable_overlaps_with_any_type,
+        ),
 
         // otherwise
         _ => false,
@@ -1364,7 +1409,7 @@ fn built_in_symbols() -> Vec<Symbol> {
             },
         }
     }
-    let type_variable = TypeVariable {
+    let type_variable = ExplicitTypeVariable {
         name: "T".to_string(),
     };
     vec![
@@ -1380,7 +1425,7 @@ fn built_in_symbols() -> Vec<Symbol> {
                     },
                     type_value: Type::Function(FunctionType {
                         parameters_types: Box::new(NonEmpty {
-                            head: Type::ImplicitTypeVariable(type_variable),
+                            head: Type::ExplicitTypeVariable(type_variable),
                             tail: vec![],
                         }),
                         return_type: Box::new(Type::Null),

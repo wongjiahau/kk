@@ -1,0 +1,63 @@
+// If we can solve this, we can probably solve every other cases
+
+enum List<T> {
+  Nil,
+  Cons({head: T, tail: List<T>})
+}
+
+interface Equatable<T> {
+  let equals: (left: T, right: T) => Boolean
+}
+
+enum Color {
+  Red,
+  Green,
+  Blue
+}
+
+implements Equatable<Color> {
+  let equals = (left, right) => 
+    switch ({left, right}) {
+      case {left: Red, right: Red}: true
+      case {left: Green, right: Green}: true
+      case {left: Blue, right: Blue}: true
+      case _: false
+    }
+}
+
+let and = (left: Boolean, right: Boolean): Boolean => 
+  switch {left, right} {
+    case {left: true, right: true}:
+      true
+    case _:
+      false
+  }
+
+
+implements<T where Equatable<T>> Equatable<List<T>> {
+  let equals = (left, right) => {
+    switch ({left, right}) {
+      case {left: Nil, right: Nil}:
+        true
+
+      case {left: Cons(left), right: Cons(right)}:
+        left.head.equals(right.head).and(left.tail.equals(right.tail))
+
+      case _: 
+        false
+    }
+  }
+}
+
+let xs = Cons({head: Red, tail: Cons({head: Blue, tail: Nil})})
+let ys = Cons({head: Blue, tail: Nil})
+
+xs.equals(xs).print() // true
+xs.equals(ys).print() // false
+
+let xss = Cons({head: xs, tail: Nil})
+let yss = Cons({head: ys, tail: Nil})
+
+xss.equals(xss).print() // true
+yss.equals(yss).print() // true
+xss.equals(yss).print() // false

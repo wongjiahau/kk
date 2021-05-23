@@ -206,7 +206,7 @@ pub fn unify_statements(
                             .type_variables_declartion
                             .type_variables
                             .clone()
-                            .map(|type_variable| TypeVariable {
+                            .map(|type_variable| ExplicitTypeVariable {
                                 name: type_variable.representation,
                             }),
                         definitions: definitions.clone(),
@@ -231,7 +231,7 @@ pub fn unify_statements(
                         .type_variables_declartion
                         .type_variables
                         .clone()
-                        .map(|type_variable| TypeVariable {
+                        .map(|type_variable| ExplicitTypeVariable {
                             name: type_variable.representation,
                         });
 
@@ -442,102 +442,57 @@ pub fn unify_statements(
     let implementation_dictionaries = implements_statements
         .into_iter()
         .map(|implement_statement| {
-            // Check that interface name exists
             let (interface_uid, interface_symbol) =
                 module.get_interface_symbol_by_name(&implement_statement.interface_name)?;
 
-            // Populate type variables
-            let result = populate_explicit_type_variables(
-                &mut module,
-                &implement_statement.type_variables_declaration,
-            )?;
-
-            // Check that the subject of implementation is a valid
-            let subject_types = implement_statement
-                .for_types
-                .type_annotations
-                .clone()
-                .fold_result(|type_annotation| {
-                    type_annotation_to_type(&mut module, &type_annotation)
-                })?;
-
-            // Rewrite all expected definitions with the subject type
-            let expected_definitions = interface_symbol
-                .definitions
-                .clone()
-                .iter()
-                .map(|definition| TypecheckedInterfaceDefinition {
-                    name: definition.name.clone(),
-                    type_value: rewrite_type_variables_in_type(
-                        interface_symbol
-                            .type_variables
-                            .clone()
-                            .into_vector()
-                            .iter()
-                            .map(|type_variable| type_variable.name.clone())
-                            .zip(subject_types.clone().into_vector().into_iter())
-                            .collect(),
-                        definition.type_value.clone(),
-                    ),
-                })
-                .collect::<Vec<TypecheckedInterfaceDefinition>>();
-
-            // Ensure that there's no missing or extra definition
-            let zipped = match_key_values_pairs(
-                &expected_definitions,
-                &implement_statement.definitions,
-                |expected_definition| &expected_definition.name,
-                |actual_implementation| &actual_implementation.name,
-                |expeced_key, actual_key| expeced_key.representation == actual_key.representation,
-            )
-            .map_err(|error| match error {
-                MatchKeyValueError::MissingKeys(missing_definition_names) => UnifyError {
-                    position: implement_statement.interface_name.position,
-                    kind: UnifyErrorKind::MissingImplementationDefinition {
-                        missing_definition_names,
-                    },
-                },
-                MatchKeyValueError::ExtraneousKey(extraneous_definition_names) => UnifyError {
-                    position: extraneous_definition_names.head.position,
-                    kind: UnifyErrorKind::ExtraneousImplementationDefinition {
-                        extraneous_definition_names,
-                    },
-                },
-            })?;
-
-            // Check that all definitions are implemented correctly
-            let definitions = zipped
-                .into_iter()
-                .map(|(expected_definition, actual_definition)| {
-                    let typechecked_expression = infer_expression_type(
-                        &mut module,
-                        Some(expected_definition.type_value),
-                        &actual_definition.expression,
-                    )?;
-                    Ok(TypecheckedImplementationDefinition {
-                        name: expected_definition.name,
-                        expression: solve_constraints(
-                            &mut module,
-                            typechecked_expression.expression,
-                        )?,
-                    })
-                })
-                .collect::<Result<Vec<_>, UnifyError>>()?;
-
-            // Insert this implementation into the current module
             let uid = module.get_next_symbol_uid();
             let scope_name = module.current_scope_name();
-            module.insert_implementation(TypecheckedImplementation {
-                uid: uid.clone(),
-                scope_name,
-                declared_at: implement_statement
-                    .interface_name
-                    .position
-                    .join(implement_statement.for_types.right_angular_bracket.position),
-                interface_uid,
-                for_types: subject_types,
-                kind: TypecheckedImplementationKind::Provided,
-            })?;
+            let (populated_type_variables, definitions) =
+                module.run_in_new_child_scope(|module| {
+                    let populated_type_variables = populate_explicit_type_variables(
+                        module,
+                        &implement_statement.type_variables_declaration,
+                    )?;
+                    let subject_types = implement_statement
+                        .for_types
+                        .type_annotations
+                        .clone()
+                        .fold_result(|type_annotation| {
+                            type_annotation_to_type(module, &type_annotation)
+                        })?;
+
+                    // Insert this implementation into the current module before inferring the definitions,
+                    // so that recursive definitions can be defined
+                    module.insert_implementation(TypecheckedImplementation {
+                        uid: uid.clone(),
+                        scope_name, // Note: using parent scope, not the current scope
+                        declared_at: implement_statement
+                            .interface_name
+                            .position
+                            .join(implement_statement.for_types.right_angular_bracket.position),
+                        interface_uid: interface_uid.clone(),
+                        for_types: subject_types.clone(),
+                        kind: TypecheckedImplementationKind::Provided {
+                            populated_type_variables: populated_type_variables.clone(),
+                        },
+                    })?;
+
+                    let definitions = infer_implement_statement(
+                        module,
+                        &interface_symbol,
+                        &subject_types,
+                        &implement_statement,
+                    )?;
+
+                    Ok((populated_type_variables, definitions))
+                })?;
+
+            let dictionary = TypecheckedExpression::Record {
+                key_value_pairs: definitions
+                    .into_iter()
+                    .map(|definition| (PropertyName(definition.name), definition.expression))
+                    .collect(),
+            };
 
             Ok(TypecheckedStatement::Let {
                 exported: implement_statement.keyword_export.is_some(),
@@ -550,12 +505,13 @@ pub fn unify_statements(
                         token: Token::dummy(),
                     })),
                 },
-                right: TypecheckedExpression::Record {
-                    key_value_pairs: definitions
-                        .into_iter()
-                        .map(|definition| (PropertyName(definition.name), definition.expression))
-                        .collect(),
-                },
+
+                right: try_parameterise_expression_with_implementation_dictionary_parameters(
+                    populated_type_variables
+                        .map(|result| result.constraints)
+                        .unwrap_or_else(Vec::new),
+                    dictionary,
+                ),
             })
         })
         .collect::<Result<Vec<TypecheckedStatement>, UnifyError>>()
@@ -620,6 +576,98 @@ pub fn unify_statements(
     })
 }
 
+fn infer_implement_statement(
+    module: &mut Module,
+    interface_symbol: &InterfaceSymbol,
+    subject_types: &NonEmpty<Type>,
+    implement_statement: &ImplementStatement,
+) -> Result<Vec<TypecheckedImplementationDefinition>, UnifyError> {
+    let expected_definitions = interface_symbol
+        .definitions
+        .clone()
+        .iter()
+        .map(|definition| TypecheckedInterfaceDefinition {
+            name: definition.name.clone(),
+            type_value: rewrite_type_variables_in_type(
+                interface_symbol
+                    .type_variables
+                    .clone()
+                    .into_vector()
+                    .iter()
+                    .map(|type_variable| type_variable.name.clone())
+                    .zip(subject_types.clone().into_vector().into_iter())
+                    .collect(),
+                definition.type_value.clone(),
+            ),
+        })
+        .collect::<Vec<TypecheckedInterfaceDefinition>>();
+    let zipped = match_key_values_pairs(
+        &expected_definitions,
+        &implement_statement.definitions,
+        |expected_definition| &expected_definition.name,
+        |actual_implementation| &actual_implementation.name,
+        |expeced_key, actual_key| expeced_key.representation == actual_key.representation,
+    )
+    .map_err(|error| match error {
+        MatchKeyValueError::MissingKeys(missing_definition_names) => UnifyError {
+            position: implement_statement.interface_name.position,
+            kind: UnifyErrorKind::MissingImplementationDefinition {
+                missing_definition_names,
+            },
+        },
+        MatchKeyValueError::ExtraneousKey(extraneous_definition_names) => UnifyError {
+            position: extraneous_definition_names.head.position,
+            kind: UnifyErrorKind::ExtraneousImplementationDefinition {
+                extraneous_definition_names,
+            },
+        },
+    })?;
+    let definitions = zipped
+        .into_iter()
+        .map(|(expected_definition, actual_definition)| {
+            let typechecked_expression = infer_expression_type(
+                module,
+                Some(expected_definition.type_value),
+                &actual_definition.expression,
+            )?;
+            Ok(TypecheckedImplementationDefinition {
+                name: expected_definition.name,
+                expression: solve_constraints(module, typechecked_expression.expression)?,
+            })
+        })
+        .collect::<Result<Vec<_>, UnifyError>>()?;
+    Ok(definitions)
+}
+
+fn try_parameterise_expression_with_implementation_dictionary_parameters(
+    constraints: Vec<TypecheckedConstraint>,
+    expression: TypecheckedExpression,
+) -> TypecheckedExpression {
+    match constraints.split_first() {
+        Some((head, tail)) => {
+            let dictionary_parameters = NonEmpty {
+                head: Identifier {
+                    uid: head.injected_parameter_uid.clone(),
+                    token: Token::dummy(),
+                },
+                tail: tail
+                    .to_vec()
+                    .into_iter()
+                    .map(|constraint| Identifier {
+                        uid: constraint.injected_parameter_uid,
+                        token: Token::dummy(),
+                    })
+                    .collect(),
+            };
+            parameterise_expression_with_implementation_dictionary_parameters(
+                dictionary_parameters,
+                expression,
+            )
+        }
+        None => expression,
+    }
+}
+
 /// This function parameterises a constrained expression with the given `injected_parameter_uid`.
 fn parameterise_expression_with_implementation_dictionary_parameters(
     injected_dictionary_parameters: NonEmpty<Identifier>,
@@ -644,7 +692,8 @@ fn parameterise_expression_with_implementation_dictionary_parameters(
     }))
 }
 
-/// Solve the constraint of an inferred expression
+/// Solve the constraint of an inferred expression.  
+/// Every solvable constraint will be turned into an extra argument for the given `expression`
 fn solve_constraints(
     module: &mut Module,
     expression: TypecheckedExpression,
@@ -660,15 +709,81 @@ fn solve_constraints(
             //  2) remove implied constraints (for example if A is super class of B, and if we have A and B, we can elide A)
             let implementations = constraints.fold_result(|constraint| {
                 let current_scope_name = module.current_scope_name();
-                let implementation = module.find_matching_implementation(
+                let (substituted_types, implementation) = module.find_matching_implementation(
                     constraint,
                     identifier.token.position,
                     current_scope_name,
                 )?;
-                Ok(Variable(Identifier {
+
+                let dictionary_implementation_id = Identifier {
                     uid: implementation.uid,
                     token: Token::dummy(),
-                }))
+                };
+                match implementation.kind {
+                    TypecheckedImplementationKind::Provided {
+                        populated_type_variables: None,
+                    }
+                    | TypecheckedImplementationKind::Required => {
+                        Ok(Variable(dictionary_implementation_id))
+                    }
+                    TypecheckedImplementationKind::Provided {
+                        populated_type_variables: Some(populated_type_variables),
+                    } => match populated_type_variables.constraints.split_first() {
+                        None => Ok(Variable(dictionary_implementation_id)),
+
+                        Some((first_constraint, tail_constraints)) => {
+                            let type_variable_substitutions = instantiate_type_variables(
+                                module,
+                                populated_type_variables
+                                    .declared_type_variables
+                                    .into_vector(),
+                            );
+
+                            // Unify the substituted types with the instantiated `implementation.for_types`
+                            let instantiated_for_types = apply_type_variable_substitutions_to_types(
+                                &type_variable_substitutions,
+                                implementation.for_types.into_vector(),
+                            );
+
+                            instantiated_for_types
+                                .iter()
+                                .zip(substituted_types.into_vector().iter())
+                                .map(|(instantiated_for_type, substituted_type)| {
+                                    unify_type(
+                                        module,
+                                        instantiated_for_type,
+                                        substituted_type,
+                                        // TODO: This position might be incorrect
+                                        identifier.token.position,
+                                    )
+                                })
+                                .collect::<Result<Vec<_>, UnifyError>>()?;
+
+                            solve_constraints(
+                                module,
+                                TypecheckedExpression::ConstrainedVariable {
+                                    identifier: dictionary_implementation_id,
+                                    constraints: NonEmpty {
+                                        head: instantiate_constraint(
+                                            first_constraint.clone(),
+                                            &type_variable_substitutions,
+                                        ),
+                                        tail: tail_constraints
+                                            .to_vec()
+                                            .into_iter()
+                                            .map(|constraint| {
+                                                instantiate_constraint(
+                                                    constraint,
+                                                    &type_variable_substitutions,
+                                                )
+                                            })
+                                            .collect(),
+                                    },
+                                },
+                            )
+                        }
+                    },
+                }
             })?;
 
             // Pass the found implementations as parameter (a.k.a dictionary passing)
@@ -814,10 +929,11 @@ fn solve_constraints(
     }
 }
 
-struct PopulateTypeVariableResult {
+#[derive(Debug, Clone)]
+pub struct PopulatedTypeVariables {
     /// The corresponding `SymbolUid` represents the UID of the injected dictionary parameter
-    constraints: Vec<TypecheckedConstraint>,
-    declared_type_variables: NonEmpty<TypeVariable>,
+    pub constraints: Vec<TypecheckedConstraint>,
+    pub declared_type_variables: NonEmpty<ExplicitTypeVariable>,
 }
 
 /// Populate explicit type variables into the current environment.   
@@ -832,7 +948,7 @@ struct PopulateTypeVariableResult {
 fn populate_explicit_type_variables(
     module: &mut Module,
     type_variables_declaration: &Option<TypeVariablesDeclaration>,
-) -> Result<Option<PopulateTypeVariableResult>, UnifyError> {
+) -> Result<Option<PopulatedTypeVariables>, UnifyError> {
     match type_variables_declaration {
         None => Ok(None),
         Some(declaration) => {
@@ -847,7 +963,7 @@ fn populate_explicit_type_variables(
                 declaration
                     .type_variables
                     .clone()
-                    .map(|type_variable| TypeVariable {
+                    .map(|type_variable| ExplicitTypeVariable {
                         name: type_variable.representation,
                     });
 
@@ -880,7 +996,7 @@ fn populate_explicit_type_variables(
                                         .name
                                         .eq(&type_variable_name.representation)
                                 }) {
-                                    Ok(Type::ExplicitTypeVariable(TypeVariable {
+                                    Ok(Type::ExplicitTypeVariable(ExplicitTypeVariable {
                                         name: type_variable_name.representation,
                                     }))
                                 } else {
@@ -907,7 +1023,7 @@ fn populate_explicit_type_variables(
                     Ok(TypecheckedConstraint {
                         interface_uid,
                         type_variables: constraint.type_variables.clone().map(|type_variable| {
-                            TypeVariable {
+                            ExplicitTypeVariable {
                                 name: type_variable.representation,
                             }
                         }),
@@ -916,7 +1032,7 @@ fn populate_explicit_type_variables(
                 })
                 .collect::<Result<Vec<TypecheckedConstraint>, UnifyError>>()?;
 
-            Ok(Some(PopulateTypeVariableResult {
+            Ok(Some(PopulatedTypeVariables {
                 declared_type_variables,
                 constraints: typechecked_constraints,
             }))
@@ -1374,7 +1490,7 @@ pub fn insert_enum_symbol(
             .map(|type_variable| {
                 (
                     type_variable.representation.clone(),
-                    Type::ImplicitTypeVariable(TypeVariable {
+                    Type::ImplicitTypeVariable(ImplicitTypeVariable {
                         name: type_variable.representation,
                     }),
                 )
@@ -1392,11 +1508,11 @@ pub fn insert_enum_symbol(
         Some((head, tail)) => Type::TypeScheme(Box::new(TypeScheme {
             constraints: vec![],
             type_variables: NonEmpty {
-                head: TypeVariable { name: head.clone() },
+                head: ExplicitTypeVariable { name: head.clone() },
                 tail: tail
                     .to_vec()
                     .into_iter()
-                    .map(|name| TypeVariable { name })
+                    .map(|name| ExplicitTypeVariable { name })
                     .collect(),
             },
             type_value: enum_type,
@@ -1503,12 +1619,12 @@ pub fn infer_type_alias_statement(
                                 .type_variables
                                 .into_vector()
                                 .iter()
-                                .map(|type_variable| TypeVariable {
+                                .map(|type_variable| ExplicitTypeVariable {
                                     name: type_variable.representation.clone(),
                                 })
                                 .collect()
                         })
-                        .unwrap_or_else(|| vec![]),
+                        .unwrap_or_else(Vec::new),
                 ),
             }),
         },
@@ -1517,7 +1633,10 @@ pub fn infer_type_alias_statement(
     Ok(())
 }
 
-pub fn try_lift_as_type_scheme(type_value: Type, type_variables: Vec<TypeVariable>) -> Type {
+pub fn try_lift_as_type_scheme(
+    type_value: Type,
+    type_variables: Vec<ExplicitTypeVariable>,
+) -> Type {
     match type_variables.split_first() {
         None => type_value,
         Some((head, tail)) => Type::TypeScheme(Box::new(TypeScheme {
@@ -2340,7 +2459,7 @@ pub fn get_enum_type(
                         .map(|type_variable| {
                             (
                                 type_variable.name.clone(),
-                                Type::ImplicitTypeVariable(TypeVariable {
+                                Type::ImplicitTypeVariable(ImplicitTypeVariable {
                                     name: module.get_next_type_variable_name(),
                                 }),
                             )
@@ -2923,7 +3042,7 @@ fn infer_expression_type_(
                     })
                 }
                 Type::ImplicitTypeVariable(type_variable) => {
-                    let expected_function_type = Type::ImplicitTypeVariable(TypeVariable {
+                    let expected_function_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
                         name: module.get_next_type_variable_name(),
                     });
 
@@ -2936,7 +3055,7 @@ fn infer_expression_type_(
                         position,
                     )?;
 
-                    let return_type = Type::ImplicitTypeVariable(TypeVariable {
+                    let return_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
                         name: module.get_next_type_variable_name(),
                     });
 
@@ -3073,7 +3192,7 @@ fn infer_expression_type_(
                     kind: BuiltInOneArgumentTypeKind::Array,
                     type_argument: expected_element_type,
                 }) => Ok(*expected_element_type),
-                _ => Ok(Type::ImplicitTypeVariable(TypeVariable {
+                _ => Ok(Type::ImplicitTypeVariable(ImplicitTypeVariable {
                     name: module.get_next_type_variable_name(),
                 })),
             }?;
@@ -3407,29 +3526,11 @@ fn infer_arrow_function(
                     None => vec![],
                 },
             };
-            match constraints.split_first() {
-                Some((head, tail)) => {
-                    let dictionary_parameters = NonEmpty {
-                        head: Identifier {
-                            uid: head.injected_parameter_uid.clone(),
-                            token: Token::dummy(),
-                        },
-                        tail: tail
-                            .to_vec()
-                            .into_iter()
-                            .map(|constraint| Identifier {
-                                uid: constraint.injected_parameter_uid,
-                                token: Token::dummy(),
-                            })
-                            .collect(),
-                    };
-                    parameterise_expression_with_implementation_dictionary_parameters(
-                        dictionary_parameters,
-                        function_expression,
-                    )
-                }
-                None => function_expression,
-            }
+
+            try_parameterise_expression_with_implementation_dictionary_parameters(
+                constraints,
+                function_expression,
+            )
         };
 
         Ok(InferExpressionResult {
@@ -3438,7 +3539,7 @@ fn infer_arrow_function(
                 arrow_function
                     .type_variables()
                     .into_iter()
-                    .map(|type_variable| TypeVariable {
+                    .map(|type_variable| ExplicitTypeVariable {
                         name: type_variable.representation,
                     })
                     .collect(),
@@ -4504,7 +4605,7 @@ fn infer_destructure_pattern_(
         } => Ok(TypecheckedDestructurePattern {
             type_value: Type::BuiltInOneArgumentType {
                 kind: BuiltInOneArgumentTypeKind::Array,
-                type_argument: Box::new(Type::ImplicitTypeVariable(TypeVariable {
+                type_argument: Box::new(Type::ImplicitTypeVariable(ImplicitTypeVariable {
                     name: module.get_next_type_variable_name(),
                 })),
             },
@@ -4525,7 +4626,7 @@ fn infer_destructure_pattern_(
                     kind: BuiltInOneArgumentTypeKind::Array,
                     type_argument: expected_type,
                 }) => *expected_type,
-                _ => Type::ImplicitTypeVariable(TypeVariable {
+                _ => Type::ImplicitTypeVariable(ImplicitTypeVariable {
                     name: module.get_next_type_variable_name(),
                 }),
             };
@@ -4975,12 +5076,41 @@ impl TypecheckedDestructurePattern {
     }
 }
 
-fn substitute_type_variable_in_type(
-    from_type_variable: &str,
-    to_type: &Type,
-    in_type: &Type,
+/// Apply a list of type variable substitutions to a list of types
+fn apply_type_variable_substitutions_to_types(
+    type_variable_substitutions: &Vec<TypeVariableSubstitution>,
+    type_values: Vec<Type>,
+) -> Vec<Type> {
+    type_values
+        .iter()
+        .map(|type_value| {
+            apply_type_variable_substitutions_to_type(type_variable_substitutions, type_value)
+        })
+        .collect()
+}
+
+/// Apply a list of type variable substitutions to the given type
+fn apply_type_variable_substitutions_to_type(
+    type_variable_substitutions: &Vec<TypeVariableSubstitution>,
+    type_value: &Type,
 ) -> Type {
-    match in_type {
+    type_variable_substitutions
+        .iter()
+        .fold(type_value.clone(), |result, substitution| {
+            apply_type_variable_substitution_to_type(substitution, &result)
+        })
+}
+
+/// For example, if `substitution` is `{A => a}` and the given type is `Result<A, Result<A, B>>`.
+///
+/// Then the result is `Result<a, Result<a, B>>`
+///
+/// Note that uppercase `A` means explicit type variable, lowercase `a` means implicit type variable.
+fn apply_type_variable_substitution_to_type(
+    substitution: &TypeVariableSubstitution,
+    type_value: &Type,
+) -> Type {
+    match type_value {
         Type::String => Type::String,
         Type::Character => Type::Character,
         Type::Null => Type::Null,
@@ -4992,36 +5122,33 @@ fn substitute_type_variable_in_type(
             type_argument,
         } => Type::BuiltInOneArgumentType {
             kind: kind.clone(),
-            type_argument: Box::new(substitute_type_variable_in_type(
-                from_type_variable,
-                to_type,
+            type_argument: Box::new(apply_type_variable_substitution_to_type(
+                substitution,
                 type_argument.as_ref(),
             )),
         },
-
-        // TODO: this might have problem since we allow type variable shadowing,
-        //  For example: let f = <T>(g: <T>(t: T) -> T) -> Integer => 123
-        // Rewriting the T of f should not rewrite the T of g, but the current implementation will.
-        Type::ExplicitTypeVariable(type_variable) | Type::ImplicitTypeVariable(type_variable) => {
-            if *type_variable.name == *from_type_variable {
-                to_type.clone()
+        Type::ImplicitTypeVariable(type_variable) => {
+            Type::ImplicitTypeVariable(type_variable.clone())
+        }
+        Type::ExplicitTypeVariable(type_variable) => {
+            if *type_variable.name == *substitution.from_type_variable.name {
+                Type::ImplicitTypeVariable(substitution.to_type_variable.clone())
             } else {
-                in_type.clone()
+                type_value.clone()
             }
         }
         Type::Tuple(types) => Type::Tuple(Box::new(types.clone().map(|type_value| {
-            substitute_type_variable_in_type(from_type_variable, to_type, &type_value)
+            apply_type_variable_substitution_to_type(substitution, &type_value)
         }))),
         Type::Function(FunctionType {
             parameters_types,
             return_type,
         }) => Type::Function(FunctionType {
             parameters_types: Box::new(parameters_types.clone().map(|parameter_type| {
-                substitute_type_variable_in_type(from_type_variable, to_type, &parameter_type)
+                apply_type_variable_substitution_to_type(substitution, &parameter_type)
             })),
-            return_type: Box::new(substitute_type_variable_in_type(
-                from_type_variable,
-                to_type,
+            return_type: Box::new(apply_type_variable_substitution_to_type(
+                substitution,
                 return_type.as_ref(),
             )),
         }),
@@ -5031,7 +5158,7 @@ fn substitute_type_variable_in_type(
                 .map(|(key, type_value)| {
                     (
                         key.clone(),
-                        substitute_type_variable_in_type(from_type_variable, to_type, type_value),
+                        apply_type_variable_substitution_to_type(substitution, type_value),
                     )
                 })
                 .collect(),
@@ -5049,7 +5176,7 @@ fn substitute_type_variable_in_type(
                 .map(|(key, type_value)| {
                     (
                         key.clone(),
-                        substitute_type_variable_in_type(from_type_variable, to_type, type_value),
+                        apply_type_variable_substitution_to_type(substitution, type_value),
                     )
                 })
                 .collect(),
@@ -5057,9 +5184,8 @@ fn substitute_type_variable_in_type(
         Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
             constraints: type_scheme.constraints.clone(),
             type_variables: type_scheme.type_variables.clone(),
-            type_value: substitute_type_variable_in_type(
-                from_type_variable,
-                to_type,
+            type_value: apply_type_variable_substitution_to_type(
+                substitution,
                 &type_scheme.type_value,
             ),
         })),
@@ -5148,52 +5274,72 @@ fn type_variable_occurs_in_type(type_variable: &str, typ: &Type) -> bool {
 pub fn instantiate_type_scheme(
     module: &mut Module,
     type_scheme: TypeScheme,
-) -> (Type, Vec<TypecheckedConstraint>) {
-    let type_variable_substitutions = type_scheme
-        .type_variables
-        .map(|from_type_variable| {
-            (
-                from_type_variable.name,
-                module.get_next_type_variable_name(),
-            )
-        })
-        .into_vector();
+) -> (Type, Vec<InstantiatedConstraint>) {
+    let type_variable_substitutions =
+        instantiate_type_variables(module, type_scheme.type_variables.into_vector());
 
-    let instantiated_type = type_variable_substitutions.iter().fold(
-        type_scheme.type_value,
-        |result, (from_type_variable, to_type_variable)| {
-            substitute_type_variable_in_type(
-                from_type_variable,
-                &Type::ImplicitTypeVariable(TypeVariable {
-                    name: to_type_variable.clone(),
-                }),
-                &result,
-            )
-        },
+    let instantiated_type = apply_type_variable_substitutions_to_type(
+        &type_variable_substitutions,
+        &type_scheme.type_value,
     );
 
-    let instantiated_constraints = type_scheme
-        .constraints
-        .into_iter()
-        .map(|constraint| TypecheckedConstraint {
-            interface_uid: constraint.interface_uid,
-            injected_parameter_uid: constraint.injected_parameter_uid,
-            type_variables: constraint.type_variables.map(|type_variable| {
-                type_variable_substitutions.iter().find_map(
-                    |(from_type_variable, to_type_variable)| {
-                        if *from_type_variable == type_variable.name {
-                            Some(TypeVariable {
-                                name: to_type_variable.clone(),
-                            })
-                        } else {
-                            None
-                        }
-                    },
-                )
-                .expect("Compiler error, all type variables in each constraint should be quantified by the inferface")
-            }),
-        })
-        .collect();
+    let instantiated_constraints =
+        instantiate_constraints(type_scheme.constraints, &type_variable_substitutions);
 
     (instantiated_type, instantiated_constraints)
+}
+
+pub fn instantiate_constraints(
+    constraints: Vec<TypecheckedConstraint>,
+    type_variable_substitutions: &Vec<TypeVariableSubstitution>,
+) -> Vec<InstantiatedConstraint> {
+    constraints
+        .into_iter()
+        .map(|constraint| instantiate_constraint(constraint, type_variable_substitutions))
+        .collect()
+}
+
+pub fn instantiate_constraint(
+    constraint: TypecheckedConstraint,
+    type_variable_substitutions: &Vec<TypeVariableSubstitution>,
+) -> InstantiatedConstraint {
+    InstantiatedConstraint {
+        interface_uid: constraint.interface_uid,
+        type_variables: constraint.type_variables.map(|type_variable| {
+            type_variable_substitutions.iter().find_map(
+                |TypeVariableSubstitution {
+                     from_type_variable,
+                     to_type_variable,
+                 }| {
+                    if *from_type_variable.name == *type_variable.name {
+                        Some(to_type_variable.clone())
+                    } else {
+                        None
+                    }
+                },
+            )
+            .expect("Compiler error, all type variables in each constraint should be quantified by the inferface")
+        }),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeVariableSubstitution {
+    pub from_type_variable: ExplicitTypeVariable,
+    pub to_type_variable: ImplicitTypeVariable,
+}
+
+pub fn instantiate_type_variables(
+    module: &mut Module,
+    type_variables: Vec<ExplicitTypeVariable>,
+) -> Vec<TypeVariableSubstitution> {
+    type_variables
+        .into_iter()
+        .map(|from_type_variable| TypeVariableSubstitution {
+            from_type_variable,
+            to_type_variable: ImplicitTypeVariable {
+                name: module.get_next_type_variable_name(),
+            },
+        })
+        .collect()
 }

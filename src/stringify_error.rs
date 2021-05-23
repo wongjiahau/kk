@@ -924,7 +924,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::OverlappingImplementation {existing_implementation, ..} =>  {
             let word = match existing_implementation.kind {
-                TypecheckedImplementationKind::Provided => {
+                TypecheckedImplementationKind::Provided { .. } => {
                     "implementation"
                 }
                 TypecheckedImplementationKind::Required => {
@@ -1068,8 +1068,10 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                 .into_vector()
                 .join(",\n")
         ),
-        Type::ImplicitTypeVariable(type_variable) | Type::ExplicitTypeVariable(type_variable) => {
-            // TODO: print constraint also
+        Type::ImplicitTypeVariable(type_variable) => {
+            indent_string(type_variable.name, indent_level * 2)
+        }
+        Type::ExplicitTypeVariable(type_variable) => {
             indent_string(type_variable.name, indent_level * 2)
         }
         Type::Underscore => "_".to_string(),

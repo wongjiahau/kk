@@ -167,31 +167,40 @@ pub struct TypecheckedConstraint {
 
     /// Note that the order of these type variables matters.  
     /// For example, `Equatable<A, B>` is not always the same as `Equatable<B, A>`.
-    pub type_variables: NonEmpty<TypeVariable>,
+    pub type_variables: NonEmpty<ExplicitTypeVariable>,
 
     /// Variable that is bounded by this contraint should be parameterised using `injected_parameter_uid`
     pub injected_parameter_uid: SymbolUid,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeVariable {
+pub struct InstantiatedConstraint {
+    pub interface_uid: SymbolUid,
+    pub type_variables: NonEmpty<ImplicitTypeVariable>,
+}
+
+/// Type variable that is declared by user (a.k.a quantified). Cannot be substituted before instantiation.
+/// Note that a type variable is only explicit within its own scope.
+/// This is also commonly known as Rigid Type Variable.  
+///
+/// See https://stackoverflow.com/a/12719617/6587634
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExplicitTypeVariable {
+    pub name: String,
+}
+
+/// Type variable that is implicitly created for unification.
+/// Also known as Fresh Type Variables.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImplicitTypeVariable {
     pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Underscore,
-
-    /// Type variable that is declared (a.k.a quantified). Cannot be substituted before instantiation.
-    /// Note that a type variable is only explicit within its own scope.
-    /// This is also commonly known as Rigid Type Variable.  
-    ///
-    /// See https://stackoverflow.com/a/12719617/6587634
-    ExplicitTypeVariable(TypeVariable),
-
-    /// Type variable that is implicitly created for unification.
-    /// Also known as Fresh Type Variables.
-    ImplicitTypeVariable(TypeVariable),
+    ExplicitTypeVariable(ExplicitTypeVariable),
+    ImplicitTypeVariable(ImplicitTypeVariable),
     Record {
         key_type_pairs: Vec<(String, Type)>,
     },
@@ -247,7 +256,7 @@ pub struct TagType {
 /// For more info, refer https://course.ccs.neu.edu/cs4410sp20/lec_type-inference_notes.html
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeScheme {
-    pub type_variables: NonEmpty<TypeVariable>,
+    pub type_variables: NonEmpty<ExplicitTypeVariable>,
     pub type_value: Type,
 
     /// List of constraints that is bounded to this type scheme.  

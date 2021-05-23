@@ -15,6 +15,7 @@ mod tokenize;
 mod stringify_error;
 
 mod cli;
+mod solved_ast;
 use cli::*;
 
 mod compile;

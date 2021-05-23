@@ -26,6 +26,6 @@ error:
   ┌─ tests/compiler/typecheck/invalid_function_arguments_length.kk:3:3
   │
 3 │ 2.foo(3).print()
-  │   ^^^ Function arguments length mismatch
+  │   ^^^ Arguments length mismatch
   │
   = Expected 1 argument only, but 2 arguments are provided.
