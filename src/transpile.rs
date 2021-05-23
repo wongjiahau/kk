@@ -1,8 +1,8 @@
 use crate::{
-    ast::InfinitePatternKind,
+    inferred_ast::*,
     non_empty::NonEmpty,
-    typechecked_ast::*,
-    unify::{TypecheckedModule, UnifyProgramResult},
+    raw_ast::InfinitePatternKind,
+    unify::{InferredModule, UnifyProgramResult},
 };
 
 mod javascript {
@@ -327,14 +327,14 @@ pub fn transpile_program(unify_project_result: UnifyProgramResult) -> String {
     javascript::print_statements(statements)
 }
 
-pub fn transpile_module(module: TypecheckedModule) -> javascript::Statement {
+pub fn transpile_module(module: InferredModule) -> javascript::Statement {
     let module_uid = module.module.meta.uid.string_value();
     let statements = transpile_statements(module.statements.clone());
     let exported_symbols = module
         .statements
         .iter()
         .flat_map(|statement| match statement {
-            TypecheckedStatement::Let { exported, left, .. } if *exported => {
+            InferredStatement::Let { exported, left, .. } if *exported => {
                 get_destructure_pattern_bindings(left.kind.clone())
             }
             _ => vec![],
@@ -373,53 +373,53 @@ pub fn transpile_module(module: TypecheckedModule) -> javascript::Statement {
 }
 
 pub fn get_destructure_pattern_bindings(
-    destructure_pattern: TypecheckedDestructurePatternKind,
+    destructure_pattern: InferredDestructurePatternKind,
 ) -> Vec<Identifier> {
     match destructure_pattern {
-        TypecheckedDestructurePatternKind::Infinite { .. }
-        | TypecheckedDestructurePatternKind::Boolean { .. }
-        | TypecheckedDestructurePatternKind::Null(_)
-        | TypecheckedDestructurePatternKind::Underscore(_) => vec![],
-        TypecheckedDestructurePatternKind::Identifier(name) => vec![*name],
-        TypecheckedDestructurePatternKind::EnumConstructor { payload, .. } => match payload {
+        InferredDestructurePatternKind::Infinite { .. }
+        | InferredDestructurePatternKind::Boolean { .. }
+        | InferredDestructurePatternKind::Null(_)
+        | InferredDestructurePatternKind::Underscore(_) => vec![],
+        InferredDestructurePatternKind::Identifier(name) => vec![*name],
+        InferredDestructurePatternKind::EnumConstructor { payload, .. } => match payload {
             None => vec![],
             Some(payload) => get_destructure_pattern_bindings(payload.pattern.kind),
         },
-        TypecheckedDestructurePatternKind::Record {
+        InferredDestructurePatternKind::Record {
             key_pattern_pairs, ..
         } => key_pattern_pairs
             .into_iter()
             .flat_map(|(_, pattern)| get_destructure_pattern_bindings(pattern.kind))
             .collect(),
-        TypecheckedDestructurePatternKind::Array { .. } => {
+        InferredDestructurePatternKind::Array { .. } => {
             panic!("")
         }
-        TypecheckedDestructurePatternKind::Tuple { patterns } => patterns
+        InferredDestructurePatternKind::Tuple { patterns } => patterns
             .into_vector()
             .into_iter()
             .flat_map(|pattern| get_destructure_pattern_bindings(pattern.kind))
             .collect(),
-        TypecheckedDestructurePatternKind::Or { patterns } => {
+        InferredDestructurePatternKind::Or { patterns } => {
             get_destructure_pattern_bindings(patterns.first().kind.clone())
         }
     }
 }
 
-pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> Vec<javascript::Statement> {
+pub fn transpile_statements(statements: Vec<InferredStatement>) -> Vec<javascript::Statement> {
     statements
         .into_iter()
         .flat_map(transpile_statement)
         .collect()
 }
 
-pub fn transpile_statement(statement: TypecheckedStatement) -> Vec<javascript::Statement> {
+pub fn transpile_statement(statement: InferredStatement) -> Vec<javascript::Statement> {
     match statement {
-        TypecheckedStatement::Expression(expression) => {
+        InferredStatement::Expression(expression) => {
             vec![javascript::Statement::Expression(transpile_expression(
                 expression,
             ))]
         }
-        TypecheckedStatement::Let { left, right, .. } => {
+        InferredStatement::Let { left, right, .. } => {
             let TranspiledDestructurePattern {
                 bindings,
                 conditions: _, // Note: conditions can be ignored as we assume that the type checker already checked for case exhaustiveness
@@ -432,7 +432,7 @@ pub fn transpile_statement(statement: TypecheckedStatement) -> Vec<javascript::S
                 })
                 .collect()
         }
-        TypecheckedStatement::ImportStatement(TypecheckedImportStatement {
+        InferredStatement::ImportStatement(InferredImportStatement {
             module_uid,
             imported_name,
             imported_as,
@@ -468,37 +468,37 @@ fn transpile_identifier(identifier: Identifier) -> javascript::Identifier {
     ))
 }
 
-pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Expression {
+pub fn transpile_expression(expression: InferredExpression) -> javascript::Expression {
     match expression {
-        TypecheckedExpression::Null => javascript::Expression::Null,
-        TypecheckedExpression::Boolean(value) => javascript::Expression::Boolean(value),
-        TypecheckedExpression::String { representation }
-        | TypecheckedExpression::Character { representation } => {
+        InferredExpression::Null => javascript::Expression::Null,
+        InferredExpression::Boolean(value) => javascript::Expression::Boolean(value),
+        InferredExpression::String { representation }
+        | InferredExpression::Character { representation } => {
             javascript::Expression::String(representation)
         }
-        TypecheckedExpression::Float { representation }
-        | TypecheckedExpression::Integer { representation } => {
+        InferredExpression::Float { representation }
+        | InferredExpression::Integer { representation } => {
             javascript::Expression::Number { representation }
         }
-        TypecheckedExpression::InterpolatedString { sections } => {
+        InferredExpression::InterpolatedString { sections } => {
             javascript::Expression::StringConcat(
                 sections
                     .into_iter()
                     .map(|section| match section {
-                        TypecheckedInterpolatedStringSection::String(string) => {
+                        InferredInterpolatedStringSection::String(string) => {
                             javascript::Expression::String(string)
                         }
-                        TypecheckedInterpolatedStringSection::Expression(expression) => {
+                        InferredInterpolatedStringSection::Expression(expression) => {
                             transpile_expression(*expression)
                         }
                     })
                     .collect::<Vec<javascript::Expression>>(),
             )
         }
-        TypecheckedExpression::Variable(variable) => {
+        InferredExpression::Variable(variable) => {
             javascript::Expression::Variable(transpile_identifier(variable))
         }
-        TypecheckedExpression::EnumConstructor {
+        InferredExpression::EnumConstructor {
             constructor_name,
             payload,
             ..
@@ -515,7 +515,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Ex
                 }),
             },
         ]),
-        TypecheckedExpression::RecordAccess {
+        InferredExpression::RecordAccess {
             expression,
             property_name,
         } => javascript::Expression::MemberAccess {
@@ -524,7 +524,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Ex
                 property_name,
             ))),
         },
-        TypecheckedExpression::Record { key_value_pairs } => javascript::Expression::Object(
+        InferredExpression::Record { key_value_pairs } => javascript::Expression::Object(
             key_value_pairs
                 .into_iter()
                 .map(|(key, value)| javascript::ObjectKeyValue {
@@ -533,8 +533,8 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Ex
                 })
                 .collect::<Vec<javascript::ObjectKeyValue>>(),
         ),
-        TypecheckedExpression::BranchedFunction(function) => {
-            let TypecheckedBranchedFunction { branches } = *function;
+        InferredExpression::BranchedFunction(function) => {
+            let InferredBranchedFunction { branches } = *function;
             let number_of_args = branches.first().parameters.len();
             let parameters = (0..number_of_args)
                 .map(build_function_argument)
@@ -547,8 +547,8 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Ex
                 .collect();
             javascript::Expression::ArrowFunction { parameters, body }
         }
-        TypecheckedExpression::FunctionCall(function) => {
-            let TypecheckedFunctionCall {
+        InferredExpression::FunctionCall(function) => {
+            let InferredFunctionCall {
                 function,
                 first_argument,
                 rest_arguments,
@@ -565,10 +565,10 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Ex
                 arguments,
             }
         }
-        TypecheckedExpression::Array { elements, .. } => {
+        InferredExpression::Array { elements, .. } => {
             javascript::Expression::Array(elements.into_iter().map(transpile_expression).collect())
         }
-        TypecheckedExpression::RecordUpdate {
+        InferredExpression::RecordUpdate {
             expression,
             updates,
         } => {
@@ -577,14 +577,14 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Ex
             let updates = updates
                 .into_iter()
                 .map(|update| match update {
-                    TypecheckedRecordUpdate::ValueUpdate {
+                    InferredRecordUpdate::ValueUpdate {
                         property_name,
                         new_value,
                     } => javascript::ObjectKeyValue {
                         key: javascript::Identifier(transpile_property_name(property_name)),
                         value: Some(Box::new(transpile_expression(new_value))),
                     },
-                    TypecheckedRecordUpdate::FunctionalUpdate {
+                    InferredRecordUpdate::FunctionalUpdate {
                         property_name,
                         function,
                     } => {
@@ -618,10 +618,10 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Ex
                 arguments: vec![transpile_expression(*expression)],
             }
         }
-        TypecheckedExpression::Javascript { code } => {
+        InferredExpression::Javascript { code } => {
             javascript::Expression::UnsafeJavascriptCode(code)
         }
-        TypecheckedExpression::If {
+        InferredExpression::If {
             condition,
             if_true,
             if_false,
@@ -630,7 +630,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Ex
             if_true: Box::new(transpile_expression(*if_true)),
             if_false: Box::new(transpile_expression(*if_false)),
         },
-        TypecheckedExpression::Block {
+        InferredExpression::Block {
             statements,
             return_value,
         } => javascript::Expression::FunctionCall {
@@ -645,7 +645,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> javascript::Ex
                     .collect(),
             }),
         },
-        TypecheckedExpression::ConstrainedVariable { .. } => {
+        InferredExpression::ConstrainedVariable { .. } => {
             todo!("Use a different AST for transpiling, because transpiling should not has ConstraintVariable,
             they should be solved as dictionary.
             Suggested naming: 
@@ -665,7 +665,7 @@ pub fn build_function_argument(index: usize) -> javascript::Identifier {
 }
 
 pub fn transpile_function_branch(
-    function_branch: TypecheckedFunctionBranch,
+    function_branch: InferredFunctionBranch,
 ) -> Vec<javascript::Statement> {
     let transpiled_destructure_pattern = function_branch
         .parameters
@@ -750,49 +750,47 @@ pub struct TranspiledDestructurePattern {
 #[derive(Debug)]
 struct Binding {
     name: Identifier,
-    expression: TypecheckedExpression,
+    expression: InferredExpression,
 }
 
 pub fn transpile_destructure_pattern(
-    destructure_pattern: TypecheckedDestructurePatternKind,
+    destructure_pattern: InferredDestructurePatternKind,
     from_expression: javascript::Expression,
 ) -> TranspiledDestructurePattern {
     match destructure_pattern {
-        TypecheckedDestructurePatternKind::Infinite { token, kind } => {
-            TranspiledDestructurePattern {
-                conditions: vec![javascript::Expression::Equals {
-                    left: Box::new(from_expression),
-                    right: match kind {
-                        InfinitePatternKind::String | InfinitePatternKind::Character => {
-                            Box::new(javascript::Expression::String(token.representation))
-                        }
-                        InfinitePatternKind::Integer => Box::new(javascript::Expression::Number {
-                            representation: token.representation,
-                        }),
-                    },
-                }],
-                bindings: vec![],
-            }
-        }
-        TypecheckedDestructurePatternKind::Boolean { value, .. } => TranspiledDestructurePattern {
+        InferredDestructurePatternKind::Infinite { token, kind } => TranspiledDestructurePattern {
+            conditions: vec![javascript::Expression::Equals {
+                left: Box::new(from_expression),
+                right: match kind {
+                    InfinitePatternKind::String | InfinitePatternKind::Character => {
+                        Box::new(javascript::Expression::String(token.representation))
+                    }
+                    InfinitePatternKind::Integer => Box::new(javascript::Expression::Number {
+                        representation: token.representation,
+                    }),
+                },
+            }],
+            bindings: vec![],
+        },
+        InferredDestructurePatternKind::Boolean { value, .. } => TranspiledDestructurePattern {
             conditions: vec![javascript::Expression::Equals {
                 left: Box::new(from_expression),
                 right: Box::new(javascript::Expression::Boolean(value)),
             }],
             bindings: vec![],
         },
-        TypecheckedDestructurePatternKind::Null { .. } => TranspiledDestructurePattern {
+        InferredDestructurePatternKind::Null { .. } => TranspiledDestructurePattern {
             conditions: vec![javascript::Expression::Equals {
                 left: Box::new(from_expression),
                 right: Box::new(javascript::Expression::Null),
             }],
             bindings: vec![],
         },
-        TypecheckedDestructurePatternKind::Underscore { .. } => TranspiledDestructurePattern {
+        InferredDestructurePatternKind::Underscore { .. } => TranspiledDestructurePattern {
             conditions: vec![],
             bindings: vec![],
         },
-        TypecheckedDestructurePatternKind::Array { .. } => {
+        InferredDestructurePatternKind::Array { .. } => {
             panic!();
             // match spread {
             //     None => TranspiledDestructurePattern {
@@ -815,14 +813,14 @@ pub fn transpile_destructure_pattern(
             //     ]),
             // }
         }
-        TypecheckedDestructurePatternKind::Identifier(variable) => TranspiledDestructurePattern {
+        InferredDestructurePatternKind::Identifier(variable) => TranspiledDestructurePattern {
             conditions: vec![],
             bindings: vec![javascript::Assignment {
                 left: javascript::AssignmentLeft::Variable(transpile_identifier(*variable)),
                 right: from_expression,
             }],
         },
-        TypecheckedDestructurePatternKind::EnumConstructor {
+        InferredDestructurePatternKind::EnumConstructor {
             constructor_name,
             payload,
             ..
@@ -857,7 +855,7 @@ pub fn transpile_destructure_pattern(
                 Some(rest) => join_transpiled_destructure_pattern(first, rest),
             }
         }
-        TypecheckedDestructurePatternKind::Record {
+        InferredDestructurePatternKind::Record {
             key_pattern_pairs, ..
         } => key_pattern_pairs.into_iter().fold(
             TranspiledDestructurePattern {
@@ -879,14 +877,14 @@ pub fn transpile_destructure_pattern(
                 )
             },
         ),
-        TypecheckedDestructurePatternKind::Tuple { .. } => {
+        InferredDestructurePatternKind::Tuple { .. } => {
             panic!("Compiler error, should not reach here")
         }
 
         // The current transpilation for OR patterns is a bit hacky as we are abusing assignment expression
         // in Javascript.
         // See the description of `into_in_place_assignment` for more information.
-        TypecheckedDestructurePatternKind::Or { patterns } => {
+        InferredDestructurePatternKind::Or { patterns } => {
             let in_place_assignments = patterns
                 .map(|pattern| transpile_destructure_pattern(pattern.kind, from_expression.clone()))
                 .map(into_in_place_assignment)

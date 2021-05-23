@@ -1,6 +1,6 @@
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
-use crate::{ast::*, typechecked_ast::TypecheckedExpression};
+use crate::{inferred_ast::InferredExpression, raw_ast::*, typ::*};
 use crate::{non_empty::NonEmpty, unify::PopulatedTypeVariables};
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -185,7 +185,7 @@ pub struct Module {
     symbol_entries: Vec<SymbolEntry>,
 
     /// List of interface-implementations
-    implementations: Vec<TypecheckedImplementation>,
+    implementations: Vec<InferredImplementation>,
 
     /// This is used for Hindley-Milner type inference algorithm
     type_variable_substitutions: Substitution,
@@ -550,7 +550,7 @@ impl Module {
 
     pub fn insert_implementation(
         &mut self,
-        new_implementation: TypecheckedImplementation,
+        new_implementation: InferredImplementation,
     ) -> Result<(), UnifyError> {
         let overlapped_implementation = self
             .implementations
@@ -827,7 +827,7 @@ impl Module {
         constraint: InstantiatedConstraint,
         position: Position,
         scope_name: usize,
-    ) -> Result<(NonEmpty<Type>, TypecheckedImplementation), UnifyError> {
+    ) -> Result<(NonEmpty<Type>, InferredImplementation), UnifyError> {
         let substituted_types = constraint.type_variables.clone().map(|type_variable| {
             match self.get_type_variable_terminal_type(type_variable.name.clone()) {
                 Some(type_value) => type_value,
@@ -838,8 +838,8 @@ impl Module {
         let matching_implementation = match self.implementations.iter().find(|implementation| {
             // If the implementation is Required, then `T` only overlaps with `T`, not other types
             let explicit_type_variable_overlaps_with_any_type = match implementation.kind {
-                TypecheckedImplementationKind::Provided { .. } => true,
-                TypecheckedImplementationKind::Required => false,
+                InferredImplementationKind::Provided { .. } => true,
+                InferredImplementationKind::Required => false,
             };
             implementation.scope_name.eq(&scope_name)
                 && implementation.interface_uid.eq(&constraint.interface_uid)
@@ -1157,7 +1157,7 @@ pub enum SymbolKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedImplementation {
+pub struct InferredImplementation {
     /// Used for transpiling dictionary passing.
     pub uid: SymbolUid,
 
@@ -1171,7 +1171,7 @@ pub struct TypecheckedImplementation {
     pub declared_at: Position,
     pub interface_uid: SymbolUid,
     pub for_types: NonEmpty<Type>,
-    pub kind: TypecheckedImplementationKind,
+    pub kind: InferredImplementationKind,
 }
 
 /// There are two kinds of implementation:  
@@ -1193,7 +1193,7 @@ pub struct TypecheckedImplementation {
 ///
 /// In this example, required implementation should be passed as an extra dictionary parameter to the `notEquals` function.
 #[derive(Debug, Clone)]
-pub enum TypecheckedImplementationKind {
+pub enum InferredImplementationKind {
     Provided {
         /// Provided implementation can have type variabes and constraints
         populated_type_variables: Option<PopulatedTypeVariables>,
@@ -1202,18 +1202,18 @@ pub enum TypecheckedImplementationKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedImplementationDefinition {
+pub struct InferredImplementationDefinition {
     pub name: Token,
-    pub expression: TypecheckedExpression,
+    pub expression: InferredExpression,
 }
 
 #[derive(Debug, Clone)]
 pub struct InterfaceSymbol {
     pub type_variables: NonEmpty<ExplicitTypeVariable>,
-    pub definitions: Vec<TypecheckedInterfaceDefinition>,
+    pub definitions: Vec<InferredInterfaceDefinition>,
 }
 #[derive(Debug, Clone)]
-pub struct TypecheckedInterfaceDefinition {
+pub struct InferredInterfaceDefinition {
     pub name: Token,
     pub type_value: Type,
 }
@@ -1239,7 +1239,7 @@ pub struct FunctionSignature {
     pub symbol_uid: SymbolUid,
     pub type_variables: Option<NonEmpty<ExplicitTypeVariable>>,
     pub function_type: FunctionType,
-    pub constraints: Vec<TypecheckedConstraint>,
+    pub constraints: Vec<InferredConstraint>,
 }
 
 impl FunctionSignature {

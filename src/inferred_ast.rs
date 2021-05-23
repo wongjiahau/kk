@@ -1,7 +1,8 @@
 use crate::{
-    ast::{InfinitePatternKind, InstantiatedConstraint, Position, Token, Type},
     module::{ModuleUid, SymbolUid},
     non_empty::NonEmpty,
+    raw_ast::{InfinitePatternKind, Position, Token},
+    typ::{InstantiatedConstraint, Type},
 };
 /// The syntax tree here represents the syntax tree that is type-checked
 /// Which contain information necessary for the transpilation
@@ -13,18 +14,18 @@ use crate::{
 ///     please use the same property name as in ast.rs whenever possible
 
 #[derive(Debug, Clone)]
-pub enum TypecheckedStatement {
-    ImportStatement(TypecheckedImportStatement),
+pub enum InferredStatement {
+    ImportStatement(InferredImportStatement),
     Let {
         exported: bool,
-        left: TypecheckedDestructurePattern,
-        right: TypecheckedExpression,
+        left: InferredDestructurePattern,
+        right: InferredExpression,
     },
-    Expression(TypecheckedExpression),
+    Expression(InferredExpression),
 }
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedImportStatement {
+pub struct InferredImportStatement {
     pub module_uid: ModuleUid,
 
     /// The name of the symbol being imported
@@ -42,7 +43,7 @@ pub struct Identifier {
 }
 
 #[derive(Debug, Clone)]
-pub enum TypecheckedExpression {
+pub enum InferredExpression {
     Null,
     Boolean(bool),
     Float {
@@ -55,7 +56,7 @@ pub enum TypecheckedExpression {
         representation: String,
     },
     InterpolatedString {
-        sections: Vec<TypecheckedInterpolatedStringSection>,
+        sections: Vec<InferredInterpolatedStringSection>,
     },
     Character {
         representation: String,
@@ -69,42 +70,42 @@ pub enum TypecheckedExpression {
     },
     EnumConstructor {
         constructor_name: String,
-        payload: Option<Box<TypecheckedExpression>>,
+        payload: Option<Box<InferredExpression>>,
     },
-    BranchedFunction(Box<TypecheckedBranchedFunction>),
-    FunctionCall(Box<TypecheckedFunctionCall>),
+    BranchedFunction(Box<InferredBranchedFunction>),
+    FunctionCall(Box<InferredFunctionCall>),
     Record {
-        key_value_pairs: Vec<(PropertyName, TypecheckedExpression)>,
+        key_value_pairs: Vec<(PropertyName, InferredExpression)>,
     },
     RecordAccess {
-        expression: Box<TypecheckedExpression>,
+        expression: Box<InferredExpression>,
         property_name: PropertyName,
     },
     RecordUpdate {
-        expression: Box<TypecheckedExpression>,
-        updates: Vec<TypecheckedRecordUpdate>,
+        expression: Box<InferredExpression>,
+        updates: Vec<InferredRecordUpdate>,
     },
     Array {
-        elements: Vec<TypecheckedExpression>,
+        elements: Vec<InferredExpression>,
     },
     Javascript {
         code: String,
     },
     If {
-        condition: Box<TypecheckedExpression>,
-        if_true: Box<TypecheckedExpression>,
-        if_false: Box<TypecheckedExpression>,
+        condition: Box<InferredExpression>,
+        if_true: Box<InferredExpression>,
+        if_false: Box<InferredExpression>,
     },
     Block {
-        statements: Vec<TypecheckedStatement>,
-        return_value: Box<TypecheckedExpression>,
+        statements: Vec<InferredStatement>,
+        return_value: Box<InferredExpression>,
     },
 }
 
 #[derive(Debug, Clone)]
-pub enum TypecheckedInterpolatedStringSection {
+pub enum InferredInterpolatedStringSection {
     String(String),
-    Expression(Box<TypecheckedExpression>),
+    Expression(Box<InferredExpression>),
 }
 
 /// This is to ensure that we transpile property name properly.
@@ -112,42 +113,42 @@ pub enum TypecheckedInterpolatedStringSection {
 pub struct PropertyName(pub Token);
 
 #[derive(Debug, Clone)]
-pub enum TypecheckedRecordUpdate {
+pub enum InferredRecordUpdate {
     ValueUpdate {
         property_name: PropertyName,
-        new_value: TypecheckedExpression,
+        new_value: InferredExpression,
     },
     FunctionalUpdate {
         property_name: PropertyName,
-        function: TypecheckedExpression,
+        function: InferredExpression,
     },
 }
 #[derive(Debug, Clone)]
-pub struct TypecheckedFunctionCall {
-    pub function: Box<TypecheckedExpression>,
-    pub first_argument: Box<TypecheckedExpression>,
-    pub rest_arguments: Vec<TypecheckedExpression>,
+pub struct InferredFunctionCall {
+    pub function: Box<InferredExpression>,
+    pub first_argument: Box<InferredExpression>,
+    pub rest_arguments: Vec<InferredExpression>,
 }
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedBranchedFunction {
-    pub branches: Box<NonEmpty<TypecheckedFunctionBranch>>,
+pub struct InferredBranchedFunction {
+    pub branches: Box<NonEmpty<InferredFunctionBranch>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedFunctionBranch {
-    pub parameters: Box<NonEmpty<TypecheckedDestructurePattern>>,
-    pub body: Box<TypecheckedExpression>,
+pub struct InferredFunctionBranch {
+    pub parameters: Box<NonEmpty<InferredDestructurePattern>>,
+    pub body: Box<InferredExpression>,
 }
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedDestructurePattern {
+pub struct InferredDestructurePattern {
     pub type_value: Type,
-    pub kind: TypecheckedDestructurePatternKind,
+    pub kind: InferredDestructurePatternKind,
 }
 
 #[derive(Debug, Clone)]
-pub enum TypecheckedDestructurePatternKind {
+pub enum InferredDestructurePatternKind {
     Infinite {
         kind: InfinitePatternKind,
         token: Token,
@@ -161,42 +162,42 @@ pub enum TypecheckedDestructurePatternKind {
     Identifier(Box<Identifier>),
     EnumConstructor {
         constructor_name: Token,
-        payload: Option<TypecheckedDestructurePatternEnumConstructorPayload>,
+        payload: Option<InferredDestructurePatternEnumConstructorPayload>,
     },
     Record {
         left_curly_bracket: Token,
-        key_pattern_pairs: Vec<(PropertyName, TypecheckedDestructurePattern)>,
+        key_pattern_pairs: Vec<(PropertyName, InferredDestructurePattern)>,
         right_curly_bracket: Token,
     },
     Array {
         left_square_bracket: Token,
-        spread: Option<TypecheckedDesturcturePatternArraySpread>,
+        spread: Option<InferredDesturcturePatternArraySpread>,
         right_square_bracket: Token,
     },
     Tuple {
-        patterns: Box<NonEmpty<TypecheckedDestructurePattern>>,
+        patterns: Box<NonEmpty<InferredDestructurePattern>>,
     },
     Or {
-        patterns: Box<NonEmpty<TypecheckedDestructurePattern>>,
+        patterns: Box<NonEmpty<InferredDestructurePattern>>,
     },
 }
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedDestructurePatternEnumConstructorPayload {
+pub struct InferredDestructurePatternEnumConstructorPayload {
     pub left_parenthesis: Token,
-    pub pattern: Box<TypecheckedDestructurePattern>,
+    pub pattern: Box<InferredDestructurePattern>,
     pub right_parenthesis: Token,
 }
 
-impl TypecheckedDestructurePatternKind {
+impl InferredDestructurePatternKind {
     pub fn position(&self) -> Position {
         match self {
-            TypecheckedDestructurePatternKind::Infinite { token, .. }
-            | TypecheckedDestructurePatternKind::Boolean { token, .. }
-            | TypecheckedDestructurePatternKind::Null(token)
-            | TypecheckedDestructurePatternKind::Underscore(token) => token.position,
-            TypecheckedDestructurePatternKind::Identifier(identifier) => identifier.token.position,
-            TypecheckedDestructurePatternKind::EnumConstructor {
+            InferredDestructurePatternKind::Infinite { token, .. }
+            | InferredDestructurePatternKind::Boolean { token, .. }
+            | InferredDestructurePatternKind::Null(token)
+            | InferredDestructurePatternKind::Underscore(token) => token.position,
+            InferredDestructurePatternKind::Identifier(identifier) => identifier.token.position,
+            InferredDestructurePatternKind::EnumConstructor {
                 constructor_name,
                 payload,
                 ..
@@ -206,28 +207,28 @@ impl TypecheckedDestructurePatternKind {
                     .position
                     .join(payload.right_parenthesis.position),
             },
-            TypecheckedDestructurePatternKind::Record {
+            InferredDestructurePatternKind::Record {
                 left_curly_bracket,
                 right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
                 .join(right_curly_bracket.position),
-            TypecheckedDestructurePatternKind::Array {
+            InferredDestructurePatternKind::Array {
                 left_square_bracket,
                 right_square_bracket,
                 ..
             } => left_square_bracket
                 .position
                 .join(right_square_bracket.position),
-            TypecheckedDestructurePatternKind::Tuple { patterns }
-            | TypecheckedDestructurePatternKind::Or { patterns } => patterns.position(),
+            InferredDestructurePatternKind::Tuple { patterns }
+            | InferredDestructurePatternKind::Or { patterns } => patterns.position(),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedDesturcturePatternArraySpread {
-    pub first_element: Box<TypecheckedDestructurePattern>,
-    pub rest_elements: Box<TypecheckedDestructurePattern>,
+pub struct InferredDesturcturePatternArraySpread {
+    pub first_element: Box<InferredDestructurePattern>,
+    pub rest_elements: Box<InferredDestructurePattern>,
 }

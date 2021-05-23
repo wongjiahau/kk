@@ -3,7 +3,7 @@ use std::vec::IntoIter;
 
 use crate::non_empty::NonEmpty;
 use crate::parse::{ParseErrorKind, Parser};
-use crate::{ast::*, parse::ParseError};
+use crate::{parse::ParseError, raw_ast::*};
 use peeking_take_while::PeekableExt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

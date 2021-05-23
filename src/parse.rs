@@ -1,5 +1,5 @@
-use crate::{ast::*, tokenize::TokenizeError};
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
+use crate::{raw_ast::*, tokenize::TokenizeError};
 
 #[derive(Debug)]
 pub struct ParseError {

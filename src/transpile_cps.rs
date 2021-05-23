@@ -1,6 +1,6 @@
 use crate::typechecked_ast::*;
 
-pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
+pub fn transpile_statements(statements: Vec<InferredStatement>) -> String {
     let built_in_library = "
         const kk_apply_functional_updates = (record, functional_updates) =>
             functional_updates.reduce((record, {key, func}, index) => {
@@ -31,12 +31,12 @@ pub fn transpile_statements(statements: Vec<TypecheckedStatement>) -> String {
     )
 }
 
-pub fn transpile_statement(statement: TypecheckedStatement) -> String {
+pub fn transpile_statement(statement: InferredStatement) -> String {
     match statement {
-        TypecheckedStatement::Do { expression, .. } => {
+        InferredStatement::Do { expression, .. } => {
             format!("await {};", transpile_expression(expression))
         }
-        TypecheckedStatement::Let { left, right, .. } => {
+        InferredStatement::Let { left, right, .. } => {
             format!(
                 "const {} = {}",
                 transpile_variable(left),
@@ -50,22 +50,22 @@ fn transpile_variable(variable: Variable) -> String {
     format!("{}_{}", variable.representation, variable.uid)
 }
 
-pub fn transpile_expression(expression: TypecheckedExpression) -> String {
+pub fn transpile_expression(expression: InferredExpression) -> String {
     match expression {
-        TypecheckedExpression::Null => ("null".to_string()),
-        TypecheckedExpression::Boolean(value) => {
+        InferredExpression::Null => ("null".to_string()),
+        InferredExpression::Boolean(value) => {
             if value {
                 "true".to_string()
             } else {
                 "false".to_string()
             }
         }
-        TypecheckedExpression::String { representation }
-        | TypecheckedExpression::Character { representation }
-        | TypecheckedExpression::Float { representation }
-        | TypecheckedExpression::Integer { representation } => representation,
-        TypecheckedExpression::Variable(variable) => transpile_variable(variable),
-        TypecheckedExpression::EnumConstructor {
+        InferredExpression::String { representation }
+        | InferredExpression::Character { representation }
+        | InferredExpression::Float { representation }
+        | InferredExpression::Integer { representation } => representation,
+        InferredExpression::Variable(variable) => transpile_variable(variable),
+        InferredExpression::EnumConstructor {
             constructor_name,
             payload,
             ..
@@ -77,7 +77,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
             },
             constructor_name,
         ),
-        TypecheckedExpression::RecordAccess {
+        InferredExpression::RecordAccess {
             expression,
             property_name,
         } => format!(
@@ -85,19 +85,19 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
             transpile_expression(*expression),
             property_name = format!("${}", property_name),
         ),
-        TypecheckedExpression::RecordUpdate {
+        InferredExpression::RecordUpdate {
             expression,
             updates,
         } => {
-            type KeyValue = Vec<(String, (TypecheckedExpression, bool))>;
+            type KeyValue = Vec<(String, (InferredExpression, bool))>;
             let (value_updates, functional_updates): (KeyValue, KeyValue) = updates
                 .into_iter()
                 .map(|update| match update {
-                    TypecheckedRecordUpdate::ValueUpdate {
+                    InferredRecordUpdate::ValueUpdate {
                         property_name,
                         new_value,
                     } => (property_name, (new_value, true)),
-                    TypecheckedRecordUpdate::FunctionalUpdate {
+                    InferredRecordUpdate::FunctionalUpdate {
                         property_name,
                         function,
                     } => (property_name, (function, false)),
@@ -106,7 +106,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
 
             let (value_updates_keys, value_updates_values): (
                 Vec<String>,
-                Vec<(TypecheckedExpression, bool)>,
+                Vec<(InferredExpression, bool)>,
             ) = value_updates.into_iter().unzip();
             format!(
                 "Promise.all([{},{}]).then(([record,{value_update_keys}]) =>
@@ -140,8 +140,8 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                     .join(",")
             )
         }
-        TypecheckedExpression::Record { key_value_pairs } => {
-            let (keys, values): (Vec<String>, Vec<TypecheckedExpression>) =
+        InferredExpression::Record { key_value_pairs } => {
+            let (keys, values): (Vec<String>, Vec<InferredExpression>) =
                 key_value_pairs.into_iter().unzip();
             let keys = keys
                 .into_iter()
@@ -158,8 +158,8 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 keys = keys
             )
         }
-        TypecheckedExpression::Function(function) => {
-            let TypecheckedFunction { branches } = *function;
+        InferredExpression::Function(function) => {
+            let InferredFunction { branches } = *function;
             let number_of_args = branches.first().parameters.len();
             let arguments: Vec<String> = (0..number_of_args).map(|x| format!("_{}", x)).collect();
             let branches = branches
@@ -168,8 +168,8 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 .join("\n");
             format!("({})=>{{{}}}", arguments.join(","), branches)
         }
-        TypecheckedExpression::FunctionCall(function) => {
-            let TypecheckedFunctionCall {
+        InferredExpression::FunctionCall(function) => {
+            let InferredFunctionCall {
                 function,
                 first_argument,
                 rest_arguments,
@@ -185,7 +185,7 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 transpile_expression(*function),
             )
         }
-        TypecheckedExpression::Array { elements, .. } => format!(
+        InferredExpression::Array { elements, .. } => format!(
             "Promise.all([{}])",
             elements
                 .into_iter()
@@ -193,11 +193,11 @@ pub fn transpile_expression(expression: TypecheckedExpression) -> String {
                 .collect::<Vec<String>>()
                 .join(",")
         ),
-        TypecheckedExpression::Javascript { code } => code,
+        InferredExpression::Javascript { code } => code,
     }
 }
 
-pub fn transpile_function_branch(function_branch: TypecheckedFunctionBranch) -> String {
+pub fn transpile_function_branch(function_branch: InferredFunctionBranch) -> String {
     let transpiled_destructure_pattern = function_branch
         .parameters
         .into_vector()
@@ -239,19 +239,19 @@ pub struct TranspiledDestructurePattern {
 }
 
 pub fn transpile_destructure_pattern(
-    destructure_pattern: TypecheckedDestructurePattern,
+    destructure_pattern: InferredDestructurePattern,
     from_expression: String,
 ) -> TranspiledDestructurePattern {
     match destructure_pattern {
-        TypecheckedDestructurePattern::Integer { representation }
-        | TypecheckedDestructurePattern::String { representation }
-        | TypecheckedDestructurePattern::Character { representation } => {
+        InferredDestructurePattern::Integer { representation }
+        | InferredDestructurePattern::String { representation }
+        | InferredDestructurePattern::Character { representation } => {
             TranspiledDestructurePattern {
                 conditions: vec![format!("{} === {}", from_expression, representation)],
                 bindings: vec![],
             }
         }
-        TypecheckedDestructurePattern::Boolean(value) => TranspiledDestructurePattern {
+        InferredDestructurePattern::Boolean(value) => TranspiledDestructurePattern {
             conditions: vec![format!(
                 "{} === {}",
                 from_expression,
@@ -259,15 +259,15 @@ pub fn transpile_destructure_pattern(
             )],
             bindings: vec![],
         },
-        TypecheckedDestructurePattern::Null => TranspiledDestructurePattern {
+        InferredDestructurePattern::Null => TranspiledDestructurePattern {
             conditions: vec![format!("{} === null", from_expression)],
             bindings: vec![],
         },
-        TypecheckedDestructurePattern::Underscore => TranspiledDestructurePattern {
+        InferredDestructurePattern::Underscore => TranspiledDestructurePattern {
             conditions: vec![],
             bindings: vec![],
         },
-        TypecheckedDestructurePattern::Array { spread, .. } => match spread {
+        InferredDestructurePattern::Array { spread, .. } => match spread {
             None => TranspiledDestructurePattern {
                 conditions: vec![format!("{}.length === 0", from_expression)],
                 bindings: vec![],
@@ -287,7 +287,7 @@ pub fn transpile_destructure_pattern(
                 ),
             ]),
         },
-        TypecheckedDestructurePattern::Variable(variable) => TranspiledDestructurePattern {
+        InferredDestructurePattern::Variable(variable) => TranspiledDestructurePattern {
             conditions: vec![],
             bindings: vec![format!(
                 "var {} = {}",
@@ -295,7 +295,7 @@ pub fn transpile_destructure_pattern(
                 from_expression
             )],
         },
-        TypecheckedDestructurePattern::EnumConstructor {
+        InferredDestructurePattern::EnumConstructor {
             constructor_name,
             payload,
             ..
@@ -316,7 +316,7 @@ pub fn transpile_destructure_pattern(
                 Some(rest) => join_transpiled_destructure_pattern(first, rest),
             }
         }
-        TypecheckedDestructurePattern::Record {
+        InferredDestructurePattern::Record {
             key_pattern_pairs, ..
         } => key_pattern_pairs.into_iter().fold(
             TranspiledDestructurePattern {
@@ -333,7 +333,7 @@ pub fn transpile_destructure_pattern(
                 )
             },
         ),
-        TypecheckedDestructurePattern::Tuple { .. } => {
+        InferredDestructurePattern::Tuple { .. } => {
             panic!("Compiler error, should not reach here")
         }
     }

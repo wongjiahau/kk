@@ -1,5 +1,5 @@
-pub mod ast;
-mod typechecked_ast;
+mod inferred_ast;
+pub mod raw_ast;
 
 mod module;
 
@@ -16,6 +16,7 @@ mod stringify_error;
 
 mod cli;
 mod solved_ast;
+mod typ;
 use cli::*;
 
 mod compile;

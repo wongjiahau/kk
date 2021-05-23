@@ -1,11 +1,11 @@
-use crate::{ast::*, typechecked_ast::Identifier, unify::Positionable};
-use crate::{module::*, typechecked_ast::PropertyName};
+use crate::{inferred_ast::Identifier, raw_ast::*, typ::*, unify::Positionable};
+use crate::{inferred_ast::PropertyName, module::*};
 use crate::{non_empty::NonEmpty, unify::rewrite_type_variables_in_type};
 use std::collections::HashSet;
 
-/// Why can't we just use the TypecheckedDestructurePatternKind enum?
+/// Why can't we just use the InferredDestructurePatternKind enum?
 /// This is because when checking for case exhaustiveness, we want to assume that there is no OR patterns.
-/// In other words, to check the case exhaustiveness of list of TypecheckedDestructurePatternKind,
+/// In other words, to check the case exhaustiveness of list of InferredDestructurePatternKind,
 /// its OR patterns must be expanded first, for example:
 ///     
 ///     {x: A | B, y: C | D}

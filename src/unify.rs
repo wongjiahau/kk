@@ -5,10 +5,11 @@ use crate::{
     tokenize::Tokenizer,
 };
 
-use crate::ast::*;
+use crate::inferred_ast::*;
 use crate::module::*;
 use crate::pattern::*;
-use crate::typechecked_ast::*;
+use crate::raw_ast::*;
+use crate::typ::*;
 use indexmap::IndexMap;
 use relative_path::RelativePath;
 use std::fs;
@@ -17,7 +18,7 @@ use std::{collections::HashSet, path::Path};
 
 pub struct UnifyProgramResult {
     /// The entrypoint module
-    pub entrypoint: TypecheckedModule,
+    pub entrypoint: InferredModule,
 
     // This is for memoization.
     // By doing this we can prevent duplicated efforts to typecheck the same module again.
@@ -114,7 +115,7 @@ pub fn unify_statements(
 
     let mut module: Module = Module::new(module_meta);
 
-    let init: (Vec<TypecheckedStatement>, _) = (vec![], imported_modules.clone());
+    let init: (Vec<InferredStatement>, _) = (vec![], imported_modules.clone());
 
     let (typechecked_import_statements, imported_modules) =
         import_statements
@@ -130,9 +131,9 @@ pub fn unify_statements(
                             .import_statements
                             .into_iter()
                             .map(|import_statement| {
-                                TypecheckedStatement::ImportStatement(import_statement)
+                                InferredStatement::ImportStatement(import_statement)
                             })
-                            .collect::<Vec<TypecheckedStatement>>(),
+                            .collect::<Vec<InferredStatement>>(),
                     );
 
                     imported_modules.extend(current.imported_modules);
@@ -185,12 +186,12 @@ pub fn unify_statements(
                     .map(|definition| {
                         let type_value =
                             type_annotation_to_type(module, &definition.type_annotation)?;
-                        Ok(TypecheckedInterfaceDefinition {
+                        Ok(InferredInterfaceDefinition {
                             name: definition.name.clone(),
                             type_value,
                         })
                     })
-                    .collect::<Result<Vec<TypecheckedInterfaceDefinition>, UnifyError>>()
+                    .collect::<Result<Vec<InferredInterfaceDefinition>, UnifyError>>()
             })?;
 
             // Insert the interface into current module
@@ -238,7 +239,7 @@ pub fn unify_statements(
                     let injected_parameter_uid = module.get_next_symbol_uid();
 
                     let type_value = Type::TypeScheme(Box::new(TypeScheme {
-                        constraints: vec![TypecheckedConstraint {
+                        constraints: vec![InferredConstraint {
                             interface_uid: interface_uid.clone(),
                             type_variables: type_variables.clone(),
                             injected_parameter_uid: injected_parameter_uid.clone(),
@@ -269,11 +270,11 @@ pub fn unify_statements(
                     //      How to make ad-hoc polymorphism less ad hoc
                     //          by Philip Wadler and Stephen Blott
                     // Link: http://users.csc.calpoly.edu/~akeen/courses/csc530/references/wadler.pdf
-                    Ok(TypecheckedStatement::Let {
+                    Ok(InferredStatement::Let {
                         exported: interface_statement.keyword_export.is_some(),
-                        left: TypecheckedDestructurePattern {
+                        left: InferredDestructurePattern {
                             type_value,
-                            kind: TypecheckedDestructurePatternKind::Identifier(Box::new(
+                            kind: InferredDestructurePatternKind::Identifier(Box::new(
                                 Identifier {
                                     uid: injected_parameter_uid.clone(),
                                     token: definition.name.clone(),
@@ -290,8 +291,8 @@ pub fn unify_statements(
                                     head: dictionary_identifier.clone(),
                                     tail: vec![],
                                 },
-                                TypecheckedExpression::RecordAccess {
-                                    expression: Box::new(TypecheckedExpression::Variable(
+                                InferredExpression::RecordAccess {
+                                    expression: Box::new(InferredExpression::Variable(
                                         dictionary_identifier,
                                     )),
                                     property_name: PropertyName(definition.name.clone()),
@@ -300,15 +301,15 @@ pub fn unify_statements(
                         },
                     })
                 })
-                .collect::<Result<Vec<TypecheckedStatement>, UnifyError>>()?;
+                .collect::<Result<Vec<InferredStatement>, UnifyError>>()?;
 
             Ok(definitions)
         })
-        .collect::<Result<Vec<Vec<TypecheckedStatement>>, UnifyError>>()
+        .collect::<Result<Vec<Vec<InferredStatement>>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?
         .into_iter()
         .flatten()
-        .collect::<Vec<TypecheckedStatement>>();
+        .collect::<Vec<InferredStatement>>();
 
     // 5. Insert top-level constant expression (i.e. expressions that does not have function call)
     let typechecked_let_statements = let_statements
@@ -330,14 +331,14 @@ pub fn unify_statements(
                     &let_statement.left,
                     let_statement.keyword_export.is_some(),
                 )?;
-                Ok(TypecheckedStatement::Let {
+                Ok(InferredStatement::Let {
                     exported: let_statement.keyword_export.is_some(),
                     left,
                     right: right.expression,
                 })
             }
         })
-        .collect::<Result<Vec<TypecheckedStatement>, UnifyError>>()
+        .collect::<Result<Vec<InferredStatement>, UnifyError>>()
         .map_err(|e| e.into_compile_error(module.meta.clone()))?;
 
     // 6. Insert top-level functions and interface-implementations into the current module.
@@ -463,7 +464,7 @@ pub fn unify_statements(
 
                     // Insert this implementation into the current module before inferring the definitions,
                     // so that recursive definitions can be defined
-                    module.insert_implementation(TypecheckedImplementation {
+                    module.insert_implementation(InferredImplementation {
                         uid: uid.clone(),
                         scope_name, // Note: using parent scope, not the current scope
                         declared_at: implement_statement
@@ -472,7 +473,7 @@ pub fn unify_statements(
                             .join(implement_statement.for_types.right_angular_bracket.position),
                         interface_uid: interface_uid.clone(),
                         for_types: subject_types.clone(),
-                        kind: TypecheckedImplementationKind::Provided {
+                        kind: InferredImplementationKind::Provided {
                             populated_type_variables: populated_type_variables.clone(),
                         },
                     })?;
@@ -487,19 +488,19 @@ pub fn unify_statements(
                     Ok((populated_type_variables, definitions))
                 })?;
 
-            let dictionary = TypecheckedExpression::Record {
+            let dictionary = InferredExpression::Record {
                 key_value_pairs: definitions
                     .into_iter()
                     .map(|definition| (PropertyName(definition.name), definition.expression))
                     .collect(),
             };
 
-            Ok(TypecheckedStatement::Let {
+            Ok(InferredStatement::Let {
                 exported: implement_statement.keyword_export.is_some(),
-                left: TypecheckedDestructurePattern {
+                left: InferredDestructurePattern {
                     // TODO: remove this unnecessary field
                     type_value: Type::Null,
-                    kind: TypecheckedDestructurePatternKind::Identifier(Box::new(Identifier {
+                    kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
                         uid,
                         // TODO: remove this dummy field
                         token: Token::dummy(),
@@ -514,7 +515,7 @@ pub fn unify_statements(
                 ),
             })
         })
-        .collect::<Result<Vec<TypecheckedStatement>, UnifyError>>()
+        .collect::<Result<Vec<InferredStatement>, UnifyError>>()
         .map_err(|error| error.into_compile_error(module.meta.clone()))?;
 
     // 7.1 Type check the body of functions
@@ -532,11 +533,11 @@ pub fn unify_statements(
                 let right = solve_constraints(module, result.expression)?;
 
                 // Return the typechecked statement, which is needed for transpilation
-                Ok(TypecheckedStatement::Let {
+                Ok(InferredStatement::Let {
                     exported,
-                    left: TypecheckedDestructurePattern {
+                    left: InferredDestructurePattern {
                         type_value: expected_type.clone(),
-                        kind: TypecheckedDestructurePatternKind::Identifier(Box::new(Identifier {
+                        kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
                             uid: uid.clone(),
                             token: name.clone(),
                         })),
@@ -545,7 +546,7 @@ pub fn unify_statements(
                 })
             })
         })
-        .collect::<Result<Vec<TypecheckedStatement>, UnifyError>>()
+        .collect::<Result<Vec<InferredStatement>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     // 8. Lastly we will infer expression statements
@@ -554,12 +555,12 @@ pub fn unify_statements(
         .map(|expression| {
             let result = infer_expression_type(&mut module, Some(Type::Null), &expression)?;
             let expression = solve_constraints(&mut module, result.expression)?;
-            Ok(TypecheckedStatement::Expression(expression))
+            Ok(InferredStatement::Expression(expression))
         })
-        .collect::<Result<Vec<TypecheckedStatement>, UnifyError>>()
+        .collect::<Result<Vec<InferredStatement>, UnifyError>>()
         .map_err(|error| error.into_compile_error(module.meta.clone()))?;
     Ok(UnifyProgramResult {
-        entrypoint: TypecheckedModule {
+        entrypoint: InferredModule {
             module,
             statements: {
                 let mut statements = Vec::new();
@@ -581,12 +582,12 @@ fn infer_implement_statement(
     interface_symbol: &InterfaceSymbol,
     subject_types: &NonEmpty<Type>,
     implement_statement: &ImplementStatement,
-) -> Result<Vec<TypecheckedImplementationDefinition>, UnifyError> {
+) -> Result<Vec<InferredImplementationDefinition>, UnifyError> {
     let expected_definitions = interface_symbol
         .definitions
         .clone()
         .iter()
-        .map(|definition| TypecheckedInterfaceDefinition {
+        .map(|definition| InferredInterfaceDefinition {
             name: definition.name.clone(),
             type_value: rewrite_type_variables_in_type(
                 interface_symbol
@@ -600,7 +601,7 @@ fn infer_implement_statement(
                 definition.type_value.clone(),
             ),
         })
-        .collect::<Vec<TypecheckedInterfaceDefinition>>();
+        .collect::<Vec<InferredInterfaceDefinition>>();
     let zipped = match_key_values_pairs(
         &expected_definitions,
         &implement_statement.definitions,
@@ -630,7 +631,7 @@ fn infer_implement_statement(
                 Some(expected_definition.type_value),
                 &actual_definition.expression,
             )?;
-            Ok(TypecheckedImplementationDefinition {
+            Ok(InferredImplementationDefinition {
                 name: expected_definition.name,
                 expression: solve_constraints(module, typechecked_expression.expression)?,
             })
@@ -640,9 +641,9 @@ fn infer_implement_statement(
 }
 
 fn try_parameterise_expression_with_implementation_dictionary_parameters(
-    constraints: Vec<TypecheckedConstraint>,
-    expression: TypecheckedExpression,
-) -> TypecheckedExpression {
+    constraints: Vec<InferredConstraint>,
+    expression: InferredExpression,
+) -> InferredExpression {
     match constraints.split_first() {
         Some((head, tail)) => {
             let dictionary_parameters = NonEmpty {
@@ -671,16 +672,16 @@ fn try_parameterise_expression_with_implementation_dictionary_parameters(
 /// This function parameterises a constrained expression with the given `injected_parameter_uid`.
 fn parameterise_expression_with_implementation_dictionary_parameters(
     injected_dictionary_parameters: NonEmpty<Identifier>,
-    expression: TypecheckedExpression,
-) -> TypecheckedExpression {
-    TypecheckedExpression::BranchedFunction(Box::new(TypecheckedBranchedFunction {
+    expression: InferredExpression,
+) -> InferredExpression {
+    InferredExpression::BranchedFunction(Box::new(InferredBranchedFunction {
         branches: Box::new(NonEmpty {
-            head: TypecheckedFunctionBranch {
+            head: InferredFunctionBranch {
                 parameters: Box::new(injected_dictionary_parameters.map(|dictionary_identifier| {
-                    TypecheckedDestructurePattern {
+                    InferredDestructurePattern {
                         // TODO: remove unnecessary field
                         type_value: Type::Null,
-                        kind: TypecheckedDestructurePatternKind::Identifier(Box::new(
+                        kind: InferredDestructurePatternKind::Identifier(Box::new(
                             dictionary_identifier,
                         )),
                     }
@@ -696,9 +697,9 @@ fn parameterise_expression_with_implementation_dictionary_parameters(
 /// Every solvable constraint will be turned into an extra argument for the given `expression`
 fn solve_constraints(
     module: &mut Module,
-    expression: TypecheckedExpression,
-) -> Result<TypecheckedExpression, UnifyError> {
-    use TypecheckedExpression::*;
+    expression: InferredExpression,
+) -> Result<InferredExpression, UnifyError> {
+    use InferredExpression::*;
     match expression {
         ConstrainedVariable {
             identifier,
@@ -720,13 +721,13 @@ fn solve_constraints(
                     token: Token::dummy(),
                 };
                 match implementation.kind {
-                    TypecheckedImplementationKind::Provided {
+                    InferredImplementationKind::Provided {
                         populated_type_variables: None,
                     }
-                    | TypecheckedImplementationKind::Required => {
+                    | InferredImplementationKind::Required => {
                         Ok(Variable(dictionary_implementation_id))
                     }
-                    TypecheckedImplementationKind::Provided {
+                    InferredImplementationKind::Provided {
                         populated_type_variables: Some(populated_type_variables),
                     } => match populated_type_variables.constraints.split_first() {
                         None => Ok(Variable(dictionary_implementation_id)),
@@ -761,7 +762,7 @@ fn solve_constraints(
 
                             solve_constraints(
                                 module,
-                                TypecheckedExpression::ConstrainedVariable {
+                                InferredExpression::ConstrainedVariable {
                                     identifier: dictionary_implementation_id,
                                     constraints: NonEmpty {
                                         head: instantiate_constraint(
@@ -787,7 +788,7 @@ fn solve_constraints(
             })?;
 
             // Pass the found implementations as parameter (a.k.a dictionary passing)
-            Ok(FunctionCall(Box::new(TypecheckedFunctionCall {
+            Ok(FunctionCall(Box::new(InferredFunctionCall {
                 function: Box::new(Variable(identifier)),
                 first_argument: Box::new(implementations.head),
                 rest_arguments: implementations.tail,
@@ -804,11 +805,11 @@ fn solve_constraints(
             sections: sections
                 .into_iter()
                 .map(|section| match section {
-                    TypecheckedInterpolatedStringSection::String(string) => {
-                        Ok(TypecheckedInterpolatedStringSection::String(string))
+                    InferredInterpolatedStringSection::String(string) => {
+                        Ok(InferredInterpolatedStringSection::String(string))
                     }
-                    TypecheckedInterpolatedStringSection::Expression(expression) => {
-                        Ok(TypecheckedInterpolatedStringSection::Expression(Box::new(
+                    InferredInterpolatedStringSection::Expression(expression) => {
+                        Ok(InferredInterpolatedStringSection::Expression(Box::new(
                             solve_constraints(module, *expression)?,
                         )))
                     }
@@ -826,16 +827,16 @@ fn solve_constraints(
             },
         }),
         BranchedFunction(branched_function) => {
-            Ok(BranchedFunction(Box::new(TypecheckedBranchedFunction {
+            Ok(BranchedFunction(Box::new(InferredBranchedFunction {
                 branches: Box::new(branched_function.branches.fold_result(|branch| {
-                    Ok(TypecheckedFunctionBranch {
+                    Ok(InferredFunctionBranch {
                         parameters: branch.parameters,
                         body: Box::new(solve_constraints(module, *branch.body)?),
                     })
                 })?),
             })))
         }
-        FunctionCall(function_call) => Ok(FunctionCall(Box::new(TypecheckedFunctionCall {
+        FunctionCall(function_call) => Ok(FunctionCall(Box::new(InferredFunctionCall {
             function: Box::new(solve_constraints(module, *function_call.function)?),
             first_argument: Box::new(solve_constraints(module, *function_call.first_argument)?),
             rest_arguments: function_call
@@ -867,17 +868,17 @@ fn solve_constraints(
             updates: updates
                 .into_iter()
                 .map(|update| match update {
-                    TypecheckedRecordUpdate::ValueUpdate {
+                    InferredRecordUpdate::ValueUpdate {
                         property_name,
                         new_value,
-                    } => Ok(TypecheckedRecordUpdate::ValueUpdate {
+                    } => Ok(InferredRecordUpdate::ValueUpdate {
                         property_name,
                         new_value: solve_constraints(module, new_value)?,
                     }),
-                    TypecheckedRecordUpdate::FunctionalUpdate {
+                    InferredRecordUpdate::FunctionalUpdate {
                         property_name,
                         function,
-                    } => Ok(TypecheckedRecordUpdate::FunctionalUpdate {
+                    } => Ok(InferredRecordUpdate::FunctionalUpdate {
                         property_name,
                         function: solve_constraints(module, function)?,
                     }),
@@ -908,20 +909,20 @@ fn solve_constraints(
             statements: statements
                 .into_iter()
                 .map(|statement| match statement {
-                    TypecheckedStatement::ImportStatement(import_statement) => {
-                        Ok(TypecheckedStatement::ImportStatement(import_statement))
+                    InferredStatement::ImportStatement(import_statement) => {
+                        Ok(InferredStatement::ImportStatement(import_statement))
                     }
-                    TypecheckedStatement::Let {
+                    InferredStatement::Let {
                         exported,
                         left,
                         right,
-                    } => Ok(TypecheckedStatement::Let {
+                    } => Ok(InferredStatement::Let {
                         exported,
                         left,
                         right: solve_constraints(module, right)?,
                     }),
-                    TypecheckedStatement::Expression(expression) => Ok({
-                        TypecheckedStatement::Expression(solve_constraints(module, expression)?)
+                    InferredStatement::Expression(expression) => Ok({
+                        InferredStatement::Expression(solve_constraints(module, expression)?)
                     }),
                 })
                 .collect::<Result<Vec<_>, _>>()?,
@@ -932,7 +933,7 @@ fn solve_constraints(
 #[derive(Debug, Clone)]
 pub struct PopulatedTypeVariables {
     /// The corresponding `SymbolUid` represents the UID of the injected dictionary parameter
-    pub constraints: Vec<TypecheckedConstraint>,
+    pub constraints: Vec<InferredConstraint>,
     pub declared_type_variables: NonEmpty<ExplicitTypeVariable>,
 }
 
@@ -1012,15 +1013,15 @@ fn populate_explicit_type_variables(
 
                     let injected_parameter_uid = module.get_next_symbol_uid();
                     let scope_name = module.current_scope_name();
-                    module.insert_implementation(TypecheckedImplementation {
+                    module.insert_implementation(InferredImplementation {
                         uid: injected_parameter_uid.clone(),
                         scope_name,
                         declared_at: constraint.interface_name.position,
                         interface_uid: interface_uid.clone(),
                         for_types,
-                        kind: TypecheckedImplementationKind::Required,
+                        kind: InferredImplementationKind::Required,
                     })?;
-                    Ok(TypecheckedConstraint {
+                    Ok(InferredConstraint {
                         interface_uid,
                         type_variables: constraint.type_variables.clone().map(|type_variable| {
                             ExplicitTypeVariable {
@@ -1030,7 +1031,7 @@ fn populate_explicit_type_variables(
                         injected_parameter_uid,
                     })
                 })
-                .collect::<Result<Vec<TypecheckedConstraint>, UnifyError>>()?;
+                .collect::<Result<Vec<InferredConstraint>, UnifyError>>()?;
 
             Ok(Some(PopulatedTypeVariables {
                 declared_type_variables,
@@ -1138,8 +1139,8 @@ pub enum UnifyErrorKind {
         for_types: NonEmpty<Type>,
     },
     OverlappingImplementation {
-        new_implementation: TypecheckedImplementation,
-        existing_implementation: TypecheckedImplementation,
+        new_implementation: InferredImplementation,
+        existing_implementation: InferredImplementation,
     },
     ExtraneousImplementationDefinition {
         extraneous_definition_names: NonEmpty<Token>,
@@ -1262,15 +1263,15 @@ pub enum UnifyErrorKind {
 /// in order for the transpiled code to work (i.e. to prevent referencing variable that is not yet declared).
 /// Of course, this only work if the dependency graph contains no cycle,
 /// fortunately, this language do not allow cyclic imports.
-type ImportedModules = IndexMap<ModuleUid, TypecheckedModule>;
+type ImportedModules = IndexMap<ModuleUid, InferredModule>;
 
 #[derive(Debug, Clone)]
-pub struct TypecheckedModule {
+pub struct InferredModule {
     pub module: Module,
-    pub statements: Vec<TypecheckedStatement>,
+    pub statements: Vec<InferredStatement>,
 }
 pub struct InferImportStatementResult {
-    pub import_statements: Vec<TypecheckedImportStatement>,
+    pub import_statements: Vec<InferredImportStatement>,
     pub imported_modules: ImportedModules,
 }
 
@@ -1440,7 +1441,7 @@ pub fn infer_import_statement(
                 Ok(uid) => {
                     // only insert import statement if the imported symbol is a value (i.e. not type)
                     match entry.symbol.kind {
-                        SymbolKind::Value(_) => Ok(vec![TypecheckedImportStatement {
+                        SymbolKind::Value(_) => Ok(vec![InferredImportStatement {
                             module_uid: imported.entrypoint.module.uid(),
                             imported_name: Identifier {
                                 uid: entry.uid.clone(),
@@ -1457,7 +1458,7 @@ pub fn infer_import_statement(
                 Err(unify_error) => Err(unify_error.into_compile_error(module.meta.clone())),
             }
         })
-        .collect::<Result<Vec<Vec<TypecheckedImportStatement>>, CompileError>>()?
+        .collect::<Result<Vec<Vec<InferredImportStatement>>, CompileError>>()?
         .into_iter()
         .flatten()
         .collect();
@@ -2495,7 +2496,7 @@ pub fn get_enum_type(
 
 #[derive(Debug)]
 struct InferExpressionResult {
-    expression: TypecheckedExpression,
+    expression: InferredExpression,
     type_value: Type,
 }
 
@@ -2529,12 +2530,12 @@ fn infer_expression_type_(
 ) -> Result<InferExpressionResult, UnifyError> {
     let result: InferExpressionResult = match expression {
         Expression::Null(_) => Ok(InferExpressionResult {
-            expression: TypecheckedExpression::Null,
+            expression: InferredExpression::Null,
             type_value: Type::Null,
         }),
         Expression::String(token) => Ok(InferExpressionResult {
             type_value: Type::String,
-            expression: TypecheckedExpression::String {
+            expression: InferredExpression::String {
                 representation: token.representation.clone(),
             },
         }),
@@ -2545,46 +2546,46 @@ fn infer_expression_type_(
                 .into_iter()
                 .map(|section| match section {
                     InterpolatedStringSection::String(string) => {
-                        Ok(TypecheckedInterpolatedStringSection::String(string))
+                        Ok(InferredInterpolatedStringSection::String(string))
                     }
                     InterpolatedStringSection::Expression(expression) => {
                         let expression =
                             infer_expression_type(module, Some(Type::String), expression.as_ref())?;
-                        Ok(TypecheckedInterpolatedStringSection::Expression(Box::new(
+                        Ok(InferredInterpolatedStringSection::Expression(Box::new(
                             expression.expression,
                         )))
                     }
                 })
-                .collect::<Result<Vec<TypecheckedInterpolatedStringSection>, UnifyError>>()?;
+                .collect::<Result<Vec<InferredInterpolatedStringSection>, UnifyError>>()?;
 
             Ok(InferExpressionResult {
                 type_value: Type::String,
-                expression: TypecheckedExpression::InterpolatedString {
+                expression: InferredExpression::InterpolatedString {
                     sections: typechecked_sections,
                 },
             })
         }
         Expression::Character(token) => Ok(InferExpressionResult {
             type_value: Type::Character,
-            expression: TypecheckedExpression::Character {
+            expression: InferredExpression::Character {
                 representation: token.representation.clone(),
             },
         }),
         Expression::Float(token) => Ok(InferExpressionResult {
             type_value: Type::Float,
-            expression: TypecheckedExpression::Float {
+            expression: InferredExpression::Float {
                 representation: token.representation.clone(),
             },
         }),
         Expression::Integer(token) => Ok(InferExpressionResult {
             type_value: Type::Integer,
-            expression: TypecheckedExpression::Integer {
+            expression: InferredExpression::Integer {
                 representation: token.representation.clone(),
             },
         }),
         Expression::Boolean { value, .. } => Ok(InferExpressionResult {
             type_value: Type::Boolean,
-            expression: TypecheckedExpression::Boolean(*value),
+            expression: InferredExpression::Boolean(*value),
         }),
         Expression::Quoted {
             expression,
@@ -2605,7 +2606,7 @@ fn infer_expression_type_(
                     kind: BuiltInOneArgumentTypeKind::Quoted,
                     type_argument: Box::new(result.type_value),
                 },
-                expression: TypecheckedExpression::Record {
+                expression: InferredExpression::Record {
                     key_value_pairs: vec![
                         (
                             PropertyName(Token::dummy_identifier("value".to_string())),
@@ -2613,13 +2614,13 @@ fn infer_expression_type_(
                         ),
                         (
                             PropertyName(Token::dummy_identifier("meta".to_string())),
-                            TypecheckedExpression::Record {
+                            InferredExpression::Record {
                                 key_value_pairs: vec![
                                     (
                                         PropertyName(Token::dummy_identifier(
                                             "filename".to_string(),
                                         )),
-                                        TypecheckedExpression::String {
+                                        InferredExpression::String {
                                             representation: format!(
                                                 "\"{}\"",
                                                 module.meta.uid.string_value(),
@@ -2630,7 +2631,7 @@ fn infer_expression_type_(
                                         PropertyName(Token::dummy_identifier(
                                             "line_start".to_string(),
                                         )),
-                                        TypecheckedExpression::Integer {
+                                        InferredExpression::Integer {
                                             representation: position.line_start.to_string(),
                                         },
                                     ),
@@ -2638,7 +2639,7 @@ fn infer_expression_type_(
                                         PropertyName(Token::dummy_identifier(
                                             "line_end".to_string(),
                                         )),
-                                        TypecheckedExpression::Integer {
+                                        InferredExpression::Integer {
                                             representation: position.line_end.to_string(),
                                         },
                                     ),
@@ -2646,7 +2647,7 @@ fn infer_expression_type_(
                                         PropertyName(Token::dummy_identifier(
                                             "column_start".to_string(),
                                         )),
-                                        TypecheckedExpression::Integer {
+                                        InferredExpression::Integer {
                                             representation: position.column_start.to_string(),
                                         },
                                     ),
@@ -2654,7 +2655,7 @@ fn infer_expression_type_(
                                         PropertyName(Token::dummy_identifier(
                                             "column_end".to_string(),
                                         )),
-                                        TypecheckedExpression::Integer {
+                                        InferredExpression::Integer {
                                             representation: position.column_end.to_string(),
                                         },
                                     ),
@@ -2670,7 +2671,7 @@ fn infer_expression_type_(
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(InferExpressionResult {
                     type_value: result.expected_enum_type,
-                    expression: TypecheckedExpression::EnumConstructor {
+                    expression: InferredExpression::EnumConstructor {
                         constructor_name: name.representation.clone(),
                         payload: None,
                     },
@@ -2693,7 +2694,7 @@ fn infer_expression_type_(
                     )?;
                     Ok(InferExpressionResult {
                         type_value: result.expected_enum_type,
-                        expression: TypecheckedExpression::EnumConstructor {
+                        expression: InferredExpression::EnumConstructor {
                             constructor_name: name.representation.clone(),
                             payload: Some(Box::new(typechecked_payload.expression)),
                         },
@@ -2733,7 +2734,7 @@ fn infer_expression_type_(
                         match constraints.split_first() {
                             Some((head, tail)) => Ok(InferExpressionResult {
                                 type_value,
-                                expression: TypecheckedExpression::ConstrainedVariable {
+                                expression: InferredExpression::ConstrainedVariable {
                                     constraints: NonEmpty {
                                         head: head.clone(),
                                         tail: tail.to_vec(),
@@ -2743,13 +2744,13 @@ fn infer_expression_type_(
                             }),
                             None => Ok(InferExpressionResult {
                                 type_value,
-                                expression: TypecheckedExpression::Variable(identifier),
+                                expression: InferredExpression::Variable(identifier),
                             }),
                         }
                     }
                     other => Ok(InferExpressionResult {
                         type_value: other,
-                        expression: TypecheckedExpression::Variable(identifier),
+                        expression: InferredExpression::Variable(identifier),
                     }),
                 }
             }
@@ -2825,7 +2826,7 @@ fn infer_expression_type_(
                 }
                 Some((_, type_value)) => Ok(InferExpressionResult {
                     type_value: type_value.clone(),
-                    expression: TypecheckedExpression::RecordAccess {
+                    expression: InferredExpression::RecordAccess {
                         expression: Box::new(subject.expression),
                         property_name: PropertyName(property_name.clone()),
                     },
@@ -2876,7 +2877,7 @@ fn infer_expression_type_(
                                             Some(expected_type.clone()),
                                             new_value,
                                         )?;
-                                        Ok(TypecheckedRecordUpdate::ValueUpdate {
+                                        Ok(InferredRecordUpdate::ValueUpdate {
                                             property_name: PropertyName(property_name.clone()),
                                             new_value: typechecked_value.expression,
                                         })
@@ -2898,7 +2899,7 @@ fn infer_expression_type_(
                                             Some(expected_type),
                                             function,
                                         )?;
-                                        Ok(TypecheckedRecordUpdate::FunctionalUpdate {
+                                        Ok(InferredRecordUpdate::FunctionalUpdate {
                                             property_name: PropertyName(property_name.clone()),
                                             function: typechecked_function.expression,
                                         })
@@ -2906,10 +2907,10 @@ fn infer_expression_type_(
                                 },
                             }
                         })
-                        .collect::<Result<Vec<TypecheckedRecordUpdate>, UnifyError>>()?;
+                        .collect::<Result<Vec<InferredRecordUpdate>, UnifyError>>()?;
                     Ok(InferExpressionResult {
                         type_value: subject.type_value,
-                        expression: TypecheckedExpression::RecordUpdate {
+                        expression: InferredExpression::RecordUpdate {
                             expression: Box::new(subject.expression),
                             updates: typechecked_updates,
                         },
@@ -2935,7 +2936,7 @@ fn infer_expression_type_(
                 infer_branched_function(module, expected_function_type, function)?;
             Ok(InferExpressionResult {
                 type_value: Type::Function(typechecked_function.function_type),
-                expression: TypecheckedExpression::BranchedFunction(Box::new(
+                expression: InferredExpression::BranchedFunction(Box::new(
                     typechecked_function.function,
                 )),
             })
@@ -3029,8 +3030,8 @@ fn infer_expression_type_(
                     Ok(InferExpressionResult {
                         type_value: module
                             .apply_subtitution_to_type(expected_function_type.return_type.as_ref()),
-                        expression: TypecheckedExpression::FunctionCall(Box::new(
-                            TypecheckedFunctionCall {
+                        expression: InferredExpression::FunctionCall(Box::new(
+                            InferredFunctionCall {
                                 function: Box::new(typechecked_function.expression),
                                 first_argument: Box::new(typechecked_first_argument.expression),
                                 rest_arguments: typechecked_rest_arguments
@@ -3090,8 +3091,8 @@ fn infer_expression_type_(
 
                     Ok(InferExpressionResult {
                         type_value: module.apply_subtitution_to_type(&return_type),
-                        expression: TypecheckedExpression::FunctionCall(Box::new(
-                            TypecheckedFunctionCall {
+                        expression: InferredExpression::FunctionCall(Box::new(
+                            InferredFunctionCall {
                                 function: Box::new(typechecked_function.expression),
                                 first_argument: Box::new(typechecked_first_argument.expression),
                                 rest_arguments: typechecked_rest_arguments
@@ -3205,7 +3206,7 @@ fn infer_expression_type_(
                     kind: BuiltInOneArgumentTypeKind::Array,
                     type_argument: Box::new(module.apply_subtitution_to_type(&element_type)),
                 },
-                expression: TypecheckedExpression::Array {
+                expression: InferredExpression::Array {
                     elements: typechecked_elements
                         .iter()
                         .map(|element| element.expression.clone())
@@ -3215,7 +3216,7 @@ fn infer_expression_type_(
         }
         Expression::UnsafeJavascript { code } => Ok(InferExpressionResult {
             type_value: module.introduce_implicit_type_variable(None)?,
-            expression: TypecheckedExpression::Javascript {
+            expression: InferredExpression::Javascript {
                 code: code.representation.clone(),
             },
         }),
@@ -3232,7 +3233,7 @@ fn infer_expression_type_(
 
             Ok(InferExpressionResult {
                 type_value: if_true.type_value,
-                expression: TypecheckedExpression::If {
+                expression: InferredExpression::If {
                     condition: Box::new(condition.expression),
                     if_true: Box::new(if_true.expression),
                     if_false: Box::new(if_false.expression),
@@ -3280,8 +3281,7 @@ fn infer_expression_type_(
                         Ok((pattern, body))
                     })
                 })
-                .collect::<Result<Vec<(TypecheckedDestructurePattern, InferExpressionResult)>, _>>(
-                )?;
+                .collect::<Result<Vec<(InferredDestructurePattern, InferExpressionResult)>, _>>()?;
             check_exhaustiveness(
                 module,
                 typechecked_first_case.0.type_value.clone(),
@@ -3296,35 +3296,33 @@ fn infer_expression_type_(
             )?;
             Ok(InferExpressionResult {
                 type_value: typechecked_first_case.1.type_value,
-                expression: TypecheckedExpression::FunctionCall(Box::new(
-                    TypecheckedFunctionCall {
-                        function: Box::new(TypecheckedExpression::BranchedFunction(Box::new(
-                            TypecheckedBranchedFunction {
-                                branches: Box::new(NonEmpty {
-                                    head: TypecheckedFunctionBranch {
+                expression: InferredExpression::FunctionCall(Box::new(InferredFunctionCall {
+                    function: Box::new(InferredExpression::BranchedFunction(Box::new(
+                        InferredBranchedFunction {
+                            branches: Box::new(NonEmpty {
+                                head: InferredFunctionBranch {
+                                    parameters: Box::new(NonEmpty {
+                                        head: typechecked_first_case.0,
+                                        tail: vec![],
+                                    }),
+                                    body: Box::new(typechecked_first_case.1.expression),
+                                },
+                                tail: typechecked_rest_cases
+                                    .iter()
+                                    .map(|case| InferredFunctionBranch {
                                         parameters: Box::new(NonEmpty {
-                                            head: typechecked_first_case.0,
+                                            head: case.0.clone(),
                                             tail: vec![],
                                         }),
-                                        body: Box::new(typechecked_first_case.1.expression),
-                                    },
-                                    tail: typechecked_rest_cases
-                                        .iter()
-                                        .map(|case| TypecheckedFunctionBranch {
-                                            parameters: Box::new(NonEmpty {
-                                                head: case.0.clone(),
-                                                tail: vec![],
-                                            }),
-                                            body: Box::new(case.1.expression.clone()),
-                                        })
-                                        .collect(),
-                                }),
-                            },
-                        ))),
-                        first_argument: Box::new(typechecked_expression.expression),
-                        rest_arguments: vec![],
-                    },
-                )),
+                                        body: Box::new(case.1.expression.clone()),
+                                    })
+                                    .collect(),
+                            }),
+                        },
+                    ))),
+                    first_argument: Box::new(typechecked_expression.expression),
+                    rest_arguments: vec![],
+                })),
             })
         }
         Expression::ArrowFunction(function) => {
@@ -3337,17 +3335,17 @@ fn infer_expression_type_(
             let (typechecked_statements, return_value, type_value) =
                 match typechecked_statements.split_last() {
                     Some((last, initial)) => match last {
-                        (TypecheckedStatement::Expression(expression), type_value) => {
+                        (InferredStatement::Expression(expression), type_value) => {
                             (initial.to_vec(), expression.clone(), type_value.clone())
                         }
-                        _ => (initial.to_vec(), TypecheckedExpression::Null, Type::Null),
+                        _ => (initial.to_vec(), InferredExpression::Null, Type::Null),
                     },
-                    None => (vec![], TypecheckedExpression::Null, Type::Null),
+                    None => (vec![], InferredExpression::Null, Type::Null),
                 };
 
             Ok(InferExpressionResult {
                 type_value,
-                expression: TypecheckedExpression::Block {
+                expression: InferredExpression::Block {
                     statements: typechecked_statements
                         .into_iter()
                         .map(|(statement, _)| statement)
@@ -3363,7 +3361,7 @@ fn infer_expression_type_(
     })
 }
 
-impl Positionable for TypecheckedDestructurePattern {
+impl Positionable for InferredDestructurePattern {
     fn position(&self) -> Position {
         self.kind.position()
     }
@@ -3494,7 +3492,7 @@ fn infer_arrow_function(
                 )?;
                 infer_destructure_pattern(module, expected_type, &parameter.pattern, false)
             })
-            .collect::<Result<Vec<TypecheckedDestructurePattern>, UnifyError>>()?;
+            .collect::<Result<Vec<InferredDestructurePattern>, UnifyError>>()?;
 
         let expected_return_type = get_expected_type(
             module,
@@ -3504,9 +3502,9 @@ fn infer_arrow_function(
         let body = infer_expression_type(module, expected_return_type, &arrow_function.body)?;
 
         let function_expression =
-            TypecheckedExpression::BranchedFunction(Box::new(TypecheckedBranchedFunction {
+            InferredExpression::BranchedFunction(Box::new(InferredBranchedFunction {
                 branches: Box::new(NonEmpty {
-                    head: TypecheckedFunctionBranch {
+                    head: InferredFunctionBranch {
                         parameters: Box::new(NonEmpty {
                             head: head_parameter,
                             tail: tail_parameters,
@@ -3553,7 +3551,7 @@ fn infer_block_level_statements(
     module: &mut Module,
     expected_final_type: Option<Type>,
     statements: Vec<Statement>,
-) -> Result<Vec<(TypecheckedStatement, Type)>, UnifyError> {
+) -> Result<Vec<(InferredStatement, Type)>, UnifyError> {
     match statements.split_first() {
         None => Ok(vec![]),
         Some((head, tail)) => module.run_in_new_child_scope(|module| {
@@ -3578,7 +3576,7 @@ fn infer_block_level_statement(
     module: &mut Module,
     expected_type: Option<Type>,
     statement: &Statement,
-) -> Result<(TypecheckedStatement, Type), UnifyError> {
+) -> Result<(InferredStatement, Type), UnifyError> {
     let result = match statement {
         Statement::Let(LetStatement {
             type_annotation,
@@ -3611,7 +3609,7 @@ fn infer_block_level_statement(
                 left.position(),
             ) {
                 Ok(_) => Ok((
-                    TypecheckedStatement::Let {
+                    InferredStatement::Let {
                         exported: false,
                         left: typechecked_left,
                         right: typechecked_right.expression,
@@ -3633,7 +3631,7 @@ fn infer_block_level_statement(
         Statement::Expression(expression) => {
             let typechecked_expression = infer_expression_type(module, expected_type, &expression)?;
             Ok((
-                TypecheckedStatement::Expression(typechecked_expression.expression),
+                InferredStatement::Expression(typechecked_expression.expression),
                 typechecked_expression.type_value,
             ))
         }
@@ -3723,14 +3721,14 @@ fn infer_with_expression_type(
                                     false,
                                 )
                             })
-                            .collect::<Result<Vec<TypecheckedDestructurePattern>, UnifyError>>()?;
+                            .collect::<Result<Vec<InferredDestructurePattern>, UnifyError>>()?;
 
                         // Check for pattern refutability
                         check_exhaustiveness(
                             module,
                             Type::Tuple(function_type.parameters_types.clone()),
                             NonEmpty {
-                                head: TypecheckedDestructurePatternKind::Tuple {
+                                head: InferredDestructurePatternKind::Tuple {
                                     patterns: Box::new(NonEmpty {
                                         head: typechecked_left_first_pattern.clone(),
                                         tail: typechecked_left_tail_patterns.clone(),
@@ -3748,14 +3746,14 @@ fn infer_with_expression_type(
                         )?;
 
                         Ok(InferExpressionResult {
-                            expression: TypecheckedExpression::FunctionCall(Box::new(
-                                TypecheckedFunctionCall {
+                            expression: InferredExpression::FunctionCall(Box::new(
+                                InferredFunctionCall {
                                     function: Box::new(bind_function.expression.clone()),
                                     first_argument: Box::new(typechecked_right.expression.clone()),
-                                    rest_arguments: vec![TypecheckedExpression::BranchedFunction(
-                                        Box::new(TypecheckedBranchedFunction {
+                                    rest_arguments: vec![InferredExpression::BranchedFunction(
+                                        Box::new(InferredBranchedFunction {
                                             branches: Box::new(NonEmpty {
-                                                head: TypecheckedFunctionBranch {
+                                                head: InferredFunctionBranch {
                                                     parameters: Box::new(NonEmpty {
                                                         head: typechecked_left_first_pattern,
                                                         tail: typechecked_left_tail_patterns,
@@ -3848,7 +3846,7 @@ fn infer_record_type(
                 .map(|(key, result)| (key.representation.clone(), result.type_value.clone()))
                 .collect(),
         },
-        expression: TypecheckedExpression::Record {
+        expression: InferredExpression::Record {
             key_value_pairs: typechecked_key_value_pairs
                 .iter()
                 .map(|(key, result)| (PropertyName(key.clone()), result.expression.clone()))
@@ -3859,7 +3857,7 @@ fn infer_record_type(
 
 struct InferFunctionResult {
     function_type: FunctionType,
-    function: TypecheckedBranchedFunction,
+    function: InferredBranchedFunction,
 }
 fn infer_branched_function(
     module: &mut Module,
@@ -3904,7 +3902,7 @@ fn infer_branched_function(
 
     Ok(InferFunctionResult {
         function_type,
-        function: TypecheckedBranchedFunction {
+        function: InferredBranchedFunction {
             branches: Box::new(NonEmpty {
                 head: typechecked_first_branch.function_branch,
                 tail: typechecked_rest_branches
@@ -3917,9 +3915,9 @@ fn infer_branched_function(
 }
 
 pub fn function_branch_parameters_to_tuple(
-    function_branch: &TypecheckedFunctionBranch,
-) -> TypecheckedDestructurePatternKind {
-    TypecheckedDestructurePatternKind::Tuple {
+    function_branch: &InferredFunctionBranch,
+) -> InferredDestructurePatternKind {
+    InferredDestructurePatternKind::Tuple {
         patterns: function_branch.parameters.clone(),
     }
 }
@@ -3927,7 +3925,7 @@ pub fn function_branch_parameters_to_tuple(
 pub fn check_exhaustiveness(
     module: &Module,
     expected_type: Type,
-    actual_patterns: NonEmpty<TypecheckedDestructurePatternKind>,
+    actual_patterns: NonEmpty<InferredDestructurePatternKind>,
     position: Position,
 ) -> Result<(), UnifyError> {
     check_exhaustiveness_(
@@ -3943,7 +3941,7 @@ pub fn check_exhaustiveness(
 pub fn check_exhaustiveness_(
     module: &Module,
     expected_patterns: Vec<ExpandablePattern>,
-    actual_patterns: NonEmpty<TypecheckedDestructurePatternKind>,
+    actual_patterns: NonEmpty<InferredDestructurePatternKind>,
     position: Position,
 ) -> Result<(), UnifyError> {
     // println!("expected_patterns = {:#?}", expected_patterns);
@@ -4001,14 +3999,14 @@ pub fn check_exhaustiveness_(
     }
 }
 
-/// This function will expand the OR pattern of TypecheckedDestructurePatternKind
+/// This function will expand the OR pattern of InferredDestructurePatternKind
 /// into a list of CheckablePattern (which does not contains OR pattern)
 pub fn to_checkable_pattern(
-    pattern: &TypecheckedDestructurePatternKind,
+    pattern: &InferredDestructurePatternKind,
     is_result_of_expansion: bool,
 ) -> Vec<CheckablePattern> {
     match pattern {
-        TypecheckedDestructurePatternKind::EnumConstructor {
+        InferredDestructurePatternKind::EnumConstructor {
             constructor_name,
             payload,
         } => match &payload {
@@ -4036,7 +4034,7 @@ pub fn to_checkable_pattern(
                 }]
             }
         },
-        TypecheckedDestructurePatternKind::Record {
+        InferredDestructurePatternKind::Record {
             left_curly_bracket,
             key_pattern_pairs,
             right_curly_bracket,
@@ -4066,7 +4064,7 @@ pub fn to_checkable_pattern(
                 .collect()
         }
 
-        TypecheckedDestructurePatternKind::Tuple { patterns } => {
+        InferredDestructurePatternKind::Tuple { patterns } => {
             let expanded_patterns = patterns
                 .clone()
                 .into_vector()
@@ -4104,16 +4102,16 @@ pub fn to_checkable_pattern(
                 })
                 .collect()
         }
-        TypecheckedDestructurePatternKind::Array { .. } => {
+        InferredDestructurePatternKind::Array { .. } => {
             panic!()
         }
-        TypecheckedDestructurePatternKind::Or { patterns } => patterns
+        InferredDestructurePatternKind::Or { patterns } => patterns
             .clone()
             .into_vector()
             .into_iter()
             .flat_map(|pattern| to_checkable_pattern(&pattern.kind, true))
             .collect(),
-        TypecheckedDestructurePatternKind::Infinite { kind, token } => {
+        InferredDestructurePatternKind::Infinite { kind, token } => {
             vec![CheckablePattern {
                 is_result_of_expansion,
                 kind: CheckablePatternKind::Infinite {
@@ -4122,7 +4120,7 @@ pub fn to_checkable_pattern(
                 },
             }]
         }
-        TypecheckedDestructurePatternKind::Boolean { token, value } => {
+        InferredDestructurePatternKind::Boolean { token, value } => {
             vec![CheckablePattern {
                 is_result_of_expansion,
                 kind: CheckablePatternKind::Boolean {
@@ -4131,19 +4129,19 @@ pub fn to_checkable_pattern(
                 },
             }]
         }
-        TypecheckedDestructurePatternKind::Null(token) => {
+        InferredDestructurePatternKind::Null(token) => {
             vec![CheckablePattern {
                 is_result_of_expansion,
                 kind: CheckablePatternKind::Null(token.clone()),
             }]
         }
-        TypecheckedDestructurePatternKind::Underscore(token) => {
+        InferredDestructurePatternKind::Underscore(token) => {
             vec![CheckablePattern {
                 is_result_of_expansion,
                 kind: CheckablePatternKind::Underscore(token.clone()),
             }]
         }
-        TypecheckedDestructurePatternKind::Identifier(identifier) => {
+        InferredDestructurePatternKind::Identifier(identifier) => {
             vec![CheckablePattern {
                 is_result_of_expansion,
                 kind: CheckablePatternKind::Identifier(identifier.clone()),
@@ -4217,7 +4215,7 @@ pub fn unify_function_type(
 }
 
 struct InferFunctionBranchResult {
-    function_branch: TypecheckedFunctionBranch,
+    function_branch: InferredFunctionBranch,
     function_type: FunctionType,
 }
 fn infer_function_branch(
@@ -4284,7 +4282,7 @@ fn infer_function_branch(
 
         Ok(InferFunctionBranchResult {
             function_type: module.apply_subtitution_to_function_type(&result_type),
-            function_branch: TypecheckedFunctionBranch {
+            function_branch: InferredFunctionBranch {
                 parameters: Box::new(typechecked_parameters),
                 body: Box::new(typechecked_body.expression),
             },
@@ -4464,7 +4462,7 @@ fn infer_destructure_pattern(
     expected_type: Option<Type>,
     destructure_pattern: &DestructurePattern,
     exported: bool,
-) -> Result<TypecheckedDestructurePattern, UnifyError> {
+) -> Result<InferredDestructurePattern, UnifyError> {
     // Same story as infer_expression_type
     let result =
         infer_destructure_pattern_(module, expected_type.clone(), destructure_pattern, exported)?;
@@ -4476,7 +4474,7 @@ fn infer_destructure_pattern(
         destructure_pattern.position(),
     )?;
 
-    Ok(TypecheckedDestructurePattern {
+    Ok(InferredDestructurePattern {
         kind: result.kind,
         type_value,
     })
@@ -4487,33 +4485,33 @@ fn infer_destructure_pattern_(
     expected_type: Option<Type>,
     destructure_pattern: &DestructurePattern,
     exported: bool,
-) -> Result<TypecheckedDestructurePattern, UnifyError> {
+) -> Result<InferredDestructurePattern, UnifyError> {
     match destructure_pattern {
-        DestructurePattern::Infinite { token, kind } => Ok(TypecheckedDestructurePattern {
+        DestructurePattern::Infinite { token, kind } => Ok(InferredDestructurePattern {
             type_value: match &kind {
                 InfinitePatternKind::Character => Type::Character,
                 InfinitePatternKind::String => Type::String,
                 InfinitePatternKind::Integer => Type::Integer,
             },
-            kind: TypecheckedDestructurePatternKind::Infinite {
+            kind: InferredDestructurePatternKind::Infinite {
                 kind: kind.clone(),
                 token: token.clone(),
             },
         }),
-        DestructurePattern::Null(token) => Ok(TypecheckedDestructurePattern {
+        DestructurePattern::Null(token) => Ok(InferredDestructurePattern {
             type_value: Type::Null,
-            kind: TypecheckedDestructurePatternKind::Null(token.clone()),
+            kind: InferredDestructurePatternKind::Null(token.clone()),
         }),
-        DestructurePattern::Boolean { value, token } => Ok(TypecheckedDestructurePattern {
+        DestructurePattern::Boolean { value, token } => Ok(InferredDestructurePattern {
             type_value: Type::Boolean,
-            kind: TypecheckedDestructurePatternKind::Boolean {
+            kind: InferredDestructurePatternKind::Boolean {
                 value: *value,
                 token: token.clone(),
             },
         }),
-        DestructurePattern::Underscore(token) => Ok(TypecheckedDestructurePattern {
+        DestructurePattern::Underscore(token) => Ok(InferredDestructurePattern {
             type_value: module.introduce_implicit_type_variable(None)?,
-            kind: TypecheckedDestructurePatternKind::Underscore(token.clone()),
+            kind: InferredDestructurePatternKind::Underscore(token.clone()),
         }),
         DestructurePattern::Identifier(identifier) => {
             // If this identifier matches any enum constructor,
@@ -4534,9 +4532,9 @@ fn infer_destructure_pattern_(
             else {
                 let (uid, type_value) =
                     module.insert_value_symbol_with_type(identifier, expected_type, exported)?;
-                Ok(TypecheckedDestructurePattern {
+                Ok(InferredDestructurePattern {
                     type_value,
-                    kind: TypecheckedDestructurePatternKind::Identifier(Box::new(Identifier {
+                    kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
                         uid,
                         token: identifier.clone(),
                     })),
@@ -4548,11 +4546,11 @@ fn infer_destructure_pattern_(
                 // TODO: pass in expected_type
                 infer_destructure_pattern(module, None, &destructure_pattern, exported)
             })?;
-            Ok(TypecheckedDestructurePattern {
+            Ok(InferredDestructurePattern {
                 type_value: Type::Tuple(Box::new(
                     typechecked_values.clone().map(|value| value.type_value),
                 )),
-                kind: TypecheckedDestructurePatternKind::Tuple {
+                kind: InferredDestructurePatternKind::Tuple {
                     patterns: Box::new(typechecked_values),
                 },
             })
@@ -4560,9 +4558,9 @@ fn infer_destructure_pattern_(
         DestructurePattern::EnumConstructor { name, payload, .. } => {
             let result = get_enum_type(module, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
-                (None, None) => Ok(TypecheckedDestructurePattern {
+                (None, None) => Ok(InferredDestructurePattern {
                     type_value: result.expected_enum_type,
-                    kind: TypecheckedDestructurePatternKind::EnumConstructor {
+                    kind: InferredDestructurePatternKind::EnumConstructor {
                         constructor_name: name.clone(),
                         payload: None,
                     },
@@ -4584,11 +4582,11 @@ fn infer_destructure_pattern_(
                         &payload.pattern,
                         exported,
                     )?;
-                    Ok(TypecheckedDestructurePattern {
+                    Ok(InferredDestructurePattern {
                         type_value: result.expected_enum_type,
-                        kind: TypecheckedDestructurePatternKind::EnumConstructor {
+                        kind: InferredDestructurePatternKind::EnumConstructor {
                             constructor_name: name.clone(),
-                            payload: Some(TypecheckedDestructurePatternEnumConstructorPayload {
+                            payload: Some(InferredDestructurePatternEnumConstructorPayload {
                                 right_parenthesis: payload.right_parenthesis,
                                 left_parenthesis: payload.left_parenthesis,
                                 pattern: Box::new(typechecked_payload),
@@ -4602,14 +4600,14 @@ fn infer_destructure_pattern_(
             spread: None,
             left_square_bracket,
             right_square_bracket,
-        } => Ok(TypecheckedDestructurePattern {
+        } => Ok(InferredDestructurePattern {
             type_value: Type::BuiltInOneArgumentType {
                 kind: BuiltInOneArgumentTypeKind::Array,
                 type_argument: Box::new(Type::ImplicitTypeVariable(ImplicitTypeVariable {
                     name: module.get_next_type_variable_name(),
                 })),
             },
-            kind: TypecheckedDestructurePatternKind::Array {
+            kind: InferredDestructurePatternKind::Array {
                 spread: None,
                 left_square_bracket: left_square_bracket.clone(),
                 right_square_bracket: right_square_bracket.clone(),
@@ -4649,12 +4647,12 @@ fn infer_destructure_pattern_(
                 exported,
             )?;
 
-            Ok(TypecheckedDestructurePattern {
+            Ok(InferredDestructurePattern {
                 type_value: module.apply_subtitution_to_type(&expected_array_type),
-                kind: TypecheckedDestructurePatternKind::Array {
+                kind: InferredDestructurePatternKind::Array {
                     left_square_bracket: left_square_bracket.clone(),
                     right_square_bracket: right_square_bracket.clone(),
-                    spread: Some(TypecheckedDesturcturePatternArraySpread {
+                    spread: Some(InferredDesturcturePatternArraySpread {
                         first_element: Box::new(typechecked_first_element),
                         rest_elements: Box::new(typechecked_rest_elements),
                     }),
@@ -4752,9 +4750,9 @@ fn infer_destructure_pattern_(
                             )?;
                             Ok((
                                 actual_key.clone(),
-                                TypecheckedDestructurePattern {
+                                InferredDestructurePattern {
                                     type_value,
-                                    kind: TypecheckedDestructurePatternKind::Identifier(Box::new(
+                                    kind: InferredDestructurePatternKind::Identifier(Box::new(
                                         Identifier {
                                             uid,
                                             token: actual_key,
@@ -4765,9 +4763,9 @@ fn infer_destructure_pattern_(
                         }
                     }
                 })
-                .collect::<Result<Vec<(Token, TypecheckedDestructurePattern)>, UnifyError>>()?;
+                .collect::<Result<Vec<(Token, InferredDestructurePattern)>, UnifyError>>()?;
 
-            Ok(TypecheckedDestructurePattern {
+            Ok(InferredDestructurePattern {
                 type_value: Type::Record {
                     key_type_pairs: typechecked_key_pattern_pairs
                         .iter()
@@ -4776,7 +4774,7 @@ fn infer_destructure_pattern_(
                         })
                         .collect(),
                 },
-                kind: TypecheckedDestructurePatternKind::Record {
+                kind: InferredDestructurePatternKind::Record {
                     left_curly_bracket: left_curly_bracket.clone(),
                     right_curly_bracket: right_curly_bracket.clone(),
                     key_pattern_pairs: typechecked_key_pattern_pairs
@@ -4812,7 +4810,7 @@ fn infer_destructure_pattern_(
                         )
                     })
                 })
-                .collect::<Result<Vec<TypecheckedDestructurePattern>, UnifyError>>()?;
+                .collect::<Result<Vec<InferredDestructurePattern>, UnifyError>>()?;
 
             // 2. Check that all the patterns has the equivalent bindings.
 
@@ -4843,11 +4841,11 @@ fn infer_destructure_pattern_(
                         }),
                     }
                 })
-                .collect::<Result<Vec<TypecheckedDestructurePattern>, UnifyError>>()?;
+                .collect::<Result<Vec<InferredDestructurePattern>, UnifyError>>()?;
 
-            Ok(TypecheckedDestructurePattern {
+            Ok(InferredDestructurePattern {
                 type_value: first_pattern.type_value.clone(),
-                kind: TypecheckedDestructurePatternKind::Or {
+                kind: InferredDestructurePatternKind::Or {
                     patterns: Box::new(NonEmpty {
                         head: first_pattern,
                         tail: tail_patterns,
@@ -4859,7 +4857,7 @@ fn infer_destructure_pattern_(
 }
 
 struct MatchingBindingResult {
-    pattern: TypecheckedDestructurePattern,
+    pattern: InferredDestructurePattern,
     /// Bindings that were not matched at all
     remaining_expected_bindings: Vec<Binding>,
 }
@@ -4880,27 +4878,27 @@ struct MatchingBindingResult {
 /// Then the result should be `A@1`.
 fn match_bindings(
     module: &mut Module,
-    source: TypecheckedDestructurePattern,
+    source: InferredDestructurePattern,
     expected_bindings: Vec<Binding>,
 ) -> Result<MatchingBindingResult, UnifyError> {
     match source.kind {
-        kind @ TypecheckedDestructurePatternKind::Infinite { .. } => Ok(MatchingBindingResult {
+        kind @ InferredDestructurePatternKind::Infinite { .. } => Ok(MatchingBindingResult {
             remaining_expected_bindings: expected_bindings,
-            pattern: TypecheckedDestructurePattern { kind, ..source },
+            pattern: InferredDestructurePattern { kind, ..source },
         }),
-        kind @ TypecheckedDestructurePatternKind::Boolean { .. } => Ok(MatchingBindingResult {
+        kind @ InferredDestructurePatternKind::Boolean { .. } => Ok(MatchingBindingResult {
             remaining_expected_bindings: expected_bindings,
-            pattern: TypecheckedDestructurePattern { kind, ..source },
+            pattern: InferredDestructurePattern { kind, ..source },
         }),
-        kind @ TypecheckedDestructurePatternKind::Null(_) => Ok(MatchingBindingResult {
+        kind @ InferredDestructurePatternKind::Null(_) => Ok(MatchingBindingResult {
             remaining_expected_bindings: expected_bindings,
-            pattern: TypecheckedDestructurePattern { kind, ..source },
+            pattern: InferredDestructurePattern { kind, ..source },
         }),
-        kind @ TypecheckedDestructurePatternKind::Underscore(_) => Ok(MatchingBindingResult {
+        kind @ InferredDestructurePatternKind::Underscore(_) => Ok(MatchingBindingResult {
             remaining_expected_bindings: expected_bindings,
-            pattern: TypecheckedDestructurePattern { kind, ..source },
+            pattern: InferredDestructurePattern { kind, ..source },
         }),
-        TypecheckedDestructurePatternKind::Identifier(identifier) => {
+        InferredDestructurePatternKind::Identifier(identifier) => {
             // Look for matching bindings
             let (matching_bindings, remaining_expected_bindings): (Vec<Binding>, Vec<Binding>) =
                 expected_bindings.into_iter().partition(|binding| {
@@ -4929,9 +4927,9 @@ fn match_bindings(
 
                     Ok(MatchingBindingResult {
                         remaining_expected_bindings,
-                        pattern: TypecheckedDestructurePattern {
+                        pattern: InferredDestructurePattern {
                             type_value: matching_binding.type_value.clone(),
-                            kind: TypecheckedDestructurePatternKind::Identifier(Box::new(
+                            kind: InferredDestructurePatternKind::Identifier(Box::new(
                                 Identifier {
                                     // Note that we use the SymbolUid of matching_binding
                                     uid: matching_binding.identifier.uid.clone(),
@@ -4943,15 +4941,15 @@ fn match_bindings(
                 }
             }
         }
-        TypecheckedDestructurePatternKind::EnumConstructor {
+        InferredDestructurePatternKind::EnumConstructor {
             constructor_name,
             payload,
         } => match payload {
             None => Ok(MatchingBindingResult {
                 remaining_expected_bindings: expected_bindings,
-                pattern: TypecheckedDestructurePattern {
+                pattern: InferredDestructurePattern {
                     type_value: source.type_value,
-                    kind: TypecheckedDestructurePatternKind::EnumConstructor {
+                    kind: InferredDestructurePatternKind::EnumConstructor {
                         constructor_name,
                         payload: None,
                     },
@@ -4961,11 +4959,11 @@ fn match_bindings(
                 let result = match_bindings(module, *payload.pattern.clone(), expected_bindings)?;
                 Ok(MatchingBindingResult {
                     remaining_expected_bindings: result.remaining_expected_bindings,
-                    pattern: TypecheckedDestructurePattern {
+                    pattern: InferredDestructurePattern {
                         type_value: source.type_value,
-                        kind: TypecheckedDestructurePatternKind::EnumConstructor {
+                        kind: InferredDestructurePatternKind::EnumConstructor {
                             constructor_name,
-                            payload: Some(TypecheckedDestructurePatternEnumConstructorPayload {
+                            payload: Some(InferredDestructurePatternEnumConstructorPayload {
                                 pattern: Box::new(result.pattern),
                                 ..payload
                             }),
@@ -4974,7 +4972,7 @@ fn match_bindings(
                 })
             }
         },
-        TypecheckedDestructurePatternKind::Record {
+        InferredDestructurePatternKind::Record {
             left_curly_bracket,
             key_pattern_pairs,
             right_curly_bracket,
@@ -4998,9 +4996,9 @@ fn match_bindings(
                 })?;
             Ok(MatchingBindingResult {
                 remaining_expected_bindings,
-                pattern: TypecheckedDestructurePattern {
+                pattern: InferredDestructurePattern {
                     type_value: source.type_value,
-                    kind: TypecheckedDestructurePatternKind::Record {
+                    kind: InferredDestructurePatternKind::Record {
                         left_curly_bracket,
                         key_pattern_pairs,
                         right_curly_bracket,
@@ -5008,14 +5006,14 @@ fn match_bindings(
                 },
             })
         }
-        TypecheckedDestructurePatternKind::Array { .. } => {
+        InferredDestructurePatternKind::Array { .. } => {
             panic!();
         }
-        TypecheckedDestructurePatternKind::Tuple { .. } => {
+        InferredDestructurePatternKind::Tuple { .. } => {
             // We use fold instead of map because we need to exhaust expected_bindings wit
             panic!()
         }
-        TypecheckedDestructurePatternKind::Or { patterns } => {
+        InferredDestructurePatternKind::Or { patterns } => {
             // Note that we use `map` instead of `fold` here, because the expected bindings
             // should remain the same after each iteration
             // because all patterns in an OR-pattern is expected to have the same set of bindings
@@ -5024,9 +5022,9 @@ fn match_bindings(
             })?;
             Ok(MatchingBindingResult {
                 remaining_expected_bindings: results.head.remaining_expected_bindings.clone(),
-                pattern: TypecheckedDestructurePattern {
+                pattern: InferredDestructurePattern {
                     type_value: source.type_value,
-                    kind: TypecheckedDestructurePatternKind::Or {
+                    kind: InferredDestructurePatternKind::Or {
                         patterns: Box::new(results.map(|result| result.pattern)),
                     },
                 },
@@ -5041,32 +5039,32 @@ pub struct Binding {
     pub type_value: Type,
 }
 
-impl TypecheckedDestructurePattern {
+impl InferredDestructurePattern {
     fn bindings(&self) -> Vec<Binding> {
         match &self.kind {
-            TypecheckedDestructurePatternKind::Infinite { .. }
-            | TypecheckedDestructurePatternKind::Boolean { .. }
-            | TypecheckedDestructurePatternKind::Null(_)
-            | TypecheckedDestructurePatternKind::Underscore(_) => vec![],
-            TypecheckedDestructurePatternKind::Identifier(identifier) => vec![Binding {
+            InferredDestructurePatternKind::Infinite { .. }
+            | InferredDestructurePatternKind::Boolean { .. }
+            | InferredDestructurePatternKind::Null(_)
+            | InferredDestructurePatternKind::Underscore(_) => vec![],
+            InferredDestructurePatternKind::Identifier(identifier) => vec![Binding {
                 identifier: *identifier.clone(),
                 type_value: self.type_value.clone(),
             }],
-            TypecheckedDestructurePatternKind::EnumConstructor { payload, .. } => match payload {
+            InferredDestructurePatternKind::EnumConstructor { payload, .. } => match payload {
                 Some(payload) => payload.pattern.bindings(),
                 None => vec![],
             },
-            TypecheckedDestructurePatternKind::Record {
+            InferredDestructurePatternKind::Record {
                 key_pattern_pairs, ..
             } => key_pattern_pairs
                 .iter()
                 .flat_map(|(_, pattern)| pattern.bindings())
                 .collect(),
-            TypecheckedDestructurePatternKind::Array { .. } => {
+            InferredDestructurePatternKind::Array { .. } => {
                 panic!("Array pattern is still pending design")
             }
-            TypecheckedDestructurePatternKind::Tuple { patterns }
-            | TypecheckedDestructurePatternKind::Or { patterns } => patterns
+            InferredDestructurePatternKind::Tuple { patterns }
+            | InferredDestructurePatternKind::Or { patterns } => patterns
                 .clone()
                 .into_vector()
                 .into_iter()
@@ -5290,7 +5288,7 @@ pub fn instantiate_type_scheme(
 }
 
 pub fn instantiate_constraints(
-    constraints: Vec<TypecheckedConstraint>,
+    constraints: Vec<InferredConstraint>,
     type_variable_substitutions: &Vec<TypeVariableSubstitution>,
 ) -> Vec<InstantiatedConstraint> {
     constraints
@@ -5300,7 +5298,7 @@ pub fn instantiate_constraints(
 }
 
 pub fn instantiate_constraint(
-    constraint: TypecheckedConstraint,
+    constraint: InferredConstraint,
     type_variable_substitutions: &Vec<TypeVariableSubstitution>,
 ) -> InstantiatedConstraint {
     InstantiatedConstraint {

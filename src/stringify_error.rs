@@ -1,10 +1,10 @@
-use crate::{ast::*, compile::CompileError};
+use crate::{compile::CompileError, raw_ast::*, typ::*};
 use crate::{
     compile::CompileErrorKind,
     parse::{ParseContext, ParseError, ParseErrorKind},
 };
+use crate::{module::InferredImplementationKind, tokenize::TokenizeError};
 use crate::{module::ModuleMeta, pattern::ExpandablePattern};
-use crate::{module::TypecheckedImplementationKind, tokenize::TokenizeError};
 use crate::{
     pattern::CheckablePatternKind,
     unify::{UnifyError, UnifyErrorKind},
@@ -924,10 +924,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::OverlappingImplementation {existing_implementation, ..} =>  {
             let word = match existing_implementation.kind {
-                TypecheckedImplementationKind::Provided { .. } => {
+                InferredImplementationKind::Provided { .. } => {
                     "implementation"
                 }
-                TypecheckedImplementationKind::Required => {
+                InferredImplementationKind::Required => {
                     "constraint"
                 }
             };
