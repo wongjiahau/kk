@@ -21,7 +21,7 @@ implements Equatable<Grade> {
 }
 
 // Specifying constraints on type variable
-let notEquals = <T> where Equatable<T> (left: T, right: T): Boolean =>
+let notEquals = <T where Equatable<T>> (left: T, right: T): Boolean =>
   left.equals(right).not()
 
 let not = (b: Boolean): Boolean =>

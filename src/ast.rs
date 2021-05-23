@@ -24,6 +24,8 @@ pub enum Statement {
 pub struct ImplementStatement {
     pub keyword_export: Option<Token>,
     pub keyword_implements: Token,
+    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
+
     pub interface_name: Token,
 
     /// The type where we are implementing the interface for.    

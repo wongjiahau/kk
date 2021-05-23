@@ -249,6 +249,7 @@ impl<'a> Parser<'a> {
         keyword_implements: Token,
     ) -> Result<Statement, ParseError> {
         let context = Some(ParseContext::StatementImplements);
+        let type_variables_declaration = self.try_parse_type_variables_declaration()?;
         let interface_name = self.eat_token(TokenType::Identifier, context)?;
         let less_than = self.eat_token(TokenType::LessThan, context)?;
         let for_types = self.parse_type_arguments(less_than, context)?;
@@ -272,6 +273,7 @@ impl<'a> Parser<'a> {
         Ok(Statement::Implement(ImplementStatement {
             keyword_export,
             keyword_implements,
+            type_variables_declaration,
             interface_name,
             for_types,
             left_curly_bracket,
@@ -622,40 +624,33 @@ impl<'a> Parser<'a> {
         let context = Some(ParseContext::TypeVariablesDeclaration);
         let head = self.eat_token(TokenType::Identifier, context)?;
         let mut tail = vec![];
-        loop {
-            if self.try_eat_token(TokenType::Comma)?.is_none() {
-                if let Some(right_angular_bracket) = self.try_eat_token(TokenType::MoreThan)? {
-                    break Ok(TypeVariablesDeclaration {
-                        left_angular_bracket,
-                        type_variables: NonEmpty { head, tail },
-                        right_angular_bracket,
-                        constraints: {
-                            if self.try_eat_token(TokenType::KeywordWhere)?.is_some() {
-                                let mut constraints = vec![];
-                                loop {
-                                    if let Some(interface_name) =
-                                        self.try_eat_token(TokenType::Identifier)?
-                                    {
-                                        constraints.push(
-                                            self.parse_type_variable_constraint(interface_name)?,
-                                        );
-                                        if self.try_eat_token(TokenType::Comma)?.is_none() {
-                                            break constraints;
-                                        }
-                                    } else {
-                                        break constraints;
-                                    }
-                                }
-                            } else {
-                                vec![]
-                            }
-                        },
-                    });
-                }
-            } else {
+        let mut constraints = vec![];
+        let right_angular_bracket = loop {
+            if self.try_eat_token(TokenType::Comma)?.is_some() {
                 tail.push(self.eat_token(TokenType::Identifier, context)?);
+            } else if self.try_eat_token(TokenType::KeywordWhere)?.is_some() {
+                loop {
+                    if let Some(interface_name) = self.try_eat_token(TokenType::Identifier)? {
+                        constraints.push(self.parse_type_variable_constraint(interface_name)?);
+                        if self.try_eat_token(TokenType::Comma)?.is_none() {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                break self.eat_token(TokenType::MoreThan, context)?;
+            } else {
+                break self.eat_token(TokenType::MoreThan, context)?;
             }
-        }
+        };
+
+        Ok(TypeVariablesDeclaration {
+            left_angular_bracket,
+            type_variables: NonEmpty { head, tail },
+            right_angular_bracket,
+            constraints,
+        })
     }
 
     fn parse_type_variable_constraint(

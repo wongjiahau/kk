@@ -30,6 +30,6 @@ error:
   ┌─ tests/compiler/typecheck/with_statement_5.kk:4:8
   │
 4 │   with x = 123.apply
-  │        ^ Function arguments length mismatch
+  │        ^ Arguments length mismatch
   │
   = Expected 2 arguments, but only 1 argument is provided.

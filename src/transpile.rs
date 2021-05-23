@@ -103,7 +103,7 @@ mod javascript {
             .into_iter()
             .map(Printable::print)
             .collect::<Vec<String>>()
-            .join(";\n")
+            .join(";\n\n")
     }
 
     trait Printable {

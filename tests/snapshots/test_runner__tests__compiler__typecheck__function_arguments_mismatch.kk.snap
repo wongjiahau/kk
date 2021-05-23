@@ -26,6 +26,6 @@ error:
   ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:2:37
   │
 2 │   let f : (n: Integer) => Integer = (x, y) => x
-  │                                     ^^^^^^ Function arguments length mismatch
+  │                                     ^^^^^^ Arguments length mismatch
   │
   = Expected 1 argument only, but 2 arguments are provided.

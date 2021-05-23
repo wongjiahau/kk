@@ -441,13 +441,19 @@ pub fn unify_statements(
 
     let implementation_dictionaries = implements_statements
         .into_iter()
-        .map(|implementation_statement| {
+        .map(|implement_statement| {
             // Check that interface name exists
             let (interface_uid, interface_symbol) =
-                module.get_interface_symbol_by_name(&implementation_statement.interface_name)?;
+                module.get_interface_symbol_by_name(&implement_statement.interface_name)?;
+
+            // Populate type variables
+            let result = populate_explicit_type_variables(
+                &mut module,
+                &implement_statement.type_variables_declaration,
+            )?;
 
             // Check that the subject of implementation is a valid
-            let subject_types = implementation_statement
+            let subject_types = implement_statement
                 .for_types
                 .type_annotations
                 .clone()
@@ -479,14 +485,14 @@ pub fn unify_statements(
             // Ensure that there's no missing or extra definition
             let zipped = match_key_values_pairs(
                 &expected_definitions,
-                &implementation_statement.definitions,
+                &implement_statement.definitions,
                 |expected_definition| &expected_definition.name,
                 |actual_implementation| &actual_implementation.name,
                 |expeced_key, actual_key| expeced_key.representation == actual_key.representation,
             )
             .map_err(|error| match error {
                 MatchKeyValueError::MissingKeys(missing_definition_names) => UnifyError {
-                    position: implementation_statement.interface_name.position,
+                    position: implement_statement.interface_name.position,
                     kind: UnifyErrorKind::MissingImplementationDefinition {
                         missing_definition_names,
                     },
@@ -510,28 +516,31 @@ pub fn unify_statements(
                     )?;
                     Ok(TypecheckedImplementationDefinition {
                         name: expected_definition.name,
-                        expression: typechecked_expression.expression,
+                        expression: solve_constraints(
+                            &mut module,
+                            typechecked_expression.expression,
+                        )?,
                     })
                 })
                 .collect::<Result<Vec<_>, UnifyError>>()?;
 
             // Insert this implementation into the current module
             let uid = module.get_next_symbol_uid();
+            let scope_name = module.current_scope_name();
             module.insert_implementation(TypecheckedImplementation {
                 uid: uid.clone(),
-                declared_at: implementation_statement.interface_name.position.join(
-                    implementation_statement
-                        .for_types
-                        .right_angular_bracket
-                        .position,
-                ),
+                scope_name,
+                declared_at: implement_statement
+                    .interface_name
+                    .position
+                    .join(implement_statement.for_types.right_angular_bracket.position),
                 interface_uid,
                 for_types: subject_types,
                 kind: TypecheckedImplementationKind::Provided,
             })?;
 
             Ok(TypecheckedStatement::Let {
-                exported: implementation_statement.keyword_export.is_some(),
+                exported: implement_statement.keyword_export.is_some(),
                 left: TypecheckedDestructurePattern {
                     // TODO: remove this unnecessary field
                     type_value: Type::Null,
@@ -557,12 +566,6 @@ pub fn unify_statements(
         .into_iter()
         .map(|(exported, uid, name, arrow_function, expected_type)| {
             module.run_in_new_child_scope(|module| {
-                // Populate type variables
-                populate_explicit_type_variables(
-                    module,
-                    &arrow_function.type_variables_declaration,
-                )?;
-
                 let result = infer_arrow_function(
                     module,
                     Some(expected_type.clone()),
@@ -656,8 +659,12 @@ fn solve_constraints(
             //  1) remove duplicated constraints,
             //  2) remove implied constraints (for example if A is super class of B, and if we have A and B, we can elide A)
             let implementations = constraints.fold_result(|constraint| {
-                let implementation =
-                    module.find_matching_implementation(constraint, identifier.token.position)?;
+                let current_scope_name = module.current_scope_name();
+                let implementation = module.find_matching_implementation(
+                    constraint,
+                    identifier.token.position,
+                    current_scope_name,
+                )?;
                 Ok(Variable(Identifier {
                     uid: implementation.uid,
                     token: Token::dummy(),
@@ -845,16 +852,29 @@ fn populate_explicit_type_variables(
                     });
 
             // Insert each constraint as a provided implementation
-            let typechecked_constraints =
-                declaration
-                    .constraints
-                    .iter()
-                    .map(|constraint| {
-                        let (interface_uid, _) =
-                            module.get_interface_symbol_by_name(&constraint.interface_name)?;
+            let typechecked_constraints = declaration
+                .constraints
+                .iter()
+                .map(|constraint| {
+                    let (interface_uid, interface_symbol) =
+                        module.get_interface_symbol_by_name(&constraint.interface_name)?;
 
-                        let for_types = constraint.type_variables.clone().fold_result(
-                            |type_variable_name| {
+                    // Tally number of type arguments
+                    if interface_symbol.type_variables.len() != constraint.type_variables.len() {
+                        return Err(UnifyError {
+                            position: constraint.interface_name.position,
+                            kind: UnifyErrorKind::InvalidArgumentLength {
+                                expected_length: interface_symbol.type_variables.len(),
+                                actual_length: constraint.type_variables.len(),
+                            },
+                        });
+                    }
+
+                    let for_types =
+                        constraint
+                            .type_variables
+                            .clone()
+                            .fold_result(|type_variable_name| {
                                 if declared_type_variables.any(|declared_type_variable| {
                                     declared_type_variable
                                         .name
@@ -872,28 +892,29 @@ fn populate_explicit_type_variables(
                                         },
                                     })
                                 }
-                            },
-                        )?;
+                            })?;
 
-                        let injected_parameter_uid = module.get_next_symbol_uid();
-                        module.insert_implementation(TypecheckedImplementation {
-                            uid: injected_parameter_uid.clone(),
-                            declared_at: constraint.interface_name.position,
-                            interface_uid: interface_uid.clone(),
-                            for_types,
-                            kind: TypecheckedImplementationKind::Required,
-                        })?;
-                        Ok(TypecheckedConstraint {
-                            interface_uid,
-                            type_variables: constraint.type_variables.clone().map(
-                                |type_variable| TypeVariable {
-                                    name: type_variable.representation,
-                                },
-                            ),
-                            injected_parameter_uid,
-                        })
+                    let injected_parameter_uid = module.get_next_symbol_uid();
+                    let scope_name = module.current_scope_name();
+                    module.insert_implementation(TypecheckedImplementation {
+                        uid: injected_parameter_uid.clone(),
+                        scope_name,
+                        declared_at: constraint.interface_name.position,
+                        interface_uid: interface_uid.clone(),
+                        for_types,
+                        kind: TypecheckedImplementationKind::Required,
+                    })?;
+                    Ok(TypecheckedConstraint {
+                        interface_uid,
+                        type_variables: constraint.type_variables.clone().map(|type_variable| {
+                            TypeVariable {
+                                name: type_variable.representation,
+                            }
+                        }),
+                        injected_parameter_uid,
                     })
-                    .collect::<Result<Vec<TypecheckedConstraint>, UnifyError>>()?;
+                })
+                .collect::<Result<Vec<TypecheckedConstraint>, UnifyError>>()?;
 
             Ok(Some(PopulateTypeVariableResult {
                 declared_type_variables,
@@ -1106,7 +1127,7 @@ pub enum UnifyErrorKind {
         first_declared_at: Position,
         then_declared_at: Position,
     },
-    InvalidFunctionArgumentLength {
+    InvalidArgumentLength {
         expected_length: usize,
         actual_length: usize,
     },
@@ -2850,7 +2871,7 @@ fn infer_expression_type_(
                         if actual_arguments_length != expected_arguments_length {
                             return Err(UnifyError {
                                 position: function_call.function.as_ref().position(),
-                                kind: UnifyErrorKind::InvalidFunctionArgumentLength {
+                                kind: UnifyErrorKind::InvalidArgumentLength {
                                     actual_length: actual_arguments_length,
                                     expected_length: expected_arguments_length,
                                 },
@@ -3315,7 +3336,7 @@ fn infer_arrow_function(
                         .join(function_parameters.right_parenthesis.position)
                 }
             },
-            kind: UnifyErrorKind::InvalidFunctionArgumentLength {
+            kind: UnifyErrorKind::InvalidArgumentLength {
                 expected_length: expected_function_type.parameters_types.len(),
                 actual_length: arrow_function.parameters.len(),
             },
@@ -3575,7 +3596,7 @@ fn infer_with_expression_type(
                     if function_type.parameters_types.len() != left_patterns.len() {
                         return Err(UnifyError {
                             position: function_arguments_position,
-                            kind: UnifyErrorKind::InvalidFunctionArgumentLength {
+                            kind: UnifyErrorKind::InvalidArgumentLength {
                                 expected_length: function_type.parameters_types.len(),
                                 actual_length: left_patterns.len(),
                             },
@@ -4041,7 +4062,7 @@ pub fn unify_function_type(
     {
         return Err(UnifyError {
             position,
-            kind: UnifyErrorKind::InvalidFunctionArgumentLength {
+            kind: UnifyErrorKind::InvalidArgumentLength {
                 expected_length: expected_function_type.parameters_types.len(),
                 actual_length: actual_function_type.parameters_types.len(),
             },
@@ -4118,7 +4139,7 @@ fn infer_function_branch(
                     if expected_function_type.parameters_types.len() != actual_parameters.len() {
                         Err(UnifyError {
                             position: function_branch.parameters.position(),
-                            kind: UnifyErrorKind::InvalidFunctionArgumentLength {
+                            kind: UnifyErrorKind::InvalidArgumentLength {
                                 expected_length: expected_function_type.parameters_types.len(),
                                 actual_length: actual_parameters.len(),
                             },

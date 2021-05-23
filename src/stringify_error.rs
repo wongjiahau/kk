@@ -1,10 +1,10 @@
-use crate::tokenize::TokenizeError;
 use crate::{ast::*, compile::CompileError};
 use crate::{
     compile::CompileErrorKind,
     parse::{ParseContext, ParseError, ParseErrorKind},
 };
 use crate::{module::ModuleMeta, pattern::ExpandablePattern};
+use crate::{module::TypecheckedImplementationKind, tokenize::TokenizeError};
 use crate::{
     pattern::CheckablePatternKind,
     unify::{UnifyError, UnifyErrorKind},
@@ -600,11 +600,11 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 body: table,
             }
         }
-        UnifyErrorKind::InvalidFunctionArgumentLength {
+        UnifyErrorKind::InvalidArgumentLength {
             expected_length,
             actual_length,
         } => StringifiedError {
-            summary: "Function arguments length mismatch".to_string(),
+            summary: "Arguments length mismatch".to_string(),
             body: format!(
                 "Expected {} {}{}, but {}{} {} {} provided.",
                 expected_length,
@@ -922,16 +922,28 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                     .join("\n")
             )
         },
-        UnifyErrorKind::OverlappingImplementation {existing_implementation, ..} => StringifiedError{
-            summary: "Overlapping implementation".to_string(),
-            // TODO: show the existing implementation position
-            body: format!(
-                "This implementation overlapped with an existing implementation:\n{}",
-                    existing_implementation.for_types
-                        .map(|type_value| stringify_type(type_value, 1))
-                        .into_vector()
-                        .join("\n")
-            )
+        UnifyErrorKind::OverlappingImplementation {existing_implementation, ..} =>  {
+            let word = match existing_implementation.kind {
+                TypecheckedImplementationKind::Provided => {
+                    "implementation"
+                }
+                TypecheckedImplementationKind::Required => {
+                    "constraint"
+                }
+            };
+            StringifiedError {
+                summary: format!("Overlapping {}", word),
+                // TODO: show the existing implementation position
+                body: format!(
+                    "This {} overlapped with an existing {}:\n{}",
+                        word,
+                        word,
+                        existing_implementation.for_types
+                            .map(|type_value| stringify_type(type_value, 1))
+                            .into_vector()
+                            .join("\n")
+                )
+            }
         },
         UnifyErrorKind::ConstraintUnsatisfied { interface_name, for_types } => StringifiedError {
             summary: "Constraint unsatisfied".to_string(),

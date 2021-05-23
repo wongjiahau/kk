@@ -1,9 +1,11 @@
+use itertools::Itertools;
+
 use crate::non_empty::NonEmpty;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
 use crate::{ast::*, typechecked_ast::TypecheckedExpression};
-use std::cell::Cell;
 use std::collections::HashMap;
+use std::{cell::Cell, cmp::Ordering};
 
 #[derive(Debug, Clone)]
 pub struct ImportRelation {
@@ -24,7 +26,7 @@ pub struct ModuleMeta {
     pub import_relations: Vec<ImportRelation>,
 }
 
-type Substitution = HashMap<String, SubstitutionItem>;
+pub type Substitution = HashMap<String, SubstitutionItem>;
 
 pub struct GetValueSymbolResult {
     pub symbol_uid: SymbolUid,
@@ -552,42 +554,31 @@ impl Module {
         &mut self,
         new_implementation: TypecheckedImplementation,
     ) -> Result<(), UnifyError> {
-        // If the `new_implementation` is a Provided implemenation,
-        // then check for overlapping implementations
-        match &new_implementation.kind {
-            TypecheckedImplementationKind::Required => Ok(()),
-            TypecheckedImplementationKind::Provided => {
-                let overlapped_implementation = self
-                    .implementations
-                    .iter()
-                    // Only check for overlapping against Provided implementations
-                    .filter(|implementation| match implementation.kind {
-                        TypecheckedImplementationKind::Provided => true,
-                        TypecheckedImplementationKind::Required => false,
-                    })
-                    .find(|implementation| {
-                        implementation
-                            .for_types
-                            .clone()
-                            .into_vector()
-                            .iter()
-                            .zip(new_implementation.for_types.clone().into_vector().iter())
-                            .all(|(existing_implementation_type, new_implementation_type)| {
-                                overlap(&existing_implementation_type, &new_implementation_type)
-                            })
-                    });
+        let overlapped_implementation = self
+            .implementations
+            .iter()
+            // Only check for overlapping against implementations that has the same scope as `new_implementation`
+            .filter(|existing_implementation| {
+                existing_implementation
+                    .scope_name
+                    .eq(&new_implementation.scope_name)
+            })
+            .find(|existing_implementation| {
+                types_overlap(
+                    existing_implementation.for_types.clone().into_vector(),
+                    new_implementation.for_types.clone().into_vector(),
+                )
+            });
 
-                match overlapped_implementation {
-                    Some(overlapped_implementation) => Err(UnifyError {
-                        position: new_implementation.declared_at,
-                        kind: UnifyErrorKind::OverlappingImplementation {
-                            new_implementation: new_implementation.clone(),
-                            existing_implementation: overlapped_implementation.clone(),
-                        },
-                    }),
-                    None => Ok(()),
-                }
-            }
+        match overlapped_implementation {
+            Some(overlapped_implementation) => Err(UnifyError {
+                position: new_implementation.declared_at,
+                kind: UnifyErrorKind::OverlappingImplementation {
+                    new_implementation: new_implementation.clone(),
+                    existing_implementation: overlapped_implementation.clone(),
+                },
+            }),
+            None => Ok(()),
         }?;
 
         self.implementations.push(new_implementation);
@@ -826,10 +817,14 @@ impl Module {
         }
     }
 
+    /// Find a matching implementation that satisfies the given `constraint`.
+    ///
+    /// `scope_name` is required such that `Required` implementation will not be wrongly selected.
     pub fn find_matching_implementation(
         &self,
         constraint: TypecheckedConstraint,
         position: Position,
+        scope_name: usize,
     ) -> Result<TypecheckedImplementation, UnifyError> {
         let substituted_types = constraint.type_variables.clone().map(|type_variable| {
             match self.get_type_variable_terminal_type(type_variable.name.clone()) {
@@ -838,24 +833,37 @@ impl Module {
             }
         });
 
-        match self.implementations.iter().find(|implementation| {
-            implementation.interface_uid.eq(&constraint.interface_uid)
-                && implementation.for_types.eq(&substituted_types)
+        let matching_implementation = match self.implementations.iter().find(|implementation| {
+            implementation.scope_name.eq(&scope_name)
+                && implementation.interface_uid.eq(&constraint.interface_uid)
+                && types_overlap(
+                    implementation.for_types.clone().into_vector(),
+                    substituted_types.clone().into_vector(),
+                )
         }) {
-            Some(implementation) => Ok(implementation.clone()),
-            None => {
-                let interface = self
-                    .get_interface_symbol_by_uid(&constraint.interface_uid)
-                    .expect("Compile error, cannot find interface");
+            Some(implementation) => Some(implementation.clone()),
+            None => None,
+        };
 
-                Err(UnifyError {
-                    position,
-                    kind: UnifyErrorKind::ConstraintUnsatisfied {
-                        interface_name: interface.0.name.representation,
-                        for_types: substituted_types,
-                    },
-                })
-            }
+        match matching_implementation {
+            Some(implementation) => Ok(implementation),
+            None => match self.scope.get_parent_scope_name(scope_name) {
+                Some(scope_name) => {
+                    self.find_matching_implementation(constraint, position, scope_name)
+                }
+                None => {
+                    let interface = self
+                        .get_interface_symbol_by_uid(&constraint.interface_uid)
+                        .expect("Compile error, cannot find interface");
+                    Err(UnifyError {
+                        position,
+                        kind: UnifyErrorKind::ConstraintUnsatisfied {
+                            interface_name: interface.0.name.representation,
+                            for_types: substituted_types,
+                        },
+                    })
+                }
+            },
         }
     }
 
@@ -1146,6 +1154,14 @@ pub struct TypecheckedImplementation {
     /// The UID of this implementation.
     /// Used for transpiling dictionary passing.
     pub uid: SymbolUid,
+
+    /// `scope_name` is used to determine where this implementation is declared.
+    ///
+    /// Usually,
+    /// - `Provided` implementations should have the top-level `scope_name`;
+    /// - `Required` implementations has lower-level `scope_name`, namely the scope of the corresponding function
+    pub scope_name: usize,
+
     pub declared_at: Position,
     pub interface_uid: SymbolUid,
     pub for_types: NonEmpty<Type>,
@@ -1161,8 +1177,8 @@ pub struct TypecheckedImplementation {
 /// ```
 /// interface Equatable<T> {  }
 ///
-/// interface Equatable<String> {}
-///        // ^^^^^^^^^^^^^^^^^ Provided implementation
+/// implements Equatable<String> {}
+///         // ^^^^^^^^^^^^^^^^^ Provided implementation
 ///
 /// let notEquals = <T> where Equatable<T>(a: T, b: T): Boolean => {
 ///                        // ^^^^^^^^^^^^ Required implementation
@@ -1227,6 +1243,14 @@ impl FunctionSignature {
             })),
             None => Type::Function(self.function_type.clone()),
         }
+    }
+}
+
+fn types_overlap(xs: Vec<Type>, ys: Vec<Type>) -> bool {
+    if xs.len().ne(&ys.len()) {
+        false
+    } else {
+        xs.iter().zip(ys.iter()).all(|(x, y)| overlap(x, y))
     }
 }
 

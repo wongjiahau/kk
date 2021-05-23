@@ -8,8 +8,8 @@ INPUT
 interface Equatable<T> {
 }
 
-let notEquals = <T> where Equatable<A>(a: T, b: T): Boolean => true
-//                                  ^ Error: Unknown type variable
+let notEquals = <T where Equatable<A>>(a: T, b: T): Boolean => true
+//                                 ^ Error: Unknown type variable
 
 ============
 EXIT CODE
@@ -25,9 +25,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/interface_3.kk:4:37
+  ┌─ tests/compiler/typecheck/interface_3.kk:4:36
   │
-4 │ let notEquals = <T> where Equatable<A>(a: T, b: T): Boolean => true
-  │                                     ^ Unknown type variable
+4 │ let notEquals = <T where Equatable<A>>(a: T, b: T): Boolean => true
+  │                                    ^ Unknown type variable
   │
   = No type variable has the name of A in this scope.
