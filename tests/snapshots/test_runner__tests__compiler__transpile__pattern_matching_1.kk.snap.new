@@ -1,0 +1,39 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+[
+print @ "hello world"
+//  and = (x : Boolean) -> (y : Boolean) -> (x .and y) match [
+//    (true .and true) -> true,
+//    _ -> false
+//  ],
+//  print @ false and true,
+//  print @ true and false,
+//  print @ false and true,
+//  print @ false and false
+]
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+const print_0 = (x) => console.log(x); ;
+
+var KK_MODULE = {};
+
+ KK_MODULE[("tests/compiler/transpile/pattern_matching_1.kk")] = (((() => {((print_0)("hello world"));
+
+return {}}))())
+hello world
+
+============
+STDERR
+============

@@ -1,3 +1,4 @@
+use crate::ibx::Ibx;
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
 use crate::{raw_ast::*, tokenize::TokenizeError};
 
@@ -73,13 +74,466 @@ pub struct Parser<'a> {
     tokenizer: &'a mut Tokenizer,
 }
 
+impl Ibx {
+    fn to_arrow_function_paramaters(self) -> Result<ArrowFunctionParameters, ParseError> {
+        match self {
+            Ibx::String(_) => todo!(),
+            Ibx::Integer(_) => todo!(),
+            Ibx::Float(_) => todo!(),
+            Ibx::Identifier(_) => todo!(),
+            Ibx::Infix {
+                left,
+                center,
+                right,
+            } => match *center {
+                Ibx::Identifier(token) => match token.representation.as_str() {
+                    ":" => {
+                        let pattern = left.to_pattern()?;
+                        let type_annotation = right.to_type_annotation()?;
+                        Ok(ArrowFunctionParameters::WithParenthesis(Box::new(
+                            FunctionParameters {
+                                left_parenthesis: Token::dummy(),
+                                parameters: Box::new(NonEmpty {
+                                    head: FunctionParameter {
+                                        pattern,
+                                        type_annotation: Box::new(Some(type_annotation)),
+                                    },
+                                    tail: vec![],
+                                }),
+                                right_parenthesis: Token::dummy(),
+                            },
+                        )))
+                    }
+                    _ => todo!(),
+                },
+                _ => todo!(),
+            },
+            Ibx::Array {
+                left_square_bracket,
+                right_square_bracket,
+                elements,
+            } => todo!(),
+        }
+    }
+    fn to_token(self, name: String) -> Result<Token, ParseError> {
+        match self {
+            Ibx::Identifier(token) => {
+                if token.representation.eq(&name) {
+                    Ok(token)
+                } else {
+                    panic!()
+                }
+            }
+
+            _ => panic!(),
+        }
+    }
+    fn to_match_case(self) -> Result<SwitchCase, ParseError> {
+        match self {
+            Ibx::Infix {
+                left,
+                center,
+                right,
+            } => {
+                center.to_token("->".to_string())?;
+                Ok(SwitchCase {
+                    keyword_case: Token::dummy(),
+                    pattern: left.to_pattern()?,
+                    body: Box::new(right.to_expression()?),
+                })
+            }
+            _ => todo!(),
+        }
+    }
+    fn to_expression(self) -> Result<Expression, ParseError> {
+        match self {
+            Ibx::String(token) => Ok(Expression::String(token)),
+            Ibx::Integer(token) => Ok(Expression::Integer(token)),
+            Ibx::Float(token) => Ok(Expression::Float(token)),
+            Ibx::Identifier(token) => Ok(Expression::Identifier(token)),
+            Ibx::Infix {
+                left,
+                center,
+                right,
+            } => match *center.clone() {
+                Ibx::String(_) => todo!(),
+                Ibx::Integer(_) => todo!(),
+                Ibx::Float(_) => todo!(),
+                Ibx::Identifier(center_token) => match center_token.representation.as_str() {
+                    // lambda
+                    "->" => Ok(Expression::ArrowFunction(Box::new(ArrowFunction {
+                        type_variables_declaration: None,
+                        parameters: left.to_arrow_function_paramaters()?,
+                        return_type_annotation: None,
+                        body: Box::new(right.to_expression()?),
+                    }))),
+                    // match expression
+                    "match" => match *right {
+                        Ibx::Array {
+                            elements,
+                            left_square_bracket,
+                            right_square_bracket,
+                        } => Ok(Expression::Switch {
+                            left_curly_bracket: left_square_bracket,
+                            right_curly_bracket: right_square_bracket,
+                            keyword_switch: center_token,
+                            expression: Box::new(left.to_expression()?),
+                            cases: match elements
+                                .into_iter()
+                                .map(|element| element.to_match_case())
+                                .collect::<Result<Vec<SwitchCase>, ParseError>>()?
+                                .split_first()
+                            {
+                                None => panic!(),
+                                Some((head, tail)) => Box::new(NonEmpty {
+                                    head: head.clone(),
+                                    tail: tail.to_vec(),
+                                }),
+                            },
+                        }),
+                        _ => panic!("expected array"),
+                    },
+                    // unary function application
+                    "@" => {
+                        let function = left.to_expression()?;
+                        let argument = right.to_expression()?;
+                        Ok(Expression::FunctionCall(Box::new(FunctionCall {
+                            function: Box::new(function),
+                            first_argument: Box::new(argument),
+                            rest_arguments: None,
+                            type_arguments: None,
+                        })))
+                    }
+                    other => {
+                        if other.starts_with(".") {
+                            // parse separator-named tuple
+                            let left = left.to_expression()?;
+                            let right = right.to_expression()?;
+                            Ok(Expression::Record {
+                                wildcard: None,
+                                left_curly_bracket: Token::dummy(),
+                                key_value_pairs: vec![
+                                    RecordKeyValue {
+                                        key: Token::dummy_identifier("0".to_string()),
+                                        value: left,
+                                    },
+                                    RecordKeyValue {
+                                        key: center_token,
+                                        value: right,
+                                    },
+                                ],
+                                right_curly_bracket: Token::dummy(),
+                            })
+                        } else {
+                            // binary function application
+                            let left = left.to_expression()?;
+                            let function = center.to_expression()?;
+                            let right = right.to_expression()?;
+                            Ok(Expression::FunctionCall(Box::new(FunctionCall {
+                                function: Box::new(function),
+                                first_argument: Box::new(left),
+                                rest_arguments: Some(FunctionCallRestArguments {
+                                    left_parenthesis: Token::dummy(),
+                                    arguments: vec![right],
+                                    right_parenthesis: Token::dummy(),
+                                }),
+                                type_arguments: None,
+                            })))
+                        }
+                    }
+                },
+                Ibx::Infix {
+                    left,
+                    center,
+                    right,
+                } => todo!(),
+                Ibx::Array {
+                    left_square_bracket,
+                    right_square_bracket,
+                    elements,
+                } => todo!(),
+            },
+            Ibx::Array {
+                left_square_bracket,
+                right_square_bracket,
+                elements,
+            } => todo!(),
+        }
+    }
+
+    fn to_type_annotation(self) -> Result<TypeAnnotation, ParseError> {
+        match self {
+            Ibx::String(_) => todo!(),
+            Ibx::Integer(_) => todo!(),
+            Ibx::Float(_) => todo!(),
+            Ibx::Identifier(token) => Ok(TypeAnnotation::Named {
+                name: token,
+                type_arguments: None,
+            }),
+            Ibx::Infix {
+                left,
+                center,
+                right,
+            } => todo!(),
+            Ibx::Array {
+                left_square_bracket,
+                right_square_bracket,
+                elements,
+            } => todo!(),
+        }
+    }
+
+    fn to_pattern(self) -> Result<DestructurePattern, ParseError> {
+        match self {
+            Ibx::String(_) => todo!(),
+            Ibx::Integer(_) => todo!(),
+            Ibx::Float(_) => todo!(),
+            Ibx::Identifier(token) => match token.representation.as_str() {
+                "true" => Ok(DestructurePattern::Boolean { token, value: true }),
+                "false" => Ok(DestructurePattern::Boolean {
+                    token,
+                    value: false,
+                }),
+                "_" => Ok(DestructurePattern::Underscore(token)),
+                _ => Ok(DestructurePattern::Identifier(token)),
+            },
+            Ibx::Infix {
+                left,
+                center,
+                right,
+            } => match *center.clone() {
+                Ibx::Identifier(center_token) => {
+                    if center_token.representation.starts_with(".") {
+                        // parse separator-named tuple
+                        let left = left.to_pattern()?;
+                        let right = right.to_pattern()?;
+                        Ok(DestructurePattern::Record {
+                            wildcard: None,
+                            left_curly_bracket: Token::dummy(),
+                            key_value_pairs: vec![
+                                DestructuredRecordKeyValue {
+                                    key: Token::dummy_identifier("0".to_string()),
+                                    as_value: Some(left),
+                                },
+                                DestructuredRecordKeyValue {
+                                    key: center_token,
+                                    as_value: Some(right),
+                                },
+                            ],
+                            right_curly_bracket: Token::dummy(),
+                        })
+                    } else {
+                        panic!("center={:#?}", center)
+                    }
+                }
+                _ => panic!(),
+            },
+            Ibx::Array {
+                left_square_bracket,
+                right_square_bracket,
+                elements,
+            } => todo!(),
+        }
+    }
+    fn to_statement(self) -> Result<Statement, ParseError> {
+        match self.clone() {
+            Ibx::String(_) => todo!(),
+            Ibx::Integer(_) => todo!(),
+            Ibx::Float(_) => todo!(),
+            Ibx::Identifier(_) => todo!(),
+            Ibx::Infix {
+                left,
+                center,
+                right,
+            } => match *center {
+                Ibx::String(_) => todo!(),
+                Ibx::Integer(_) => todo!(),
+                Ibx::Float(_) => todo!(),
+                Ibx::Identifier(token) => match token.representation.as_str() {
+                    // assignment
+                    "=" => {
+                        let (left, type_annotation) = match *left {
+                            Ibx::Infix {
+                                left,
+                                center,
+                                right,
+                            } => match *center.clone() {
+                                Ibx::Identifier(Token { representation, .. })
+                                    if representation.eq(":") =>
+                                {
+                                    (left.to_pattern()?, Some(right.to_type_annotation()?))
+                                }
+                                other => (other.to_pattern()?, None),
+                            },
+                            other => (other.to_pattern()?, None),
+                        };
+                        Ok(Statement::Let(LetStatement {
+                            keyword_export: None,
+                            keyword_let: Token::dummy(),
+                            left,
+                            type_annotation,
+                            right: right.to_expression()?,
+                        }))
+                    }
+                    _ => {
+                        // expression
+                        Ok(Statement::Expression(self.to_expression()?))
+                    }
+                },
+                Ibx::Infix {
+                    left,
+                    center,
+                    right,
+                } => todo!(),
+                Ibx::Array {
+                    left_square_bracket,
+                    right_square_bracket,
+                    elements,
+                } => todo!(),
+            },
+            Ibx::Array {
+                left_square_bracket,
+                right_square_bracket,
+                elements,
+            } => todo!(),
+        }
+    }
+    fn to_statements(self) -> Result<Vec<Statement>, ParseError> {
+        match self {
+            Ibx::String(_) => todo!(),
+            Ibx::Integer(_) => todo!(),
+            Ibx::Float(_) => todo!(),
+            Ibx::Identifier(_) => todo!(),
+            Ibx::Array { elements, .. } => elements
+                .into_iter()
+                .map(|element| element.to_statement())
+                .collect(),
+            Ibx::Infix {
+                left,
+                center,
+                right,
+            } => match *center {
+                Ibx::String(_) => todo!(),
+                Ibx::Integer(_) => todo!(),
+                Ibx::Float(_) => todo!(),
+                Ibx::Identifier(token) => match token.representation.as_str() {
+                    "," => {
+                        let head = left.to_statement()?;
+                        let tail = right.to_statements()?;
+                        Ok(vec![head].into_iter().chain(tail.into_iter()).collect())
+                    }
+                    _ => panic!(),
+                },
+                Ibx::Infix {
+                    left,
+                    center,
+                    right,
+                } => todo!(),
+                Ibx::Array {
+                    left_square_bracket,
+                    right_square_bracket,
+                    elements,
+                } => todo!(),
+            },
+        }
+    }
+}
+
 impl<'a> Parser<'a> {
     pub fn new(tokenizer: &mut Tokenizer) -> Parser {
         Parser { tokenizer }
     }
     pub fn parse(tokenizer: &mut Tokenizer) -> Result<Vec<Statement>, ParseError> {
         let mut parser = Parser { tokenizer };
-        parser.parse_statements()
+        let ibx = parser.parse_ibx()?;
+        ibx.to_statements()
+
+        // println!("{}", ibx.to_string());
+        // parser.parse_statements()
+    }
+    fn parse_ibx(&mut self) -> Result<Ibx, ParseError> {
+        let mut elements = vec![];
+        let context = None;
+        while let Some(token) = self.peek_next_meaningful_token()? {
+            let element = match token.token_type {
+                t @ TokenType::Identifier => Ibx::Identifier(self.eat_token(t, context)?),
+                t @ TokenType::Float => Ibx::Float(self.eat_token(t, context)?),
+                t @ TokenType::Integer => Ibx::Integer(self.eat_token(t, context)?),
+                t @ TokenType::String => Ibx::String(self.eat_token(t, context)?),
+                TokenType::LeftParenthesis => {
+                    self.eat_token(TokenType::LeftParenthesis, context)?;
+                    let ibx = self.parse_ibx()?;
+                    self.eat_token(TokenType::RightParenthesis, context)?;
+                    ibx
+                }
+                TokenType::LeftSquareBracket => {
+                    let mut elements = vec![];
+                    let left_square_bracket =
+                        self.eat_token(TokenType::LeftSquareBracket, context)?;
+                    loop {
+                        if let Some(right_square_bracket) =
+                            self.try_eat_token(TokenType::RightSquareBracket)?
+                        {
+                            break Ibx::Array {
+                                left_square_bracket,
+                                elements,
+                                right_square_bracket,
+                            };
+                        } else {
+                            elements.push(self.parse_ibx()?);
+                            if self.try_eat_token(TokenType::Comma)?.is_none() {
+                                break Ibx::Array {
+                                    left_square_bracket,
+                                    elements,
+                                    right_square_bracket: self
+                                        .eat_token(TokenType::RightSquareBracket, context)?,
+                                };
+                            }
+                        }
+                    }
+                }
+                TokenType::Comma | TokenType::RightParenthesis | TokenType::RightSquareBracket => {
+                    break
+                }
+                other => {
+                    panic!("unknown token type = {:#?}", other)
+                }
+            };
+            elements.push(element)
+        }
+        // organize elements into a right-associative binary tree
+        match elements.split_first() {
+            None => todo!(),
+            Some((head, tail)) => self.parse_ibx_binary(NonEmpty {
+                head: head.clone(),
+                tail: tail.to_vec(),
+            }),
+        }
+    }
+
+    fn parse_ibx_binary(&self, elements: NonEmpty<Ibx>) -> Result<Ibx, ParseError> {
+        let first = elements.head;
+        match elements.tail.split_first() {
+            None => Ok(first),
+            Some((second, tail)) => match tail.split_first() {
+                None => panic!("{:#?}", first),
+                // None => Ok(Ibx::Prefix {
+                //     left: Box::new(first),
+                //     right: Box::new(second.clone()),
+                // }),
+                Some((head, tail)) => {
+                    let ibx = Ibx::Infix {
+                        left: Box::new(first.clone()),
+                        center: Box::new(second.clone()),
+                        right: Box::new(self.parse_ibx_binary(NonEmpty {
+                            head: head.clone(),
+                            tail: tail.to_vec(),
+                        })?),
+                    };
+                    Ok(ibx)
+                }
+            },
+        }
     }
 
     /// Return the next meaningful token.  

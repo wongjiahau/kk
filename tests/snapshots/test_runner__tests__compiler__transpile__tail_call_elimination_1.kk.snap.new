@@ -1,0 +1,62 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let minus = (a: Integer, b: Integer): Integer => @@@  _0 - _1 @@@
+let equals = (a: Integer, b: Integer): Boolean => @@@ _0 === _1 @@@
+
+let loopDown = (n: Integer): Integer => {
+  if n.equals(0)
+    0
+  else {
+    "hello world".print()
+    n.minus(1).loopDown()
+  }
+}
+
+// This will result in stack overflow if loopDown don't have tail call elimination
+// Last tested, any number above 5964 will trigger stack overflow
+10.loopDown().print()
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+const print_0 = (x) => console.log(x); ;
+
+var KK_MODULE = {};
+
+ KK_MODULE[("tests/compiler/transpile/tail_call_elimination_1.kk")] = (((() => {var minus_7 = ((_0,_1) => {var a_10 = _0;
+
+var b_11 = _1;
+
+return   _0 - _1 });
+
+var equals_8 = ((_0,_1) => {var a_12 = _0;
+
+var b_13 = _1;
+
+return  _0 === _1 });
+
+var loopDown_9 = ((_0) => {while(true){var n_14 = _0;
+
+return (((() => {return ((((equals_8)(n_14, 0))) ? (0) : ((((() => {((print_0)("hello world"));
+
+return (((() => { _0 = ((minus_7)(n_14, 1))}))())}))())))}))())}});
+
+((print_0)(((loopDown_9)(10))));
+
+return {}}))())
+hello world
+undefined
+
+============
+STDERR
+============

@@ -4,8 +4,9 @@ let equals = (a: Integer, b: Integer): Boolean => @@@ _0 === _1 @@@
 let loopDown = (n: Integer): Integer => {
   if n.equals(0)
     0
-  else
+  else {
     n.minus(1).loopDown()
+  }
 }
 
 // This will result in stack overflow if loopDown don't have tail call elimination

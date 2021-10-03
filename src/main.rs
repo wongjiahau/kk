@@ -15,7 +15,10 @@ mod tokenize;
 mod stringify_error;
 
 mod cli;
+mod ibx;
+mod javascript_ast;
 mod solved_ast;
+mod tail_call_optimisation;
 mod typ;
 use cli::*;
 

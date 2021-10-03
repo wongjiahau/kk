@@ -1,294 +1,10 @@
 use crate::{
     inferred_ast::*,
+    javascript_ast::javascript,
     non_empty::NonEmpty,
     raw_ast::InfinitePatternKind,
     unify::{InferredModule, UnifyProgramResult},
 };
-
-mod javascript {
-    use crate::non_empty::NonEmpty;
-
-    #[derive(Debug, Clone)]
-    pub enum Statement {
-        Assignment {
-            is_declaration: bool,
-            assignment: Assignment,
-        },
-        Expression(Expression),
-        Return(Expression),
-        If {
-            condition: Expression,
-            if_true: Vec<Statement>,
-        },
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct Assignment {
-        pub left: AssignmentLeft,
-        pub right: Expression,
-    }
-
-    #[derive(Debug, Clone)]
-    pub enum AssignmentLeft {
-        Variable(Identifier),
-        Object {
-            name: Identifier,
-            accesses: NonEmpty<Expression>,
-        },
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct Identifier(pub String);
-
-    #[derive(Debug, Clone)]
-    pub enum Expression {
-        /// Namely, something like (a, b, c), but not that this is not a tuple in JavaScript.
-        /// Refer https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Comma_Operator
-        Sequence(Box<NonEmpty<Expression>>),
-        LogicalOr {
-            left: Box<Expression>,
-            right: Box<Expression>,
-        },
-        LogicalAnd {
-            left: Box<Expression>,
-            right: Box<Expression>,
-        },
-        Equals {
-            left: Box<Expression>,
-            right: Box<Expression>,
-        },
-        Null,
-        Boolean(bool),
-        Variable(Identifier),
-        String(String),
-        Number {
-            representation: String,
-        },
-        StringConcat(Vec<Expression>),
-        Array(Vec<Expression>),
-        FunctionCall {
-            function: Box<Expression>,
-            arguments: Vec<Expression>,
-        },
-        ArrowFunction {
-            parameters: Vec<Identifier>,
-            body: Vec<Statement>,
-        },
-        Object(Vec<ObjectKeyValue>),
-        ObjectWithSpread {
-            spread: Box<Expression>,
-            key_values: Vec<ObjectKeyValue>,
-        },
-        Conditional {
-            condition: Box<Expression>,
-            if_true: Box<Expression>,
-            if_false: Box<Expression>,
-        },
-        MemberAccess {
-            object: Box<Expression>,
-            property: Box<Expression>,
-        },
-        UnsafeJavascriptCode(String),
-        Assignment(Box<Assignment>),
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct ObjectKeyValue {
-        pub key: Identifier,
-        pub value: Option<Box<Expression>>,
-    }
-
-    pub fn print_statements(statements: Vec<Statement>) -> String {
-        statements
-            .into_iter()
-            .map(Printable::print)
-            .collect::<Vec<String>>()
-            .join(";\n\n")
-    }
-
-    trait Printable {
-        fn print(self) -> String;
-    }
-
-    impl Printable for Statement {
-        fn print(self) -> String {
-            match self {
-                Statement::Assignment {
-                    is_declaration,
-                    assignment,
-                } => {
-                    format!(
-                        "{} {}",
-                        if is_declaration { "var" } else { "" },
-                        assignment.print(),
-                    )
-                }
-                Statement::Expression(expression) => expression.print(),
-                Statement::Return(expression) => {
-                    format!("return {}", expression.print())
-                }
-                Statement::If { condition, if_true } => {
-                    format!("if({}){{{}}}", condition.print(), print_statements(if_true))
-                }
-            }
-        }
-    }
-    impl Printable for AssignmentLeft {
-        fn print(self) -> String {
-            match self {
-                AssignmentLeft::Variable(identifier) => identifier.print(),
-                AssignmentLeft::Object { name, accesses } => {
-                    format!(
-                        "{}{}",
-                        name.print(),
-                        accesses
-                            .map(|access| access.print())
-                            .map(|expression| { format!("[{}]", expression) })
-                            .into_vector()
-                            .join("")
-                    )
-                }
-            }
-        }
-    }
-    impl Printable for Assignment {
-        fn print(self) -> String {
-            let right = self.right.print();
-            let left = self.left.print();
-            format!("{} = {}", left, right)
-        }
-    }
-    impl Printable for Expression {
-        fn print(self) -> String {
-            match self {
-                Expression::LogicalOr { left, right } => {
-                    format!("({}) || ({})", left.print(), right.print())
-                }
-                Expression::LogicalAnd { left, right } => {
-                    format!("({}) && ({})", left.print(), right.print())
-                }
-                Expression::Equals { left, right } => {
-                    format!("({}) === ({})", left.print(), right.print())
-                }
-                Expression::Null => "null".to_string(),
-                Expression::Boolean(value) => (if value { "true" } else { "false" }).to_string(),
-                Expression::Variable(identifier) => identifier.print(),
-                Expression::String(string) => {
-                    if string.starts_with('"') {
-                        string
-                    } else {
-                        format!("(\"{}\")", string)
-                    }
-                }
-                Expression::Number { representation } => representation,
-                Expression::StringConcat(expressions) => {
-                    let result = expressions
-                        .into_iter()
-                        .map(|expression| format!("({})", expression.print()))
-                        .collect::<Vec<String>>()
-                        .join("+");
-                    format!("({})", result)
-                }
-                Expression::Array(expressions) => {
-                    let elements = expressions
-                        .into_iter()
-                        .map(Printable::print)
-                        .collect::<Vec<String>>()
-                        .join(",");
-                    format!("[{}]", elements)
-                }
-                Expression::FunctionCall {
-                    function,
-                    arguments,
-                } => {
-                    format!(
-                        "(({})({}))",
-                        function.print(),
-                        arguments
-                            .into_iter()
-                            .map(Printable::print)
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                    )
-                }
-                Expression::ArrowFunction { parameters, body } => {
-                    format!(
-                        "(({}) => {{{}}})",
-                        parameters
-                            .into_iter()
-                            .map(Printable::print)
-                            .collect::<Vec<String>>()
-                            .join(","),
-                        print_statements(body)
-                    )
-                }
-                Expression::Object(key_values) => {
-                    format!(
-                        "{{{}}}",
-                        key_values
-                            .into_iter()
-                            .map(Printable::print)
-                            .collect::<Vec<String>>()
-                            .join(",")
-                    )
-                }
-                Expression::ObjectWithSpread { spread, key_values } => {
-                    format!(
-                        "{{...{}, {}}}",
-                        spread.print(),
-                        key_values
-                            .into_iter()
-                            .map(Printable::print)
-                            .collect::<Vec<String>>()
-                            .join(",")
-                    )
-                }
-                Expression::Conditional {
-                    condition,
-                    if_true,
-                    if_false,
-                } => {
-                    format!(
-                        "(({}) ? ({}) : ({}))",
-                        condition.print(),
-                        if_true.print(),
-                        if_false.print()
-                    )
-                }
-                Expression::MemberAccess { object, property } => {
-                    format!("({})[{}]", object.print(), property.print())
-                }
-                Expression::UnsafeJavascriptCode(code) => code,
-                Expression::Sequence(expressions) => {
-                    format!(
-                        "({})",
-                        expressions.map(Printable::print).into_vector().join(", ")
-                    )
-                }
-                Expression::Assignment(assignment) => {
-                    format!("({})", assignment.print())
-                }
-            }
-        }
-    }
-    impl Printable for ObjectKeyValue {
-        fn print(self) -> String {
-            format!(
-                "{}: {}",
-                self.key.clone().print(),
-                match self.value {
-                    Some(value) => value.print(),
-                    None => self.key.print(),
-                }
-            )
-        }
-    }
-    impl Printable for Identifier {
-        fn print(self) -> String {
-            self.0
-        }
-    }
-}
 
 const KK_MODULE: &str = "KK_MODULE";
 const ENUM_TAG_NAME: &str = "$";
@@ -324,7 +40,7 @@ pub fn transpile_program(unify_project_result: UnifyProgramResult) -> String {
         .chain(vec![entry_module])
         .collect::<Vec<javascript::Statement>>();
 
-    javascript::print_statements(statements)
+    javascript::print_multiple(statements, ";\n\n")
 }
 
 pub fn transpile_module(module: InferredModule) -> javascript::Statement {
@@ -358,7 +74,7 @@ pub fn transpile_module(module: InferredModule) -> javascript::Statement {
             },
             right: javascript::Expression::FunctionCall {
                 arguments: vec![],
-                function: Box::new(javascript::Expression::ArrowFunction {
+                function: Box::new(javascript::Expression::Function(javascript::Function {
                     parameters: vec![],
                     body: statements
                         .into_iter()
@@ -366,7 +82,7 @@ pub fn transpile_module(module: InferredModule) -> javascript::Statement {
                             javascript::Expression::Object(exported_symbols),
                         )])
                         .collect(),
-                }),
+                })),
             },
         },
     }
@@ -545,7 +261,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                 .into_iter()
                 .flatten()
                 .collect();
-            javascript::Expression::ArrowFunction { parameters, body }
+            javascript::Expression::Function(javascript::Function { parameters, body })
         }
         InferredExpression::FunctionCall(function) => {
             let InferredFunctionCall {
@@ -606,7 +322,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                 .collect::<Vec<javascript::ObjectKeyValue>>();
 
             javascript::Expression::FunctionCall {
-                function: Box::new(javascript::Expression::ArrowFunction {
+                function: Box::new(javascript::Expression::Function(javascript::Function {
                     parameters: vec![temporary_identifier],
                     body: vec![javascript::Statement::Return(
                         javascript::Expression::ObjectWithSpread {
@@ -614,7 +330,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                             key_values: updates,
                         },
                     )],
-                }),
+                })),
                 arguments: vec![transpile_expression(*expression)],
             }
         }
@@ -635,7 +351,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
             return_value,
         } => javascript::Expression::FunctionCall {
             arguments: vec![],
-            function: Box::new(javascript::Expression::ArrowFunction {
+            function: Box::new(javascript::Expression::Function(javascript::Function {
                 parameters: vec![],
                 body: transpile_statements(statements)
                     .into_iter()
@@ -643,7 +359,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                         *return_value,
                     ))])
                     .collect(),
-            }),
+            })),
         },
         InferredExpression::ConstrainedVariable { .. } => {
             todo!("Use a different AST for transpiling, because transpiling should not has ConstraintVariable,

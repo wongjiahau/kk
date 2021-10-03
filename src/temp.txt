@@ -1,0 +1,29 @@
+====
+FIXED
+=====
+displayProject(transactions)
+editBuyers
+insertNewAgentLead (with defined source)
+displayAgencies 2 (include developers)
+whitelistIndividualAgent & removeWhitelist (Case 1)
+whitelistIndividualAgent & removeWhitelist (Case 2)
+displayPreferenceOptions & submitPreferenceOptions
+updateProjectStatus
+createChildProject
+booking a unit which is entitled for a non-expired discount (need to resolve displayProject conflict)
+Update appointment letter commission tiers
+registerSocialMedia
+createScheduleAgent (Case 3
+displayAvailableTimeslots (Case 1) & createScheduleArm (with agentLeadIds) & updateAgentLeads
+display categorized project (jma only)
+
+====
+PENDING
+====
+verify an unverified agent (requires logic changes)
+
+
+====
+Removed
+====
+submitLoanDecision

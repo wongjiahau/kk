@@ -20,7 +20,7 @@ fn run_all_tests() {
                 .expect("Failed to convert entry to string")
                 .to_string();
 
-            if filename.ends_with(".kk") {
+            if filename.ends_with("pattern_matching_1.kk") {
                 let input_filename = filename;
                 print!("{}", input_filename);
                 let input = fs::read_to_string(&input_filename).expect("failed to read input file");

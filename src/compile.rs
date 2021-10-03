@@ -27,7 +27,7 @@ pub fn compile(module_meta: ModuleMeta) {
             Ok(result) => {
                 use std::process::Command;
                 let javascript = transpile_program(result);
-                // println!("{}", javascript);
+                println!("{}", javascript);
                 let output = Command::new("node")
                     .arg("-e")
                     .arg(javascript)
