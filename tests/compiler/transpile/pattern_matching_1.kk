@@ -1,12 +1,9 @@
-[
-print @ "hello world"
-//  and = (x : Boolean) -> (y : Boolean) -> (x .and y) match [ 
-//    (true .and true) -> true,
-//    _ -> false
-//  ],
-//  print @ false and true,
-//  print @ true and false,
-//  print @ false and true,
-//  print @ false and false
-]
-
+{
+  and: x: y: {x, y} match [
+    {x: true, y: true}: true,
+    _ : false
+  ],
+  false and true | print,
+  true and false | print,
+  x: 1 + 2, 
+}

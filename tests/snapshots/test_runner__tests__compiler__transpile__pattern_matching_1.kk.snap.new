@@ -5,35 +5,28 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-[
-print @ "hello world"
-//  and = (x : Boolean) -> (y : Boolean) -> (x .and y) match [
-//    (true .and true) -> true,
-//    _ -> false
-//  ],
-//  print @ false and true,
-//  print @ true and false,
-//  print @ false and true,
-//  print @ false and false
-]
+{
+  and: x: y: {x, y} match [
+    {x: true, y: true}: true,
+    _ : false
+  ],
+  false and true | print,
+  true and false | print,
+  x: 1 + 2,
+}
 
 ============
 EXIT CODE
 ============
-0
+101
 
 ============
 STDOUT
 ============
-const print_0 = (x) => console.log(x); ;
 
-var KK_MODULE = {};
-
- KK_MODULE[("tests/compiler/transpile/pattern_matching_1.kk")] = (((() => {((print_0)("hello world"));
-
-return {}}))())
-hello world
 
 ============
 STDERR
 ============
+thread 'main' panicked at 'unknown token type = RightCurlyBracket', src/parse.rs:984:21
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

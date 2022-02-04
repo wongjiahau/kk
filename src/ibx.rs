@@ -14,11 +14,19 @@ pub enum Ibx {
         center: Box<Ibx>,
         right: Box<Ibx>,
     },
-    Array {
-        left_square_bracket: Token,
-        right_square_bracket: Token,
+    List {
+        bracket_kind: IbxListBracketKind,
+        open: Token,
+        close: Token,
         elements: Vec<Ibx>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum IbxListBracketKind {
+    Parenthesis,
+    CurlyBracket,
+    SquareBracket,
 }
 
 impl Ibx {
@@ -28,10 +36,11 @@ impl Ibx {
             Ibx::Float(token) | Ibx::Identifier(token) | Ibx::Integer(token) => {
                 format!("{}", token.representation)
             }
-            Ibx::Array {
-                left_square_bracket,
+            Ibx::List {
+                open: left_square_bracket,
                 elements,
-                right_square_bracket,
+                close: right_square_bracket,
+                bracket_kind,
             } => format!(
                 "[ {} ]",
                 elements

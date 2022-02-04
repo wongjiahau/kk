@@ -10,6 +10,16 @@
 (65.0 |> grade , print),
 (print : 1 + sin : 2)
 
+[
+  grade enum [a, b, c, failed],
+  to-grade = (score: float) -> grade => failed unless [
+    (score > 80.0) ? a,
+    (score > 60.0) ? b,
+    (score > 40.0) ? c
+  ],
+  85.to-grade().print(),
+]
+
 ; (f : x) means call f with the value f
 (
   (x |> fs) macro
