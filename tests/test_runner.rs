@@ -5,13 +5,18 @@ fn run_all_tests() {
     use std::fs;
     use std::process::Command;
 
-    let test_dir = "tests/compiler/";
+    let test_dir = "tests/compiler";
     let folders = fs::read_dir(test_dir).expect("Failed to read directory");
 
     let mut successful_test_count = 0;
     for folder in folders {
-        let files = fs::read_dir(folder.unwrap().path().to_str().unwrap())
-            .expect("Failed to read directory");
+        let folder = folder.unwrap().path();
+        let folder = folder.to_str().unwrap();
+        // TODO: remove the following temp code
+        if !folder.ends_with("intepret") {
+            continue;
+        }
+        let files = fs::read_dir(folder).expect("Failed to read directory");
         for file in files {
             let file = file.expect("Failed to read entry");
             let filename = file

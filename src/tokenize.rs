@@ -152,32 +152,7 @@ impl Tokenizer {
 
         if let Some(character) = self.characters_iterator.next() {
             match character.value {
-                '_' => Ok(Some(Token {
-                    token_type: TokenType::Underscore,
-                    representation: "_".to_string(),
-                    position: make_position(character, None),
-                })),
-                '`' => {
-                    let trailing_backticks = self
-                        .characters_iterator
-                        .by_ref()
-                        .peeking_take_while(|character| character.value == '`')
-                        .collect::<Vec<Character>>();
-
-                    match trailing_backticks.len() {
-                        0 => Ok(Some(Token {
-                            token_type: TokenType::Backtick,
-                            representation: "`".to_string(),
-                            position: make_position(character, None),
-                        })),
-                        2 => Ok(Some(Token {
-                            token_type: TokenType::TripleBacktick,
-                            representation: "```".to_string(),
-                            position: make_position(character, trailing_backticks.last()),
-                        })),
-                        _ => panic!("Not implemented yet"),
-                    }
-                }
+                // Comments
                 '/' => match self.characters_iterator.next() {
                     Some(Character { value: '/', .. }) => {
                         let comment = self
@@ -239,41 +214,7 @@ impl Tokenizer {
                         }),
                     }),
                 },
-                '@' => {
-                    let first_alias = character;
-                    let _second_alias = self.eat_character('@')?;
-                    let _third_alias = self.eat_character('@')?;
-
-                    let mut characters = Vec::new();
-                    let mut ending_aliases_count = 0;
-                    let (characters, last_alias) = loop {
-                        if let Some(character) = self.characters_iterator.next() {
-                            if character.value == '@' {
-                                ending_aliases_count += 1;
-                                if ending_aliases_count == 3 {
-                                    break (characters, character);
-                                }
-                            } else {
-                                ending_aliases_count = 0;
-                                characters.push(character)
-                            }
-                        } else {
-                            return Err(TokenizeError::UnexpectedEof {
-                                expected_character_value: '@',
-                            }
-                            .into_parse_error());
-                        }
-                    };
-                    Ok(Some(Token {
-                        token_type: TokenType::JavascriptCode,
-                        position: make_position(first_alias, Some(&last_alias)),
-                        representation: characters
-                            .into_iter()
-                            .map(|character| character.value.to_string())
-                            .collect::<Vec<String>>()
-                            .join(""),
-                    }))
-                }
+                // Character
                 '\'' => match self.characters_iterator.next() {
                     Some(quote @ Character { value: '\'', .. }) => {
                         Err(TokenizeError::CharacterLiteralCannotBeEmpty {
@@ -297,6 +238,7 @@ impl Tokenizer {
                     }
                     .into_parse_error()),
                 },
+                // String
                 '"' => {
                     let start_quote = character;
                     enum StartOf {
@@ -389,6 +331,7 @@ impl Tokenizer {
                         })),
                     }
                 }
+                // Number
                 '-' | '0'..='9' => {
                     let intergral = self
                         .characters_iterator
@@ -467,7 +410,8 @@ impl Tokenizer {
                         })),
                     }
                 }
-                'A'..='Z' | 'a'..='z' => {
+                // Identifier
+                '#' | 'A'..='Z' | 'a'..='z' => {
                     let characters = self
                         .characters_iterator
                         .by_ref()
@@ -479,67 +423,32 @@ impl Tokenizer {
                     let representation =
                         format!("{}{}", character.value, stringify(characters.clone()));
                     Ok(Some(Token {
-                        token_type: get_token_type(representation.clone()),
+                        // token_type:  get_token_type(representation.clone()),
+                        token_type: TokenType::Identifier,
                         representation,
                         position: make_position(character, characters.last()),
                     }))
                 }
-                '.' => {
-                    let dots = self
+                ':' => Ok(Some(Token {
+                    token_type: TokenType::Colon,
+                    representation: ":".to_string(),
+                    position: make_position(character, None),
+                })),
+                other if is_symbol(other) => {
+                    let characters = self
                         .characters_iterator
                         .by_ref()
-                        .peeking_take_while(|character| character.value == '.')
+                        .peeking_take_while(|character| is_symbol(character.value))
                         .collect::<Vec<Character>>();
 
-                    match dots.len() {
-                        0 => Ok(Some(Token {
-                            token_type: TokenType::Period,
-                            representation: ".".to_string(),
-                            position: make_position(character, None),
-                        })),
-                        2 => Ok(Some(Token {
-                            token_type: TokenType::TriplePeriod,
-                            representation: "...".to_string(),
-                            position: make_position(character, dots.last()),
-                        })),
-                        _ => Err(TokenizeError::InvalidToken {
-                            error: "Only one dot (.) or three dots(...) are acceptable."
-                                .to_string(),
-                            position: make_position(character, dots.last()),
-                        }
-                        .into_parse_error()),
-                    }
+                    let representation =
+                        format!("{}{}", character.value, stringify(characters.clone()));
+                    Ok(Some(Token {
+                        token_type: TokenType::Identifier,
+                        representation,
+                        position: make_position(character, characters.last()),
+                    }))
                 }
-                '=' => match self.characters_iterator.peek() {
-                    Some(Character { value: '>', .. }) => {
-                        let greater_than_character = self.characters_iterator.by_ref().next();
-                        Ok(Some(Token {
-                            token_type: TokenType::FatArrowRight,
-                            representation: "=>".to_string(),
-                            position: make_position(character, greater_than_character.as_ref()),
-                        }))
-                    }
-                    _ => Ok(Some(Token {
-                        token_type: TokenType::Equals,
-                        representation: "=".to_string(),
-                        position: make_position(character, None),
-                    })),
-                },
-                ':' => match self.characters_iterator.peek() {
-                    Some(Character { value: ':', .. }) => {
-                        let colon = self.characters_iterator.by_ref().next();
-                        Ok(Some(Token {
-                            token_type: TokenType::DoubleColon,
-                            representation: "::".to_string(),
-                            position: make_position(character, colon.as_ref()),
-                        }))
-                    }
-                    _ => Ok(Some(Token {
-                        token_type: TokenType::Colon,
-                        representation: ":".to_string(),
-                        position: make_position(character, None),
-                    })),
-                },
                 other => Ok(Some(Token {
                     position: make_position(character, None),
                     representation: other.to_string(),
@@ -551,16 +460,7 @@ impl Tokenizer {
                         '[' => TokenType::LeftSquareBracket,
                         ']' => TokenType::RightSquareBracket,
                         ' ' => TokenType::Whitespace,
-                        '-' => TokenType::Minus,
                         ',' => TokenType::Comma,
-                        '<' => TokenType::LessThan,
-                        '>' => TokenType::MoreThan,
-                        '|' => TokenType::Pipe,
-                        '/' => TokenType::Slash,
-                        '_' => TokenType::Underscore,
-                        '`' => TokenType::Backtick,
-                        '!' => TokenType::Bang,
-                        '*' => TokenType::Asterisk,
                         '\n' => TokenType::Newline,
                         other => TokenType::Other(other),
                     },
@@ -570,6 +470,10 @@ impl Tokenizer {
             Ok(None)
         }
     }
+}
+
+fn is_symbol(c: char) -> bool {
+    "!@#$%^&*_-<>=+/?~".contains(c)
 }
 
 pub fn make_position(first: Character, last: Option<&Character>) -> Position {

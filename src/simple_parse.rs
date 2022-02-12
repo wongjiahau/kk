@@ -1,0 +1,230 @@
+use crate::parse::{ParseContext, ParseError, ParseErrorKind};
+use crate::raw_ast::{Token, TokenType};
+use crate::simple_ast::*;
+use crate::tokenize::Tokenizer;
+
+pub struct Parser<'a> {
+    tokenizer: &'a mut Tokenizer,
+}
+
+impl<'a> Parser<'a> {
+    pub fn new(tokenizer: &mut Tokenizer) -> Parser {
+        Parser { tokenizer }
+    }
+    pub fn parse(tokenizer: &mut Tokenizer) -> Result<Expression, ParseError> {
+        let mut parser = Parser { tokenizer };
+        parser.parse_expression()
+    }
+
+    /// Return the next meaningful token.  
+    /// In other words, meaningless comments such as Whitespace and Comments will be skipped.
+    fn next_meaningful_token(&mut self) -> Result<Option<Token>, ParseError> {
+        loop {
+            match self.tokenizer.next()? {
+                None => return Ok(None),
+                Some(token) => {
+                    if is_token_meaningless(&token) {
+                        continue;
+                    } else {
+                        return Ok(Some(token));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Peek the next meaningful token without advancing the iterator.  
+    /// In other words, meaningless comments such as Whitespace, Comments and Documentation will be skipped.
+    fn peek_next_meaningful_token(&mut self) -> Result<Option<Token>, ParseError> {
+        loop {
+            match self.tokenizer.peek()? {
+                None => return Ok(None),
+                Some(token) => {
+                    if is_token_meaningless(&token) {
+                        let _ = self.tokenizer.next();
+                        continue;
+                    } else {
+                        return Ok(Some(token));
+                    }
+                }
+            }
+        }
+    }
+
+    fn invalid_token(actual_token: Token, context: Option<ParseContext>) -> ParseError {
+        ParseError {
+            context,
+            kind: ParseErrorKind::InvalidToken {
+                actual_token,
+                expected_token_type: None,
+            },
+        }
+    }
+
+    fn unexpected_eof(context: Option<ParseContext>) -> ParseError {
+        ParseError {
+            context,
+            kind: ParseErrorKind::UnexpectedEof {
+                expected_token_type: None,
+            },
+        }
+    }
+
+    pub fn eat_token(
+        &mut self,
+        token_type: TokenType,
+        context: Option<ParseContext>,
+    ) -> Result<Token, ParseError> {
+        let token = self.next_meaningful_token()?;
+        Parser::validate_token(token_type, token, context)
+    }
+
+    fn validate_token(
+        expected_token_type: TokenType,
+        actual_token: Option<Token>,
+        context: Option<ParseContext>,
+    ) -> Result<Token, ParseError> {
+        if let Some(token) = actual_token {
+            if variant_eq(&token.token_type, &expected_token_type) {
+                Ok(token)
+            } else {
+                Err(ParseError {
+                    context,
+                    kind: ParseErrorKind::InvalidToken {
+                        actual_token: token,
+                        expected_token_type: Some(expected_token_type),
+                    },
+                })
+            }
+        } else {
+            Err(ParseError {
+                context,
+                kind: ParseErrorKind::UnexpectedEof {
+                    expected_token_type: Some(expected_token_type),
+                },
+            })
+        }
+    }
+
+    fn try_eat_token(&mut self, token_type: TokenType) -> Result<Option<Token>, ParseError> {
+        if let Some(token) = self.peek_next_meaningful_token()? {
+            Ok(if variant_eq(&token.token_type, &token_type) {
+                match self.next_meaningful_token()? {
+                    Some(token) => Some(token),
+                    None => None,
+                }
+            } else {
+                None
+            })
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_expression(&mut self) -> Result<Expression, ParseError> {
+        let left_argument = self.parse_high_precedence_expression()?;
+        self.try_parse_function_call(left_argument)
+    }
+
+    fn is_terminating(token_type: &TokenType) -> bool {
+        match token_type {
+            TokenType::RightCurlyBracket
+            | TokenType::RightParenthesis
+            | TokenType::RightSquareBracket
+            | TokenType::Comma => true,
+            _ => false,
+        }
+    }
+    fn try_parse_function_call(
+        &mut self,
+        left_argument: Expression,
+    ) -> Result<Expression, ParseError> {
+        match self.peek_next_meaningful_token()? {
+            None => Ok(left_argument),
+            Some(token) if Parser::is_terminating(&token.token_type) => Ok(left_argument),
+            Some(token) => {
+                let function = self.parse_high_precedence_expression()?;
+                let right_argument = self.parse_high_precedence_expression()?;
+                self.try_parse_function_call(Expression::FunctionCall(FunctionCall {
+                    left_argument: Box::new(left_argument),
+                    function: Box::new(function),
+                    right_argument: Box::new(right_argument),
+                }))
+            }
+        }
+    }
+
+    /// High precedenc expression =
+    /// * object access (e.g. "a.b.c")
+    fn parse_high_precedence_expression(&mut self) -> Result<Expression, ParseError> {
+        let object = self.parse_highest_precedence_expression()?;
+        self.try_parse_high_precedence_expression(object)
+    }
+
+    fn try_parse_high_precedence_expression(
+        &mut self,
+        object: Expression,
+    ) -> Result<Expression, ParseError> {
+        match self.peek_next_meaningful_token()? {
+            Some(token) if Parser::is_terminating(&token.token_type) => Ok(object),
+            Some(Token {
+                token_type: TokenType::Period,
+                ..
+            }) => {
+                self.eat_token(TokenType::Period, None)?;
+                let property = self.parse_highest_precedence_expression()?;
+                self.try_parse_high_precedence_expression(Expression::ObjectAccess(ObjectAccess {
+                    object: Box::new(object),
+                    property: Box::new(property),
+                }))
+            }
+            _ => Ok(object),
+        }
+    }
+
+    /// Highest predence expressions =
+    /// * string
+    /// * number
+    /// * array
+    /// * tuple/unit
+    /// * parenthesized expression
+    /// * object
+    fn parse_highest_precedence_expression(&mut self) -> Result<Expression, ParseError> {
+        let first = match self.next_meaningful_token()? {
+            None => Err(Parser::unexpected_eof(None)),
+            Some(token) => Ok(token),
+        }?;
+
+        match first.token_type {
+            TokenType::Integer => Ok(Expression::Number(Number::Int32(
+                first.representation.parse().unwrap(),
+            ))),
+            TokenType::Identifier => {
+                if first.representation.starts_with("#") {
+                    Ok(Expression::TagOnlyVariant(TagOnlyVariant {
+                        tag: first.representation,
+                    }))
+                } else {
+                    Ok(Expression::Identifier(first.representation))
+                }
+            }
+
+            other => {
+                panic!("{:#?}", other)
+            }
+        }
+    }
+}
+
+fn is_token_meaningless(token: &Token) -> bool {
+    matches!(
+        token.token_type,
+        TokenType::Whitespace | TokenType::Newline | TokenType::Comment
+    )
+}
+
+/// Compare the variants of two enum, while ignoring the payload
+/// Refer https://stackoverflow.com/a/32554326/6587634
+fn variant_eq(a: &TokenType, b: &TokenType) -> bool {
+    std::mem::discriminant(a) == std::mem::discriminant(b)
+}
