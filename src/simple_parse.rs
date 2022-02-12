@@ -122,8 +122,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParseError> {
-        let left_argument = self.parse_high_precedence_expression()?;
-        self.try_parse_function_call(left_argument)
+        self.parse_mid_precedence_expression()
     }
 
     fn is_terminating(token_type: &TokenType) -> bool {
@@ -131,10 +130,19 @@ impl<'a> Parser<'a> {
             TokenType::RightCurlyBracket
             | TokenType::RightParenthesis
             | TokenType::RightSquareBracket
-            | TokenType::Comma => true,
+            | TokenType::Comma
+            | TokenType::Colon => true,
             _ => false,
         }
     }
+
+    /// Mid precedence expression =
+    /// * function call
+    fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
+        let left_argument = self.parse_high_precedence_expression()?;
+        self.try_parse_function_call(left_argument)
+    }
+
     fn try_parse_function_call(
         &mut self,
         left_argument: Expression,
@@ -142,7 +150,7 @@ impl<'a> Parser<'a> {
         match self.peek_next_meaningful_token()? {
             None => Ok(left_argument),
             Some(token) if Parser::is_terminating(&token.token_type) => Ok(left_argument),
-            Some(token) => {
+            Some(_) => {
                 let function = self.parse_high_precedence_expression()?;
                 let right_argument = self.parse_high_precedence_expression()?;
                 self.try_parse_function_call(Expression::FunctionCall(FunctionCall {
@@ -208,11 +216,48 @@ impl<'a> Parser<'a> {
                     Ok(Expression::Identifier(first.representation))
                 }
             }
+            TokenType::LeftCurlyBracket => Ok(Expression::Object(self.parse_object(first)?)),
+            TokenType::LeftParenthesis => Ok(Expression::Tuple(self.parse_tuple(first)?)),
 
             other => {
                 panic!("{:#?}", other)
             }
         }
+    }
+
+    fn parse_tuple(&mut self, left_parenthesis: Token) -> Result<Tuple, ParseError> {
+        let mut values = vec![];
+        let right_parenthesis = loop {
+            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+                break right_parenthesis;
+            }
+            let value = self.parse_mid_precedence_expression()?;
+            self.eat_token(TokenType::Comma, None)?;
+        };
+        Ok(Tuple {
+            left_parenthesis,
+            values,
+            right_parenthesis,
+        })
+    }
+
+    fn parse_object(&mut self, left_curly_bracket: Token) -> Result<Object, ParseError> {
+        let mut pairs = vec![];
+        let right_curly_bracket = loop {
+            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
+                break right_curly_bracket;
+            }
+            let pattern = self.parse_mid_precedence_expression()?;
+            self.eat_token(TokenType::Colon, None)?;
+            let value = self.parse_mid_precedence_expression()?;
+            pairs.push(ObjectPair { pattern, value });
+            self.eat_token(TokenType::Comma, None)?;
+        };
+        Ok(Object {
+            left_curly_bracket,
+            pairs,
+            right_curly_bracket,
+        })
     }
 }
 

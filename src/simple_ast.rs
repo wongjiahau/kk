@@ -1,7 +1,10 @@
+use crate::raw_ast::Token;
+
 pub enum Expression {
     Object(Object),
     ObjectAccess(ObjectAccess),
     Array(Array),
+    Tuple(Tuple),
     FunctionCall(FunctionCall),
     Function(Function),
     String(String),
@@ -28,7 +31,20 @@ pub struct Variant {
 }
 
 pub struct Object {
-    pub pairs: Vec<(Expression, Expression)>,
+    pub left_curly_bracket: Token,
+    pub pairs: Vec<ObjectPair>,
+    pub right_curly_bracket: Token,
+}
+
+pub struct ObjectPair {
+    pub pattern: Expression,
+    pub value: Expression,
+}
+
+pub struct Tuple {
+    pub left_parenthesis: Token,
+    pub values: Vec<Expression>,
+    pub right_parenthesis: Token,
 }
 
 pub struct Array {

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use itertools::Itertools;
+
 use crate::simple_ast::*;
 
 #[derive(Clone, Debug)]
@@ -7,7 +9,18 @@ enum Value {
     Integer32(i32),
     TagOnlyVariant(TagOnlyVariant),
     NativeFunction(NativeFunction),
-    Unit,
+    Object(ValueObject),
+    Tuple(ValueTuple),
+}
+
+#[derive(Clone, Debug)]
+struct ValueObject {
+    variables: HashMap<String, Value>,
+}
+
+#[derive(Clone, Debug)]
+struct ValueTuple {
+    values: Vec<Value>,
 }
 
 impl Value {
@@ -16,7 +29,18 @@ impl Value {
             Value::Integer32(integer) => integer.to_string(),
             Value::TagOnlyVariant(variant) => variant.tag,
             Value::NativeFunction(function) => format!("<native:{:#?}>", function),
-            Value::Unit => "()".to_string(),
+            Value::Tuple(tuple) => {
+                let mut values = tuple.values.into_iter().map(|value| value.print());
+                format!("({})", values.join(", "))
+            }
+            Value::Object(object) => {
+                let mut values = object
+                    .variables
+                    .into_iter()
+                    .sorted_by(|a, b| a.0.cmp(&b.0))
+                    .map(|(name, value)| format!("{}: {}", name, value.print()));
+                format!("{{{}}}", values.join(", "))
+            }
         }
     }
 }
@@ -28,12 +52,20 @@ enum NativeFunction {
     Multiply,
 }
 
+#[derive(Clone)]
 struct Environment {
     parent: Option<Box<Environment>>,
     variables: HashMap<String, Value>,
 }
 
 impl Environment {
+    fn new(parent: &Environment) -> Environment {
+        Environment {
+            parent: Some(Box::new(parent.clone())),
+            variables: HashMap::new(),
+        }
+    }
+
     fn global() -> Environment {
         Environment {
             parent: None,
@@ -56,6 +88,15 @@ impl Environment {
                 None => Err(EvalError::UnkwownVariable { name: name.clone() }),
                 Some(env) => env.lookup(name),
             },
+        }
+    }
+    fn set(&mut self, pattern: Expression, value: Value) -> Result<(), EvalError> {
+        match (pattern, value) {
+            (Expression::Identifier(name), value) => {
+                self.variables.insert(name, value);
+                Ok(())
+            }
+            _ => panic!(),
         }
     }
 }
@@ -88,9 +129,10 @@ impl Eval for Expression {
     fn eval(self, env: &Environment) -> Result<Value, EvalError> {
         match self {
             Expression::FunctionCall(function_call) => function_call.eval(env),
-            Expression::Object(_) => todo!(),
+            Expression::Object(object) => object.eval(env),
             Expression::ObjectAccess(_) => todo!(),
             Expression::Array(_) => todo!(),
+            Expression::Tuple(tuple) => tuple.eval(env),
             Expression::Function(_) => todo!(),
             Expression::String(_) => todo!(),
             Expression::Identifier(name) => env.lookup(&name),
@@ -99,6 +141,31 @@ impl Eval for Expression {
             Expression::Variant(_) => todo!(),
             Expression::TagOnlyVariant(variant) => Ok(Value::TagOnlyVariant(variant)),
         }
+    }
+}
+
+impl Eval for Tuple {
+    fn eval(self, env: &Environment) -> Result<Value, EvalError> {
+        Ok(Value::Tuple(ValueTuple {
+            values: self
+                .values
+                .into_iter()
+                .map(|value| value.eval(env))
+                .collect::<Result<Vec<Value>, EvalError>>()?,
+        }))
+    }
+}
+
+impl Eval for Object {
+    fn eval(self, env: &Environment) -> Result<Value, EvalError> {
+        let mut env = Environment::new(env);
+        for pair in self.pairs {
+            let value = pair.value.eval(&env)?;
+            env.set(pair.pattern, value)?;
+        }
+        Ok(Value::Object(ValueObject {
+            variables: env.variables,
+        }))
     }
 }
 
@@ -124,7 +191,7 @@ fn call_native_function(
     match function {
         NativeFunction::Print => {
             println!("{}", left.print());
-            Ok(Value::Unit)
+            Ok(Value::Tuple(ValueTuple { values: vec![] }))
         }
         NativeFunction::Plus => match (left, right) {
             (Value::Integer32(a), Value::Integer32(b)) => Ok(Value::Integer32(a + b)),
