@@ -2,7 +2,7 @@ use std::process;
 
 use indexmap::IndexMap;
 
-use crate::interpret::intepret;
+use crate::interpret::interpret;
 use crate::simple_parse;
 use crate::tokenize::Tokenizer;
 use crate::transpile::transpile_program;
@@ -24,7 +24,7 @@ pub fn compile(module_meta: ModuleMeta) {
     let mut tokenizer = Tokenizer::new(module_meta.code.clone());
     match simple_parse::Parser::parse(&mut tokenizer) {
         Err(parse_error) => print_parse_error(module_meta, parse_error),
-        Ok(expression) => intepret(expression),
+        Ok(expression) => interpret(expression),
     }
     // match Parser::parse(&mut tokenizer) {
     //     Err(parse_error) => print_parse_error(module_meta, parse_error),

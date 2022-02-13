@@ -122,7 +122,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParseError> {
-        self.parse_mid_precedence_expression()
+        self.parse_low_precedence_expression()
     }
 
     fn is_terminating(token_type: &TokenType) -> bool {
@@ -136,8 +136,30 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// High precedence expression
+    /// * function (right associative colon)
+    fn parse_low_precedence_expression(&mut self) -> Result<Expression, ParseError> {
+        let parameter = self.parse_mid_precedence_expression()?;
+        self.try_parse_function(parameter)
+    }
+
+    fn try_parse_function(&mut self, parameter: Expression) -> Result<Expression, ParseError> {
+        match self.try_eat_token(TokenType::Colon)? {
+            Some(_) => {
+                let body = self.parse_low_precedence_expression()?;
+                Ok(Expression::Function(Function {
+                    parameter: Box::new(parameter),
+                    body: Box::new(body),
+                }))
+            }
+            _ => Ok(parameter),
+        }
+    }
+
     /// Mid precedence expression =
     /// * function call
+    /// * binary variant construction
+    /// * match expression
     fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         let left_argument = self.parse_high_precedence_expression()?;
         self.try_parse_function_call(left_argument)
@@ -153,11 +175,66 @@ impl<'a> Parser<'a> {
             Some(_) => {
                 let function = self.parse_high_precedence_expression()?;
                 let right_argument = self.parse_high_precedence_expression()?;
-                self.try_parse_function_call(Expression::FunctionCall(FunctionCall {
-                    left_argument: Box::new(left_argument),
-                    function: Box::new(function),
-                    right_argument: Box::new(right_argument),
-                }))
+                let left_argument = match function {
+                    // Unary function call
+                    Expression::Identifier(i) if i == "|" => {
+                        Expression::FunctionCall(FunctionCall {
+                            argument: Box::new(left_argument),
+                            function: Box::new(right_argument),
+                        })
+                    }
+
+                    Expression::Identifier(i) if i == "match" => Expression::Match(Match {
+                        value: Box::new(left_argument),
+                        cases: match right_argument {
+                            Expression::Object(object) => Ok(object
+                                .pairs
+                                .into_iter()
+                                .map(|pair| match pair.pattern {
+                                    None => panic!(),
+                                    Some(pattern) => MatchCase {
+                                        pattern,
+                                        body: pair.value,
+                                    },
+                                })
+                                .collect()),
+                            other => Err(ParseError {
+                                context: todo!(),
+                                kind: todo!(),
+                            }),
+                        }?,
+                    }),
+
+                    // Binary variant construction
+                    Expression::TagOnlyVariant(tag) => Expression::Variant(Variant {
+                        tag,
+                        left: Box::new(left_argument),
+                        right: Box::new(right_argument),
+                    }),
+
+                    // Binary function call
+                    _ => {
+                        // Note: (x f y) === (y | (x | f))
+                        // Or in maths, (x f y) === (f(x))(y)
+                        // Expression::FunctionCall()
+                        //
+                        // Why?
+                        // This is so that the syntactical sequence is
+                        // the same as when the function is declared, i.e.
+                        // f: (x: (y: body))
+                        //
+                        // Where x is on the left; y is on the right
+
+                        Expression::FunctionCall(FunctionCall {
+                            argument: Box::new(right_argument),
+                            function: Box::new(Expression::FunctionCall(FunctionCall {
+                                function: Box::new(function),
+                                argument: Box::new(left_argument),
+                            })),
+                        })
+                    }
+                };
+                self.try_parse_function_call(left_argument)
             }
         }
     }
@@ -207,17 +284,18 @@ impl<'a> Parser<'a> {
             TokenType::Integer => Ok(Expression::Number(Number::Int32(
                 first.representation.parse().unwrap(),
             ))),
+            TokenType::Float => Ok(Expression::Number(Number::Float32(
+                first.representation.parse().unwrap(),
+            ))),
             TokenType::Identifier => {
                 if first.representation.starts_with("#") {
-                    Ok(Expression::TagOnlyVariant(TagOnlyVariant {
-                        tag: first.representation,
-                    }))
+                    Ok(Expression::TagOnlyVariant(first.representation))
                 } else {
                     Ok(Expression::Identifier(first.representation))
                 }
             }
             TokenType::LeftCurlyBracket => Ok(Expression::Object(self.parse_object(first)?)),
-            TokenType::LeftParenthesis => Ok(Expression::Tuple(self.parse_tuple(first)?)),
+            TokenType::LeftParenthesis => Ok(self.parse_tuple_or_parenthesized_expression(first)?),
 
             other => {
                 panic!("{:#?}", other)
@@ -225,20 +303,30 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_tuple(&mut self, left_parenthesis: Token) -> Result<Tuple, ParseError> {
+    fn parse_tuple_or_parenthesized_expression(
+        &mut self,
+        left_parenthesis: Token,
+    ) -> Result<Expression, ParseError> {
         let mut values = vec![];
         let right_parenthesis = loop {
             if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
                 break right_parenthesis;
             }
-            let value = self.parse_mid_precedence_expression()?;
-            self.eat_token(TokenType::Comma, None)?;
+            values.push(self.parse_low_precedence_expression()?);
+            if self.try_eat_token(TokenType::Comma)?.is_some() {
+                continue;
+            }
+            let right_parenthesis = self.eat_token(TokenType::RightParenthesis, None)?;
+            match values.split_first() {
+                Some((head, [])) => return Ok(head.clone()),
+                _ => break right_parenthesis,
+            }
         };
-        Ok(Tuple {
+        Ok(Expression::Tuple(Tuple {
             left_parenthesis,
             values,
             right_parenthesis,
-        })
+        }))
     }
 
     fn parse_object(&mut self, left_curly_bracket: Token) -> Result<Object, ParseError> {
@@ -248,9 +336,29 @@ impl<'a> Parser<'a> {
                 break right_curly_bracket;
             }
             let pattern = self.parse_mid_precedence_expression()?;
-            self.eat_token(TokenType::Colon, None)?;
-            let value = self.parse_mid_precedence_expression()?;
-            pairs.push(ObjectPair { pattern, value });
+            if self.try_eat_token(TokenType::Colon)?.is_some() {
+                let value = self.parse_low_precedence_expression()?;
+                pairs.push(ObjectPair {
+                    pattern: Some(pattern),
+                    value,
+                });
+            } else {
+                match &pattern {
+                    Expression::Identifier(i) => {
+                        // object punning / shorthand
+                        pairs.push(ObjectPair {
+                            pattern: Some(Pattern::Identifier(i.clone())),
+                            value: pattern,
+                        });
+                    }
+                    pattern => {
+                        pairs.push(ObjectPair {
+                            pattern: None,
+                            value: pattern.clone(),
+                        });
+                    }
+                };
+            }
             self.eat_token(TokenType::Comma, None)?;
         };
         Ok(Object {

@@ -6,9 +6,9 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 {
-  x: 1,
-  y: x + 2,
-} | print
+  squarePlus: a: b: a * a + (b * b),
+  3 squarePlus 4 | print,
+}
 
 ============
 EXIT CODE
@@ -18,7 +18,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-{x: 1, y: 3}
+25
 
 ============
 STDERR

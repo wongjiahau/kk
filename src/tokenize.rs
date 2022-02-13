@@ -473,7 +473,7 @@ impl Tokenizer {
 }
 
 fn is_symbol(c: char) -> bool {
-    "!@#$%^&*_-<>=+/?~".contains(c)
+    "!@#$%^&*_-<>=+/|?~".contains(c)
 }
 
 pub fn make_position(first: Character, last: Option<&Character>) -> Position {

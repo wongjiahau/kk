@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+{
+  area: shape: shape match {
+    # #square {side,}: side * side,
+    # #rectangle {width, height,}: width * height,
+  },
+  # #square {side: 10,} | area | print,
+  # #rectangle {width: 3, height: 7,} | area | print,
+}
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+100
+21
+
+============
+STDERR
+============
