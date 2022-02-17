@@ -17,9 +17,22 @@ pub enum Expression {
     Variant(Variant),
     TagOnlyVariant(String),
     Match(Match),
+    Conditional(Conditional),
 
     /// These are internal operations that cannot be called directly from userspace
     InternalOp(Box<InternalOp>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Conditional {
+    pub default: Box<Expression>,
+    pub branches: Vec<Branch>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Branch {
+    pub condition: Expression,
+    pub body: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +51,7 @@ pub struct MatchCase {
 pub enum InternalOp {
     Add(Expression, Expression),
     Multiply(Expression, Expression),
+    LessThan(Expression, Expression),
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +106,6 @@ pub struct Function {
 
 #[derive(Debug, Clone)]
 pub enum Number {
-    Int32(i32),
-    Float32(f32),
+    Int64(i64),
+    Float64(f64),
 }

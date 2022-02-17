@@ -184,6 +184,7 @@ impl<'a> Parser<'a> {
                         })
                     }
 
+                    // Match expression
                     Expression::Identifier(i) if i == "match" => Expression::Match(Match {
                         value: Box::new(left_argument),
                         cases: match right_argument {
@@ -204,6 +205,30 @@ impl<'a> Parser<'a> {
                             }),
                         }?,
                     }),
+
+                    // Conditional expression
+                    Expression::Identifier(i) if i == "else" => {
+                        Expression::Conditional(Conditional {
+                            default: Box::new(right_argument),
+                            branches: match left_argument {
+                                Expression::Object(object) => Ok(object
+                                    .pairs
+                                    .into_iter()
+                                    .map(|pair| match pair.pattern {
+                                        None => panic!(),
+                                        Some(condition) => Branch {
+                                            condition,
+                                            body: pair.value,
+                                        },
+                                    })
+                                    .collect()),
+                                other => Err(ParseError {
+                                    context: todo!(),
+                                    kind: todo!(),
+                                }),
+                            }?,
+                        })
+                    }
 
                     // Binary variant construction
                     Expression::TagOnlyVariant(tag) => Expression::Variant(Variant {
@@ -281,10 +306,11 @@ impl<'a> Parser<'a> {
         }?;
 
         match first.token_type {
-            TokenType::Integer => Ok(Expression::Number(Number::Int32(
+            TokenType::String => Ok(Expression::String(first.representation)),
+            TokenType::Integer => Ok(Expression::Number(Number::Int64(
                 first.representation.parse().unwrap(),
             ))),
-            TokenType::Float => Ok(Expression::Number(Number::Float32(
+            TokenType::Float => Ok(Expression::Number(Number::Float64(
                 first.representation.parse().unwrap(),
             ))),
             TokenType::Identifier => {

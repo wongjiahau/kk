@@ -1,0 +1,32 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// Example from http://craftinginterpreters.com/resolving-and-binding.html
+{
+  a: 1,
+  innerScope: {
+    showA: #: a | print,
+    # | showA,
+    a: 2,
+    # | showA,
+  },
+}
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+1
+1
+
+============
+STDERR
+============

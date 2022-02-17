@@ -6,7 +6,10 @@ use crate::simple_ast::*;
 
 #[derive(Clone, Debug)]
 enum Value {
-    Integer32(i32),
+    Int64(i64),
+    Float32(f64),
+    Boolean(bool),
+    String(String),
     TagOnlyVariant(String),
     Variant(ValueVariant),
     NativeFunction(NativeFunction),
@@ -42,7 +45,9 @@ struct ValueTuple {
 impl Value {
     fn print(&self) -> String {
         match self {
-            Value::Integer32(integer) => integer.to_string(),
+            Value::Int64(integer) => integer.to_string(),
+            Value::Float32(float) => float.to_string(),
+            Value::Boolean(boolean) => boolean.to_string(),
             Value::TagOnlyVariant(tag) => tag.clone(),
             Value::Variant(variant) => format!(
                 "{} {} {}",
@@ -64,6 +69,7 @@ impl Value {
                 format!("{{{}}}", values.join(", "))
             }
             Value::Function(_) => "<function>".to_string(),
+            Value::String(string) => string.to_string(),
         }
     }
 }
@@ -73,6 +79,7 @@ enum NativeFunction {
     Print,
     Plus,
     Multiply,
+    LessThan,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +120,7 @@ impl Environment {
                     ("print", Value::NativeFunction(NativeFunction::Print)),
                     ("+", Value::NativeFunction(NativeFunction::Plus)),
                     ("*", Value::NativeFunction(NativeFunction::Multiply)),
+                    ("<", Value::NativeFunction(NativeFunction::LessThan)),
                 ]
                 .iter()
                 .map(|(name, f)| (name.to_string(), f.clone()))
@@ -185,10 +193,10 @@ impl Eval for Expression {
             Expression::Array(_) => todo!(),
             Expression::Tuple(tuple) => tuple.eval(env),
             Expression::Function(function) => function.eval(env),
-            Expression::String(_) => todo!(),
+            Expression::String(string) => Ok(Value::String(string)),
             Expression::Identifier(name) => env.lookup(&name),
-            Expression::Number(Number::Int32(integer)) => Ok(Value::Integer32(integer)),
-            Expression::Number(Number::Float32(float)) => todo!(),
+            Expression::Number(Number::Int64(integer)) => Ok(Value::Int64(integer)),
+            Expression::Number(Number::Float64(float)) => todo!(),
             Expression::Variant(variant) => Ok(Value::Variant(ValueVariant {
                 left: Box::new(variant.left.eval(env)?),
                 tag: variant.tag,
@@ -197,7 +205,26 @@ impl Eval for Expression {
             Expression::TagOnlyVariant(variant) => Ok(Value::TagOnlyVariant(variant)),
             Expression::InternalOp(op) => op.eval(env),
             Expression::Match(m) => m.eval(env),
+            Expression::Conditional(conditional) => conditional.eval(env),
         }
+    }
+}
+
+impl Eval for Conditional {
+    fn eval(self, env: &Environment) -> Result<Value, EvalError> {
+        for branch in self.branches {
+            match branch.condition.eval(env)? {
+                Value::Boolean(boolean) => {
+                    if boolean {
+                        return branch.body.eval(env);
+                    }
+                }
+                other => {
+                    panic!("{:#?} is not boolean", other)
+                }
+            }
+        }
+        return self.default.eval(env);
     }
 }
 
@@ -278,11 +305,15 @@ impl Eval for InternalOp {
     fn eval(self, env: &Environment) -> Result<Value, EvalError> {
         match self {
             InternalOp::Add(a, b) => match (a.eval(env)?, b.eval(env)?) {
-                (Value::Integer32(a), Value::Integer32(b)) => Ok(Value::Integer32(a + b)),
+                (Value::Int64(a), Value::Int64(b)) => Ok(Value::Int64(a + b)),
                 _ => panic!(),
             },
             InternalOp::Multiply(a, b) => match (a.eval(env)?, b.eval(env)?) {
-                (Value::Integer32(a), Value::Integer32(b)) => Ok(Value::Integer32(a * b)),
+                (Value::Int64(a), Value::Int64(b)) => Ok(Value::Int64(a * b)),
+                _ => panic!(),
+            },
+            InternalOp::LessThan(a, b) => match (a.eval(env)?, b.eval(env)?) {
+                (Value::Int64(a), Value::Int64(b)) => Ok(Value::Boolean(a < b)),
                 _ => panic!(),
             },
         }
@@ -346,37 +377,39 @@ impl Eval for FunctionCall {
 }
 
 fn call_native_function(function: NativeFunction, argument: Value) -> Result<Value, EvalError> {
+    fn curry_binary_op(
+        a: i64,
+        internal_op: &dyn Fn(Expression, Expression) -> InternalOp,
+    ) -> Value {
+        let parameter = Expression::Identifier("x".to_string());
+        Value::Function(ValueFunction {
+            closure: Environment::new(None),
+            parameter: parameter.clone(),
+            body: Expression::InternalOp(Box::new(internal_op(
+                parameter,
+                Expression::Number(Number::Int64(a)),
+            ))),
+        })
+    }
     match function {
         NativeFunction::Print => {
             println!("{}", argument.print());
             Ok(Value::Tuple(ValueTuple { values: vec![] }))
         }
         NativeFunction::Plus => match argument {
-            Value::Integer32(a) => {
-                let parameter = Expression::Identifier("x".to_string());
-                Ok(Value::Function(ValueFunction {
-                    closure: Environment::new(None),
-                    parameter: parameter.clone(),
-                    body: Expression::InternalOp(Box::new(InternalOp::Add(
-                        parameter,
-                        Expression::Number(Number::Int32(a)),
-                    ))),
-                }))
-            }
+            Value::Int64(a) => Ok(curry_binary_op(a, &InternalOp::Add)),
             argument => Err(EvalError::NativeFunctionCallFailed { function, argument }),
         },
         NativeFunction::Multiply => match argument {
-            Value::Integer32(a) => {
-                let parameter = Expression::Identifier("x".to_string());
-                Ok(Value::Function(ValueFunction {
-                    closure: Environment::new(None),
-                    parameter: parameter.clone(),
-                    body: Expression::InternalOp(Box::new(InternalOp::Multiply(
-                        parameter,
-                        Expression::Number(Number::Int32(a)),
-                    ))),
-                }))
-            }
+            Value::Int64(a) => Ok(curry_binary_op(a, &InternalOp::Multiply)),
+            argument => Err(EvalError::NativeFunctionCallFailed { function, argument }),
+        },
+        NativeFunction::LessThan => match argument {
+            Value::Int64(a) => Ok(curry_binary_op(
+                a,
+                // Have to invert the arguments position because of currying
+                &|a, b| InternalOp::LessThan(b, a),
+            )),
             argument => Err(EvalError::NativeFunctionCallFailed { function, argument }),
         },
     }
