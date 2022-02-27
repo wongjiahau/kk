@@ -15,6 +15,7 @@ INPUT
 
   // Product of squares
   3 (* over square) 4 | print,
+
 }
 
 ============

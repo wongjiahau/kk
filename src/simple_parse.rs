@@ -51,6 +51,14 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn next_meaningful_token_is_terminating(&mut self) -> Result<bool, ParseError> {
+        match self.peek_next_meaningful_token()? {
+            Some(token) if Parser::is_terminating(&token.token_type) => Ok(true),
+            None => Ok(true),
+            _ => Ok(false),
+        }
+    }
+
     fn invalid_token(actual_token: Token, context: Option<ParseContext>) -> ParseError {
         ParseError {
             context,
@@ -137,57 +145,55 @@ impl<'a> Parser<'a> {
     }
 
     /// High precedence expression
-    /// * function (right associative colon)
+    /// (none at the moment)
     fn parse_low_precedence_expression(&mut self) -> Result<Expression, ParseError> {
-        let parameter = self.parse_mid_precedence_expression()?;
-        self.try_parse_function(parameter)
-    }
-
-    fn try_parse_function(&mut self, parameter: Expression) -> Result<Expression, ParseError> {
-        match self.try_eat_token(TokenType::Colon)? {
-            Some(_) => {
-                let body = self.parse_low_precedence_expression()?;
-                Ok(Expression::Function(Function {
-                    parameter: Box::new(parameter),
-                    body: Box::new(body),
-                }))
-            }
-            _ => Ok(parameter),
-        }
+        self.parse_mid_precedence_expression()
     }
 
     /// Mid precedence expression =
     /// * function call
     /// * binary variant construction
     /// * match expression
+    /// * lambda
     fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         let left_argument = self.parse_high_precedence_expression()?;
         self.try_parse_function_call(left_argument)
     }
 
-    fn try_parse_function_call(
-        &mut self,
-        left_argument: Expression,
-    ) -> Result<Expression, ParseError> {
+    fn try_parse_function_call(&mut self, left: Expression) -> Result<Expression, ParseError> {
         match self.peek_next_meaningful_token()? {
-            None => Ok(left_argument),
-            Some(token) if Parser::is_terminating(&token.token_type) => Ok(left_argument),
+            None => Ok(left),
+            Some(token) if Parser::is_terminating(&token.token_type) => Ok(left),
             Some(_) => {
-                let function = self.parse_high_precedence_expression()?;
-                let right_argument = self.parse_high_precedence_expression()?;
-                let left_argument = match function {
-                    // Unary function call
+                let middle = self.parse_high_precedence_expression()?;
+
+                if self.next_meaningful_token_is_terminating()? {
+                    return Ok(Expression::FunctionCall(FunctionCall {
+                        argument: Box::new(left),
+                        function: Box::new(middle),
+                    }));
+                }
+
+                let right = self.parse_high_precedence_expression()?;
+                let left = match middle {
+                    // Postfix unary function call (function comes AFTER argument)
                     Expression::Identifier(i) if i == "|" => {
                         Expression::FunctionCall(FunctionCall {
-                            argument: Box::new(left_argument),
-                            function: Box::new(right_argument),
+                            argument: Box::new(left),
+                            function: Box::new(right),
                         })
                     }
 
+                    // Function
+                    Expression::Identifier(i) if i == "given" => Expression::Function(Function {
+                        parameter: Box::new(right),
+                        body: Box::new(left),
+                    }),
+
                     // Match expression
                     Expression::Identifier(i) if i == "match" => Expression::Match(Match {
-                        value: Box::new(left_argument),
-                        cases: match right_argument {
+                        value: Box::new(left),
+                        cases: match right {
                             Expression::Object(object) => Ok(object
                                 .pairs
                                 .into_iter()
@@ -209,8 +215,8 @@ impl<'a> Parser<'a> {
                     // Conditional expression
                     Expression::Identifier(i) if i == "else" => {
                         Expression::Conditional(Conditional {
-                            default: Box::new(right_argument),
-                            branches: match left_argument {
+                            default: Box::new(right),
+                            branches: match left {
                                 Expression::Object(object) => Ok(object
                                     .pairs
                                     .into_iter()
@@ -233,33 +239,32 @@ impl<'a> Parser<'a> {
                     // Binary variant construction
                     Expression::TagOnlyVariant(tag) => Expression::Variant(Variant {
                         tag,
-                        left: Box::new(left_argument),
-                        right: Box::new(right_argument),
+                        left: Box::new(left),
+                        right: Box::new(right),
                     }),
 
                     // Binary function call
                     _ => {
-                        // Note: (x f y) === (y | (x | f))
-                        // Or in maths, (x f y) === (f(x))(y)
-                        // Expression::FunctionCall()
+                        // Note: (x f y) === (x | (y | f))
+                        // Or in maths, (x f y) === (f(y))(x)
                         //
                         // Why?
                         // This is so that the syntactical sequence is
                         // the same as when the function is declared, i.e.
-                        // f: (x: (y: body))
+                        // f: body given x given y
                         //
                         // Where x is on the left; y is on the right
 
                         Expression::FunctionCall(FunctionCall {
-                            argument: Box::new(right_argument),
+                            argument: Box::new(left),
                             function: Box::new(Expression::FunctionCall(FunctionCall {
-                                function: Box::new(function),
-                                argument: Box::new(left_argument),
+                                function: Box::new(middle),
+                                argument: Box::new(right),
                             })),
                         })
                     }
                 };
-                self.try_parse_function_call(left_argument)
+                self.try_parse_function_call(left)
             }
         }
     }

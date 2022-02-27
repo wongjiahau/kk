@@ -124,7 +124,7 @@ impl Environment {
                 ]
                 .iter()
                 .map(|(name, f)| (name.to_string(), f.clone()))
-                .collect(),
+                .collect::<HashMap<String, Value>>(),
             ),
         }
     }
@@ -285,6 +285,26 @@ impl Pattern {
                     }
                 }
                 Ok(Some(env))
+            }
+            (Pattern::Tuple(pattern), Value::Tuple(value)) => {
+                if pattern.values.len() != value.values.len() {
+                    return Ok(None);
+                }
+
+                let envs: Vec<Option<Environment>> = pattern
+                    .values
+                    .iter()
+                    .zip(value.values.iter())
+                    .map(|(pattern, value)| pattern.matches(&value))
+                    .collect::<Result<Vec<Option<Environment>>, EvalError>>()?;
+
+                let mut resultEnv = Environment::new(None);
+                for env in envs {
+                    if let Some(env) = env {
+                        resultEnv = resultEnv.combine(env);
+                    }
+                }
+                Ok(Some(resultEnv))
             }
             other => panic!("{:#?}", other),
         }

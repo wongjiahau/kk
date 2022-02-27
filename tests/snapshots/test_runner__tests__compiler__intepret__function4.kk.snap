@@ -1,0 +1,41 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// no more callback hell
+{
+  <-: value match {
+    n #ok (): n | function,
+    err: err,
+  }
+    given function
+    given value,
+
+  a + b
+    given a <- (1 #ok ())
+    given b <- (2 #ok ())
+    | print,
+
+  a + b
+    given a <- ("oh no" #error ())
+    given b <- (2 #ok ())
+    | print,
+}
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+3
+"oh no" #error ()
+
+============
+STDERR
+============
