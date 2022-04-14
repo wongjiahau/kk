@@ -221,6 +221,8 @@ pub struct EffectHandlerPerformValue {
 
 #[derive(Clone, Debug)]
 pub enum EvalError {
+    /// This is used for exiting evaluation of a handled thread that is not resumed.
+    Exit,
     NoEffectHandlerFound {
         name: Token,
     },
@@ -287,7 +289,7 @@ impl Eval for Expression {
     }
 }
 
-impl Eval for Perform {
+impl Eval for PerformEffect {
     fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
         let perform = self;
         let (sender, receiver) = channel();
@@ -305,8 +307,14 @@ impl Eval for Perform {
             .unwrap();
 
         // pause the current thread, and wait for handler to resume or kill the thread
-        let captured = receiver.recv().unwrap();
-        Ok(captured)
+        match receiver.recv() {
+            // If ok, it means that resume is called
+            Ok(captured) => Ok(captured),
+
+            // If err, it means that resume is not called.
+            // and if resume is not called, exit the evaluation of `handled`.
+            Err(_) => Err(EvalError::Exit),
+        }
     }
 }
 
@@ -329,9 +337,16 @@ impl Eval for EffectHandlerNode {
 
         let handled = handler.handled.clone();
         thread::spawn(move || {
-            sender
-                .send(HandlerResponse::BodyEvalDone(handled.eval(&mut child_env)))
-                .unwrap();
+            match handled.eval(&mut child_env) {
+                Err(EvalError::Exit) => {
+                    // no need to do anything, because `handled` will only return exit if `resume` is not called
+                }
+                other => {
+                    // If `handled` returns a non-Exit value, resume the handler thread with this
+                    // value
+                    sender.send(HandlerResponse::BodyEvalDone(other)).unwrap();
+                }
+            }
         });
 
         let result = pause_current_thread(env, receiver, handler.handler);

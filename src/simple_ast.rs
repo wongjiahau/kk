@@ -26,13 +26,13 @@ pub enum Expression {
     InternalOp(Box<InternalOp>),
     EffectHandlerNode(EffectHandlerNode),
     /// The syntax for perform is bang `!`.
-    Perform(Box<Perform>),
+    Perform(Box<PerformEffect>),
 }
 
 #[derive(Debug, Clone)]
-pub struct Perform {
+pub struct PerformEffect {
     pub name: Token,
-    pub body: Expression,
+    pub value: Expression,
 }
 
 #[derive(Debug, Clone)]

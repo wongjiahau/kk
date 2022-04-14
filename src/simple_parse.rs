@@ -173,12 +173,12 @@ impl<'a> Parser<'a> {
                 let result = match middle {
                     // Effect perform
                     Expression::Identifier(i) if i.representation == "!" => {
-                        Expression::Perform(Box::new(Perform {
+                        Expression::Perform(Box::new(PerformEffect {
                             name: match right {
                                 Expression::Identifier(id) => id,
                                 _ => panic!("Expecting identifier for perform"),
                             },
-                            body: left,
+                            value: left,
                         }))
                     }
 

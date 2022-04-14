@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+{
+  hello:
+    99
+    ! raise
+    <- x,
+
+  raiseConst:
+    (1 | hello)
+      handle {
+        raise: 1 + message <- message,
+      },
+
+  raiseConst | print, // should be 100 not 99
+}
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+100
+
+============
+STDERR
+============
