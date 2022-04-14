@@ -299,7 +299,7 @@ impl Eval for Perform {
         handler
             .resume_handler_thread
             .send(HandlerResponse::BodyPerform(EffectHandlerPerformValue {
-                value: handler.function.eval(env)?,
+                value: perform.value.eval(env)?,
                 resume_handled_thread: sender,
             }))
             .unwrap();

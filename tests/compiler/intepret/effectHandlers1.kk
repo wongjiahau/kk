@@ -7,8 +7,8 @@
   raiseConst:
     (1 | hello) 
       handle {
-        raise: 42 <- message,
+        raise: 1 + message <- message,
       },
 
-  raiseConst | print, // should be 42 not 50
+  raiseConst | print, // should be 100 not 99
 }
