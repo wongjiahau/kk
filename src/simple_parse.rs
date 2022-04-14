@@ -13,7 +13,9 @@ impl<'a> Parser<'a> {
     }
     pub fn parse(tokenizer: &mut Tokenizer) -> Result<Expression, ParseError> {
         let mut parser = Parser { tokenizer };
-        parser.parse_expression()
+        let result = parser.parse_expression()?;
+        // println!("result={:#?}", result);
+        Ok(result)
     }
 
     /// Return the next meaningful token.  
@@ -144,7 +146,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// High precedence expression
+    /// Low precedence expression
     /// (none at the moment)
     fn parse_low_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         self.parse_mid_precedence_expression()
@@ -167,65 +169,108 @@ impl<'a> Parser<'a> {
             Some(_) => {
                 let middle = self.parse_high_precedence_expression()?;
 
-                if self.next_meaningful_token_is_terminating()? {
-                    return Ok(Expression::FunctionCall(FunctionCall {
-                        argument: Box::new(left),
-                        function: Box::new(middle),
-                    }));
-                }
-
                 let right = self.parse_high_precedence_expression()?;
-                let left = match middle {
+                let result = match middle {
+                    // Effect perform
+                    Expression::Identifier(i) if i.representation == "!" => {
+                        Expression::Perform(Box::new(Perform {
+                            name: match right {
+                                Expression::Identifier(id) => id,
+                                _ => panic!("Expecting identifier for perform"),
+                            },
+                            body: left,
+                        }))
+                    }
+
+                    // Effect handler
+                    Expression::Identifier(i) if i.representation == "handle" => {
+                        Expression::EffectHandlerNode(EffectHandlerNode {
+                            handler: match right {
+                                Expression::Object(object) => {
+                                    match object.pairs.split_first()  {
+                                        Some((head, [])) => {
+                                            match head.pattern.clone() {
+                                                Some(Expression::Identifier(effect_name)) => {
+                                                    match head.value.clone() {
+                                                        Expression::Function(function) => {
+                                                            Handler {
+                                                                name: effect_name,
+                                                                function,
+                                                            }
+                                                        }
+                                                        _ => panic!("Body of effect should be a function")
+                                                    }
+                                                }
+                                                _ => panic!("Name of effect should be identifier")
+                                            }
+                                        },
+                                        _ => panic!("The object of `handle` should have one and only one property which should be an identifier"),
+                                    }
+
+                                }
+                                _ => panic!("The right side of `handle` should be an object with one property")
+                            },
+                            handled: Box::new(left),
+                        })
+                    }
+
                     // Postfix unary function call (function comes AFTER argument)
-                    Expression::Identifier(i) if i == "|" => {
+                    Expression::Identifier(i) if i.representation == "|" => {
                         Expression::FunctionCall(FunctionCall {
-                            argument: Box::new(left),
                             function: Box::new(right),
+                            argument: Box::new(left),
                         })
                     }
 
                     // Function
-                    Expression::Identifier(i) if i == "given" => Expression::Function(Function {
-                        parameter: Box::new(right),
-                        body: Box::new(left),
-                    }),
+                    Expression::Identifier(i) if i.representation == "<-" => {
+                        Expression::Function(Function {
+                            body: Box::new(left),
+                            parameter: Box::new(right),
+                        })
+                    }
+
+                    // Assignment
+                    Expression::Identifier(i) if i.representation == "as" => {
+                        Expression::Assignment(Assignment {
+                            value: Box::new(left),
+                            pattern: Box::new(right),
+                        })
+                    }
 
                     // Match expression
-                    Expression::Identifier(i) if i == "match" => Expression::Match(Match {
-                        value: Box::new(left),
-                        cases: match right {
-                            Expression::Object(object) => Ok(object
-                                .pairs
-                                .into_iter()
-                                .map(|pair| match pair.pattern {
-                                    None => panic!(),
-                                    Some(pattern) => MatchCase {
-                                        pattern,
-                                        body: pair.value,
-                                    },
-                                })
-                                .collect()),
-                            other => Err(ParseError {
-                                context: todo!(),
-                                kind: todo!(),
-                            }),
-                        }?,
-                    }),
-
-                    // Conditional expression
-                    Expression::Identifier(i) if i == "else" => {
-                        Expression::Conditional(Conditional {
-                            default: Box::new(right),
-                            branches: match left {
+                    Expression::Identifier(i) if i.representation == "match" => {
+                        Expression::Match(Match {
+                            value: Box::new(left),
+                            cases: match right {
                                 Expression::Object(object) => Ok(object
                                     .pairs
                                     .into_iter()
-                                    .map(|pair| match pair.pattern {
-                                        None => panic!(),
-                                        Some(condition) => Branch {
-                                            condition,
-                                            body: pair.value,
-                                        },
+                                    .map(|pair| MatchCase {
+                                        pattern: pair
+                                            .pattern
+                                            .expect("match case needs to have left side"),
+                                        body: pair.value,
+                                    })
+                                    .collect()),
+                                other => Err(ParseError {
+                                    context: todo!(),
+                                    kind: todo!(),
+                                }),
+                            }?,
+                        })
+                    }
+                    // Conditional expression
+                    Expression::Identifier(i) if i.representation == "else" => {
+                        Expression::Conditional(Conditional {
+                            default: Box::new(left),
+                            branches: match right {
+                                Expression::Array(array) => Ok(array
+                                    .values
+                                    .into_iter()
+                                    .map(|value| match value {
+                                        Expression::Branch(branch) => *branch,
+                                        _ => panic!("Match should use `if`"),
                                     })
                                     .collect()),
                                 other => Err(ParseError {
@@ -236,6 +281,15 @@ impl<'a> Parser<'a> {
                         })
                     }
 
+                    Expression::Identifier(i) if i.representation == "if" => {
+                        Expression::Branch(Box::new(Branch {
+                            condition: right,
+                            body: left,
+                        }))
+                    }
+
+                    // If branch
+
                     // Binary variant construction
                     Expression::TagOnlyVariant(tag) => Expression::Variant(Variant {
                         tag,
@@ -243,7 +297,7 @@ impl<'a> Parser<'a> {
                         right: Box::new(right),
                     }),
 
-                    // Binary function call
+                    // Binary operation
                     _ => {
                         // Note: (x f y) === (x | (y | f))
                         // Or in maths, (x f y) === (f(y))(x)
@@ -264,13 +318,14 @@ impl<'a> Parser<'a> {
                         })
                     }
                 };
-                self.try_parse_function_call(left)
+                self.try_parse_function_call(result)
             }
         }
     }
 
-    /// High precedenc expression =
+    /// High precedence expression =
     /// * object access (e.g. "a.b.c")
+    /// * dot syntax (e.g. "x.(+ | 2).(print)")
     fn parse_high_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         let object = self.parse_highest_precedence_expression()?;
         self.try_parse_high_precedence_expression(object)
@@ -288,10 +343,19 @@ impl<'a> Parser<'a> {
             }) => {
                 self.eat_token(TokenType::Period, None)?;
                 let property = self.parse_highest_precedence_expression()?;
-                self.try_parse_high_precedence_expression(Expression::ObjectAccess(ObjectAccess {
-                    object: Box::new(object),
-                    property: Box::new(property),
-                }))
+                self.try_parse_high_precedence_expression(match property {
+                    Expression::Parenthesized(parenthesized) => {
+                        Expression::FunctionCall(FunctionCall {
+                            function: Box::new(Expression::Parenthesized(parenthesized)),
+                            argument: Box::new(object),
+                        })
+                    }
+                    Expression::Identifier(token) => Expression::ObjectAccess(ObjectAccess {
+                        object: Box::new(object),
+                        property: token,
+                    }),
+                    other => panic!("{:#?}", other),
+                })
             }
             _ => Ok(object),
         }
@@ -301,7 +365,7 @@ impl<'a> Parser<'a> {
     /// * string
     /// * number
     /// * array
-    /// * tuple/unit
+    /// * tag only variant
     /// * parenthesized expression
     /// * object
     fn parse_highest_precedence_expression(&mut self) -> Result<Expression, ParseError> {
@@ -310,53 +374,36 @@ impl<'a> Parser<'a> {
             Some(token) => Ok(token),
         }?;
 
-        match first.token_type {
-            TokenType::String => Ok(Expression::String(first.representation)),
+        match &first.token_type {
+            TokenType::String => Ok(Expression::String(first)),
             TokenType::Integer => Ok(Expression::Number(Number::Int64(
                 first.representation.parse().unwrap(),
             ))),
             TokenType::Float => Ok(Expression::Number(Number::Float64(
                 first.representation.parse().unwrap(),
             ))),
-            TokenType::Identifier => {
-                if first.representation.starts_with("#") {
-                    Ok(Expression::TagOnlyVariant(first.representation))
-                } else {
-                    Ok(Expression::Identifier(first.representation))
-                }
-            }
+            TokenType::Identifier => Ok(Expression::Identifier(first)),
             TokenType::LeftCurlyBracket => Ok(Expression::Object(self.parse_object(first)?)),
-            TokenType::LeftParenthesis => Ok(self.parse_tuple_or_parenthesized_expression(first)?),
+            TokenType::LeftParenthesis => Ok(self.parse_parenthesized_expression(first)?),
 
+            TokenType::Tag => Ok(Expression::TagOnlyVariant(first)),
+            TokenType::LeftSquareBracket => {
+                todo!()
+            }
             other => {
-                panic!("{:#?}", other)
+                panic!("first={:#?} other={:#?}", first, other)
             }
         }
     }
 
-    fn parse_tuple_or_parenthesized_expression(
+    fn parse_parenthesized_expression(
         &mut self,
         left_parenthesis: Token,
     ) -> Result<Expression, ParseError> {
-        let mut values = vec![];
-        let right_parenthesis = loop {
-            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
-                break right_parenthesis;
-            }
-            values.push(self.parse_low_precedence_expression()?);
-            if self.try_eat_token(TokenType::Comma)?.is_some() {
-                continue;
-            }
-            let right_parenthesis = self.eat_token(TokenType::RightParenthesis, None)?;
-            match values.split_first() {
-                Some((head, [])) => return Ok(head.clone()),
-                _ => break right_parenthesis,
-            }
-        };
-        Ok(Expression::Tuple(Tuple {
+        Ok(Expression::Parenthesized(Parenthesized {
             left_parenthesis,
-            values,
-            right_parenthesis,
+            expression: Box::new(self.parse_low_precedence_expression()?),
+            right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
         }))
     }
 

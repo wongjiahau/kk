@@ -11,16 +11,54 @@ pub enum Expression {
     Tuple(Tuple),
     FunctionCall(FunctionCall),
     Function(Function),
-    String(String),
-    Identifier(String),
+    String(Token),
+    Identifier(Token),
+    Branch(Box<Branch>),
+    Assignment(Assignment),
     Number(Number),
     Variant(Variant),
-    TagOnlyVariant(String),
+    TagOnlyVariant(Token),
     Match(Match),
     Conditional(Conditional),
+    Parenthesized(Parenthesized),
 
     /// These are internal operations that cannot be called directly from userspace
     InternalOp(Box<InternalOp>),
+    EffectHandlerNode(EffectHandlerNode),
+    /// The syntax for perform is bang `!`.
+    Perform(Box<Perform>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Perform {
+    pub name: Token,
+    pub body: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectHandlerNode {
+    pub handler: Handler,
+    /// This is what goes belows the handler in the AST
+    pub handled: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Handler {
+    pub name: Token,
+    pub function: Function,
+}
+
+#[derive(Debug, Clone)]
+pub struct Parenthesized {
+    pub left_parenthesis: Token,
+    pub expression: Box<Expression>,
+    pub right_parenthesis: Token,
+}
+
+#[derive(Debug, Clone)]
+pub struct Assignment {
+    pub pattern: Box<Pattern>,
+    pub value: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +67,7 @@ pub struct Conditional {
     pub branches: Vec<Branch>,
 }
 
+/// deprecated: this can cause the type system to be unsound
 #[derive(Debug, Clone)]
 pub struct Branch {
     pub condition: Expression,
@@ -57,12 +96,12 @@ pub enum InternalOp {
 #[derive(Debug, Clone)]
 pub struct ObjectAccess {
     pub object: Box<Expression>,
-    pub property: Box<Expression>,
+    pub property: Token,
 }
 
 #[derive(Debug, Clone)]
 pub struct Variant {
-    pub tag: String,
+    pub tag: Token,
     pub left: Box<Expression>,
     pub right: Box<Expression>,
 }

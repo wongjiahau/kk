@@ -238,6 +238,30 @@ impl Tokenizer {
                     }
                     .into_parse_error()),
                 },
+                // Tag
+                '`' => {
+                    let mut characters = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| character.value != '`')
+                        .collect::<Vec<Character>>();
+
+                    match self.characters_iterator.next() {
+                        Some(backtick) => {
+                            characters.push(backtick);
+
+                            let representation =
+                                format!("{}{}", character.value, stringify(characters.clone()));
+                            Ok(Some(Token {
+                                // token_type:  get_token_type(representation.clone()),
+                                token_type: TokenType::Tag,
+                                representation,
+                                position: make_position(character, characters.last()),
+                            }))
+                        }
+                        None => panic!("missing closing backtick(`) for tag"),
+                    }
+                }
                 // String
                 '"' => {
                     let start_quote = character;
@@ -340,17 +364,18 @@ impl Tokenizer {
                         .collect::<Vec<Character>>();
 
                     if character.value == '-' && intergral.is_empty() {
+                        let characters = self
+                            .characters_iterator
+                            .by_ref()
+                            .peeking_take_while(|character| is_symbol(character.value))
+                            .collect::<Vec<Character>>();
+
+                        let representation =
+                            format!("{}{}", character.value, stringify(characters.clone()));
                         return Ok(Some(Token {
-                            token_type: TokenType::Minus,
-                            representation: character.value.to_string(),
-                            position: Position {
-                                line_start: character.line_number,
-                                line_end: character.line_number,
-                                column_start: character.column_number,
-                                column_end: character.column_number,
-                                character_index_start: character.index,
-                                character_index_end: character.index,
-                            },
+                            token_type: TokenType::Identifier,
+                            representation,
+                            position: make_position(character, characters.last()),
                         }));
                     };
 
@@ -434,6 +459,12 @@ impl Tokenizer {
                     representation: ":".to_string(),
                     position: make_position(character, None),
                 })),
+                '.' => Ok(Some(Token {
+                    token_type: TokenType::Period,
+                    representation: ".".to_string(),
+                    position: make_position(character, None),
+                })),
+                // Symbolic identifer
                 other if is_symbol(other) => {
                     let characters = self
                         .characters_iterator
