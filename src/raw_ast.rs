@@ -597,6 +597,8 @@ pub enum TokenType {
     Slash,
     Underscore,
     Identifier,
+    /// Used for construction of tagged union
+    Tag,
     String,
     InterpolatedString {
         start_quote: Box<Character>,

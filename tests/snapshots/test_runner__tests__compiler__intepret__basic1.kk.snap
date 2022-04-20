@@ -5,17 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-(
-  hello: {x: 99 ! raise},
-
-  raiseConst:
-    (1 | hello)
-      handle (
-        raise: {message: 1 + message},
-      ),
-
-  raiseConst | print, // should be 100 not 99
-)
+`hello world` | print
 
 ============
 EXIT CODE
@@ -25,7 +15,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-100
+"hello world"
 
 ============
 STDERR

@@ -1,4 +1,4 @@
-use crate::raw_ast::Token;
+use crate::{non_empty::NonEmpty, raw_ast::Token};
 
 /// TODO: Change Pattern into a different type
 pub type Pattern = Expression;
@@ -108,9 +108,9 @@ pub struct Variant {
 
 #[derive(Debug, Clone)]
 pub struct Object {
-    pub left_curly_bracket: Token,
+    pub left_parenthesis: Token,
     pub pairs: Vec<ObjectPair>,
-    pub right_curly_bracket: Token,
+    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +139,13 @@ pub struct FunctionCall {
 
 #[derive(Debug, Clone)]
 pub struct Function {
+    pub left_curly_bracket: Token,
+    pub branches: NonEmpty<FunctionBranch>,
+    pub right_curly_bracket: Token,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionBranch {
     pub parameter: Box<Expression>,
     pub body: Box<Expression>,
 }

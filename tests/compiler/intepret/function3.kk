@@ -1,4 +1,4 @@
-{
-  squarePlus: a * a + (b * b) given a given b,
+(
+  squarePlus:  {a: {b: a * a + (b * b) }}, 
   3 squarePlus 4 | print,
-}
+)

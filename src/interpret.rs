@@ -1,3 +1,4 @@
+use crate::non_empty::NonEmpty;
 use crate::raw_ast::Token;
 use crossbeam_channel::{unbounded as channel, Receiver, Sender};
 use std::collections::HashMap;
@@ -43,6 +44,11 @@ struct ValueVariant {
 #[derive(Debug, Clone)]
 struct ValueFunction {
     closure: Environment,
+    branches: NonEmpty<ValueFunctionBranch>,
+}
+
+#[derive(Clone, Debug)]
+struct ValueFunctionBranch {
     parameter: Pattern,
     body: Expression,
 }
@@ -81,7 +87,7 @@ impl Value {
                     .iter()
                     .sorted_by(|a, b| a.0.cmp(&b.0))
                     .map(|(name, value)| format!("{}: {}", name, value.print()));
-                format!("{{{}}}", values.join(", "))
+                format!("({})", values.join(", "))
             }
             Value::Function(function) => format!("<function>:({:#?})", function),
             Value::String(string) => string.representation.to_string(),
@@ -104,7 +110,7 @@ enum NativeFunction {
 #[derive(Debug, Clone)]
 struct Environment {
     parent: Option<Box<Environment>>,
-    variables: HashMap<String, Value>,
+    bindings: HashMap<String, Value>,
     effect_handlers_stack: Vec<EffectHandler>,
 }
 
@@ -115,7 +121,7 @@ impl Environment {
     fn new(parent: Option<Box<Environment>>) -> Environment {
         Environment {
             parent,
-            variables: HashMap::new(),
+            bindings: HashMap::new(),
             effect_handlers_stack: Vec::new(),
         }
     }
@@ -127,15 +133,15 @@ impl Environment {
         self
     }
     fn combine(&mut self, other: Environment) {
-        for (key, value) in other.variables {
-            self.variables.insert(key, value);
+        for (key, value) in other.bindings {
+            self.bindings.insert(key, value);
         }
     }
 
     fn global() -> Environment {
         Environment {
             parent: None,
-            variables: HashMap::from(
+            bindings: HashMap::from(
                 [
                     ("print", Value::NativeFunction(NativeFunction::Print)),
                     ("+", Value::NativeFunction(NativeFunction::Plus)),
@@ -149,8 +155,8 @@ impl Environment {
             effect_handlers_stack: Vec::new(),
         }
     }
-    fn get_value(&self, name: &String) -> Result<Value, EvalError> {
-        match self.variables.get(name) {
+    fn get_value(&self, name: &Token) -> Result<Value, EvalError> {
+        match self.bindings.get(&name.representation) {
             Some(value) => Ok(value.clone()),
             None => match &self.parent {
                 None => Err(EvalError::UnkwownVariable { name: name.clone() }),
@@ -159,13 +165,13 @@ impl Environment {
         }
     }
     fn set_value(&mut self, name: String, value: Value) -> Result<(), EvalError> {
-        self.variables.insert(name, value);
+        self.bindings.insert(name, value);
         Ok(())
     }
 
     fn print(&self) -> String {
         let current = self
-            .variables
+            .bindings
             .iter()
             .map(|(key, value)| format!("  {}: {}", key, value.print()))
             .join("\n");
@@ -227,7 +233,7 @@ pub enum EvalError {
         name: Token,
     },
     UnkwownVariable {
-        name: String,
+        name: Token,
     },
     NotAFunction {
         value: Value,
@@ -268,7 +274,7 @@ impl Eval for Expression {
             Expression::Tuple(tuple) => tuple.eval(env),
             Expression::Function(function) => function.eval(env),
             Expression::String(string) => Ok(Value::String(string)),
-            Expression::Identifier(name) => env.get_value(&name.representation),
+            Expression::Identifier(name) => env.get_value(&name),
             Expression::Number(Number::Int64(integer)) => Ok(Value::Int64(integer)),
             Expression::Number(Number::Float64(float)) => todo!(),
             Expression::Variant(variant) => Ok(Value::Variant(ValueVariant {
@@ -461,7 +467,7 @@ impl Eval for Match {
 impl Pattern {
     /// Check if the given `value` is bindable to this pattern.
     /// If bindable, a list of bindings will be returned,
-    /// else an error will be thrown.
+    /// else `None` will be returned.
     fn matches(&self, value: &Value) -> Result<Option<Environment>, EvalError> {
         match (self, value) {
             (Pattern::Identifier(pattern), value) => {
@@ -541,9 +547,11 @@ impl Pattern {
 impl Eval for Function {
     fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
         Ok(Value::Function(ValueFunction {
-            closure: env.new_child(),
-            parameter: *self.parameter,
-            body: *self.body,
+            closure: env.clone(),
+            branches: self.branches.map(|branch| ValueFunctionBranch {
+                parameter: *branch.parameter,
+                body: *branch.body,
+            }),
         }))
     }
 }
@@ -593,7 +601,7 @@ impl Eval for Object {
             }
         }
         Ok(Value::Object(ValueObject {
-            pairs: env.variables,
+            pairs: env.bindings,
         }))
     }
 }
@@ -606,19 +614,15 @@ fn call_function(
     match function {
         Value::NativeFunction(native_function) => call_native_function(native_function, argument),
         Value::Function(function) => {
-            let mut env = env.new_child();
-
-            // TODO: consider removing the following code
-            // let mut env = Environment::new(Some(Box::new(function.closure)));
-            if let Some(bindings) = function.parameter.matches(&argument)? {
-                env.combine(bindings);
-                function.body.eval(&mut env)
-            } else {
-                Err(EvalError::RefutablePattern {
-                    pattern: function.parameter,
-                    value: argument,
-                })
+            for branch in function.branches.into_vector() {
+                let mut env = env.new_child();
+                env.combine(function.closure.clone());
+                if let Some(bindings) = branch.parameter.matches(&argument)? {
+                    env.combine(bindings);
+                    return branch.body.eval(&mut env);
+                }
             }
+            panic!("No matching branches")
         }
         Value::ResumeFunction(resume_function) => {
             // Send a value to resume the handled thread
@@ -653,11 +657,16 @@ fn call_native_function(function: NativeFunction, argument: Value) -> Result<Val
         let parameter = Expression::Identifier(Token::dummy_identifier("x".to_string()));
         Value::Function(ValueFunction {
             closure: Environment::new(None),
-            parameter: parameter.clone(),
-            body: Expression::InternalOp(Box::new(internal_op(
-                parameter,
-                Expression::Number(Number::Int64(a)),
-            ))),
+            branches: NonEmpty {
+                head: ValueFunctionBranch {
+                    parameter: parameter.clone(),
+                    body: Expression::InternalOp(Box::new(internal_op(
+                        parameter,
+                        Expression::Number(Number::Int64(a)),
+                    ))),
+                },
+                tail: vec![],
+            },
         })
     }
     match function {

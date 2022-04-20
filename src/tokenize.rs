@@ -214,36 +214,37 @@ impl Tokenizer {
                         }),
                     }),
                 },
-                // Character
-                '\'' => match self.characters_iterator.next() {
-                    Some(quote @ Character { value: '\'', .. }) => {
-                        Err(TokenizeError::CharacterLiteralCannotBeEmpty {
-                            position: make_position(character, Some(&quote)),
-                        }
-                        .into_parse_error())
-                    }
-                    Some(c) => match self.characters_iterator.next() {
-                        Some(end_quote @ Character { value: '\'', .. }) => Ok(Some(Token {
-                            token_type: TokenType::Character,
-                            representation: format!("'{}'", c.value),
-                            position: make_position(character, Some(&end_quote)),
-                        })),
-                        other => Err(TokenizeError::UnterminatedCharacterLiteral {
-                            position: make_position(character, other.as_ref()),
-                        }
-                        .into_parse_error()),
-                    },
-                    None => Err(TokenizeError::UnterminatedCharacterLiteral {
-                        position: make_position(character, None),
-                    }
-                    .into_parse_error()),
-                },
+                // // Character
+                // '\'' => match self.characters_iterator.next() {
+                //     Some(quote @ Character { value: '\'', .. }) => {
+                //         Err(TokenizeError::CharacterLiteralCannotBeEmpty {
+                //             position: make_position(character, Some(&quote)),
+                //         }
+                //         .into_parse_error())
+                //     }
+                //     Some(c) => match self.characters_iterator.next() {
+                //         Some(end_quote @ Character { value: '\'', .. }) => Ok(Some(Token {
+                //             token_type: TokenType::Character,
+                //             representation: format!("'{}'", c.value),
+                //             position: make_position(character, Some(&end_quote)),
+                //         })),
+                //         other => Err(TokenizeError::UnterminatedCharacterLiteral {
+                //             position: make_position(character, other.as_ref()),
+                //         }
+                //         .into_parse_error()),
+                //     },
+                //     None => Err(TokenizeError::UnterminatedCharacterLiteral {
+                //         position: make_position(character, None),
+                //     }
+                //     .into_parse_error()),
+                // },
                 // Tag
-                '`' => {
+                '\'' => {
+                    let quote = character;
                     let mut characters = self
                         .characters_iterator
                         .by_ref()
-                        .peeking_take_while(|character| character.value != '`')
+                        .peeking_take_while(|character| character.value != quote.value)
                         .collect::<Vec<Character>>();
 
                     match self.characters_iterator.next() {
@@ -251,19 +252,19 @@ impl Tokenizer {
                             characters.push(backtick);
 
                             let representation =
-                                format!("{}{}", character.value, stringify(characters.clone()));
+                                format!("{}{}", quote.value, stringify(characters.clone()),);
                             Ok(Some(Token {
                                 // token_type:  get_token_type(representation.clone()),
                                 token_type: TokenType::Tag,
                                 representation,
-                                position: make_position(character, characters.last()),
+                                position: make_position(quote, characters.last()),
                             }))
                         }
-                        None => panic!("missing closing backtick(`) for tag"),
+                        None => panic!("missing closing single quote(') for tag"),
                     }
                 }
                 // String
-                '"' => {
+                '`' => {
                     let start_quote = character;
                     enum StartOf {
                         Nothing,
@@ -284,7 +285,7 @@ impl Tokenizer {
                                             _ => StartOf::Escape,
                                         },
                                     ),
-                                    '"' => match start_of {
+                                    '`' => match start_of {
                                         StartOf::Escape => (Some(character), StartOf::Nothing),
                                         _ => break Ok(character),
                                     },
@@ -350,7 +351,7 @@ impl Tokenizer {
                         }
                         None => Ok(Some(Token {
                             token_type: TokenType::String,
-                            representation: format!("\"{}\"", stringify(characters)),
+                            representation: format!("`{}`", stringify(characters)),
                             position: make_position(start_quote, Some(&end_quote)),
                         })),
                     }

@@ -7,6 +7,9 @@ pub struct NonEmpty<T> {
 }
 
 impl<T> NonEmpty<T> {
+    pub fn new(head: T, tail: Vec<T>) -> NonEmpty<T> {
+        NonEmpty { head, tail }
+    }
     pub const fn first(&self) -> &T {
         &self.head
     }

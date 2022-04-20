@@ -1,3 +1,4 @@
+use crate::non_empty::NonEmpty;
 use crate::parse::{ParseContext, ParseError, ParseErrorKind};
 use crate::raw_ast::{Token, TokenType};
 use crate::simple_ast::*;
@@ -222,14 +223,6 @@ impl<'a> Parser<'a> {
                         })
                     }
 
-                    // Function
-                    Expression::Identifier(i) if i.representation == "<-" => {
-                        Expression::Function(Function {
-                            body: Box::new(left),
-                            parameter: Box::new(right),
-                        })
-                    }
-
                     // Assignment
                     Expression::Identifier(i) if i.representation == "as" => {
                         Expression::Assignment(Assignment {
@@ -325,7 +318,6 @@ impl<'a> Parser<'a> {
 
     /// High precedence expression =
     /// * object access (e.g. "a.b.c")
-    /// * dot syntax (e.g. "x.(+ | 2).(print)")
     fn parse_high_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         let object = self.parse_highest_precedence_expression()?;
         self.try_parse_high_precedence_expression(object)
@@ -383,8 +375,8 @@ impl<'a> Parser<'a> {
                 first.representation.parse().unwrap(),
             ))),
             TokenType::Identifier => Ok(Expression::Identifier(first)),
-            TokenType::LeftCurlyBracket => Ok(Expression::Object(self.parse_object(first)?)),
-            TokenType::LeftParenthesis => Ok(self.parse_parenthesized_expression(first)?),
+            TokenType::LeftCurlyBracket => Ok(Expression::Function(self.parse_function(first)?)),
+            TokenType::LeftParenthesis => self.parse_parenthesized_expression(first),
 
             TokenType::Tag => Ok(Expression::TagOnlyVariant(first)),
             TokenType::LeftSquareBracket => {
@@ -396,53 +388,157 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_function(&mut self, left_curly_bracket: Token) -> Result<Function, ParseError> {
+        let first = self.parse_low_precedence_expression()?;
+        if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
+            return Ok(Function {
+                left_curly_bracket: left_curly_bracket.clone(),
+                right_curly_bracket: right_curly_bracket.clone(),
+                branches: NonEmpty::new(
+                    FunctionBranch {
+                        // Inject dummy unit parameter if there's no parameter
+                        parameter: Box::new(Expression::Object(Object {
+                            left_parenthesis: Token {
+                                token_type: TokenType::LeftParenthesis,
+                                representation: "(".to_string(),
+                                position: left_curly_bracket.position,
+                            },
+                            right_parenthesis: Token {
+                                token_type: TokenType::LeftParenthesis,
+                                representation: ")".to_string(),
+                                position: right_curly_bracket.position,
+                            },
+                            pairs: vec![],
+                        })),
+                        body: Box::new(first),
+                    },
+                    vec![],
+                ),
+            });
+        } else {
+            let parameter = first;
+            self.eat_token(TokenType::Colon, None)?;
+            let body = self.parse_low_precedence_expression()?;
+            let head = FunctionBranch {
+                parameter: Box::new(parameter),
+                body: Box::new(body),
+            };
+            let mut tail = vec![];
+            let (tail, right_curly_bracket) = loop {
+                if let Some(right_curly_bracket) =
+                    self.try_eat_token(TokenType::RightCurlyBracket)?
+                {
+                    break (tail, right_curly_bracket);
+                }
+                self.try_eat_token(TokenType::Comma)?;
+                let parameter = self.parse_low_precedence_expression()?;
+                self.eat_token(TokenType::Colon, None)?;
+                let body = self.parse_low_precedence_expression()?;
+                tail.push(FunctionBranch {
+                    parameter: Box::new(parameter),
+                    body: Box::new(body),
+                })
+            };
+            Ok(Function {
+                left_curly_bracket,
+                right_curly_bracket,
+                branches: NonEmpty::new(head, tail),
+            })
+        }
+    }
+
+    /// Can be either object, or purely parenthesized expression.
     fn parse_parenthesized_expression(
         &mut self,
         left_parenthesis: Token,
     ) -> Result<Expression, ParseError> {
-        Ok(Expression::Parenthesized(Parenthesized {
-            left_parenthesis,
-            expression: Box::new(self.parse_low_precedence_expression()?),
-            right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
-        }))
+        // Handle empty object
+        if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+            return Ok(Expression::Object(Object {
+                left_parenthesis,
+                right_parenthesis,
+                pairs: vec![],
+            }));
+        }
+
+        let first = self.parse_low_precedence_expression()?;
+        match self.next_meaningful_token()? {
+            Some(token) => match &token.token_type {
+                TokenType::RightParenthesis => Ok(Expression::Parenthesized(Parenthesized {
+                    left_parenthesis,
+                    expression: Box::new(first),
+                    right_parenthesis: token,
+                })),
+                TokenType::Colon => {
+                    let value = self.parse_low_precedence_expression()?;
+                    Ok(Expression::Object(self.parse_object(
+                        left_parenthesis,
+                        ObjectPair {
+                            pattern: Some(first),
+                            value,
+                        },
+                    )?))
+                }
+                TokenType::Comma => {
+                    todo!()
+                }
+                _ => Err(ParseError {
+                    context: None,
+                    kind: ParseErrorKind::InvalidToken {
+                        actual_token: token,
+                        expected_token_type: Some(TokenType::LeftParenthesis),
+                    },
+                }),
+            },
+            None => Err(Parser::unexpected_eof(None)),
+        }
     }
 
-    fn parse_object(&mut self, left_curly_bracket: Token) -> Result<Object, ParseError> {
-        let mut pairs = vec![];
-        let right_curly_bracket = loop {
-            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
-                break right_curly_bracket;
-            }
-            let pattern = self.parse_mid_precedence_expression()?;
-            if self.try_eat_token(TokenType::Colon)?.is_some() {
-                let value = self.parse_low_precedence_expression()?;
-                pairs.push(ObjectPair {
-                    pattern: Some(pattern),
-                    value,
-                });
+    fn parse_object(
+        &mut self,
+        left_parenthesis: Token,
+        first_pair: ObjectPair,
+    ) -> Result<Object, ParseError> {
+        let mut pairs = vec![first_pair];
+        let right_parenthesis = loop {
+            if self.try_eat_token(TokenType::Comma)?.is_some() {
+                // Handle trailing comma
+                if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+                    break right_parenthesis;
+                }
+
+                let pattern = self.parse_mid_precedence_expression()?;
+                if self.try_eat_token(TokenType::Colon)?.is_some() {
+                    let value = self.parse_low_precedence_expression()?;
+                    pairs.push(ObjectPair {
+                        pattern: Some(pattern),
+                        value,
+                    });
+                } else {
+                    match &pattern {
+                        Expression::Identifier(i) => {
+                            // object punning / shorthand
+                            pairs.push(ObjectPair {
+                                pattern: Some(Pattern::Identifier(i.clone())),
+                                value: pattern,
+                            });
+                        }
+                        pattern => {
+                            pairs.push(ObjectPair {
+                                pattern: None,
+                                value: pattern.clone(),
+                            });
+                        }
+                    };
+                }
             } else {
-                match &pattern {
-                    Expression::Identifier(i) => {
-                        // object punning / shorthand
-                        pairs.push(ObjectPair {
-                            pattern: Some(Pattern::Identifier(i.clone())),
-                            value: pattern,
-                        });
-                    }
-                    pattern => {
-                        pairs.push(ObjectPair {
-                            pattern: None,
-                            value: pattern.clone(),
-                        });
-                    }
-                };
+                break self.eat_token(TokenType::RightParenthesis, None)?;
             }
-            self.eat_token(TokenType::Comma, None)?;
         };
         Ok(Object {
-            left_curly_bracket,
+            left_parenthesis,
             pairs,
-            right_curly_bracket,
+            right_parenthesis,
         })
     }
 }
