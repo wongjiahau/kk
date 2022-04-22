@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-1 + 2 * 3 | print
+print | 3 * 2 + 1
 
 ============
 EXIT CODE

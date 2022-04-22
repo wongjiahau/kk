@@ -5,16 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// Example from http://craftinginterpreters.com/resolving-and-binding.html
-(
-  a: 1,
-  innerScope: (
-    showA: {a | print},
-    () | showA, // should be 1
-    a: 2,
-    () | showA, // should be 2
-  ),
-)
+(a: (b: (c: 123))).a.b.c | print
 
 ============
 EXIT CODE
@@ -24,8 +15,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-1
-1
+123
 
 ============
 STDERR

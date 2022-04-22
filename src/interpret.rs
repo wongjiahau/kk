@@ -583,8 +583,13 @@ fn call_function(
         Value::NativeFunction(native_function) => call_native_function(native_function, argument),
         Value::Function(function) => {
             for branch in function.branches.into_vector() {
-                let mut env = env.new_child();
-                env.combine(function.closure.clone());
+                let mut env = {
+                    let child_env = env.new_child();
+                    let mut env = function.closure.clone();
+                    env.combine(child_env);
+                    env
+                };
+
                 if let Some(bindings) = branch.parameter.matches(&argument)? {
                     env.combine(bindings);
                     return branch.body.eval(&mut env);

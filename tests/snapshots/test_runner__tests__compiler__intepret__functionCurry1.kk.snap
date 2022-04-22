@@ -5,10 +5,10 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-{
+(
   add1: 1 | +,
-  3 | add1 | print,
-}
+  3 | add1 | print
+)
 
 ============
 EXIT CODE
