@@ -190,8 +190,8 @@ impl<'a> Parser<'a> {
                                 Expression::Object(object) => {
                                     match object.pairs.split_first()  {
                                         Some((head, [])) => {
-                                            match head.pattern.clone() {
-                                                Some(Expression::Identifier(effect_name)) => {
+                                            match head.key.clone() {
+                                                Some(Pattern::Identifier(effect_name)) => {
                                                     match head.value.clone() {
                                                         Expression::Function(function) => {
                                                             Handler {
@@ -223,36 +223,6 @@ impl<'a> Parser<'a> {
                         })
                     }
 
-                    // Assignment
-                    Expression::Identifier(i) if i.representation == "as" => {
-                        Expression::Assignment(Assignment {
-                            value: Box::new(left),
-                            pattern: Box::new(right),
-                        })
-                    }
-
-                    // Match expression
-                    Expression::Identifier(i) if i.representation == "match" => {
-                        Expression::Match(Match {
-                            value: Box::new(left),
-                            cases: match right {
-                                Expression::Object(object) => Ok(object
-                                    .pairs
-                                    .into_iter()
-                                    .map(|pair| MatchCase {
-                                        pattern: pair
-                                            .pattern
-                                            .expect("match case needs to have left side"),
-                                        body: pair.value,
-                                    })
-                                    .collect()),
-                                other => Err(ParseError {
-                                    context: todo!(),
-                                    kind: todo!(),
-                                }),
-                            }?,
-                        })
-                    }
                     // Conditional expression
                     Expression::Identifier(i) if i.representation == "else" => {
                         Expression::Conditional(Conditional {
@@ -397,7 +367,7 @@ impl<'a> Parser<'a> {
                 branches: NonEmpty::new(
                     FunctionBranch {
                         // Inject dummy unit parameter if there's no parameter
-                        parameter: Box::new(Expression::Object(Object {
+                        parameter: Box::new(Pattern::Object {
                             left_parenthesis: Token {
                                 token_type: TokenType::LeftParenthesis,
                                 representation: "(".to_string(),
@@ -409,7 +379,7 @@ impl<'a> Parser<'a> {
                                 position: right_curly_bracket.position,
                             },
                             pairs: vec![],
-                        })),
+                        }),
                         body: Box::new(first),
                     },
                     vec![],
@@ -420,7 +390,7 @@ impl<'a> Parser<'a> {
             self.eat_token(TokenType::Colon, None)?;
             let body = self.parse_low_precedence_expression()?;
             let head = FunctionBranch {
-                parameter: Box::new(parameter),
+                parameter: Box::new(parameter.to_pattern()?),
                 body: Box::new(body),
             };
             let mut tail = vec![];
@@ -435,7 +405,7 @@ impl<'a> Parser<'a> {
                 self.eat_token(TokenType::Colon, None)?;
                 let body = self.parse_low_precedence_expression()?;
                 tail.push(FunctionBranch {
-                    parameter: Box::new(parameter),
+                    parameter: Box::new(parameter.to_pattern()?),
                     body: Box::new(body),
                 })
             };
@@ -474,14 +444,18 @@ impl<'a> Parser<'a> {
                     Ok(Expression::Object(self.parse_object(
                         left_parenthesis,
                         ObjectPair {
-                            pattern: Some(first),
+                            key: Some(first.to_pattern()?),
                             value,
                         },
                     )?))
                 }
-                TokenType::Comma => {
-                    todo!()
-                }
+                TokenType::Comma => Ok(Expression::Object(self.parse_object(
+                    left_parenthesis,
+                    ObjectPair {
+                        key: Some(first.clone().to_pattern()?),
+                        value: first,
+                    },
+                )?)),
                 _ => Err(ParseError {
                     context: None,
                     kind: ParseErrorKind::InvalidToken {
@@ -501,38 +475,16 @@ impl<'a> Parser<'a> {
     ) -> Result<Object, ParseError> {
         let mut pairs = vec![first_pair];
         let right_parenthesis = loop {
-            if self.try_eat_token(TokenType::Comma)?.is_some() {
+            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+                break right_parenthesis;
+            } else if self.try_eat_token(TokenType::Comma)?.is_some() {
                 // Handle trailing comma
                 if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
                     break right_parenthesis;
                 }
-
-                let pattern = self.parse_mid_precedence_expression()?;
-                if self.try_eat_token(TokenType::Colon)?.is_some() {
-                    let value = self.parse_low_precedence_expression()?;
-                    pairs.push(ObjectPair {
-                        pattern: Some(pattern),
-                        value,
-                    });
-                } else {
-                    match &pattern {
-                        Expression::Identifier(i) => {
-                            // object punning / shorthand
-                            pairs.push(ObjectPair {
-                                pattern: Some(Pattern::Identifier(i.clone())),
-                                value: pattern,
-                            });
-                        }
-                        pattern => {
-                            pairs.push(ObjectPair {
-                                pattern: None,
-                                value: pattern.clone(),
-                            });
-                        }
-                    };
-                }
+                pairs.push(self.parse_object_pair()?);
             } else {
-                break self.eat_token(TokenType::RightParenthesis, None)?;
+                pairs.push(self.parse_object_pair()?);
             }
         };
         Ok(Object {
@@ -540,6 +492,31 @@ impl<'a> Parser<'a> {
             pairs,
             right_parenthesis,
         })
+    }
+
+    fn parse_object_pair(&mut self) -> Result<ObjectPair, ParseError> {
+        let pattern = self.parse_mid_precedence_expression()?;
+        if self.try_eat_token(TokenType::Colon)?.is_some() {
+            let value = self.parse_low_precedence_expression()?;
+            Ok(ObjectPair {
+                key: Some(pattern.to_pattern()?),
+                value,
+            })
+        } else {
+            match &pattern {
+                Expression::Identifier(i) => {
+                    // object punning / shorthand
+                    Ok(ObjectPair {
+                        key: Some(Pattern::Identifier(i.clone())),
+                        value: pattern,
+                    })
+                }
+                pattern => Ok(ObjectPair {
+                    key: None,
+                    value: pattern.clone(),
+                }),
+            }
+        }
     }
 }
 
@@ -554,4 +531,44 @@ fn is_token_meaningless(token: &Token) -> bool {
 /// Refer https://stackoverflow.com/a/32554326/6587634
 fn variant_eq(a: &TokenType, b: &TokenType) -> bool {
     std::mem::discriminant(a) == std::mem::discriminant(b)
+}
+
+impl Expression {
+    fn to_pattern(self) -> Result<Pattern, ParseError> {
+        match self {
+            Expression::Object(object) => Ok(Pattern::Object {
+                left_parenthesis: object.left_parenthesis,
+                pairs: object
+                    .pairs
+                    .into_iter()
+                    .map(|pair| {
+                        let pattern = match pair.key {
+                            Some(pattern) => pattern,
+                            None => panic!(
+                                "Expected to have key but got none, the value is {:#?}",
+                                pair.value
+                            ),
+                        };
+                        match pattern {
+                            Pattern::Identifier(token) => Ok((token, pair.value.to_pattern()?)),
+                            other => panic!(
+                                "Expected the key of object to be an identifer, but got {:#?}",
+                                other
+                            ),
+                        }
+                    })
+                    .collect::<Result<Vec<(Token, Pattern)>, ParseError>>()?,
+                right_parenthesis: object.right_parenthesis,
+            }),
+            Expression::Identifier(token) => Ok(Pattern::Identifier(token)),
+            Expression::Variant(variant) => Ok(Pattern::Variant {
+                left: Box::new(variant.left.to_pattern()?),
+                tag: variant.tag,
+                right: Box::new(variant.right.to_pattern()?),
+            }),
+            Expression::TagOnlyVariant(token) => Ok(Pattern::TagOnlyVariant(token)),
+            Expression::Parenthesized(parenthesized) => parenthesized.expression.to_pattern(),
+            _ => panic!("Invalid pattern"),
+        }
+    }
 }

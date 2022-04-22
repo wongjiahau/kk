@@ -1,24 +1,34 @@
 use crate::{non_empty::NonEmpty, raw_ast::Token};
 
-/// TODO: Change Pattern into a different type
-pub type Pattern = Expression;
+#[derive(Debug, Clone)]
+pub enum Pattern {
+    Identifier(Token),
+    Object {
+        left_parenthesis: Token,
+        pairs: Vec<(Token, Pattern)>,
+        right_parenthesis: Token,
+    },
+    Variant {
+        left: Box<Pattern>,
+        tag: Token,
+        right: Box<Pattern>,
+    },
+    TagOnlyVariant(Token),
+}
 
 #[derive(Debug, Clone)]
 pub enum Expression {
     Object(Object),
     ObjectAccess(ObjectAccess),
     Array(Array),
-    Tuple(Tuple),
     FunctionCall(FunctionCall),
     Function(Function),
     String(Token),
     Identifier(Token),
     Branch(Box<Branch>),
-    Assignment(Assignment),
     Number(Number),
     Variant(Variant),
     TagOnlyVariant(Token),
-    Match(Match),
     Conditional(Conditional),
     Parenthesized(Parenthesized),
 
@@ -115,7 +125,7 @@ pub struct Object {
 
 #[derive(Debug, Clone)]
 pub struct ObjectPair {
-    pub pattern: Option<Pattern>,
+    pub key: Option<Pattern>,
     pub value: Expression,
 }
 
@@ -146,7 +156,7 @@ pub struct Function {
 
 #[derive(Debug, Clone)]
 pub struct FunctionBranch {
-    pub parameter: Box<Expression>,
+    pub parameter: Box<Pattern>,
     pub body: Box<Expression>,
 }
 

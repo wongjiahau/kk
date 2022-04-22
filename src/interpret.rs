@@ -271,7 +271,6 @@ impl Eval for Expression {
             Expression::Object(object) => object.eval(env),
             Expression::ObjectAccess(object_access) => object_access.eval(env),
             Expression::Array(_) => todo!(),
-            Expression::Tuple(tuple) => tuple.eval(env),
             Expression::Function(function) => function.eval(env),
             Expression::String(string) => Ok(Value::String(string)),
             Expression::Identifier(name) => env.get_value(&name),
@@ -284,9 +283,7 @@ impl Eval for Expression {
             })),
             Expression::TagOnlyVariant(variant) => Ok(Value::TagOnlyVariant(variant)),
             Expression::InternalOp(op) => op.eval(env),
-            Expression::Match(m) => m.eval(env),
             Expression::Conditional(conditional) => conditional.eval(env),
-            Expression::Assignment(assignment) => assignment.eval(env),
             Expression::Parenthesized(parenthesized) => parenthesized.expression.eval(env),
             Expression::Branch(branch) => branch.eval(env),
             Expression::EffectHandlerNode(handler) => handler.eval(env),
@@ -482,13 +479,13 @@ impl Pattern {
                     None
                 })
             }
-            (Pattern::Variant(pattern), Value::Variant(value)) => {
-                if pattern.tag.representation != value.tag.representation {
+            (Pattern::Variant { left, tag, right }, Value::Variant(value)) => {
+                if tag.representation != value.tag.representation {
                     Ok(None)
                 } else {
                     match (
-                        pattern.left.matches(value.left.as_ref())?,
-                        pattern.right.matches(value.right.as_ref())?,
+                        left.matches(value.left.as_ref())?,
+                        right.matches(value.right.as_ref())?,
                     ) {
                         (Some(bindings_a), Some(bindings_b)) => {
                             let mut env = Environment::new(None);
@@ -500,44 +497,15 @@ impl Pattern {
                     }
                 }
             }
-            (Pattern::Object(pattern), Value::Object(value)) => {
+            (Pattern::Object { pairs, .. }, Value::Object(value)) => {
                 let mut env = Environment::new(None);
-                for expected_pair in &pattern.pairs {
-                    match &expected_pair.pattern {
-                        Some(Pattern::Identifier(name)) => {
-                            match value.pairs.get(&name.representation) {
-                                Some(value) => {
-                                    env.set_value(name.representation.clone(), value.clone())?
-                                }
-                                None => return Ok(None),
-                            }
-                        }
-                        other_pattern => {
-                            return Err(EvalError::InvalidPattern(other_pattern.clone()))
-                        }
+                for (key, pattern) in pairs {
+                    match value.pairs.get(&key.representation) {
+                        Some(value) => env.set_value(key.representation.clone(), value.clone())?,
+                        None => return Ok(None),
                     }
                 }
                 Ok(Some(env))
-            }
-            (Pattern::Tuple(pattern), Value::Tuple(value)) => {
-                if pattern.values.len() != value.values.len() {
-                    return Ok(None);
-                }
-
-                let envs: Vec<Option<Environment>> = pattern
-                    .values
-                    .iter()
-                    .zip(value.values.iter())
-                    .map(|(pattern, value)| pattern.matches(&value))
-                    .collect::<Result<Vec<Option<Environment>>, EvalError>>()?;
-
-                let mut result_env = Environment::new(None);
-                for env in envs {
-                    if let Some(env) = env {
-                        result_env.combine(env);
-                    }
-                }
-                Ok(Some(result_env))
             }
             other => panic!("{:#?}", other),
         }
@@ -592,7 +560,7 @@ impl Eval for Object {
         let mut env = env.new_child();
         for pair in self.pairs {
             let value = pair.value.eval(&mut env)?;
-            if let Some(pattern) = pair.pattern {
+            if let Some(pattern) = pair.key {
                 if let Some(bindings) = pattern.matches(&value)? {
                     env.combine(bindings);
                 } else {
@@ -654,14 +622,14 @@ fn call_native_function(function: NativeFunction, argument: Value) -> Result<Val
         a: i64,
         internal_op: &dyn Fn(Expression, Expression) -> InternalOp,
     ) -> Value {
-        let parameter = Expression::Identifier(Token::dummy_identifier("x".to_string()));
+        let dummy = Token::dummy_identifier("x".to_string());
         Value::Function(ValueFunction {
             closure: Environment::new(None),
             branches: NonEmpty {
                 head: ValueFunctionBranch {
-                    parameter: parameter.clone(),
+                    parameter: Pattern::Identifier(dummy.clone()),
                     body: Expression::InternalOp(Box::new(internal_op(
-                        parameter,
+                        Expression::Identifier(dummy),
                         Expression::Number(Number::Int64(a)),
                     ))),
                 },
