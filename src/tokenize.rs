@@ -263,6 +263,28 @@ impl Tokenizer {
                         None => panic!("missing closing single quote(') for tag"),
                     }
                 }
+                // Quoted Identifers
+                // Similar to Postgres Quoted Identifier using double-quote
+                '"' => {
+                    let quote = character;
+                    let mut characters = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| character.value != quote.value)
+                        .collect::<Vec<Character>>();
+
+                    match self.characters_iterator.next() {
+                        Some(_) => {
+                            let representation = format!("{}", stringify(characters.clone()),);
+                            Ok(Some(Token {
+                                token_type: TokenType::Identifier,
+                                representation,
+                                position: make_position(quote, characters.last()),
+                            }))
+                        }
+                        None => panic!("missing closing single quote(') for tag"),
+                    }
+                }
                 // String
                 '`' => {
                     let start_quote = character;
