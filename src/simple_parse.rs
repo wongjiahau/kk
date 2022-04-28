@@ -191,7 +191,7 @@ impl<'a> Parser<'a> {
                                     match object.pairs.split_first()  {
                                         Some((head, [])) => {
                                             match head.key.clone() {
-                                                Some(Pattern::Identifier(effect_name)) => {
+                                                Pattern::Identifier(effect_name) => {
                                                     match head.value.clone() {
                                                         Expression::Function(function) => {
                                                             Handler {
@@ -444,17 +444,20 @@ impl<'a> Parser<'a> {
                     Ok(Expression::Object(self.parse_object(
                         left_parenthesis,
                         ObjectPair {
-                            key: Some(first.to_pattern()?),
+                            key: first.to_pattern()?,
                             value,
                         },
+                        0,
                     )?))
                 }
                 TokenType::Comma => Ok(Expression::Object(self.parse_object(
                     left_parenthesis,
                     ObjectPair {
-                        key: Some(first.clone().to_pattern()?),
+                        // TODO: don't use dummy_identifier, use the first position of `first`
+                        key: Pattern::Identifier(Token::dummy_identifier(0.to_string())),
                         value: first,
                     },
+                    1,
                 )?)),
                 _ => Err(ParseError {
                     context: None,
@@ -472,8 +475,10 @@ impl<'a> Parser<'a> {
         &mut self,
         left_parenthesis: Token,
         first_pair: ObjectPair,
+        implicit_integer_key: usize,
     ) -> Result<Object, ParseError> {
         let mut pairs = vec![first_pair];
+        let mut implicit_integer_key = implicit_integer_key;
         let right_parenthesis = loop {
             if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
                 break right_parenthesis;
@@ -482,9 +487,15 @@ impl<'a> Parser<'a> {
                 if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
                     break right_parenthesis;
                 }
-                pairs.push(self.parse_object_pair()?);
+                let (pair, new_implicit_integer_key) =
+                    self.parse_object_pair(implicit_integer_key)?;
+                pairs.push(pair);
+                implicit_integer_key = new_implicit_integer_key;
             } else {
-                pairs.push(self.parse_object_pair()?);
+                let (pair, new_implicit_integer_key) =
+                    self.parse_object_pair(implicit_integer_key)?;
+                pairs.push(pair);
+                implicit_integer_key = new_implicit_integer_key;
             }
         };
         Ok(Object {
@@ -494,27 +505,43 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_object_pair(&mut self) -> Result<ObjectPair, ParseError> {
+    /// This returns an `ObjectPair` with the updated `implicit_integer_key`.
+    fn parse_object_pair(
+        &mut self,
+        implicit_integer_key: usize,
+    ) -> Result<(ObjectPair, usize), ParseError> {
         let pattern = self.parse_mid_precedence_expression()?;
         if self.try_eat_token(TokenType::Colon)?.is_some() {
             let value = self.parse_low_precedence_expression()?;
-            Ok(ObjectPair {
-                key: Some(pattern.to_pattern()?),
-                value,
-            })
+            Ok((
+                ObjectPair {
+                    key: (pattern.to_pattern()?),
+                    value,
+                },
+                implicit_integer_key,
+            ))
         } else {
             match &pattern {
                 Expression::Identifier(i) => {
                     // object punning / shorthand
-                    Ok(ObjectPair {
-                        key: Some(Pattern::Identifier(i.clone())),
-                        value: pattern,
-                    })
+                    Ok((
+                        ObjectPair {
+                            key: (Pattern::Identifier(i.clone())),
+                            value: pattern,
+                        },
+                        implicit_integer_key,
+                    ))
                 }
-                pattern => Ok(ObjectPair {
-                    key: None,
-                    value: pattern.clone(),
-                }),
+                pattern => Ok((
+                    ObjectPair {
+                        // TODO: don't use dummy_identifier, use the first position of `pattern`
+                        key: Pattern::Identifier(Token::dummy_identifier(
+                            implicit_integer_key.to_string(),
+                        )),
+                        value: pattern.clone(),
+                    },
+                    implicit_integer_key + 1,
+                )),
             }
         }
     }
@@ -542,13 +569,7 @@ impl Expression {
                     .pairs
                     .into_iter()
                     .map(|pair| {
-                        let pattern = match pair.key {
-                            Some(pattern) => pattern,
-                            None => panic!(
-                                "Expected to have key but got none, the value is {:#?}",
-                                pair.value
-                            ),
-                        };
+                        let pattern = pair.key;
                         match pattern {
                             Pattern::Identifier(token) => Ok((token, pair.value.to_pattern()?)),
                             other => panic!(

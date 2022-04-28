@@ -125,7 +125,7 @@ pub struct Object {
 
 #[derive(Debug, Clone)]
 pub struct ObjectPair {
-    pub key: Option<Pattern>,
+    pub key: Pattern,
     pub value: Expression,
 }
 

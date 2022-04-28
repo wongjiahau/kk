@@ -560,12 +560,11 @@ impl Eval for Object {
         let mut env = env.new_child();
         for pair in self.pairs {
             let value = pair.value.eval(&mut env)?;
-            if let Some(pattern) = pair.key {
-                if let Some(bindings) = pattern.matches(&value)? {
-                    env.combine(bindings);
-                } else {
-                    return Err(EvalError::RefutablePattern { pattern, value });
-                }
+            let (pattern) = pair.key;
+            if let Some(bindings) = pattern.matches(&value)? {
+                env.combine(bindings);
+            } else {
+                return Err(EvalError::RefutablePattern { pattern, value });
             }
         }
         Ok(Value::Object(ValueObject {

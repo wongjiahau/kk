@@ -1,0 +1,29 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+(
+  x: ('hello', my: 'beautiful', 'world'),
+  x."0" | print, // 'hello'
+  x.my | print,  // 'beautiful'
+  x."1" | print, // 'world'
+)
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+'hello'
+'beautiful'
+'world'
+
+============
+STDERR
+============
