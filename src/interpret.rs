@@ -264,6 +264,7 @@ pub fn interpret(expression: Expression) {
             let mut global = Environment::global();
             let (_, promises) = expression.eval(&mut global).unwrap();
 
+            // Refer https://rust-lang.github.io/async-book/07_workarounds/04_recursion.html
             fn run_promises(promises: Vec<Promise>) -> BoxFuture<'static, ()> {
                 async move {
                     for promise in promises {
@@ -602,10 +603,12 @@ fn call_function(
         Value::Function(function) => {
             for branch in function.branches.into_vector() {
                 let mut env = {
-                    let child_env = env.new_child();
-                    let mut env = function.closure.clone();
-                    env.combine(child_env);
-                    env
+                    // TODO: think about how to make this work for both closure and effect handler
+                    // Note: if the logic here is wrong, it will cause Effect handler to not work
+                    let mut child_env = env.new_child();
+                    let closure = function.closure.clone();
+                    child_env.combine(closure);
+                    child_env
                 };
 
                 if let Some(bindings) = branch.parameter.matches(&argument)? {
@@ -653,12 +656,13 @@ fn call_native_function(
     argument: Value,
 ) -> Result<Evalled, EvalError> {
     fn curry_binary_op(
+        env: &mut Environment,
         expression: Expression,
         internal_op: &dyn Fn(Expression, Expression) -> InternalOp,
     ) -> Value {
         let dummy = Token::dummy_identifier("x".to_string());
         Value::Function(ValueFunction {
-            closure: Environment::new(None),
+            closure: env.clone(),
             branches: NonEmpty {
                 head: ValueFunctionBranch {
                     parameter: Pattern::Identifier(dummy.clone()),
@@ -678,9 +682,11 @@ fn call_native_function(
         }
         NativeFunction::ReadFile => match argument {
             Value::String(filename) => Ok((
-                curry_binary_op(Expression::String(filename), &|a, b| InternalOp::ReadFile {
-                    filename: a,
-                    callback: b,
+                curry_binary_op(env, Expression::String(filename), &|a, b| {
+                    InternalOp::ReadFile {
+                        filename: a,
+                        callback: b,
+                    }
                 }),
                 vec![],
             )),
@@ -688,14 +694,18 @@ fn call_native_function(
         },
         NativeFunction::Plus => match argument {
             Value::Int64(a) => Ok((
-                curry_binary_op(Expression::Number(Number::Int64(a)), &InternalOp::Add),
+                curry_binary_op(env, Expression::Number(Number::Int64(a)), &InternalOp::Add),
                 vec![],
             )),
             argument => Err(EvalError::NativeFunctionCallFailed { function, argument }),
         },
         NativeFunction::Multiply => match argument {
             Value::Int64(a) => Ok((
-                curry_binary_op(Expression::Number(Number::Int64(a)), &InternalOp::Multiply),
+                curry_binary_op(
+                    env,
+                    Expression::Number(Number::Int64(a)),
+                    &InternalOp::Multiply,
+                ),
                 vec![],
             )),
             argument => Err(EvalError::NativeFunctionCallFailed { function, argument }),
@@ -703,6 +713,7 @@ fn call_native_function(
         NativeFunction::LessThan => match argument {
             Value::Int64(a) => Ok((
                 curry_binary_op(
+                    env,
                     Expression::Number(Number::Int64(a)),
                     // Have to invert the arguments position because of currying
                     &|a, b| InternalOp::LessThan(b, a),

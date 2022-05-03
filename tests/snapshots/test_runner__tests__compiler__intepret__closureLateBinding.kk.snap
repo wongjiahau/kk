@@ -1,0 +1,27 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+(
+  showA: {(): a | print},
+  a: 2,
+  a: 3,
+  () | showA, // should be 3
+)
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+3
+
+============
+STDERR
+============
