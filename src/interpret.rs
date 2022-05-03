@@ -1,7 +1,9 @@
 use crate::non_empty::NonEmpty;
 use crate::raw_ast::Token;
 use crossbeam_channel::{unbounded as channel, Receiver, Sender};
+use futures::future::{BoxFuture, FutureExt};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use itertools::Itertools;
@@ -19,7 +21,6 @@ enum Value {
     NativeFunction(NativeFunction),
     ResumeFunction(ResumeFunction),
     Object(ValueObject),
-    Tuple(ValueTuple),
     Function(ValueFunction),
 }
 
@@ -29,7 +30,7 @@ struct ResumeFunction {
     block_current_thread: Receiver<HandlerResponse>,
 
     /// Used for resuming the handled thread
-    resume_handled_thread: Sender<Value>,
+    resume_handled_thread: Sender<Evalled>,
 
     handler: Handler,
 }
@@ -58,11 +59,6 @@ struct ValueObject {
     pairs: HashMap<String, Value>,
 }
 
-#[derive(Clone, Debug)]
-struct ValueTuple {
-    values: Vec<Value>,
-}
-
 impl Value {
     fn print(&self) -> String {
         match self {
@@ -77,10 +73,6 @@ impl Value {
                 variant.right.print()
             ),
             Value::NativeFunction(function) => format!("<native:{:#?}>", function),
-            Value::Tuple(tuple) => {
-                let mut values = tuple.values.iter().map(|value| value.print());
-                format!("({})", values.join(", "))
-            }
             Value::Object(object) => {
                 let mut values = object
                     .pairs
@@ -90,7 +82,7 @@ impl Value {
                 format!("({})", values.join(", "))
             }
             Value::Function(function) => format!("<function>:({:#?})", function),
-            Value::String(string) => string.representation.to_string(),
+            Value::String(string) => format!("`{}`", string.representation.to_string()),
             Value::ResumeFunction(resume_function) => format!(
                 "<resume_function({})>",
                 resume_function.handler.name.representation
@@ -105,6 +97,7 @@ enum NativeFunction {
     Plus,
     Multiply,
     LessThan,
+    ReadFile,
 }
 
 #[derive(Debug, Clone)]
@@ -114,15 +107,21 @@ struct Environment {
     effect_handlers_stack: Vec<EffectHandler>,
 }
 
+#[derive(Debug)]
+struct Promise {
+    handle: tokio::task::JoinHandle<Value>,
+    callback: Value,
+}
+
 impl Environment {
     fn new_child(&self) -> Environment {
         Environment::new(Some(Box::new(self.clone())))
     }
     fn new(parent: Option<Box<Environment>>) -> Environment {
         Environment {
-            parent,
             bindings: HashMap::new(),
             effect_handlers_stack: Vec::new(),
+            parent,
         }
     }
     fn set_parent(mut self, parent: Environment) -> Environment {
@@ -147,6 +146,7 @@ impl Environment {
                     ("+", Value::NativeFunction(NativeFunction::Plus)),
                     ("*", Value::NativeFunction(NativeFunction::Multiply)),
                     ("<", Value::NativeFunction(NativeFunction::LessThan)),
+                    ("readFile", Value::NativeFunction(NativeFunction::ReadFile)),
                 ]
                 .iter()
                 .map(|(name, f)| (name.to_string(), f.clone()))
@@ -219,10 +219,10 @@ pub struct EffectHandler {
     resume_handler_thread: Sender<HandlerResponse>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct EffectHandlerPerformValue {
-    value: Value,
-    resume_handled_thread: Sender<Value>,
+    value: Evalled,
+    resume_handled_thread: Sender<Evalled>,
 }
 
 #[derive(Clone, Debug)]
@@ -249,43 +249,76 @@ pub enum EvalError {
     InvalidPattern(Option<Pattern>),
 }
 
+/// Evaluated result
+type Evalled = (Value, Vec<Promise>);
 trait Eval {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError>;
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError>;
 }
 
 pub fn interpret(expression: Expression) {
-    let mut global = Environment::global();
-    expression.eval(&mut global).unwrap();
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let mut global = Environment::global();
+            let (_, promises) = expression.eval(&mut global).unwrap();
+
+            fn run_promises(promises: Vec<Promise>) -> BoxFuture<'static, ()> {
+                async move {
+                    for promise in promises {
+                        let (result,) = tokio::join!(promise.handle);
+
+                        let (_, promises) = call_function(
+                            &mut Environment::global(),
+                            promise.callback,
+                            result.unwrap(),
+                        )
+                        .unwrap();
+
+                        run_promises(promises).await
+                    }
+                }
+                .boxed()
+            }
+            run_promises(promises).await
+        });
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum HandlerResponse {
-    BodyEvalDone(Result<Value, EvalError>),
+    BodyEvalDone(Result<Evalled, EvalError>),
     BodyPerform(EffectHandlerPerformValue),
 }
 
 impl Eval for Expression {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
         match self {
             Expression::FunctionCall(function_call) => function_call.eval(env),
             Expression::Object(object) => object.eval(env),
             Expression::ObjectAccess(object_access) => object_access.eval(env),
             Expression::Array(_) => todo!(),
             Expression::Function(function) => function.eval(env),
-            Expression::String(string) => Ok(Value::String(string)),
-            Expression::Identifier(name) => env.get_value(&name),
-            Expression::Number(Number::Int64(integer)) => Ok(Value::Int64(integer)),
+            Expression::String(string) => Ok((Value::String(string), Vec::new())),
+            Expression::Identifier(name) => Ok((env.get_value(&name)?, Vec::new())),
+            Expression::Number(Number::Int64(integer)) => Ok((Value::Int64(integer), Vec::new())),
             Expression::Number(Number::Float64(float)) => todo!(),
-            Expression::Variant(variant) => Ok(Value::Variant(ValueVariant {
-                left: Box::new(variant.left.eval(env)?),
-                tag: variant.tag,
-                right: Box::new(variant.right.eval(env)?),
-            })),
-            Expression::TagOnlyVariant(variant) => Ok(Value::TagOnlyVariant(variant)),
+            Expression::Variant(variant) => {
+                let mut left = variant.left.eval(env)?;
+                let mut right = variant.right.eval(env)?;
+                left.1.append(&mut right.1);
+                Ok((
+                    Value::Variant(ValueVariant {
+                        left: Box::new(left.0),
+                        tag: variant.tag,
+                        right: Box::new(right.0),
+                    }),
+                    left.1,
+                ))
+            }
+            Expression::TagOnlyVariant(variant) => Ok((Value::TagOnlyVariant(variant), Vec::new())),
             Expression::InternalOp(op) => op.eval(env),
-            Expression::Conditional(conditional) => conditional.eval(env),
             Expression::Parenthesized(parenthesized) => parenthesized.expression.eval(env),
-            Expression::Branch(branch) => branch.eval(env),
             Expression::EffectHandlerNode(handler) => handler.eval(env),
             Expression::Perform(perform) => perform.eval(env),
         }
@@ -293,7 +326,7 @@ impl Eval for Expression {
 }
 
 impl Eval for PerformEffect {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
         let perform = self;
         let (sender, receiver) = channel();
 
@@ -322,7 +355,7 @@ impl Eval for PerformEffect {
 }
 
 impl Eval for EffectHandlerNode {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
         let handler = self;
 
         // The implementation is roughly based on https://www.reddit.com/r/ProgrammingLanguages/comments/tpyi6p/comment/i2fbf8c
@@ -336,11 +369,11 @@ impl Eval for EffectHandlerNode {
         });
 
         // Run body in a new thread
-        let mut child_env = env.new_child();
+        let child_env = Arc::new(Mutex::new(env.new_child()));
 
         let handled = handler.handled.clone();
         thread::spawn(move || {
-            match handled.eval(&mut child_env) {
+            match handled.eval(&mut child_env.clone().lock().unwrap()) {
                 Err(EvalError::Exit) => {
                     // no need to do anything, because `handled` will only return exit if `resume` is not called
                 }
@@ -371,11 +404,11 @@ fn pause_current_thread(
     env: &mut Environment,
     receiver: Receiver<HandlerResponse>,
     handler: Handler,
-) -> Result<Value, EvalError> {
+) -> Result<Evalled, EvalError> {
     let received = receiver.recv().unwrap();
     match received {
         HandlerResponse::BodyEvalDone(value) => value,
-        HandlerResponse::BodyPerform(perform) => {
+        HandlerResponse::BodyPerform(mut perform) => {
             // Inject `resume` function into current environment
             let mut env = env.new_child();
             env.set_value(
@@ -386,78 +419,30 @@ fn pause_current_thread(
                     handler: handler.clone(),
                 }),
             )?;
-            let function = handler.function.eval(&mut env)?;
-            call_function(&mut env, function, perform.value)
-        }
-    }
-}
+            let mut function = handler.function.eval(&mut env)?;
 
-impl Eval for Branch {
-    /// TODO: Should return Option<T> instead of bool to be sound
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
-        match self.condition.eval(env)? {
-            Value::Boolean(boolean) => {
-                if boolean {
-                    self.body.eval(env)
-                } else {
-                    Ok(Value::Boolean(false))
-                }
-            }
-            _ => panic!("Condition is not a boolean"),
+            let mut result = call_function(&mut env, function.0, perform.value.0)?;
+
+            let mut promises = vec![];
+            promises.append(&mut function.1);
+            promises.append(&mut perform.value.1);
+            promises.append(&mut result.1);
+
+            Ok((result.0, promises))
         }
     }
 }
 
 impl Eval for ObjectAccess {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
-        match self.object.eval(env)? {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
+        let expr = self.object.eval(env)?;
+        match expr.0 {
             Value::Object(object) => match object.pairs.get(&self.property.representation) {
-                Some(value) => Ok(value.clone()),
+                Some(value) => Ok((value.clone(), expr.1)),
                 None => panic!("No such property"),
             },
             _ => panic!("cannot access property of a non-object"),
         }
-    }
-}
-
-impl Eval for Assignment {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
-        let value = self.value.eval(env)?;
-        if let Some(bindings) = self.pattern.matches(&value)? {
-            env.combine(bindings);
-        }
-        Ok(value)
-    }
-}
-
-impl Eval for Conditional {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
-        for branch in self.branches {
-            match branch.condition.eval(env)? {
-                Value::Boolean(boolean) => {
-                    if boolean {
-                        return branch.body.eval(env);
-                    }
-                }
-                other => {
-                    panic!("{:#?} is not boolean", other)
-                }
-            }
-        }
-        return self.default.eval(env);
-    }
-}
-
-impl Eval for Match {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
-        let value = self.value.eval(env)?;
-        for case in self.cases {
-            if let Some(bindings) = case.pattern.matches(&value)? {
-                let mut combined_env = bindings.set_parent(env.clone());
-                return case.body.eval(&mut combined_env);
-            }
-        }
-        panic!("No matching cases")
     }
 }
 
@@ -501,7 +486,10 @@ impl Pattern {
                 let mut env = Environment::new(None);
                 for (key, pattern) in pairs {
                     match value.pairs.get(&key.representation) {
-                        Some(value) => env.set_value(key.representation.clone(), value.clone())?,
+                        Some(value) => match pattern.matches(value)? {
+                            Some(bindings) => env.combine(bindings),
+                            None => (),
+                        },
                         None => return Ok(None),
                     }
                 }
@@ -513,63 +501,92 @@ impl Pattern {
 }
 
 impl Eval for Function {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
-        Ok(Value::Function(ValueFunction {
-            closure: env.clone(),
-            branches: self.branches.map(|branch| ValueFunctionBranch {
-                parameter: *branch.parameter,
-                body: *branch.body,
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
+        Ok((
+            Value::Function(ValueFunction {
+                closure: env.clone(),
+                branches: self.branches.map(|branch| ValueFunctionBranch {
+                    parameter: *branch.parameter,
+                    body: *branch.body,
+                }),
             }),
-        }))
+            vec![],
+        ))
     }
 }
 
 impl Eval for InternalOp {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
+        fn eval_native<F>(
+            env: &mut Environment,
+            a: Expression,
+            b: Expression,
+            f: F,
+        ) -> Result<Evalled, EvalError>
+        where
+            F: Fn(Value, Value) -> Result<Evalled, EvalError>,
+        {
+            let mut a = a.eval(env)?;
+            let mut b = b.eval(env)?;
+            let mut promises = vec![];
+            promises.append(&mut a.1);
+            promises.append(&mut b.1);
+            let mut result = f(a.0, b.0)?;
+            promises.append(&mut result.1);
+            Ok((result.0, promises))
+        }
         match self {
-            InternalOp::Add(a, b) => match (a.eval(env)?, b.eval(env)?) {
-                (Value::Int64(a), Value::Int64(b)) => Ok(Value::Int64(a + b)),
+            InternalOp::Add(a, b) => eval_native(env, a, b, |a, b| match (a, b) {
+                (Value::Int64(a), Value::Int64(b)) => Ok((Value::Int64(a + b), vec![])),
                 _ => panic!(),
-            },
-            InternalOp::Multiply(a, b) => match (a.eval(env)?, b.eval(env)?) {
-                (Value::Int64(a), Value::Int64(b)) => Ok(Value::Int64(a * b)),
+            }),
+            InternalOp::Multiply(a, b) => eval_native(env, a, b, |a, b| match (a, b) {
+                (Value::Int64(a), Value::Int64(b)) => Ok((Value::Int64(a * b), vec![])),
                 _ => panic!(),
-            },
-            InternalOp::LessThan(a, b) => match (a.eval(env)?, b.eval(env)?) {
-                (Value::Int64(a), Value::Int64(b)) => Ok(Value::Boolean(a < b)),
+            }),
+            InternalOp::LessThan(a, b) => eval_native(env, a, b, |a, b| match (a, b) {
+                (Value::Int64(a), Value::Int64(b)) => Ok((Value::Boolean(a < b), vec![])),
                 _ => panic!(),
-            },
+            }),
+            InternalOp::ReadFile { filename, callback } => {
+                eval_native(env, callback, filename, |a, b| match (a, b) {
+                    (Value::String(filename), callback) => {
+                        let handle = tokio::spawn(async move {
+                            let content = tokio::fs::read_to_string(filename.representation)
+                                .await
+                                .unwrap();
+                            Value::String(Token::dummy_identifier(content))
+                        });
+
+                        Ok((unit(), vec![Promise { handle, callback }]))
+                    }
+                    other => panic!("{:#?}", other),
+                })
+            }
         }
     }
 }
 
-impl Eval for Tuple {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
-        Ok(Value::Tuple(ValueTuple {
-            values: self
-                .values
-                .into_iter()
-                .map(|value| value.eval(env))
-                .collect::<Result<Vec<Value>, EvalError>>()?,
-        }))
-    }
-}
-
 impl Eval for Object {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
         let mut env = env.new_child();
+        let mut promises = vec![];
         for pair in self.pairs {
-            let value = pair.value.eval(&mut env)?;
-            let (pattern) = pair.key;
+            let (value, mut newPromises) = pair.value.eval(&mut env)?;
+            promises.append(&mut newPromises);
+            let pattern = pair.key;
             if let Some(bindings) = pattern.matches(&value)? {
                 env.combine(bindings);
             } else {
                 return Err(EvalError::RefutablePattern { pattern, value });
             }
         }
-        Ok(Value::Object(ValueObject {
-            pairs: env.bindings,
-        }))
+        Ok((
+            Value::Object(ValueObject {
+                pairs: env.bindings,
+            }),
+            promises,
+        ))
     }
 }
 
@@ -577,9 +594,11 @@ fn call_function(
     env: &mut Environment,
     function: Value,
     argument: Value,
-) -> Result<Value, EvalError> {
+) -> Result<Evalled, EvalError> {
     match function {
-        Value::NativeFunction(native_function) => call_native_function(native_function, argument),
+        Value::NativeFunction(native_function) => {
+            call_native_function(env, native_function, argument)
+        }
         Value::Function(function) => {
             for branch in function.branches.into_vector() {
                 let mut env = {
@@ -600,7 +619,7 @@ fn call_function(
             // Send a value to resume the handled thread
             resume_function
                 .resume_handled_thread
-                .send(argument)
+                .send((argument, vec![]))
                 .unwrap();
             pause_current_thread(
                 env,
@@ -613,17 +632,28 @@ fn call_function(
 }
 
 impl Eval for FunctionCall {
-    fn eval(self, env: &mut Environment) -> Result<Value, EvalError> {
-        let argument = self.argument.eval(env)?;
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
+        let mut argument = self.argument.eval(env)?;
+        let mut function = self.function.eval(env)?;
 
-        let function = self.function.eval(env)?;
-        call_function(env, function, argument)
+        let mut result = call_function(env, function.0, argument.0)?;
+
+        let mut promises = vec![];
+        promises.append(&mut argument.1);
+        promises.append(&mut function.1);
+        promises.append(&mut result.1);
+
+        Ok((result.0, promises))
     }
 }
 
-fn call_native_function(function: NativeFunction, argument: Value) -> Result<Value, EvalError> {
+fn call_native_function(
+    env: &mut Environment,
+    function: NativeFunction,
+    argument: Value,
+) -> Result<Evalled, EvalError> {
     fn curry_binary_op(
-        a: i64,
+        expression: Expression,
         internal_op: &dyn Fn(Expression, Expression) -> InternalOp,
     ) -> Value {
         let dummy = Token::dummy_identifier("x".to_string());
@@ -634,7 +664,7 @@ fn call_native_function(function: NativeFunction, argument: Value) -> Result<Val
                     parameter: Pattern::Identifier(dummy.clone()),
                     body: Expression::InternalOp(Box::new(internal_op(
                         Expression::Identifier(dummy),
-                        Expression::Number(Number::Int64(a)),
+                        expression,
                     ))),
                 },
                 tail: vec![],
@@ -644,23 +674,48 @@ fn call_native_function(function: NativeFunction, argument: Value) -> Result<Val
     match function {
         NativeFunction::Print => {
             println!("{}", argument.print());
-            Ok(Value::Tuple(ValueTuple { values: vec![] }))
+            Ok((unit(), vec![]))
         }
+        NativeFunction::ReadFile => match argument {
+            Value::String(filename) => Ok((
+                curry_binary_op(Expression::String(filename), &|a, b| InternalOp::ReadFile {
+                    filename: a,
+                    callback: b,
+                }),
+                vec![],
+            )),
+            argument => Err(EvalError::NativeFunctionCallFailed { function, argument }),
+        },
         NativeFunction::Plus => match argument {
-            Value::Int64(a) => Ok(curry_binary_op(a, &InternalOp::Add)),
+            Value::Int64(a) => Ok((
+                curry_binary_op(Expression::Number(Number::Int64(a)), &InternalOp::Add),
+                vec![],
+            )),
             argument => Err(EvalError::NativeFunctionCallFailed { function, argument }),
         },
         NativeFunction::Multiply => match argument {
-            Value::Int64(a) => Ok(curry_binary_op(a, &InternalOp::Multiply)),
+            Value::Int64(a) => Ok((
+                curry_binary_op(Expression::Number(Number::Int64(a)), &InternalOp::Multiply),
+                vec![],
+            )),
             argument => Err(EvalError::NativeFunctionCallFailed { function, argument }),
         },
         NativeFunction::LessThan => match argument {
-            Value::Int64(a) => Ok(curry_binary_op(
-                a,
-                // Have to invert the arguments position because of currying
-                &|a, b| InternalOp::LessThan(b, a),
+            Value::Int64(a) => Ok((
+                curry_binary_op(
+                    Expression::Number(Number::Int64(a)),
+                    // Have to invert the arguments position because of currying
+                    &|a, b| InternalOp::LessThan(b, a),
+                ),
+                vec![],
             )),
             argument => Err(EvalError::NativeFunctionCallFailed { function, argument }),
         },
     }
+}
+
+fn unit() -> Value {
+    Value::Object(ValueObject {
+        pairs: HashMap::new(),
+    })
 }

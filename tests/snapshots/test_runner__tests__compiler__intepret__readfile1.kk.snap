@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+`tests/compiler/intepret/readfile1.kk` readFile {
+  x: `tests/compiler/intepret/readfile1.kk` readFile {
+    y: (x | print, y | print)
+  }
+}
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+``tests/compiler/intepret/readfile1.kk` readFile {
+  x: `tests/compiler/intepret/readfile1.kk` readFile {
+    y: (x | print, y | print)
+  }
+}
+`
+``tests/compiler/intepret/readfile1.kk` readFile {
+  x: `tests/compiler/intepret/readfile1.kk` readFile {
+    y: (x | print, y | print)
+  }
+}
+`
+
+============
+STDERR
+============

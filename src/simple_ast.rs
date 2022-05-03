@@ -25,11 +25,9 @@ pub enum Expression {
     Function(Function),
     String(Token),
     Identifier(Token),
-    Branch(Box<Branch>),
     Number(Number),
     Variant(Variant),
     TagOnlyVariant(Token),
-    Conditional(Conditional),
     Parenthesized(Parenthesized),
 
     /// These are internal operations that cannot be called directly from userspace
@@ -66,41 +64,14 @@ pub struct Parenthesized {
 }
 
 #[derive(Debug, Clone)]
-pub struct Assignment {
-    pub pattern: Box<Pattern>,
-    pub value: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Conditional {
-    pub default: Box<Expression>,
-    pub branches: Vec<Branch>,
-}
-
-/// deprecated: this can cause the type system to be unsound
-#[derive(Debug, Clone)]
-pub struct Branch {
-    pub condition: Expression,
-    pub body: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct Match {
-    pub value: Box<Expression>,
-    pub cases: Vec<MatchCase>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MatchCase {
-    pub pattern: Pattern,
-    pub body: Expression,
-}
-
-#[derive(Debug, Clone)]
 pub enum InternalOp {
     Add(Expression, Expression),
     Multiply(Expression, Expression),
     LessThan(Expression, Expression),
+    ReadFile {
+        filename: Expression,
+        callback: Expression,
+    },
 }
 
 #[derive(Debug, Clone)]

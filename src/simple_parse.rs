@@ -223,36 +223,6 @@ impl<'a> Parser<'a> {
                         })
                     }
 
-                    // Conditional expression
-                    Expression::Identifier(i) if i.representation == "else" => {
-                        Expression::Conditional(Conditional {
-                            default: Box::new(left),
-                            branches: match right {
-                                Expression::Array(array) => Ok(array
-                                    .values
-                                    .into_iter()
-                                    .map(|value| match value {
-                                        Expression::Branch(branch) => *branch,
-                                        _ => panic!("Match should use `if`"),
-                                    })
-                                    .collect()),
-                                other => Err(ParseError {
-                                    context: todo!(),
-                                    kind: todo!(),
-                                }),
-                            }?,
-                        })
-                    }
-
-                    Expression::Identifier(i) if i.representation == "if" => {
-                        Expression::Branch(Box::new(Branch {
-                            condition: right,
-                            body: left,
-                        }))
-                    }
-
-                    // If branch
-
                     // Binary variant construction
                     Expression::TagOnlyVariant(tag) => Expression::Variant(Variant {
                         tag,
@@ -262,22 +232,23 @@ impl<'a> Parser<'a> {
 
                     // Binary operation
                     _ => {
-                        // Note: (x f y) === (x | (y | f))
-                        // Or in maths, (x f y) === (f(y))(x)
+                        // Note: (x f y) === (y | (x | f))
+                        // Or in maths, (x f y) === (f(x))(y)
                         //
                         // Why?
                         // This is so that the syntactical sequence is
                         // the same as when the function is declared, i.e.
-                        // f: body given x given y
+
+                        // (f: {x: {y: body}})
                         //
                         // Where x is on the left; y is on the right
 
                         Expression::FunctionCall(FunctionCall {
-                            argument: Box::new(left),
                             function: Box::new(Expression::FunctionCall(FunctionCall {
                                 function: Box::new(middle),
-                                argument: Box::new(right),
+                                argument: Box::new(left),
                             })),
+                            argument: Box::new(right),
                         })
                     }
                 };

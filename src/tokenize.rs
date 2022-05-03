@@ -373,7 +373,7 @@ impl Tokenizer {
                         }
                         None => Ok(Some(Token {
                             token_type: TokenType::String,
-                            representation: format!("`{}`", stringify(characters)),
+                            representation: stringify(characters),
                             position: make_position(start_quote, Some(&end_quote)),
                         })),
                     }

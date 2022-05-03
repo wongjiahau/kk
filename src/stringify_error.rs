@@ -285,7 +285,9 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Asterisk => "used for glob import",
         TokenType::KeywordInterface => "used for declaring interface",
         TokenType::KeywordImplements => "used for implementing an interface",
-        TokenType::KeywordWhere => "used for defining type variable constraints"
+        TokenType::KeywordWhere => "used for defining type variable constraints",
+        TokenType::Tag => todo!(),
+
     }
 }
 
@@ -485,6 +487,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordInterface => "interface",
         TokenType::KeywordImplements => "implements",
         TokenType::KeywordWhere => "where",
+        TokenType::Tag => todo!(),
     }
 }
 
