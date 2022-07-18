@@ -5,55 +5,32 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Nat {
-  Zero,
-  Succ(Nat)
-}
+enum Nat =
+  | #zero
+  | #succ(Nat)
 
-let equals = (a: Nat, b: Nat): Boolean =>
-  switch ({ a, b }) {
-    case { a: Zero, b: Zero }:
-      true
-    case { a: Zero, b: Succ(_) }:
-      false
-    case { a: Succ(_), b: Zero }:
-      false
-    case { a: Succ(a), b: Succ(b) }:
-      a.pred().equals(b.pred())
+let "is even"
+  : {Nat -> Boolean}
+  = {
+  | #zero -> true
+  | #succ(n) -> n "is odd"
   }
 
-let pred = (n: Nat): Nat =>
-  switch (n) {
-    case Zero:
-      Zero
-    case Succ(n):
-      n
+let "is odd"
+  : {Nat -> Boolean}
+  = {
+  | #zero -> false
+  | #succ(n) -> n "is even"
   }
 
-let isEven = (n: Nat): Boolean =>
-  switch (n) {
-    case Zero:
-      true
-    case n:
-      n.pred().isOdd()
-  }
-
-let isOdd = (n: Nat): Boolean =>
-  switch (n) {
-    case Zero:
-      false
-    case n:
-      n.pred().isEven()
-  }
-
-{
-  let one = Succ(Zero)
-  let two = Succ(one)
-  Zero.isOdd().print() // false
-  one.isEven().print() // false
-  two.isEven().print() // true
-  two.isOdd().print() // false
-  Succ(two).isOdd().print() // false
+entry {
+  let one = #succ(#zero),
+  let two = #succ(one),
+  #zero "is odd" print, // false
+  one "is even" print, // false
+  two "is even" print, // true
+  two "is odd" print, // false
+  #succ(two) "is odd" print // false
 }
 
 ============

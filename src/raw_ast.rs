@@ -1,4 +1,4 @@
-use crate::{non_empty::NonEmpty, tokenize::Character};
+use crate::{non_empty::NonEmpty, tokenize::Character, unify::Positionable};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -18,6 +18,21 @@ pub enum Statement {
     Enum(EnumStatement),
 
     Import(ImportStatement),
+
+    Entry(EntryStatement),
+}
+
+#[derive(Debug, Clone)]
+pub struct EntryStatement {
+    pub keyword_entry: Token,
+    pub block: Block,
+}
+
+#[derive(Debug, Clone)]
+pub struct Assignment {
+    pub left: DestructurePattern,
+    pub type_annotation: Option<TypeAnnotation>,
+    pub right: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -109,7 +124,6 @@ pub struct EnumStatement {
     pub name: Token,
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
     pub constructors: Vec<EnumConstructorDefinition>,
-    pub right_curly_bracket: Token,
 }
 
 impl EnumStatement {
@@ -194,8 +208,10 @@ pub enum TypeAnnotation {
     },
     Underscore(Token),
     Function {
-        parameters: FunctionParameters,
+        left_curly_bracket: Token,
+        parameters: Box<NonEmpty<TypeAnnotation>>,
         return_type: Box<TypeAnnotation>,
+        right_curly_bracket: Token,
     },
 }
 
@@ -266,6 +282,11 @@ pub struct DestructuredRecordKeyValue {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Null(Token),
+    Parenthesized {
+        left_parenthesis: Token,
+        right_parenthesis: Token,
+        value: Box<Expression>,
+    },
     Boolean {
         token: Token,
         value: bool,
@@ -291,7 +312,7 @@ pub enum Expression {
     },
 
     /// This cannot be constructed directly from syntax, it is only for internal usage
-    BranchedFunction(Box<BranchedFunction>),
+    Lambda(Box<Lambda>),
 
     /// Typescript-styled function
     ArrowFunction(Box<ArrowFunction>),
@@ -357,6 +378,22 @@ impl Block {
             Block::WithoutBrackets { statements } => statements.into_vector(),
         }
     }
+
+    pub fn position(&self) -> Position {
+        match self {
+            Block::WithBrackets {
+                left_curly_bracket,
+                statements,
+                right_curly_bracket,
+            } => left_curly_bracket
+                .position
+                .join(right_curly_bracket.position),
+            Block::WithoutBrackets { statements } => statements
+                .first()
+                .position()
+                .join(statements.last().position()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -420,14 +457,14 @@ pub struct TypeArguments {
 
 #[derive(Debug, Clone)]
 pub struct FunctionCallRestArguments {
-    pub left_parenthesis: Token,
     pub arguments: Vec<Expression>,
-    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
-pub struct BranchedFunction {
+pub struct Lambda {
+    pub left_curly_bracket: Token,
     pub branches: NonEmpty<FunctionBranch>,
+    pub right_curly_bracket: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -453,9 +490,7 @@ fn get_type_variables(type_variables_declaration: &Option<TypeVariablesDeclarati
 
 #[derive(Debug, Clone)]
 pub struct FunctionParameters {
-    pub left_parenthesis: Token,
     pub parameters: Box<NonEmpty<FunctionParameter>>,
-    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -559,6 +594,7 @@ pub enum TokenType {
     KeywordSwitch,
     KeywordCase,
     KeywordWith,
+    KeywordEntry,
     KeywordLet,
     KeywordType,
     KeywordEnum,
@@ -571,6 +607,7 @@ pub enum TokenType {
     KeywordAs,
     KeywordExport,
     Whitespace,
+    HashLeftCurlyBracket,
     LeftCurlyBracket,
     RightCurlyBracket,
     LeftParenthesis,
@@ -592,11 +629,12 @@ pub enum TokenType {
     TriplePeriod,
     Comma,
     Minus,
-    FatArrowRight,
+    ArrowRight,
     Pipe,
     Slash,
     Underscore,
     Identifier,
+    Operator,
     /// Used for construction of tagged union
     Tag,
     String,

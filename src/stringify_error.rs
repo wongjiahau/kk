@@ -262,7 +262,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::TriplePeriod => "used for record wildcard, for example:\n\n\tlet f : |{x: Integer y: Integer} => Integer = |{..} => x.plus(y)",
         TokenType::Comma => "used for separation",
         TokenType::Minus => "only used to represent negative numbers, for example:\n\n\t-123.4",
-        TokenType::FatArrowRight | TokenType::Pipe => "only used for creating function, for example:\n\n\t| x => x.add(1)",
+        TokenType::ArrowRight | TokenType::Pipe => "only used for creating function, for example:\n\n\t| x => x.add(1)",
         TokenType::Underscore => "used in pattern matching to match values that are not used afterwards",
         TokenType::Identifier => "used to represent the name of a variable",
         TokenType::InterpolatedString{..} | TokenType::String => "only used to represent string values",
@@ -286,7 +286,10 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordInterface => "used for declaring interface",
         TokenType::KeywordImplements => "used for implementing an interface",
         TokenType::KeywordWhere => "used for defining type variable constraints",
-        TokenType::Tag => todo!(),
+        TokenType::Tag => "used as constructor of enum",
+        TokenType::Operator => "used for defining symbolic functions",
+        TokenType::HashLeftCurlyBracket => "used for defining records",
+        TokenType::KeywordEntry => "used for defining the entry point of a file",
 
     }
 }
@@ -372,6 +375,15 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Record Type Annotation",
             examples: vec!["{ x: String,  y: { z: Integer } }"],
         },
+        ParseContext::TypeAnnotationFunction => ParseContextDescription {
+            name: "Function Type Annotation",
+            examples: vec![
+                "{ Int -> Boolean }",
+                "{ Int Int -> Boolean }",
+                "{ [T] Int -> Boolean }",
+                "{ [T] Int -> Boolean where (==): { Int Int -> Boolean } }",
+            ],
+        },
         ParseContext::TypeAnnotationQuoted => ParseContextDescription {
             name: "Quoted Type Annotation",
             examples: vec!["`String`", "`{name: String}`"],
@@ -428,6 +440,23 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Type Variable Constraint",
             examples: vec!["Equatable<A>"],
         },
+        ParseContext::Lambda => ParseContextDescription {
+            name: "Lambda",
+            examples: vec![
+                "{ 'Hello world' print }",
+                "{ x -> x + 2 }",
+                "{ x y -> x + y }",
+                "{ | true -> false | false -> true }",
+            ],
+        },
+        ParseContext::EntryStatement => ParseContextDescription {
+            name: "Entry Statement",
+            examples: vec!["entry { 'Hello world' print }"],
+        },
+        ParseContext::BlockLevelStatement => ParseContextDescription {
+            name: "Block Level Statement",
+            examples: vec!["x = 123", "'Hello world' print"],
+        },
     }
 }
 
@@ -463,7 +492,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::TriplePeriod => "...",
         TokenType::Comma => ",",
         TokenType::Minus => "-",
-        TokenType::FatArrowRight => "=>",
+        TokenType::ArrowRight => "=>",
         TokenType::Pipe => "|",
         TokenType::Underscore => "_",
         TokenType::Identifier => "abc",
@@ -488,6 +517,9 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordImplements => "implements",
         TokenType::KeywordWhere => "where",
         TokenType::Tag => todo!(),
+        TokenType::Operator => todo!(),
+        TokenType::HashLeftCurlyBracket => "#{",
+        TokenType::KeywordEntry => "entry",
     }
 }
 
@@ -755,7 +787,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 "To disambiguate, annotate the type of the first argument of this function call with any of the following types:",
                 indent_string(
                     available_function_signatures.into_iter().map(|signature| {
-                        stringify_type(signature.function_type.parameters_types.first().clone(), 0)
+                        todo!()
                     })
                     .collect::<Vec<String>>()
                     .join("\n\n"),
@@ -963,7 +995,9 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::UnknownTypeVariable { unknown_type_variable_name } => StringifiedError {
             summary: "Unknown type variable".to_string(),
             body: format!("No type variable has the name of {} in this scope.", unknown_type_variable_name)
-        }
+        },
+        UnifyErrorKind::TopLevelLetStatementCannotBeDestructured => todo!(),
+        UnifyErrorKind::MissingTypeAnnotationForTopLevelBinding => todo!(),
     }
 }
 

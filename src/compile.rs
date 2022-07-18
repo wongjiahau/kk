@@ -22,36 +22,36 @@ pub enum CompileErrorKind {
 
 pub fn compile(module_meta: ModuleMeta) {
     let mut tokenizer = Tokenizer::new(module_meta.code.clone());
-    match simple_parse::Parser::parse(&mut tokenizer) {
-        Err(parse_error) => print_parse_error(module_meta, parse_error),
-        Ok(expression) => interpret(expression),
-    }
-    // match Parser::parse(&mut tokenizer) {
+    // match simple_parse::Parser::parse(&mut tokenizer) {
     //     Err(parse_error) => print_parse_error(module_meta, parse_error),
-    //     Ok(statements) => match unify_statements(module_meta, statements, &IndexMap::new(), true) {
-    //         Err(compile_error) => print_compile_error(compile_error),
-    //         Ok(result) => {
-    //             use std::process::Command;
-    //             let javascript = transpile_program(result);
-    //             // println!("{}", javascript);
-    //             let output = Command::new("node")
-    //                 .arg("-e")
-    //                 .arg(javascript)
-    //                 .output()
-    //                 .expect("Failed to run NodeJS binary");
-
-    //             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    //             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    //             if !stdout.is_empty() {
-    //                 println!("{}", stdout.trim())
-    //             }
-    //             if !stderr.is_empty() {
-    //                 eprintln!("{}", stderr.trim())
-    //             }
-    //             if let Some(code) = output.status.code() {
-    //                 process::exit(code)
-    //             }
-    //         }
-    //     },
+    //     Ok(expression) => interpret(expression),
     // }
+    match Parser::parse(&mut tokenizer) {
+        Err(parse_error) => print_parse_error(module_meta, parse_error),
+        Ok(statements) => match unify_statements(module_meta, statements, &IndexMap::new(), true) {
+            Err(compile_error) => print_compile_error(compile_error),
+            Ok(result) => {
+                use std::process::Command;
+                let javascript = transpile_program(result);
+                // println!("{}", javascript);
+                let output = Command::new("node")
+                    .arg("-e")
+                    .arg(javascript)
+                    .output()
+                    .expect("Failed to run NodeJS binary");
+
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                if !stdout.is_empty() {
+                    println!("{}", stdout.trim())
+                }
+                if !stderr.is_empty() {
+                    eprintln!("{}", stderr.trim())
+                }
+                if let Some(code) = output.status.code() {
+                    process::exit(code)
+                }
+            }
+        },
+    }
 }

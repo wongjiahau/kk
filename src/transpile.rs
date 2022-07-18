@@ -285,7 +285,7 @@ mod javascript {
     }
     impl Printable for Identifier {
         fn print(self) -> String {
-            self.0
+            self.0.replace(" ", "_")
         }
     }
 }

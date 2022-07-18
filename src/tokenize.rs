@@ -267,22 +267,22 @@ impl Tokenizer {
                 // Similar to Postgres Quoted Identifier using double-quote
                 '"' => {
                     let quote = character;
-                    let mut characters = self
+                    let characters = self
                         .characters_iterator
                         .by_ref()
                         .peeking_take_while(|character| character.value != quote.value)
                         .collect::<Vec<Character>>();
 
                     match self.characters_iterator.next() {
-                        Some(_) => {
+                        Some(end_quote) => {
                             let representation = format!("{}", stringify(characters.clone()),);
                             Ok(Some(Token {
                                 token_type: TokenType::Identifier,
                                 representation,
-                                position: make_position(quote, characters.last()),
+                                position: make_position(quote, Some(&end_quote)),
                             }))
                         }
-                        None => panic!("missing closing single quote(') for tag"),
+                        None => panic!("missing closing double quote(\") for quoted identifier"),
                     }
                 }
                 // String
@@ -380,6 +380,17 @@ impl Tokenizer {
                 }
                 // Number
                 '-' | '0'..='9' => {
+                    if let Some(next_character) =
+                        self.characters_iterator.next_if(|c| c.value == '>')
+                    {
+                        if next_character.value == '>' {
+                            return Ok(Some(Token {
+                                token_type: TokenType::ArrowRight,
+                                representation: "->".to_string(),
+                                position: make_position(character, Some(&next_character)),
+                            }));
+                        }
+                    }
                     let intergral = self
                         .characters_iterator
                         .by_ref()
@@ -458,8 +469,8 @@ impl Tokenizer {
                         })),
                     }
                 }
-                // Identifier
-                '#' | 'A'..='Z' | 'a'..='z' => {
+                // Tag
+                '#' => {
                     let characters = self
                         .characters_iterator
                         .by_ref()
@@ -471,8 +482,25 @@ impl Tokenizer {
                     let representation =
                         format!("{}{}", character.value, stringify(characters.clone()));
                     Ok(Some(Token {
-                        // token_type:  get_token_type(representation.clone()),
-                        token_type: TokenType::Identifier,
+                        token_type: TokenType::Tag,
+                        representation,
+                        position: make_position(character, characters.last()),
+                    }))
+                }
+                // Identifier
+                'A'..='Z' | 'a'..='z' => {
+                    let characters = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| {
+                            character.value.is_alphanumeric() || character.value == '_'
+                        })
+                        .collect::<Vec<Character>>();
+
+                    let representation =
+                        format!("{}{}", character.value, stringify(characters.clone()));
+                    Ok(Some(Token {
+                        token_type: get_token_type(representation.clone()),
                         representation,
                         position: make_position(character, characters.last()),
                     }))
@@ -487,6 +515,16 @@ impl Tokenizer {
                     representation: ".".to_string(),
                     position: make_position(character, None),
                 })),
+                '=' => Ok(Some(Token {
+                    token_type: TokenType::Equals,
+                    representation: "=".to_string(),
+                    position: make_position(character, None),
+                })),
+                '|' => Ok(Some(Token {
+                    token_type: TokenType::Pipe,
+                    representation: "|".to_string(),
+                    position: make_position(character, None),
+                })),
                 // Symbolic identifer
                 other if is_symbol(other) => {
                     let characters = self
@@ -498,7 +536,7 @@ impl Tokenizer {
                     let representation =
                         format!("{}{}", character.value, stringify(characters.clone()));
                     Ok(Some(Token {
-                        token_type: TokenType::Identifier,
+                        token_type: TokenType::Operator,
                         representation,
                         position: make_position(character, characters.last()),
                     }))
@@ -507,6 +545,7 @@ impl Tokenizer {
                     position: make_position(character, None),
                     representation: other.to_string(),
                     token_type: match other {
+                        '.' => TokenType::Period,
                         '{' => TokenType::LeftCurlyBracket,
                         '}' => TokenType::RightCurlyBracket,
                         '(' => TokenType::LeftParenthesis,
@@ -554,7 +593,9 @@ pub fn stringify(characters: Vec<Character>) -> String {
 }
 
 pub fn get_token_type(s: String) -> TokenType {
-    if s.eq("with") {
+    if s.eq("entry") {
+        TokenType::KeywordEntry
+    } else if s.eq("with") {
         TokenType::KeywordWith
     } else if s.eq("switch") {
         TokenType::KeywordSwitch
