@@ -442,7 +442,7 @@ impl<'a> Parser<'a> {
         let type_variables = self.try_parse_type_variables_declaration()?;
         self.eat_token(TokenType::Equals, context)?;
 
-        let mut constructors = vec![];
+        let mut constructors = vec![self.parse_enum_constructor_definition()?];
 
         let constructors = loop {
             if self.try_eat_token(TokenType::Pipe)?.is_some() {
@@ -791,7 +791,7 @@ impl<'a> Parser<'a> {
         context: Option<ParseContext>,
     ) -> Result<TypeAnnotation, ParseError> {
         if let Some(token) = self.next_meaningful_token()? {
-            match token.token_type {
+            let potential_function_parameter_type = match token.token_type {
                 TokenType::Identifier | TokenType::KeywordNull => {
                     let name = token;
                     Ok(TypeAnnotation::Named {
@@ -820,33 +820,6 @@ impl<'a> Parser<'a> {
                         left_square_bracket,
                         element_type: Box::new(element_type),
                         right_square_bracket,
-                    })
-                }
-                TokenType::LeftCurlyBracket => {
-                    let left_curly_bracket = token;
-                    let context = Some(ParseContext::TypeAnnotationFunction);
-                    let head_parameter_type_annotation = self.parse_type_annotation(context)?;
-                    let mut tail_parameters_type_annotations = vec![];
-
-                    let tail_parameters_type_annotations = loop {
-                        if self.try_eat_token(TokenType::ArrowRight)?.is_some() {
-                            break tail_parameters_type_annotations;
-                        } else {
-                            tail_parameters_type_annotations
-                                .push(self.parse_type_annotation(context)?)
-                        }
-                    };
-                    let return_type_annotation = self.parse_type_annotation(context)?;
-                    let right_curly_bracket =
-                        self.eat_token(TokenType::RightCurlyBracket, context)?;
-                    Ok(TypeAnnotation::Function {
-                        left_curly_bracket,
-                        parameters: Box::new(NonEmpty {
-                            head: head_parameter_type_annotation,
-                            tail: tail_parameters_type_annotations,
-                        }),
-                        return_type: Box::new(return_type_annotation),
-                        right_curly_bracket,
                     })
                 }
                 TokenType::HashLeftCurlyBracket => {
@@ -897,9 +870,27 @@ impl<'a> Parser<'a> {
                     }
                 }
                 _ => Err(Parser::invalid_token(token, context)),
-            }
+            }?;
+            self.try_parse_function_type_annotation(potential_function_parameter_type)
         } else {
             Err(Parser::unexpected_eof(context))
+        }
+    }
+
+    fn try_parse_function_type_annotation(
+        &mut self,
+        potential_function_parameter_type: TypeAnnotation,
+    ) -> Result<TypeAnnotation, ParseError> {
+        if self.try_eat_token(TokenType::ArrowRight)?.is_some() {
+            Ok(TypeAnnotation::Function {
+                parameters: Box::new(NonEmpty {
+                    head: potential_function_parameter_type,
+                    tail: vec![],
+                }),
+                return_type: Box::new(self.parse_type_annotation(None)?),
+            })
+        } else {
+            Ok(potential_function_parameter_type)
         }
     }
 

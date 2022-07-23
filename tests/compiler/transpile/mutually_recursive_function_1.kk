@@ -1,16 +1,16 @@
-enum Nat =
-  | #zero
+enum Nat 
+  = #zero
   | #succ(Nat)
 
 let "is even"
-  : {Nat -> Boolean} 
+  : Nat -> Boolean
   = {
   | #zero -> true
   | #succ(n) -> n "is odd"
   }
 
 let "is odd"
-  : {Nat -> Boolean} 
+  : Nat -> Boolean
   = {
   | #zero -> false
   | #succ(n) -> n "is even"

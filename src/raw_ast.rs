@@ -93,13 +93,6 @@ pub struct InterfaceDefinition {
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionStatement {
-    pub keyword_export: Option<Token>,
-    pub name: Token,
-    pub arrow_function: ArrowFunction,
-}
-
-#[derive(Debug, Clone)]
 pub struct LetStatement {
     pub keyword_export: Option<Token>,
     pub keyword_let: Token,
@@ -208,10 +201,8 @@ pub enum TypeAnnotation {
     },
     Underscore(Token),
     Function {
-        left_curly_bracket: Token,
         parameters: Box<NonEmpty<TypeAnnotation>>,
         return_type: Box<TypeAnnotation>,
-        right_curly_bracket: Token,
     },
 }
 

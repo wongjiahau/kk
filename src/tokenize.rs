@@ -255,12 +255,12 @@ impl Tokenizer {
                                 format!("{}{}", quote.value, stringify(characters.clone()),);
                             Ok(Some(Token {
                                 // token_type:  get_token_type(representation.clone()),
-                                token_type: TokenType::Tag,
+                                token_type: TokenType::String,
                                 representation,
                                 position: make_position(quote, characters.last()),
                             }))
                         }
-                        None => panic!("missing closing single quote(') for tag"),
+                        None => panic!("missing closing single quote(') for string"),
                     }
                 }
                 // Quoted Identifers

@@ -516,7 +516,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordInterface => "interface",
         TokenType::KeywordImplements => "implements",
         TokenType::KeywordWhere => "where",
-        TokenType::Tag => todo!(),
+        TokenType::Tag => "tag",
         TokenType::Operator => todo!(),
         TokenType::HashLeftCurlyBracket => "#{",
         TokenType::KeywordEntry => "entry",
