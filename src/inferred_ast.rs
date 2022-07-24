@@ -126,8 +126,7 @@ pub enum InferredRecordUpdate {
 #[derive(Debug, Clone)]
 pub struct InferredFunctionCall {
     pub function: Box<InferredExpression>,
-    pub first_argument: Box<InferredExpression>,
-    pub rest_arguments: Vec<InferredExpression>,
+    pub argument: Box<InferredExpression>,
 }
 
 #[derive(Debug, Clone)]
@@ -137,7 +136,7 @@ pub struct InferredBranchedFunction {
 
 #[derive(Debug, Clone)]
 pub struct InferredFunctionBranch {
-    pub parameters: Box<NonEmpty<InferredDestructurePattern>>,
+    pub parameter: Box<InferredDestructurePattern>,
     pub body: Box<InferredExpression>,
 }
 

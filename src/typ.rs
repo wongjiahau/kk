@@ -59,7 +59,7 @@ pub struct TypeScheme {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionType {
-    pub parameters_types: Box<NonEmpty<Type>>,
+    pub parameter_type: Box<Type>,
     pub return_type: Box<Type>,
 }
 

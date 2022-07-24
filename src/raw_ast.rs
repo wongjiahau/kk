@@ -1,4 +1,6 @@
-use crate::{non_empty::NonEmpty, tokenize::Character, unify::Positionable};
+use crate::{
+    non_empty::NonEmpty, tokenize::Character, typ::ExplicitTypeVariable, unify::Positionable,
+};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -25,7 +27,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct EntryStatement {
     pub keyword_entry: Token,
-    pub block: Block,
+    pub expression: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -180,6 +182,10 @@ pub struct NamedTypeAnnotationArguments {
 
 #[derive(Debug, Clone)]
 pub enum TypeAnnotation {
+    Scheme {
+        type_variables: TypeVariablesDeclaration,
+        type_annotation: Box<TypeAnnotation>,
+    },
     Quoted {
         opening_backtick: Token,
         type_annotation: Box<TypeAnnotation>,
@@ -201,7 +207,7 @@ pub enum TypeAnnotation {
     },
     Underscore(Token),
     Function {
-        parameters: Box<NonEmpty<TypeAnnotation>>,
+        parameter: Box<TypeAnnotation>,
         return_type: Box<TypeAnnotation>,
     },
 }
@@ -305,8 +311,6 @@ pub enum Expression {
     /// This cannot be constructed directly from syntax, it is only for internal usage
     Lambda(Box<Lambda>),
 
-    /// Typescript-styled function
-    ArrowFunction(Box<ArrowFunction>),
     FunctionCall(Box<FunctionCall>),
     Record {
         wildcard: Option<Token>,
@@ -329,7 +333,6 @@ pub enum Expression {
         elements: Vec<Expression>,
         right_square_bracket: Token,
     },
-    With(WithExpression),
     If {
         keyword_if: Token,
         condition: Box<Expression>,
@@ -343,6 +346,10 @@ pub enum Expression {
         left_curly_bracket: Token,
         cases: Box<NonEmpty<SwitchCase>>,
         right_curly_bracket: Token,
+    },
+    Let {
+        let_statement: Box<LetStatement>,
+        body: Box<Expression>,
     },
     Block(Block),
     UnsafeJavascript {
@@ -434,8 +441,7 @@ pub struct RecordKeyValue {
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
     pub function: Box<Expression>,
-    pub first_argument: Box<Expression>,
-    pub rest_arguments: Option<FunctionCallRestArguments>,
+    pub argument: Box<Expression>,
     pub type_arguments: Option<TypeArguments>,
 }
 
@@ -525,7 +531,7 @@ pub struct FunctionParameter {
 #[derive(Debug, Clone)]
 pub struct FunctionBranch {
     pub start_token: Token,
-    pub parameters: NonEmpty<DestructurePattern>,
+    pub parameter: Box<DestructurePattern>,
     pub body: Box<Expression>,
 }
 
@@ -584,7 +590,6 @@ pub enum TokenType {
     KeywordElse,
     KeywordSwitch,
     KeywordCase,
-    KeywordWith,
     KeywordEntry,
     KeywordLet,
     KeywordType,
@@ -598,7 +603,6 @@ pub enum TokenType {
     KeywordAs,
     KeywordExport,
     Whitespace,
-    HashLeftCurlyBracket,
     LeftCurlyBracket,
     RightCurlyBracket,
     LeftParenthesis,
@@ -619,6 +623,7 @@ pub enum TokenType {
     Period,
     TriplePeriod,
     Comma,
+    Semicolon,
     Minus,
     ArrowRight,
     Pipe,
@@ -661,7 +666,7 @@ pub enum InterpolatedStringSection {
     Expression(Box<Expression>),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub struct Position {
     /// First line is zero.
     pub line_start: usize,

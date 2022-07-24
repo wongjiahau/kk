@@ -280,7 +280,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordCase => "used for pattern matching",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
         TokenType::KeywordFrom => "used for importing modules",
-        TokenType::KeywordWith => "used for with statement",
         TokenType::KeywordAs => "used for aliasing imported symbols",
         TokenType::Asterisk => "used for glob import",
         TokenType::KeywordInterface => "used for declaring interface",
@@ -288,8 +287,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordWhere => "used for defining type variable constraints",
         TokenType::Tag => "used as constructor of enum",
         TokenType::Operator => "used for defining symbolic functions",
-        TokenType::HashLeftCurlyBracket => "used for defining records",
         TokenType::KeywordEntry => "used for defining the entry point of a file",
+        TokenType::Semicolon => "used for separating statements",
 
     }
 }
@@ -451,7 +450,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         },
         ParseContext::EntryStatement => ParseContextDescription {
             name: "Entry Statement",
-            examples: vec!["entry { 'Hello world' print }"],
+            examples: vec!["entry 'Hello world' print"],
         },
         ParseContext::BlockLevelStatement => ParseContextDescription {
             name: "Block Level Statement",
@@ -465,7 +464,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordIf => "if",
         TokenType::KeywordElse => "else",
         TokenType::KeywordLet => "let",
-        TokenType::KeywordWith => "with",
         TokenType::KeywordType => "type",
         TokenType::KeywordEnum => "enum",
         TokenType::KeywordDo => "do",
@@ -518,8 +516,8 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordWhere => "where",
         TokenType::Tag => "tag",
         TokenType::Operator => todo!(),
-        TokenType::HashLeftCurlyBracket => "#{",
         TokenType::KeywordEntry => "entry",
+        TokenType::Semicolon => ";",
     }
 }
 
@@ -1133,11 +1131,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Function(function_type) => {
             let result = format!(
                 "(\n{}\n) =>\n{}",
-                function_type
-                    .parameters_types
-                    .map(|argument_type| { indent_string(stringify_type(argument_type, 0), 2) })
-                    .into_vector()
-                    .join(",\n"),
+                indent_string(stringify_type(*function_type.parameter_type, 0), 2),
                 indent_string(stringify_type(*function_type.return_type, 0), 2)
             );
             indent_string(result, indent_level * 2)

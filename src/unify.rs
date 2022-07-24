@@ -450,15 +450,11 @@ pub fn unify_statements(
     }
     let typechecked_entry_statements = match entry_statements.get(0) {
         None => vec![],
-        Some(entry_statement) => infer_block_level_statements(
-            &mut module,
-            None,
-            entry_statement.block.clone().statements(),
-        )
-        .map_err(|error| error.into_compile_error(module.meta.clone()))?
-        .into_iter()
-        .map(|(statement, _)| statement)
-        .collect(),
+        Some(entry_statement) => vec![InferredStatement::Expression(
+            infer_expression_type(&mut module, None, &entry_statement.expression)
+                .map_err(|error| error.into_compile_error(module.meta.clone()))?
+                .expression,
+        )],
     };
 
     // 9. Lastly we will infer expression statements
@@ -589,15 +585,16 @@ fn parameterise_expression_with_implementation_dictionary_parameters(
     InferredExpression::BranchedFunction(Box::new(InferredBranchedFunction {
         branches: Box::new(NonEmpty {
             head: InferredFunctionBranch {
-                parameters: Box::new(injected_dictionary_parameters.map(|dictionary_identifier| {
-                    InferredDestructurePattern {
-                        // TODO: remove unnecessary field
-                        type_value: Type::Null,
-                        kind: InferredDestructurePatternKind::Identifier(Box::new(
-                            dictionary_identifier,
-                        )),
-                    }
-                })),
+                parameter: todo!(),
+                // Box::new(injected_dictionary_parameters.map(|dictionary_identifier| {
+                // InferredDestructurePattern {
+                //     // TODO: remove unnecessary field
+                //     type_value: Type::Null,
+                //     kind: InferredDestructurePatternKind::Identifier(Box::new(
+                //         dictionary_identifier,
+                //     )),
+                // }
+                // })),
                 body: Box::new(expression),
             },
             tail: vec![],
@@ -702,8 +699,7 @@ fn solve_constraints(
             // Pass the found implementations as parameter (a.k.a dictionary passing)
             Ok(FunctionCall(Box::new(InferredFunctionCall {
                 function: Box::new(Variable(identifier)),
-                first_argument: Box::new(implementations.head),
-                rest_arguments: implementations.tail,
+                argument: Box::new(implementations.head),
             })))
         }
         Null => Ok(Null),
@@ -742,7 +738,7 @@ fn solve_constraints(
             Ok(BranchedFunction(Box::new(InferredBranchedFunction {
                 branches: Box::new(branched_function.branches.fold_result(|branch| {
                     Ok(InferredFunctionBranch {
-                        parameters: branch.parameters,
+                        parameter: branch.parameter,
                         body: Box::new(solve_constraints(module, *branch.body)?),
                     })
                 })?),
@@ -750,12 +746,7 @@ fn solve_constraints(
         }
         FunctionCall(function_call) => Ok(FunctionCall(Box::new(InferredFunctionCall {
             function: Box::new(solve_constraints(module, *function_call.function)?),
-            first_argument: Box::new(solve_constraints(module, *function_call.first_argument)?),
-            rest_arguments: function_call
-                .rest_arguments
-                .into_iter()
-                .map(|expression| solve_constraints(module, expression))
-                .collect::<Result<Vec<_>, _>>()?,
+            argument: Box::new(solve_constraints(module, *function_call.argument)?),
         }))),
         Record { key_value_pairs } => Ok(Record {
             key_value_pairs: key_value_pairs
@@ -964,10 +955,8 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::Character(_)
         | Expression::Identifier(_)
         | Expression::String(_)
-        | Expression::Lambda(_)
-        | Expression::ArrowFunction(_) => None,
+        | Expression::Lambda(_) => None,
         Expression::FunctionCall(function_call) => Some(function_call.function.position()),
-        Expression::With(with_expression) => Some(with_expression.binary_function_name.position),
         Expression::UnsafeJavascript { code } => Some(code.position),
         Expression::InterpolatedString { sections, .. } => {
             sections.find_map(|section| match section {
@@ -1028,6 +1017,10 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
                 })
         }
         Expression::Parenthesized { value, .. } => has_direct_function_call(value),
+        Expression::Let {
+            let_statement,
+            body,
+        } => has_direct_function_call(&let_statement.right).or(has_direct_function_call(&body)),
     }
 }
 
@@ -1583,13 +1576,10 @@ impl Positionable for TypeAnnotation {
         match self {
             TypeAnnotation::Underscore(token) => token.position,
             TypeAnnotation::Function {
-                parameters,
+                parameter,
                 return_type,
                 ..
-            } => parameters
-                .first()
-                .position()
-                .join(return_type.as_ref().position()),
+            } => parameter.position().join(return_type.as_ref().position()),
             TypeAnnotation::Array {
                 left_square_bracket,
                 right_square_bracket,
@@ -1619,6 +1609,13 @@ impl Positionable for TypeAnnotation {
                 closing_backtick,
                 ..
             } => opening_backtick.position.join(closing_backtick.position),
+            TypeAnnotation::Scheme {
+                type_variables,
+                type_annotation,
+            } => type_variables
+                .left_angular_bracket
+                .position
+                .join(type_annotation.position()),
         }
     }
 }
@@ -1660,8 +1657,8 @@ impl Positionable for DestructurePattern {
 
 impl Position {
     pub fn join(self, other: Position) -> Position {
-        let start_position = self;
-        let end_position = other;
+        let start_position = self.min(other);
+        let end_position = self.max(other);
         Position {
             line_start: start_position.line_start,
             column_start: start_position.column_start,
@@ -1730,17 +1727,10 @@ impl Positionable for Expression {
                 .position()
                 .join(right_curly_bracket.position),
             Expression::FunctionCall(function_call) => {
-                let first_argument = function_call.first_argument.as_ref();
-                let start_position = first_argument.position();
-                let end_position = match &function_call.rest_arguments {
-                    Some(FunctionCallRestArguments { arguments }) => arguments.last().map_or_else(
-                        || function_call.function.position(),
-                        |argument| argument.position(),
-                    ),
-                    None => function_call.function.position(),
-                };
+                let argument_position = function_call.argument.as_ref().position();
+                let function_position = function_call.function.as_ref().position();
 
-                start_position.join(end_position)
+                argument_position.join(function_position)
             }
             Expression::Lambda(function) => {
                 let start_position = function.branches.first().start_token.position;
@@ -1748,10 +1738,6 @@ impl Positionable for Expression {
                 start_position.join(end_position)
             }
             Expression::UnsafeJavascript { code } => code.position,
-            Expression::With(with_expression) => with_expression
-                .keyword_with
-                .position
-                .join(with_expression.body.position()),
             Expression::If {
                 keyword_if,
                 if_false,
@@ -1762,15 +1748,6 @@ impl Positionable for Expression {
                 right_curly_bracket,
                 ..
             } => keyword_switch.position.join(right_curly_bracket.position),
-            Expression::ArrowFunction(new_function) => {
-                let start_position = match &new_function.parameters {
-                    ArrowFunctionParameters::WithoutParenthesis(pattern) => pattern.position(),
-                    ArrowFunctionParameters::WithParenthesis(parameters) => {
-                        todo!()
-                    }
-                };
-                start_position.join(new_function.body.as_ref().position())
-            }
             Expression::Block(block) => match block {
                 Block::WithBrackets {
                     left_curly_bracket,
@@ -1786,6 +1763,10 @@ impl Positionable for Expression {
                 right_parenthesis,
                 ..
             } => left_parenthesis.position.join(right_parenthesis.position),
+            Expression::Let {
+                let_statement,
+                body,
+            } => let_statement.keyword_let.position.join(body.position()),
         }
     }
 }
@@ -1834,7 +1815,7 @@ impl Positionable for Statement {
             Statement::Entry(entry_statement) => entry_statement
                 .keyword_entry
                 .position
-                .join(entry_statement.block.position()),
+                .join(entry_statement.expression.position()),
         }
     }
 }
@@ -2320,12 +2301,14 @@ pub fn rewrite_type_variable_in_type(
         }))),
         Type::Underscore => Type::Underscore,
         Type::Function(FunctionType {
-            parameters_types: arguments_types,
+            parameter_type,
             return_type,
         }) => Type::Function(FunctionType {
-            parameters_types: Box::new(arguments_types.map(|argument_type| {
-                rewrite_type_variable_in_type(from_type_variable, to_type, argument_type)
-            })),
+            parameter_type: Box::new(rewrite_type_variable_in_type(
+                from_type_variable,
+                to_type,
+                *parameter_type,
+            )),
             return_type: Box::new(rewrite_type_variable_in_type(
                 from_type_variable,
                 to_type,
@@ -2736,8 +2719,7 @@ fn infer_expression_type_(
                         expected_type,
                         &Expression::FunctionCall(Box::new(FunctionCall {
                             function: Box::new(Expression::Identifier(property_name.clone())),
-                            first_argument: expression.clone(),
-                            rest_arguments: None,
+                            argument: expression.clone(),
                             type_arguments: None,
                         })),
                     ) {
@@ -2822,10 +2804,7 @@ fn infer_expression_type_(
                                         ..
                                     } => {
                                         let expected_type = Type::Function(FunctionType {
-                                            parameters_types: Box::new(NonEmpty {
-                                                head: expected_type.clone(),
-                                                tail: vec![],
-                                            }),
+                                            parameter_type: Box::new(expected_type.clone()),
                                             return_type: Box::new(expected_type.clone()),
                                         });
                                         let typechecked_function = infer_expression_type(
@@ -2876,31 +2855,14 @@ fn infer_expression_type_(
             })
         }
         Expression::FunctionCall(function_call) => {
-            // Get the type of the first argument, this is necessary for performing single-dispatch
-            let typechecked_first_argument =
-                infer_expression_type(module, None, function_call.first_argument.as_ref())?;
+            let typechecked_argument =
+                infer_expression_type(module, None, function_call.argument.as_ref())?;
 
             // Get expected function type
-            let expected_function_type = {
-                // Note that we only infer the type of the first argument
-                // The rest arguments is just instantiated with type variables
-                let expected_rest_arguments_types = match &function_call.rest_arguments {
-                    None => Ok(vec![]),
-                    Some(rest_arguments) => rest_arguments
-                        .arguments
-                        .iter()
-                        .map(|_| module.introduce_implicit_type_variable(None))
-                        .collect::<Result<Vec<Type>, UnifyError>>(),
-                }?;
-                let expected_return_type = module.introduce_implicit_type_variable(None)?;
-                Type::Function(FunctionType {
-                    parameters_types: Box::new(NonEmpty {
-                        head: typechecked_first_argument.type_value,
-                        tail: expected_rest_arguments_types,
-                    }),
-                    return_type: Box::new(expected_return_type),
-                })
-            };
+            let expected_function_type = Type::Function(FunctionType {
+                parameter_type: Box::new(typechecked_argument.type_value),
+                return_type: Box::new(module.introduce_implicit_type_variable(None)?),
+            });
 
             // Get the actual function type
             // note that we use infer_expression_type_ instead of infer_expression_type
@@ -2914,52 +2876,12 @@ fn infer_expression_type_(
             // Check if expression being invoked is a function
             match typechecked_function.type_value {
                 Type::Function(expected_function_type) => {
-                    // Tally arguments length
-                    {
-                        let expected_arguments_length =
-                            expected_function_type.parameters_types.len();
-                        let actual_arguments_length = match &function_call.rest_arguments {
-                            Some(rest_arguments) => rest_arguments.arguments.len() + 1,
-                            None => 1,
-                        };
-                        if actual_arguments_length != expected_arguments_length {
-                            return Err(UnifyError {
-                                position: function_call.function.as_ref().position(),
-                                kind: UnifyErrorKind::InvalidArgumentLength {
-                                    actual_length: actual_arguments_length,
-                                    expected_length: expected_arguments_length,
-                                },
-                            });
-                        }
-                    }
-
-                    // Unify first argument
+                    // Unify argument
                     let typechecked_first_argument = infer_expression_type(
                         module,
-                        Some(expected_function_type.parameters_types.first().clone()),
-                        function_call.first_argument.as_ref(),
+                        Some(*expected_function_type.parameter_type),
+                        function_call.argument.as_ref(),
                     )?;
-
-                    // Unify the type of each rest argument
-                    let actual_rest_arguments = match function_call.rest_arguments.clone() {
-                        Some(rest_arguments) => rest_arguments.arguments,
-                        None => Vec::new(),
-                    };
-                    let typechecked_rest_arguments = expected_function_type
-                        .parameters_types
-                        .tail()
-                        .iter()
-                        .zip(actual_rest_arguments.iter())
-                        .map(|(expected_argument_type, actual_argument)| {
-                            let expected_argument_type =
-                                module.apply_subtitution_to_type(expected_argument_type);
-                            infer_expression_type(
-                                module,
-                                Some(expected_argument_type),
-                                &actual_argument,
-                            )
-                        })
-                        .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?;
 
                     Ok(InferExpressionResult {
                         type_value: module
@@ -2967,11 +2889,7 @@ fn infer_expression_type_(
                         expression: InferredExpression::FunctionCall(Box::new(
                             InferredFunctionCall {
                                 function: Box::new(typechecked_function.expression),
-                                first_argument: Box::new(typechecked_first_argument.expression),
-                                rest_arguments: typechecked_rest_arguments
-                                    .iter()
-                                    .map(|argument| argument.expression.clone())
-                                    .collect(),
+                                argument: Box::new(typechecked_first_argument.expression),
                             },
                         )),
                     })
@@ -2994,25 +2912,11 @@ fn infer_expression_type_(
                         name: module.get_next_type_variable_name(),
                     });
 
-                    let typechecked_first_argument =
-                        infer_expression_type(module, None, function_call.first_argument.as_ref())?;
+                    let typechecked_argument =
+                        infer_expression_type(module, None, function_call.argument.as_ref())?;
 
-                    let typechecked_rest_arguments = match &function_call.rest_arguments {
-                        None => Vec::new(),
-                        Some(FunctionCallRestArguments { arguments, .. }) => arguments
-                            .clone()
-                            .into_iter()
-                            .map(|argument| infer_expression_type(module, None, &argument))
-                            .collect::<Result<Vec<InferExpressionResult>, UnifyError>>()?,
-                    };
                     let actual_function_type = Type::Function(FunctionType {
-                        parameters_types: Box::new(NonEmpty {
-                            head: typechecked_first_argument.type_value,
-                            tail: typechecked_rest_arguments
-                                .iter()
-                                .map(|argument| argument.type_value.clone())
-                                .collect(),
-                        }),
+                        parameter_type: Box::new(typechecked_argument.type_value),
                         return_type: Box::new(return_type.clone()),
                     });
 
@@ -3028,11 +2932,7 @@ fn infer_expression_type_(
                         expression: InferredExpression::FunctionCall(Box::new(
                             InferredFunctionCall {
                                 function: Box::new(typechecked_function.expression),
-                                first_argument: Box::new(typechecked_first_argument.expression),
-                                rest_arguments: typechecked_rest_arguments
-                                    .iter()
-                                    .map(|argument| argument.expression.clone())
-                                    .collect(),
+                                argument: Box::new(typechecked_argument.expression),
                             },
                         )),
                     })
@@ -3043,7 +2943,6 @@ fn infer_expression_type_(
                 }),
             }
         }
-        Expression::With(with_expression) => infer_with_expression_type(module, with_expression),
         Expression::Record {
             key_value_pairs,
             left_curly_bracket,
@@ -3235,32 +3134,22 @@ fn infer_expression_type_(
                         InferredBranchedFunction {
                             branches: Box::new(NonEmpty {
                                 head: InferredFunctionBranch {
-                                    parameters: Box::new(NonEmpty {
-                                        head: typechecked_first_case.0,
-                                        tail: vec![],
-                                    }),
+                                    parameter: Box::new(typechecked_first_case.0),
                                     body: Box::new(typechecked_first_case.1.expression),
                                 },
                                 tail: typechecked_rest_cases
                                     .iter()
                                     .map(|case| InferredFunctionBranch {
-                                        parameters: Box::new(NonEmpty {
-                                            head: case.0.clone(),
-                                            tail: vec![],
-                                        }),
+                                        parameter: Box::new(case.0.clone()),
                                         body: Box::new(case.1.expression.clone()),
                                     })
                                     .collect(),
                             }),
                         },
                     ))),
-                    first_argument: Box::new(typechecked_expression.expression),
-                    rest_arguments: vec![],
+                    argument: Box::new(typechecked_expression.expression),
                 })),
             })
-        }
-        Expression::ArrowFunction(function) => {
-            infer_arrow_function(module, expected_type, *function.clone())
         }
         Expression::Block(block) => {
             let typechecked_statements =
@@ -3291,6 +3180,20 @@ fn infer_expression_type_(
         Expression::Parenthesized { value, .. } => {
             infer_expression_type(module, expected_type, value)
         }
+        Expression::Let {
+            let_statement,
+            body,
+        } => module.run_in_new_child_scope(|module| {
+            let typechecked_statement = infer_let_statement(module, &let_statement)?;
+            let typechecked_body = infer_expression_type(module, expected_type.clone(), &body)?;
+            Ok(InferExpressionResult {
+                type_value: typechecked_body.type_value,
+                expression: InferredExpression::Block {
+                    statements: vec![typechecked_statement],
+                    return_value: Box::new(typechecked_body.expression),
+                },
+            })
+        }),
     }?;
     Ok(InferExpressionResult {
         type_value: module.apply_subtitution_to_type(&result.type_value),
@@ -3311,182 +3214,6 @@ impl Positionable for InferredDestructurePattern {
     fn position(&self) -> Position {
         self.kind.position()
     }
-}
-
-fn infer_arrow_function(
-    module: &mut Module,
-    expected_type: Option<Type>,
-    arrow_function: ArrowFunction,
-) -> Result<InferExpressionResult, UnifyError> {
-    let position = Expression::ArrowFunction(Box::new(arrow_function.clone())).position();
-    let expected_function_type = match &expected_type {
-        Some(Type::Function(function_type)) => {
-            match arrow_function.type_variables().split_first() {
-                None => Ok(function_type.clone()),
-                Some((head, tail)) => Err(UnifyError {
-                    position: head.position.join(tail.last().unwrap_or(head).position),
-                    kind: UnifyErrorKind::NotExpectingTypeVariable,
-                }),
-            }
-        }
-        Some(Type::TypeScheme(type_scheme)) => {
-            match &type_scheme.type_value {
-                Type::Function(function_type) => {
-                    let type_variables = arrow_function
-                        .type_variables()
-                        .iter()
-                        .map(|type_variable| type_variable.representation.clone())
-                        .collect::<Vec<String>>();
-
-                    // TODO: tally constraints
-
-                    // TODO: perform alpha conversion before checking equivalence
-                    if type_scheme
-                        .type_variables
-                        .clone()
-                        .into_vector()
-                        .into_iter()
-                        .map(|type_variable| type_variable.name)
-                        .collect::<Vec<String>>()
-                        .ne(&type_variables)
-                    {
-                        Err(UnifyError {
-                            position,
-                            kind: panic!(), // UnifyErrorKind::TypeVariableMismatch {
-                                            //     expected_type_variables: type_scheme.type_variables,
-                                            // },
-                        })
-                    } else {
-                        Ok(function_type.clone())
-                    }
-                }
-                other_type => Err(UnifyError {
-                    position,
-                    kind: UnifyErrorKind::NotExpectingFunction {
-                        expected_type: other_type.clone(),
-                    },
-                }),
-            }
-        }
-        Some(other_type) => Err(UnifyError {
-            position,
-            kind: UnifyErrorKind::NotExpectingFunction {
-                expected_type: other_type.clone(),
-            },
-        }),
-        None => {
-            let parameters_types = arrow_function
-                .parameters
-                .clone()
-                .parameters()
-                .fold_result(|_| module.introduce_implicit_type_variable(None))?;
-            let return_type = module.introduce_implicit_type_variable(None)?;
-            Ok(FunctionType {
-                parameters_types: Box::new(parameters_types),
-                return_type: Box::new(return_type),
-            })
-        }
-    }?;
-    if expected_function_type.parameters_types.len() != arrow_function.parameters.len() {
-        return Err(UnifyError {
-            position: match &arrow_function.parameters {
-                ArrowFunctionParameters::WithoutParenthesis(pattern) => pattern.position(),
-                ArrowFunctionParameters::WithParenthesis(function_parameters) => {
-                    todo!()
-                }
-            },
-            kind: UnifyErrorKind::InvalidArgumentLength {
-                expected_length: expected_function_type.parameters_types.len(),
-                actual_length: arrow_function.parameters.len(),
-            },
-        });
-    };
-    module.run_in_new_child_scope(|module| {
-        // Insert explicit type variables
-        let result =
-            populate_explicit_type_variables(module, &arrow_function.type_variables_declaration)?;
-
-        let function_parameters = arrow_function.parameters.clone().parameters();
-        let head_parameter = {
-            let expected_type = get_expected_type(
-                module,
-                Some(expected_function_type.parameters_types.head.clone()),
-                *function_parameters.head.type_annotation.clone(),
-            )?;
-            infer_destructure_pattern(
-                module,
-                expected_type,
-                &function_parameters.head.pattern,
-                false,
-            )
-        }?;
-        let tail_parameters = expected_function_type
-            .parameters_types
-            .tail
-            .clone()
-            .into_iter()
-            .zip(function_parameters.tail().iter())
-            .map(|(expected_type, parameter)| {
-                let expected_type = get_expected_type(
-                    module,
-                    Some(expected_type),
-                    *parameter.type_annotation.clone(),
-                )?;
-                infer_destructure_pattern(module, expected_type, &parameter.pattern, false)
-            })
-            .collect::<Result<Vec<InferredDestructurePattern>, UnifyError>>()?;
-
-        let expected_return_type = get_expected_type(
-            module,
-            Some(*expected_function_type.return_type.clone()),
-            arrow_function.return_type_annotation.clone(),
-        )?;
-        let body = infer_expression_type(module, expected_return_type, &arrow_function.body)?;
-
-        let function_expression =
-            InferredExpression::BranchedFunction(Box::new(InferredBranchedFunction {
-                branches: Box::new(NonEmpty {
-                    head: InferredFunctionBranch {
-                        parameters: Box::new(NonEmpty {
-                            head: head_parameter,
-                            tail: tail_parameters,
-                        }),
-                        body: Box::new(body.expression),
-                    },
-                    tail: vec![],
-                }),
-            }));
-
-        // Parameterise this function with dictionary parameters if possible
-        let function_expression = {
-            let constraints = match expected_type.clone() {
-                Some(Type::TypeScheme(type_scheme)) => type_scheme.constraints,
-                _ => match result {
-                    Some(result) => result.constraints,
-                    None => vec![],
-                },
-            };
-
-            try_parameterise_expression_with_implementation_dictionary_parameters(
-                constraints,
-                function_expression,
-            )
-        };
-
-        Ok(InferExpressionResult {
-            type_value: try_lift_as_type_scheme(
-                Type::Function(expected_function_type.clone()),
-                arrow_function
-                    .type_variables()
-                    .into_iter()
-                    .map(|type_variable| ExplicitTypeVariable {
-                        name: type_variable.representation,
-                    })
-                    .collect(),
-            ),
-            expression: function_expression,
-        })
-    })
 }
 
 fn infer_block_level_statements(
@@ -3513,6 +3240,47 @@ fn infer_block_level_statements(
     }
 }
 
+fn infer_let_statement(
+    module: &mut Module,
+    LetStatement {
+        type_annotation,
+        left,
+        right,
+        ..
+    }: &LetStatement,
+) -> Result<InferredStatement, UnifyError> {
+    let type_annotation_type = optional_type_annotation_to_type(module, type_annotation)?;
+    let typechecked_right = { infer_expression_type(module, type_annotation_type.clone(), right)? };
+
+    let typechecked_left = infer_destructure_pattern(module, type_annotation_type, left, false)?;
+
+    match check_exhaustiveness(
+        module,
+        typechecked_left.type_value.clone(),
+        NonEmpty {
+            head: typechecked_left.kind.clone(),
+            tail: vec![],
+        },
+        left.position(),
+    ) {
+        Ok(_) => Ok(InferredStatement::Let {
+            exported: false,
+            left: typechecked_left,
+            right: typechecked_right.expression,
+        }),
+        Err(UnifyError {
+            kind: UnifyErrorKind::MissingCases(remaining_patterns),
+            position,
+        }) => Err(UnifyError {
+            position,
+            kind: UnifyErrorKind::LetBindingRefutablePattern {
+                missing_patterns: remaining_patterns,
+            },
+        }),
+        Err(other_error) => Err(other_error),
+    }
+}
+
 /// Returns the typechecked statement, the type value of the statement, and the accumulated constraints
 fn infer_block_level_statement(
     module: &mut Module,
@@ -3520,47 +3288,8 @@ fn infer_block_level_statement(
     statement: &Statement,
 ) -> Result<(InferredStatement, Type), UnifyError> {
     let result = match statement {
-        Statement::Let(LetStatement {
-            type_annotation,
-            left,
-            right,
-            ..
-        }) => {
-            let type_annotation_type = optional_type_annotation_to_type(module, type_annotation)?;
-            let typechecked_right =
-                { infer_expression_type(module, type_annotation_type.clone(), right)? };
-
-            let typechecked_left =
-                infer_destructure_pattern(module, type_annotation_type, left, false)?;
-
-            match check_exhaustiveness(
-                module,
-                typechecked_left.type_value.clone(),
-                NonEmpty {
-                    head: typechecked_left.kind.clone(),
-                    tail: vec![],
-                },
-                left.position(),
-            ) {
-                Ok(_) => Ok((
-                    InferredStatement::Let {
-                        exported: false,
-                        left: typechecked_left,
-                        right: typechecked_right.expression,
-                    },
-                    Type::Null,
-                )),
-                Err(UnifyError {
-                    kind: UnifyErrorKind::MissingCases(remaining_patterns),
-                    position,
-                }) => Err(UnifyError {
-                    position,
-                    kind: UnifyErrorKind::LetBindingRefutablePattern {
-                        missing_patterns: remaining_patterns,
-                    },
-                }),
-                Err(other_error) => Err(other_error),
-            }
+        Statement::Let(let_statement) => {
+            Ok((infer_let_statement(module, let_statement)?, Type::Null))
         }
         Statement::Expression(expression) => {
             let typechecked_expression = infer_expression_type(module, expected_type, &expression)?;
@@ -3575,150 +3304,6 @@ fn infer_block_level_statement(
         }
     }?;
     Ok(result)
-}
-
-fn infer_with_expression_type(
-    module: &mut Module,
-    WithExpression {
-        left_patterns,
-        binary_function_name,
-        right,
-        body,
-        ..
-    }: &WithExpression,
-) -> Result<InferExpressionResult, UnifyError> {
-    // Get the type of the first argument, this is necessary for performing single-dispatch
-    let typechecked_right = infer_expression_type(module, None, right.as_ref())?;
-
-    // Get expected function type
-    let expected_function_type = {
-        // Note that we only infer the type of the first argument
-        // The rest arguments is just instantiated with type variables
-        let expected_rest_arguments_types = vec![module.introduce_implicit_type_variable(None)?];
-        let expected_return_type = module.introduce_implicit_type_variable(None)?;
-        Type::Function(FunctionType {
-            parameters_types: Box::new(NonEmpty {
-                head: typechecked_right.type_value.clone(),
-                tail: expected_rest_arguments_types,
-            }),
-            return_type: Box::new(expected_return_type),
-        })
-    };
-
-    // Get the actual function type
-    // note that we use infer_expression_type_ instead of infer_expression_type
-    // This is so that we can throw the error of `cannot invoke non-function`
-    let bind_function = infer_expression_type_(
-        module,
-        Some(expected_function_type),
-        &Expression::Identifier(binary_function_name.clone()),
-    )?;
-
-    match bind_function.type_value.clone() {
-        Type::Function(bind_function_type) => {
-            unify_type(
-                module,
-                bind_function_type.parameters_types.first(),
-                &typechecked_right.type_value,
-                right.position(),
-            )?;
-            let rest_parameters_types = bind_function_type.parameters_types.tail();
-            match rest_parameters_types.split_first() {
-                Some((Type::Function(function_type), [])) => {
-                    let function_arguments_position = left_patterns.position();
-                    if function_type.parameters_types.len() != left_patterns.len() {
-                        return Err(UnifyError {
-                            position: function_arguments_position,
-                            kind: UnifyErrorKind::InvalidArgumentLength {
-                                expected_length: function_type.parameters_types.len(),
-                                actual_length: left_patterns.len(),
-                            },
-                        });
-                    }
-                    module.run_in_new_child_scope(|module| {
-                        let typechecked_left_first_pattern = infer_destructure_pattern(
-                            module,
-                            Some(function_type.parameters_types.first().clone()),
-                            left_patterns.first(),
-                            false,
-                        )?;
-                        let typechecked_left_tail_patterns = function_type
-                            .parameters_types
-                            .tail()
-                            .iter()
-                            .zip(left_patterns.tail().iter())
-                            .map(|(expected_type, pattern)| {
-                                infer_destructure_pattern(
-                                    module,
-                                    Some(expected_type.clone()),
-                                    &pattern,
-                                    false,
-                                )
-                            })
-                            .collect::<Result<Vec<InferredDestructurePattern>, UnifyError>>()?;
-
-                        // Check for pattern refutability
-                        check_exhaustiveness(
-                            module,
-                            Type::Tuple(function_type.parameters_types.clone()),
-                            NonEmpty {
-                                head: InferredDestructurePatternKind::Tuple {
-                                    patterns: Box::new(NonEmpty {
-                                        head: typechecked_left_first_pattern.clone(),
-                                        tail: typechecked_left_tail_patterns.clone(),
-                                    }),
-                                },
-                                tail: vec![],
-                            },
-                            function_arguments_position,
-                        )?;
-
-                        let body = infer_expression_type(
-                            module,
-                            Some(*function_type.return_type.clone()),
-                            body,
-                        )?;
-
-                        Ok(InferExpressionResult {
-                            expression: InferredExpression::FunctionCall(Box::new(
-                                InferredFunctionCall {
-                                    function: Box::new(bind_function.expression.clone()),
-                                    first_argument: Box::new(typechecked_right.expression.clone()),
-                                    rest_arguments: vec![InferredExpression::BranchedFunction(
-                                        Box::new(InferredBranchedFunction {
-                                            branches: Box::new(NonEmpty {
-                                                head: InferredFunctionBranch {
-                                                    parameters: Box::new(NonEmpty {
-                                                        head: typechecked_left_first_pattern,
-                                                        tail: typechecked_left_tail_patterns,
-                                                    }),
-                                                    body: Box::new(body.expression),
-                                                },
-                                                tail: vec![],
-                                            }),
-                                        }),
-                                    )],
-                                },
-                            )),
-                            type_value: *bind_function_type.return_type.clone(),
-                        })
-                    })
-                }
-                _ => Err(UnifyError {
-                    position: binary_function_name.position,
-                    kind: UnifyErrorKind::WithExpressionBindFunctionConditionNotMet {
-                        actual_type: bind_function.type_value,
-                    },
-                }),
-            }
-        }
-        other_type => Err(UnifyError {
-            position: binary_function_name.position,
-            kind: UnifyErrorKind::WithExpressionBindFunctionConditionNotMet {
-                actual_type: other_type,
-            },
-        }),
-    }
 }
 
 fn infer_record_type(
@@ -3818,12 +3403,16 @@ fn infer_branched_function(
         module.apply_subtitution_to_function_type(&typechecked_first_branch.function_type);
 
     // Check for case exhaustiveness
-    let expected_type = Type::Tuple(function_type.clone().parameters_types);
+    let expected_type = *function_type.clone().parameter_type;
     let actual_patterns = NonEmpty {
-        head: function_branch_parameters_to_tuple(&typechecked_first_branch.function_branch),
+        head: typechecked_first_branch
+            .function_branch
+            .parameter
+            .kind
+            .clone(),
         tail: typechecked_rest_branches
             .iter()
-            .map(|branch| function_branch_parameters_to_tuple(&branch.function_branch))
+            .map(|branch| branch.function_branch.parameter.kind.clone())
             .collect(),
     };
 
@@ -3846,14 +3435,6 @@ fn infer_branched_function(
             }),
         },
     })
-}
-
-pub fn function_branch_parameters_to_tuple(
-    function_branch: &InferredFunctionBranch,
-) -> InferredDestructurePatternKind {
-    InferredDestructurePatternKind::Tuple {
-        patterns: function_branch.parameters.clone(),
-    }
 }
 
 pub fn check_exhaustiveness(
@@ -4090,30 +3671,16 @@ pub fn unify_function_type(
     actual_function_type: &FunctionType,
     position: Position,
 ) -> Result<FunctionType, UnifyError> {
-    // compare parameters length
-    if expected_function_type.parameters_types.len() != actual_function_type.parameters_types.len()
-    {
-        return Err(UnifyError {
-            position,
-            kind: UnifyErrorKind::InvalidArgumentLength {
-                expected_length: expected_function_type.parameters_types.len(),
-                actual_length: actual_function_type.parameters_types.len(),
-            },
-        });
-    }
+    // unify parameter type
+    let unify_parameter_type_result = unify_type(
+        module,
+        &expected_function_type.parameter_type,
+        &actual_function_type.parameter_type,
+        position,
+    );
 
-    // unify parameters types
-    let zipped = expected_function_type
-        .clone()
-        .parameters_types
-        .zip(*actual_function_type.parameters_types.clone());
-
-    let unify_rest_argument_type_result = zipped.fold_result(|(expected_type, actual_type)| {
-        unify_type(module, &expected_type, &actual_type, position)
-    });
-
-    match unify_rest_argument_type_result {
-        Ok(parameters_types) => {
+    match unify_parameter_type_result {
+        Ok(parameter_type) => {
             // unify return type
             match unify_type(
                 module,
@@ -4122,7 +3689,7 @@ pub fn unify_function_type(
                 position,
             ) {
                 Ok(return_type) => Ok(FunctionType {
-                    parameters_types: Box::new(parameters_types),
+                    parameter_type: Box::new(parameter_type),
                     return_type: Box::new(return_type),
                 }),
                 Err(_) => Err(UnifyError {
@@ -4158,42 +3725,14 @@ fn infer_function_branch(
     function_branch: &FunctionBranch,
 ) -> Result<InferFunctionBranchResult, UnifyError> {
     module.run_in_new_child_scope(|module| {
-        let typechecked_parameters = {
-            match &expected_function_type {
-                None => function_branch
-                    .parameters
-                    .clone()
-                    .fold_result(|destructure_pattern| {
-                        infer_destructure_pattern(module, None, &destructure_pattern, false)
-                    }),
-
-                Some(expected_function_type) => {
-                    let actual_parameters = function_branch.parameters.clone();
-                    if expected_function_type.parameters_types.len() != actual_parameters.len() {
-                        Err(UnifyError {
-                            position: function_branch.parameters.position(),
-                            kind: UnifyErrorKind::InvalidArgumentLength {
-                                expected_length: expected_function_type.parameters_types.len(),
-                                actual_length: actual_parameters.len(),
-                            },
-                        })
-                    } else {
-                        expected_function_type
-                            .clone()
-                            .parameters_types
-                            .zip(actual_parameters)
-                            .fold_result(|(expected_parameter_type, actual_parameter)| {
-                                infer_destructure_pattern(
-                                    module,
-                                    Some(expected_parameter_type),
-                                    &actual_parameter,
-                                    false,
-                                )
-                            })
-                    }
-                }
-            }
-        }?;
+        let typechecked_parameter = infer_destructure_pattern(
+            module,
+            expected_function_type
+                .clone()
+                .map(|function_type| *function_type.parameter_type),
+            &function_branch.parameter,
+            false,
+        )?;
 
         let expected_return_type = expected_function_type
             .clone()
@@ -4203,11 +3742,7 @@ fn infer_function_branch(
             infer_expression_type(module, expected_return_type, &function_branch.body)?;
 
         let result_type = FunctionType {
-            parameters_types: Box::new(
-                typechecked_parameters
-                    .clone()
-                    .map(|argument| argument.type_value),
-            ),
+            parameter_type: Box::new(typechecked_parameter.type_value.clone()),
             return_type: Box::new(module.apply_subtitution_to_type(&typechecked_body.type_value)),
         };
 
@@ -4217,7 +3752,7 @@ fn infer_function_branch(
         Ok(InferFunctionBranchResult {
             function_type: module.apply_subtitution_to_function_type(&result_type),
             function_branch: InferredFunctionBranch {
-                parameters: Box::new(typechecked_parameters),
+                parameter: Box::new(typechecked_parameter),
                 body: Box::new(typechecked_body.expression),
             },
         })
@@ -4370,15 +3905,29 @@ pub fn type_annotation_to_type(
             type_argument: Box::new(type_annotation_to_type(module, type_annotation.as_ref())?),
         }),
         TypeAnnotation::Function {
-            parameters,
+            parameter,
             return_type,
             ..
         } => Ok(Type::Function(FunctionType {
-            parameters_types: Box::new(parameters.clone().fold_result(|type_annotation| {
-                type_annotation_to_type(module, &type_annotation)
-            })?),
+            parameter_type: Box::new(type_annotation_to_type(module, &parameter)?),
             return_type: Box::new(type_annotation_to_type(module, return_type)?),
         })),
+        TypeAnnotation::Scheme {
+            type_variables,
+            type_annotation,
+        } => Ok(Type::TypeScheme(Box::new(TypeScheme {
+            type_variables: type_variables.type_variables.clone().map(|type_variable| {
+                ExplicitTypeVariable {
+                    name: type_variable.representation,
+                }
+            }),
+            type_value: module.run_in_new_child_scope(|module| {
+                populate_explicit_type_variables(module, &Some(type_variables.clone()))?;
+
+                type_annotation_to_type(module, type_annotation)
+            })?,
+            constraints: vec![],
+        }))),
     }
 }
 
@@ -5066,12 +4615,13 @@ fn apply_type_variable_substitution_to_type(
             apply_type_variable_substitution_to_type(substitution, &type_value)
         }))),
         Type::Function(FunctionType {
-            parameters_types,
+            parameter_type,
             return_type,
         }) => Type::Function(FunctionType {
-            parameters_types: Box::new(parameters_types.clone().map(|parameter_type| {
-                apply_type_variable_substitution_to_type(substitution, &parameter_type)
-            })),
+            parameter_type: Box::new(apply_type_variable_substitution_to_type(
+                substitution,
+                &parameter_type,
+            )),
             return_type: Box::new(apply_type_variable_substitution_to_type(
                 substitution,
                 return_type.as_ref(),
@@ -5142,23 +4692,12 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
             result
         }
         Type::Function(FunctionType {
-            parameters_types,
+            parameter_type,
             return_type,
         }) => {
             let mut result: HashSet<String> = HashSet::new();
-
-            let type_variables: Vec<HashSet<String>> = parameters_types
-                .clone()
-                .into_vector()
-                .iter()
-                .map(get_free_type_variables_in_type)
-                .collect();
-            type_variables
-                .into_iter()
-                .for_each(|type_variables| result.extend(type_variables));
-
+            result.extend(get_free_type_variables_in_type(parameter_type.as_ref()));
             result.extend(get_free_type_variables_in_type(return_type.as_ref()));
-
             result
         }
         Type::Record { key_type_pairs } => key_type_pairs

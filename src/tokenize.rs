@@ -525,6 +525,21 @@ impl Tokenizer {
                     representation: "|".to_string(),
                     position: make_position(character, None),
                 })),
+                '<' => Ok(Some(Token {
+                    token_type: TokenType::LessThan,
+                    representation: "<".to_string(),
+                    position: make_position(character, None),
+                })),
+                '>' => Ok(Some(Token {
+                    token_type: TokenType::MoreThan,
+                    representation: ">".to_string(),
+                    position: make_position(character, None),
+                })),
+                '_' => Ok(Some(Token {
+                    token_type: TokenType::Underscore,
+                    representation: "_".to_string(),
+                    position: make_position(character, None),
+                })),
                 // Symbolic identifer
                 other if is_symbol(other) => {
                     let characters = self
@@ -552,8 +567,11 @@ impl Tokenizer {
                         ')' => TokenType::RightParenthesis,
                         '[' => TokenType::LeftSquareBracket,
                         ']' => TokenType::RightSquareBracket,
+                        '<' => TokenType::LessThan,
+                        '>' => TokenType::MoreThan,
                         ' ' => TokenType::Whitespace,
                         ',' => TokenType::Comma,
+                        ';' => TokenType::Semicolon,
                         '\n' => TokenType::Newline,
                         other => TokenType::Other(other),
                     },
@@ -595,8 +613,6 @@ pub fn stringify(characters: Vec<Character>) -> String {
 pub fn get_token_type(s: String) -> TokenType {
     if s.eq("entry") {
         TokenType::KeywordEntry
-    } else if s.eq("with") {
-        TokenType::KeywordWith
     } else if s.eq("switch") {
         TokenType::KeywordSwitch
     } else if s.eq("case") {

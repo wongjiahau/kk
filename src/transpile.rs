@@ -535,10 +535,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
         ),
         InferredExpression::BranchedFunction(function) => {
             let InferredBranchedFunction { branches } = *function;
-            let number_of_args = branches.first().parameters.len();
-            let parameters = (0..number_of_args)
-                .map(build_function_argument)
-                .collect::<Vec<javascript::Identifier>>();
+            let parameters = vec![build_function_argument(0)];
             let body = branches
                 .map(transpile_function_branch)
                 .into_vector()
@@ -548,17 +545,9 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
             javascript::Expression::ArrowFunction { parameters, body }
         }
         InferredExpression::FunctionCall(function) => {
-            let InferredFunctionCall {
-                function,
-                first_argument,
-                rest_arguments,
-            } = *function;
+            let InferredFunctionCall { function, argument } = *function;
             let function = transpile_expression(*function);
-            let arguments = vec![*first_argument]
-                .into_iter()
-                .chain(rest_arguments.into_iter())
-                .map(transpile_expression)
-                .collect::<Vec<javascript::Expression>>();
+            let arguments = vec![transpile_expression(*argument)];
 
             javascript::Expression::FunctionCall {
                 function: Box::new(function),
@@ -667,24 +656,10 @@ pub fn build_function_argument(index: usize) -> javascript::Identifier {
 pub fn transpile_function_branch(
     function_branch: InferredFunctionBranch,
 ) -> Vec<javascript::Statement> {
-    let transpiled_destructure_pattern = function_branch
-        .parameters
-        .into_vector()
-        .into_iter()
-        .enumerate()
-        .map(|(index, pattern)| {
-            transpile_destructure_pattern(
-                pattern.kind,
-                javascript::Expression::Variable(build_function_argument(index)),
-            )
-        })
-        .fold(
-            TranspiledDestructurePattern {
-                conditions: vec![],
-                bindings: vec![],
-            },
-            join_transpiled_destructure_pattern,
-        );
+    let transpiled_destructure_pattern = transpile_destructure_pattern(
+        function_branch.parameter.kind,
+        javascript::Expression::Variable(build_function_argument(0)),
+    );
 
     let body = transpiled_destructure_pattern
         .bindings

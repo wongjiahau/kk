@@ -1,7 +1,7 @@
-let foo = <T>(t: T): Integer => 123
+let foo
+  : Integer -> Integer
+  = { _ -> 123 }
 
-
-{ 
-  let xs = [ null.foo(), {x: null.foo()}.x ]
-  xs.print()
-}
+entry
+  let xs = [ 999 foo, { .x = 1 foo }.x ];
+  xs print

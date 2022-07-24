@@ -424,16 +424,12 @@ impl Module {
     pub fn apply_subtitution_to_function_type(
         &self,
         FunctionType {
-            parameters_types,
+            parameter_type,
             return_type,
         }: &FunctionType,
     ) -> FunctionType {
         FunctionType {
-            parameters_types: Box::new(
-                parameters_types
-                    .clone()
-                    .map(|argument_type| self.apply_subtitution_to_type(&argument_type)),
-            ),
+            parameter_type: Box::new(self.apply_subtitution_to_type(&parameter_type)),
             return_type: Box::new(self.apply_subtitution_to_type(return_type.as_ref())),
         }
     }
@@ -676,16 +672,16 @@ impl Module {
                                     match (existing_function_type, new_function_type) {
                                         (Some(existing_function_type), Some(new_function_type)) => {
                                             if overlap(
-                                                existing_function_type.parameters_types.first(),
-                                                new_function_type.parameters_types.first(),
+                                                &existing_function_type.parameter_type,
+                                                &new_function_type.parameter_type,
                                                 true
                                             ) {
                                                 Err(UnifyError {
                                                     position: new_symbol.meta.name.position,
                                                     kind: UnifyErrorKind::ConflictingFunctionDefinition {
                                                         function_name: new_symbol.meta.name.representation.clone(),
-                                                        existing_first_parameter_type: existing_function_type.parameters_types.first().clone(),
-                                                        new_first_parameter_type: new_function_type.parameters_types.first().clone(),
+                                                        existing_first_parameter_type: *existing_function_type.parameter_type.clone(),
+                                                        new_first_parameter_type: *new_function_type.parameter_type.clone(),
                                                         first_declared_at: entry.symbol.meta.name.position,
                                                     }
                                                 })
@@ -993,9 +989,7 @@ impl Module {
                         Some(Type::Function(expected_function_type)) => {
                             // check if the actual first parameter type is not implicit type variable
                             if let Type::ImplicitTypeVariable { .. } = self
-                                .apply_subtitution_to_type(
-                                    expected_function_type.parameters_types.first(),
-                                )
+                                .apply_subtitution_to_type(&expected_function_type.parameter_type)
                             {
                                 return Err(UnifyError {
                                     position: symbol_name.position,
@@ -1009,8 +1003,8 @@ impl Module {
                             let matching_function_signature =
                                 matching_function_signatures.iter().find(|signature| {
                                     overlap(
-                                        signature.function_type.parameters_types.first(),
-                                        expected_function_type.parameters_types.first(),
+                                        signature.function_type.parameter_type.as_ref(),
+                                        expected_function_type.parameter_type.as_ref(),
                                         true,
                                     )
                                 });
@@ -1024,18 +1018,16 @@ impl Module {
                                         None => Err(UnifyError {
                                             position: symbol_name.position,
                                             kind: UnifyErrorKind::NoMatchingFunction {
-                                                actual_first_argument_type: expected_function_type
-                                                    .parameters_types
-                                                    .first()
+                                                actual_first_argument_type: *expected_function_type
+                                                    .parameter_type
                                                     .clone(),
                                                 expected_first_argument_types:
                                                     matching_function_signatures
                                                         .into_iter()
                                                         .map(|signature| {
-                                                            signature
+                                                            *signature
                                                                 .function_type
-                                                                .parameters_types
-                                                                .first()
+                                                                .parameter_type
                                                                 .clone()
                                                         })
                                                         .collect(),
@@ -1320,17 +1312,15 @@ fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bo
                     })
         }
         (Type::Function(a), Type::Function(b)) => {
-            a.parameters_types.len() == b.parameters_types.len()
-                && (a
-                    .parameters_types
-                    .clone()
-                    .zip(*b.parameters_types.clone())
-                    .all(|(a, b)| overlap(a, b, explicit_type_variable_overlaps_with_any_type))
-                    && overlap(
-                        a.return_type.as_ref(),
-                        b.return_type.as_ref(),
-                        explicit_type_variable_overlaps_with_any_type,
-                    ))
+            overlap(
+                &a.parameter_type,
+                &b.parameter_type,
+                explicit_type_variable_overlaps_with_any_type,
+            ) && overlap(
+                a.return_type.as_ref(),
+                b.return_type.as_ref(),
+                explicit_type_variable_overlaps_with_any_type,
+            )
         }
         (
             Type::BuiltInOneArgumentType {
@@ -1424,10 +1414,7 @@ fn built_in_symbols() -> Vec<Symbol> {
                         tail: vec![],
                     },
                     type_value: Type::Function(FunctionType {
-                        parameters_types: Box::new(NonEmpty {
-                            head: Type::ExplicitTypeVariable(type_variable),
-                            tail: vec![],
-                        }),
+                        parameter_type: Box::new(Type::ExplicitTypeVariable(type_variable)),
                         return_type: Box::new(Type::Null),
                     }),
                 })),
