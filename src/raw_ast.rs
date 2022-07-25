@@ -98,9 +98,15 @@ pub struct InterfaceDefinition {
 pub struct LetStatement {
     pub keyword_export: Option<Token>,
     pub keyword_let: Token,
-    pub left: DestructurePattern,
-    pub type_annotation: Option<TypeAnnotation>,
-    pub right: Expression,
+    pub name: Token,
+    pub type_annotation: TypeAnnotation,
+    pub expression: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct Parameter {
+    pub pattern: DestructurePattern,
+    pub type_annotation: TypeAnnotation,
 }
 
 #[derive(Debug, Clone)]
@@ -355,7 +361,10 @@ pub enum Expression {
         right_curly_bracket: Token,
     },
     Let {
-        let_statement: Box<LetStatement>,
+        keyword_let: Token,
+        left: DestructurePattern,
+        right: Box<Expression>,
+        type_annotation: Option<TypeAnnotation>,
         body: Box<Expression>,
     },
     Block(Block),

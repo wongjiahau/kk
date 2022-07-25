@@ -12,9 +12,9 @@ use crate::raw_ast::*;
 use crate::typ::*;
 use indexmap::IndexMap;
 use relative_path::RelativePath;
-use std::fs;
 use std::iter;
 use std::{collections::HashSet, path::Path};
+use std::{fs, option};
 
 pub struct UnifyProgramResult {
     /// The entrypoint module
@@ -304,20 +304,8 @@ pub fn unify_statements(
     let unchecked_let_statements = let_statements
         .into_iter()
         .map(|let_statement| {
-            let type_value = match &let_statement.type_annotation {
-                None => Err(UnifyError {
-                    position: let_statement.keyword_let.position,
-                    kind: UnifyErrorKind::MissingTypeAnnotationForTopLevelBinding,
-                }),
-                Some(type_annotation) => type_annotation_to_type(&mut module, type_annotation),
-            }?;
-            let name = match &let_statement.left {
-                DestructurePattern::Identifier(identifier) => Ok(identifier.clone()),
-                other => Err(UnifyError {
-                    position: other.position(),
-                    kind: UnifyErrorKind::TopLevelLetStatementCannotBeDestructured,
-                }),
-            }?;
+            let type_value = type_annotation_to_type(&mut module, &let_statement.type_annotation)?;
+            let name = let_statement.name.clone();
             let uid = module.insert_symbol(
                 None,
                 Symbol {
@@ -333,22 +321,22 @@ pub fn unify_statements(
         .collect::<Result<Vec<_>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
-    // 5b. Insert top-level constant expression (i.e. expressions that does not have function call)
+    // 5b. Insert top-level constant expression (i.e. expressions that does not have direct function call)
     let typechecked_let_statements = unchecked_let_statements
         .into_iter()
         .map(|(uid, name, let_statement)| {
-            if let Some(position) = has_direct_function_call(&let_statement.right) {
+            if let Some(position) = has_direct_function_call(&let_statement.expression) {
                 Err(UnifyError {
                     position,
                     kind: UnifyErrorKind::FunctionCallAtTopLevelIsNotAllowed,
                 })
             } else {
                 let expected_type =
-                    optional_type_annotation_to_type(&mut module, &let_statement.type_annotation)?;
+                    type_annotation_to_type(&mut module, &let_statement.type_annotation)?;
                 let right = infer_expression_type(
                     &mut module,
-                    expected_type.clone(),
-                    &let_statement.right,
+                    Some(expected_type.clone()),
+                    &let_statement.expression,
                 )?;
                 Ok(InferredStatement::Let {
                     exported: let_statement.keyword_export.is_some(),
@@ -1006,7 +994,9 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
                 .statements()
                 .iter()
                 .find_map(|statement| match statement {
-                    Statement::Let(let_statement) => has_direct_function_call(&let_statement.right),
+                    Statement::Let(let_statement) => {
+                        has_direct_function_call(&let_statement.expression)
+                    }
                     Statement::Expression(expression) => has_direct_function_call(expression),
                     Statement::Type(_)
                     | Statement::Entry(_)
@@ -1017,10 +1007,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
                 })
         }
         Expression::Parenthesized { value, .. } => has_direct_function_call(value),
-        Expression::Let {
-            let_statement,
-            body,
-        } => has_direct_function_call(&let_statement.right).or(has_direct_function_call(&body)),
+        Expression::Let { body, .. } => has_direct_function_call(&body),
         Expression::Statements { current, next } => {
             has_direct_function_call(current).or(has_direct_function_call(next))
         }
@@ -1772,9 +1759,8 @@ impl Positionable for Expression {
                 ..
             } => left_parenthesis.position.join(right_parenthesis.position),
             Expression::Let {
-                let_statement,
-                body,
-            } => let_statement.keyword_let.position.join(body.position()),
+                keyword_let, body, ..
+            } => keyword_let.position.join(body.position()),
             Expression::Statements { current, next } => current.position().join(next.position()),
         }
     }
@@ -1796,7 +1782,7 @@ impl Positionable for Statement {
             Statement::Let(let_statement) => let_statement
                 .keyword_let
                 .position
-                .join(let_statement.right.position()),
+                .join(let_statement.expression.position()),
 
             Statement::Expression(expression) => expression.position(),
             Statement::Type(type_statement) => type_statement
@@ -3190,18 +3176,56 @@ fn infer_expression_type_(
             infer_expression_type(module, expected_type, value)
         }
         Expression::Let {
-            let_statement,
+            left,
+            right,
+            type_annotation,
             body,
+            ..
         } => module.run_in_new_child_scope(|module| {
-            let typechecked_statement = infer_let_statement(module, &let_statement)?;
-            let typechecked_body = infer_expression_type(module, expected_type.clone(), &body)?;
-            Ok(InferExpressionResult {
-                type_value: typechecked_body.type_value,
-                expression: InferredExpression::Block {
-                    statements: vec![typechecked_statement],
-                    return_value: Box::new(typechecked_body.expression),
+            let expected_right_type = optional_type_annotation_to_type(module, type_annotation)?;
+            let typechecked_right = infer_expression_type(module, expected_right_type, right)?;
+            let typechecked_left = infer_destructure_pattern(
+                module,
+                Some(typechecked_right.type_value.clone()),
+                left,
+                false,
+            )?;
+            let typechecked_body = infer_expression_type(module, expected_type.clone(), body)?;
+
+            match check_exhaustiveness(
+                module,
+                typechecked_left.type_value.clone(),
+                NonEmpty {
+                    head: typechecked_left.kind.clone(),
+                    tail: vec![],
                 },
-            })
+                left.position(),
+            ) {
+                Ok(_) => {
+                    let typechecked_statement = InferredStatement::Let {
+                        exported: false,
+                        left: typechecked_left,
+                        right: typechecked_right.expression,
+                    };
+                    Ok(InferExpressionResult {
+                        type_value: typechecked_body.type_value,
+                        expression: InferredExpression::Block {
+                            statements: vec![typechecked_statement],
+                            return_value: Box::new(typechecked_body.expression),
+                        },
+                    })
+                }
+                Err(UnifyError {
+                    kind: UnifyErrorKind::MissingCases(remaining_patterns),
+                    position,
+                }) => Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::LetBindingRefutablePattern {
+                        missing_patterns: remaining_patterns,
+                    },
+                }),
+                Err(other_error) => Err(other_error),
+            }
         }),
         Expression::Statements { current, next } => {
             let current = infer_expression_type(module, None, &current)?;
@@ -3270,41 +3294,27 @@ fn infer_let_statement(
     module: &mut Module,
     LetStatement {
         type_annotation,
-        left,
-        right,
+        name,
+        expression,
         ..
     }: &LetStatement,
 ) -> Result<InferredStatement, UnifyError> {
-    let type_annotation_type = optional_type_annotation_to_type(module, type_annotation)?;
-    let typechecked_right = { infer_expression_type(module, type_annotation_type.clone(), right)? };
+    let type_annotation_type = type_annotation_to_type(module, type_annotation)?;
+    let typechecked_right =
+        { infer_expression_type(module, Some(type_annotation_type.clone()), expression)? };
 
-    let typechecked_left = infer_destructure_pattern(module, type_annotation_type, left, false)?;
-
-    match check_exhaustiveness(
+    let typechecked_left = infer_destructure_pattern(
         module,
-        typechecked_left.type_value.clone(),
-        NonEmpty {
-            head: typechecked_left.kind.clone(),
-            tail: vec![],
-        },
-        left.position(),
-    ) {
-        Ok(_) => Ok(InferredStatement::Let {
-            exported: false,
-            left: typechecked_left,
-            right: typechecked_right.expression,
-        }),
-        Err(UnifyError {
-            kind: UnifyErrorKind::MissingCases(remaining_patterns),
-            position,
-        }) => Err(UnifyError {
-            position,
-            kind: UnifyErrorKind::LetBindingRefutablePattern {
-                missing_patterns: remaining_patterns,
-            },
-        }),
-        Err(other_error) => Err(other_error),
-    }
+        Some(type_annotation_type),
+        &DestructurePattern::Identifier(name.clone()),
+        false,
+    )?;
+
+    Ok(InferredStatement::Let {
+        exported: false,
+        left: typechecked_left,
+        right: typechecked_right.expression,
+    })
 }
 
 /// Returns the typechecked statement, the type value of the statement, and the accumulated constraints

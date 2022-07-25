@@ -165,7 +165,7 @@ impl<'a> Parser<'a> {
                 TokenType::KeywordLet => {
                     let token = self.next_meaningful_token()?.unwrap();
                     Ok(vec![Statement::Let(
-                        self.parse_let_statement(keyword_export, token)?,
+                        self.parse_top_level_let_statement(keyword_export, token)?,
                     )])
                 }
                 TokenType::KeywordType => {
@@ -341,21 +341,89 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_let_statement(
+    fn parse_top_level_let_statement(
         &mut self,
         keyword_export: Option<Token>,
         keyword_let: Token,
     ) -> Result<LetStatement, ParseError> {
         let context = Some(ParseContext::StatementLet);
-        let left = self.parse_destructure_pattern()?;
-        let type_annotation = self.try_parse_type_annotation()?;
+
+        let mut parameters = {
+            if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
+                vec![self.parse_parameter(left_parenthesis)?]
+            } else {
+                vec![]
+            }
+        };
+
+        let name = self.eat_token(TokenType::Identifier, context)?;
+        parameters.extend(self.try_parse_parameters()?);
+
+        self.eat_token(TokenType::Colon, context)?;
+        let type_annotation = self.parse_type_annotation(context)?;
         self.eat_token(TokenType::Equals, context)?;
-        let right = self.parse_mid_precedence_expression()?;
+        let expression = self.parse_low_precedence_expression()?;
         Ok(LetStatement {
             keyword_export,
             keyword_let,
-            left,
-            right,
+            name,
+            expression: Self::convert_to_lambda(parameters.clone(), expression),
+            type_annotation: Self::convert_to_function_type_annotation(parameters, type_annotation),
+        })
+    }
+
+    fn convert_to_lambda(parameters: Vec<Parameter>, return_value: Expression) -> Expression {
+        match parameters.split_first() {
+            Some((head, tail)) => Expression::Lambda(Box::new(Lambda {
+                left_curly_bracket: Token::dummy(),
+                branches: NonEmpty {
+                    head: FunctionBranch {
+                        start_token: Token::dummy(),
+                        parameter: Box::new(head.pattern.clone()),
+                        body: Box::new(Self::convert_to_lambda(tail.to_vec(), return_value)),
+                    },
+                    tail: vec![],
+                },
+                right_curly_bracket: Token::dummy(),
+            })),
+            None => return_value,
+        }
+    }
+
+    fn convert_to_function_type_annotation(
+        parameters: Vec<Parameter>,
+        return_type: TypeAnnotation,
+    ) -> TypeAnnotation {
+        match parameters.split_first() {
+            Some((head, tail)) => TypeAnnotation::Function {
+                parameter: Box::new(head.type_annotation.clone()),
+                return_type: Box::new(Self::convert_to_function_type_annotation(
+                    tail.to_vec(),
+                    return_type,
+                )),
+            },
+            None => return_type,
+        }
+    }
+
+    fn try_parse_parameters(&mut self) -> Result<Vec<Parameter>, ParseError> {
+        let mut parameters = vec![];
+        loop {
+            if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
+                parameters.push(self.parse_parameter(left_parenthesis)?)
+            } else {
+                return Ok(parameters);
+            }
+        }
+    }
+
+    fn parse_parameter(&mut self, left_parenthesis: Token) -> Result<Parameter, ParseError> {
+        let pattern = self.parse_destructure_pattern()?;
+        self.eat_token(TokenType::Colon, None)?;
+        let type_annotation = self.parse_type_annotation(None)?;
+        self.eat_token(TokenType::RightParenthesis, None)?;
+        Ok(Parameter {
+            pattern,
             type_annotation,
         })
     }
@@ -1009,7 +1077,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         if let Some(token) = self.peek_next_meaningful_token()? {
-            match &token.token_type {
+            let expression = match &token.token_type {
                 TokenType::Period => {
                     let period = self.next_meaningful_token()?.unwrap();
                     Ok(Expression::Lambda(Box::new(
@@ -1042,18 +1110,23 @@ impl<'a> Parser<'a> {
                 }
                 TokenType::KeywordLet => {
                     let keyword_let = self.next_meaningful_token()?.unwrap();
-                    let let_statement = self.parse_let_statement(None, keyword_let)?;
-                    self.eat_token(TokenType::Semicolon, None)?;
                     Ok(Expression::Let {
-                        let_statement: Box::new(let_statement),
-                        body: Box::new(self.parse_low_precedence_expression()?),
+                        keyword_let,
+                        left: self.parse_destructure_pattern()?,
+                        type_annotation: self.try_parse_type_annotation()?,
+                        right: {
+                            self.eat_token(TokenType::Equals, None)?;
+                            Box::new(self.parse_mid_precedence_expression()?)
+                        },
+                        body: {
+                            self.eat_token(TokenType::Semicolon, None)?;
+                            Box::new(self.parse_low_precedence_expression()?)
+                        },
                     })
                 }
-                _ => {
-                    let simple_expression = self.parse_high_precedence_expression()?;
-                    self.try_parse_function_call(simple_expression)
-                }
-            }
+                _ => self.parse_high_precedence_expression(),
+            }?;
+            self.try_parse_function_call(expression)
         } else {
             Err(Parser::unexpected_eof(Some(ParseContext::Expression)))
         }
