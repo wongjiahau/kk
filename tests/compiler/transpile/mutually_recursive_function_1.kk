@@ -16,12 +16,11 @@ let "is odd"
   | #succ(n) -> n "is even"
   }
 
-entry {
-  let one = #succ(#zero),
-  let two = #succ(one),
-  #zero "is odd" print, // false
-  one "is even" print, // false
-  two "is even" print, // true
-  two "is odd" print, // false
+entry
+  let one = #succ(#zero);
+  #zero "is odd" print; // false
+  let two = #succ(one);
+  one "is even" print; // false
+  two "is even" print; // true
+  two "is odd" print; // false
   #succ(two) "is odd" print // false
-}

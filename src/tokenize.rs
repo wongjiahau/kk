@@ -323,7 +323,7 @@ impl Tokenizer {
                                             let mut parser = Parser::new(self);
                                             interpolated_string_sections.push(
                                                 InterpolatedStringSection::Expression(Box::new(
-                                                    parser.parse_expression()?,
+                                                    parser.parse_mid_precedence_expression()?,
                                                 )),
                                             );
                                             parser.eat_token(TokenType::RightCurlyBracket, None)?;

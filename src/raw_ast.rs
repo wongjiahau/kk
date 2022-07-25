@@ -159,9 +159,7 @@ pub struct EnumConstructorDefinition {
 
 #[derive(Debug, Clone)]
 pub struct EnumConstructorDefinitionPayload {
-    pub left_parenthesis: Token,
     pub type_annotation: TypeAnnotation,
-    pub right_parenthesis: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -182,6 +180,11 @@ pub struct NamedTypeAnnotationArguments {
 
 #[derive(Debug, Clone)]
 pub enum TypeAnnotation {
+    Parenthesized {
+        left_parenthesis: Token,
+        type_annotation: Box<TypeAnnotation>,
+        right_parenthesis: Token,
+    },
     Scheme {
         type_variables: TypeVariablesDeclaration,
         type_annotation: Box<TypeAnnotation>,
@@ -278,6 +281,10 @@ pub struct DestructuredRecordKeyValue {
 
 #[derive(Debug, Clone)]
 pub enum Expression {
+    Statements {
+        current: Box<Expression>,
+        next: Box<Expression>,
+    },
     Null(Token),
     Parenthesized {
         left_parenthesis: Token,

@@ -1021,6 +1021,9 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
             let_statement,
             body,
         } => has_direct_function_call(&let_statement.right).or(has_direct_function_call(&body)),
+        Expression::Statements { current, next } => {
+            has_direct_function_call(current).or(has_direct_function_call(next))
+        }
     }
 }
 
@@ -1616,6 +1619,11 @@ impl Positionable for TypeAnnotation {
                 .left_angular_bracket
                 .position
                 .join(type_annotation.position()),
+            TypeAnnotation::Parenthesized {
+                left_parenthesis,
+                right_parenthesis,
+                ..
+            } => left_parenthesis.position.join(right_parenthesis.position),
         }
     }
 }
@@ -1767,6 +1775,7 @@ impl Positionable for Expression {
                 let_statement,
                 body,
             } => let_statement.keyword_let.position.join(body.position()),
+            Expression::Statements { current, next } => current.position().join(next.position()),
         }
     }
 }
@@ -3194,6 +3203,17 @@ fn infer_expression_type_(
                 },
             })
         }),
+        Expression::Statements { current, next } => {
+            let current = infer_expression_type(module, None, &current)?;
+            let next = infer_expression_type(module, None, &next)?;
+            Ok(InferExpressionResult {
+                type_value: next.type_value,
+                expression: InferredExpression::Block {
+                    statements: vec![InferredStatement::Expression(current.expression)],
+                    return_value: Box::new(next.expression),
+                },
+            })
+        }
     }?;
     Ok(InferExpressionResult {
         type_value: module.apply_subtitution_to_type(&result.type_value),
@@ -3205,8 +3225,14 @@ impl Positionable for EnumConstructorDefinition {
     fn position(&self) -> Position {
         match &self.payload {
             None => self.name.position.clone(),
-            Some(payload) => self.name.position.join(payload.right_parenthesis.position),
+            Some(payload) => self.name.position.join(payload.position()),
         }
+    }
+}
+
+impl Positionable for EnumConstructorDefinitionPayload {
+    fn position(&self) -> Position {
+        self.type_annotation.position()
     }
 }
 
@@ -3928,6 +3954,9 @@ pub fn type_annotation_to_type(
             })?,
             constraints: vec![],
         }))),
+        TypeAnnotation::Parenthesized {
+            type_annotation, ..
+        } => type_annotation_to_type(module, type_annotation),
     }
 }
 

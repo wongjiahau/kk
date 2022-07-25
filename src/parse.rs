@@ -242,7 +242,9 @@ impl<'a> Parser<'a> {
                         iter = tokenizer.remaining_characters().into_iter();
                     }
                 }
-                _ => Ok(vec![Statement::Expression(self.parse_expression()?)]),
+                _ => Ok(vec![Statement::Expression(
+                    self.parse_low_precedence_expression()?,
+                )]),
             },
             None => Err(Parser::unexpected_eof(context)),
         }
@@ -256,10 +258,9 @@ impl<'a> Parser<'a> {
         if keyword_export.is_some() {
             panic!("Cannot export entry")
         }
-        let context = Some(ParseContext::EntryStatement);
         Ok(Statement::Entry(EntryStatement {
             keyword_entry,
-            expression: self.parse_expression()?,
+            expression: self.parse_low_precedence_expression()?,
         }))
     }
 
@@ -282,7 +283,7 @@ impl<'a> Parser<'a> {
                 let keyword_let = self.eat_token(TokenType::KeywordLet, context)?;
                 let name = self.eat_token(TokenType::Identifier, context)?;
                 self.eat_token(TokenType::Equals, context)?;
-                let expression = self.parse_expression()?;
+                let expression = self.parse_mid_precedence_expression()?;
                 definitions.push(ImplementDefinition {
                     keyword_let,
                     name,
@@ -349,7 +350,7 @@ impl<'a> Parser<'a> {
         let left = self.parse_destructure_pattern()?;
         let type_annotation = self.try_parse_type_annotation()?;
         self.eat_token(TokenType::Equals, context)?;
-        let right = self.parse_expression()?;
+        let right = self.parse_mid_precedence_expression()?;
         Ok(LetStatement {
             keyword_export,
             keyword_let,
@@ -551,14 +552,18 @@ impl<'a> Parser<'a> {
         let context = Some(ParseContext::EnumConstructorDefinition);
         let name = self.eat_token(TokenType::Tag, context)?;
         if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
-            let type_annotation = self.parse_type_annotation(context)?;
-            let right_parenthesis = self.eat_token(TokenType::RightParenthesis, context)?;
             Ok(EnumConstructorDefinition {
                 name,
                 payload: Some(Box::new(EnumConstructorDefinitionPayload {
-                    left_parenthesis,
+                    type_annotation: self.parse_parenthesized_type_annotation(left_parenthesis)?,
+                })),
+            })
+        } else if let Some(left_curly_bracket) = self.try_eat_token(TokenType::LeftCurlyBracket)? {
+            let type_annotation = self.parse_record_type_annotation(left_curly_bracket)?;
+            Ok(EnumConstructorDefinition {
+                name,
+                payload: Some(Box::new(EnumConstructorDefinitionPayload {
                     type_annotation,
-                    right_parenthesis,
                 })),
             })
         } else {
@@ -769,32 +774,8 @@ impl<'a> Parser<'a> {
                     })
                 }
                 TokenType::LeftCurlyBracket => {
-                    let hash_left_curly_bracket = token;
-                    let context = Some(ParseContext::TypeAnnotationRecord);
-                    let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = Vec::new();
-                    let right_curly_bracket = loop {
-                        if let Some(right_curly_bracket) =
-                            self.try_eat_token(TokenType::RightCurlyBracket)?
-                        {
-                            break right_curly_bracket;
-                        }
-                        let key = self.eat_token(TokenType::Identifier, context)?;
-                        self.eat_token(TokenType::Colon, context)?;
-                        let type_annotation = self.parse_type_annotation(context)?;
-                        key_type_annotation_pairs.push((key, type_annotation));
-                        if let Some(right_curly_bracket) =
-                            self.try_eat_token(TokenType::RightCurlyBracket)?
-                        {
-                            break right_curly_bracket;
-                        } else {
-                            self.eat_token(TokenType::Comma, context)?;
-                        }
-                    };
-                    Ok(TypeAnnotation::Record {
-                        left_curly_bracket: hash_left_curly_bracket,
-                        key_type_annotation_pairs,
-                        right_curly_bracket,
-                    })
+                    let left_curly_bracket = token;
+                    self.parse_record_type_annotation(left_curly_bracket)
                 }
                 TokenType::LessThan => {
                     let left_angular_bracket = token;
@@ -806,22 +787,7 @@ impl<'a> Parser<'a> {
                 }
                 TokenType::LeftParenthesis => {
                     let left_parenthesis = token;
-                    let type_annotation = self.parse_type_annotation(context)?;
-                    match &type_annotation {
-                        TypeAnnotation::Named {
-                            name,
-                            type_arguments: None,
-                        } => match self.peek_next_meaningful_token()? {
-                            _ => {
-                                self.eat_token(TokenType::RightParenthesis, context)?;
-                                Ok(type_annotation)
-                            }
-                        },
-                        _ => {
-                            self.eat_token(TokenType::RightParenthesis, context)?;
-                            Ok(type_annotation)
-                        }
-                    }
+                    self.parse_parenthesized_type_annotation(left_parenthesis)
                 }
                 _ => Err(Parser::invalid_token(token, context)),
             }?;
@@ -829,6 +795,33 @@ impl<'a> Parser<'a> {
         } else {
             Err(Parser::unexpected_eof(context))
         }
+    }
+
+    fn parse_record_type_annotation(
+        &mut self,
+        left_curly_bracket: Token,
+    ) -> Result<TypeAnnotation, ParseError> {
+        let context = Some(ParseContext::TypeAnnotationRecord);
+        let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = Vec::new();
+        let right_curly_bracket = loop {
+            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
+                break right_curly_bracket;
+            }
+            let key = self.eat_token(TokenType::Identifier, context)?;
+            self.eat_token(TokenType::Colon, context)?;
+            let type_annotation = self.parse_type_annotation(context)?;
+            key_type_annotation_pairs.push((key, type_annotation));
+            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
+                break right_curly_bracket;
+            } else {
+                self.eat_token(TokenType::Comma, context)?;
+            }
+        };
+        Ok(TypeAnnotation::Record {
+            left_curly_bracket,
+            key_type_annotation_pairs,
+            right_curly_bracket,
+        })
     }
 
     fn try_parse_function_type_annotation(
@@ -860,7 +853,7 @@ impl<'a> Parser<'a> {
                 self.parse_record_update(first_argument, left_curly_bracket)?
             } else if self.try_eat_token(TokenType::LeftParenthesis)?.is_some() {
                 // Then this is a immediately invoked function
-                let function = self.parse_expression()?;
+                let function = self.parse_mid_precedence_expression()?;
                 self.eat_token(
                     TokenType::RightParenthesis,
                     Some(ParseContext::ExpressionFunctionCall),
@@ -937,7 +930,7 @@ impl<'a> Parser<'a> {
                 })
             } else if self.try_eat_token(TokenType::Colon)?.is_some() {
                 // this is a value update
-                let new_value = self.parse_expression()?;
+                let new_value = self.parse_mid_precedence_expression()?;
                 record_updates.push(RecordUpdate::ValueUpdate {
                     property_name,
                     new_value,
@@ -977,7 +970,7 @@ impl<'a> Parser<'a> {
                     TokenType::Identifier | TokenType::Operator => {
                         return Ok(Some(FunctionCallRestArguments { arguments }))
                     }
-                    _ => arguments.push(self.parse_simple_expression()?),
+                    _ => arguments.push(self.parse_high_precedence_expression()?),
                 }
             }
         }
@@ -994,7 +987,27 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_expression(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_low_precedence_expression(&mut self) -> Result<Expression, ParseError> {
+        let expression = self.parse_mid_precedence_expression()?;
+        self.try_parse_statement_expression(expression)
+    }
+
+    fn try_parse_statement_expression(
+        &mut self,
+        expression: Expression,
+    ) -> Result<Expression, ParseError> {
+        if self.try_eat_token(TokenType::Semicolon)?.is_some() {
+            let next = self.parse_mid_precedence_expression()?;
+            self.try_parse_statement_expression(Expression::Statements {
+                current: Box::new(expression),
+                next: Box::new(next),
+            })
+        } else {
+            Ok(expression)
+        }
+    }
+
+    pub fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         if let Some(token) = self.peek_next_meaningful_token()? {
             match &token.token_type {
                 TokenType::Period => {
@@ -1020,31 +1033,12 @@ impl<'a> Parser<'a> {
 
                 TokenType::LeftParenthesis => {
                     let left_parenthesis = self.next_meaningful_token()?.unwrap();
-                    let expression = self.parse_expression()?;
-                    match self.next_meaningful_token()? {
-                        None => Err(ParseError {
-                            kind: ParseErrorKind::UnexpectedEof {
-                                expected_token_type: None,
-                            },
-                            context: None, // TODO: add context
-                        }),
-                        Some(token) => {
-                            match token.token_type {
-                                TokenType::RightParenthesis => {
-                                    // This is not a lambda expression
-                                    // Just an expression grouped by parentheses
-                                    Ok(Expression::Parenthesized {
-                                        left_parenthesis,
-                                        right_parenthesis: token,
-                                        value: Box::new(expression),
-                                    })
-                                }
-                                other => {
-                                    panic!("Cannot handle {:?}", other)
-                                }
-                            }
-                        }
-                    }
+                    let expression = self.parse_low_precedence_expression()?;
+                    Ok(Expression::Parenthesized {
+                        left_parenthesis,
+                        right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
+                        value: Box::new(expression),
+                    })
                 }
                 TokenType::KeywordLet => {
                     let keyword_let = self.next_meaningful_token()?.unwrap();
@@ -1052,11 +1046,11 @@ impl<'a> Parser<'a> {
                     self.eat_token(TokenType::Semicolon, None)?;
                     Ok(Expression::Let {
                         let_statement: Box::new(let_statement),
-                        body: Box::new(self.parse_expression()?),
+                        body: Box::new(self.parse_low_precedence_expression()?),
                     })
                 }
                 _ => {
-                    let simple_expression = self.parse_simple_expression()?;
+                    let simple_expression = self.parse_high_precedence_expression()?;
                     self.try_parse_function_call(simple_expression)
                 }
             }
@@ -1065,7 +1059,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_simple_expression(&mut self) -> Result<Expression, ParseError> {
+    fn parse_high_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::Expression);
         let expression = if let Some(token) = self.next_meaningful_token()? {
             match token.token_type {
@@ -1104,7 +1098,7 @@ impl<'a> Parser<'a> {
                                 self.try_eat_token(TokenType::LeftParenthesis)?
                             {
                                 let context = Some(ParseContext::ExpressionEnumConstructor);
-                                let expression = self.parse_expression()?;
+                                let expression = self.parse_low_precedence_expression()?;
                                 let right_parenthesis =
                                     self.eat_token(TokenType::RightParenthesis, context)?;
                                 Some(Box::new(ExpressionEnumConstructorPayload {
@@ -1121,7 +1115,7 @@ impl<'a> Parser<'a> {
                 TokenType::Backtick => {
                     let context = Some(ParseContext::ExpressionQuoted);
                     let opening_backtick = token.clone();
-                    let expression = self.parse_expression()?;
+                    let expression = self.parse_mid_precedence_expression()?;
                     let closing_backtick = self.eat_token(TokenType::Backtick, context)?;
                     Ok(Expression::Quoted {
                         opening_backtick,
@@ -1146,7 +1140,7 @@ impl<'a> Parser<'a> {
             if !elements.is_empty() {
                 self.eat_token(TokenType::Comma, None)?;
             }
-            elements.push(self.parse_expression()?);
+            elements.push(self.parse_low_precedence_expression()?);
         };
         Ok(Expression::Array {
             left_square_bracket,
@@ -1199,7 +1193,7 @@ impl<'a> Parser<'a> {
                     Parser::validate_token(TokenType::Period, other, context)?;
                     let key = self.eat_token(TokenType::Identifier, context)?;
                     let value = if self.try_eat_token(TokenType::Equals)?.is_some() {
-                        self.parse_expression()?
+                        self.parse_low_precedence_expression()?
                     } else {
                         Expression::Identifier(key.clone())
                     };
@@ -1225,7 +1219,7 @@ impl<'a> Parser<'a> {
 
     fn parse_switch_expression(&mut self, keyword_switch: Token) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::ExpressionSwitch);
-        let expression = self.parse_expression()?;
+        let expression = self.parse_mid_precedence_expression()?;
         let left_curly_bracket = self.eat_token(TokenType::LeftCurlyBracket, context)?;
         let head = self.parse_switch_case(context)?;
         let mut tail = vec![];
@@ -1252,7 +1246,7 @@ impl<'a> Parser<'a> {
         let keyword_case = self.eat_token(TokenType::KeywordCase, context)?;
         let pattern = self.parse_destructure_pattern()?;
         self.eat_token(TokenType::Colon, context)?;
-        let body = self.parse_expression()?;
+        let body = self.parse_mid_precedence_expression()?;
         Ok(SwitchCase {
             keyword_case,
             pattern,
@@ -1264,10 +1258,10 @@ impl<'a> Parser<'a> {
         let context = Some(ParseContext::ExpressionIf);
         Ok(Expression::If {
             keyword_if,
-            condition: Box::new(self.parse_expression()?),
-            if_true: Box::new(self.parse_expression()?),
+            condition: Box::new(self.parse_mid_precedence_expression()?),
+            if_true: Box::new(self.parse_mid_precedence_expression()?),
             keyword_else: self.eat_token(TokenType::KeywordElse, context)?,
-            if_false: Box::new(self.parse_expression()?),
+            if_false: Box::new(self.parse_mid_precedence_expression()?),
         })
     }
 
@@ -1472,7 +1466,7 @@ impl<'a> Parser<'a> {
     fn parse_function_branch(&mut self, start_token: Token) -> Result<FunctionBranch, ParseError> {
         let parameter = self.parse_destructure_pattern()?;
         self.eat_token(TokenType::ArrowRight, None)?;
-        let body = self.parse_expression()?;
+        let body = self.parse_low_precedence_expression()?;
         Ok(FunctionBranch {
             start_token,
             parameter: Box::new(parameter),
@@ -1485,7 +1479,7 @@ impl<'a> Parser<'a> {
             return Ok(previous);
         }
 
-        let next = self.parse_simple_expression()?;
+        let next = self.parse_high_precedence_expression()?;
         let previous = match &next {
             // TODO: handle operator
 
@@ -1523,6 +1517,19 @@ impl<'a> Parser<'a> {
                     | TokenType::Semicolon
             )),
         }
+    }
+
+    fn parse_parenthesized_type_annotation(
+        &mut self,
+        left_parenthesis: Token,
+    ) -> Result<TypeAnnotation, ParseError> {
+        let context = None;
+        let type_annotation = self.parse_type_annotation(context)?;
+        Ok(TypeAnnotation::Parenthesized {
+            left_parenthesis,
+            type_annotation: Box::new(type_annotation),
+            right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
+        })
     }
 }
 
@@ -1605,7 +1612,6 @@ fn convert_expression_to_pattern(
         | Expression::InterpolatedString { .. }
         | Expression::Quoted { .. }
         | Expression::Lambda(_)
-        | Expression::Lambda(_)
         | Expression::FunctionCall(_)
         | Expression::RecordAccess { .. }
         | Expression::RecordUpdate { .. }
@@ -1613,6 +1619,7 @@ fn convert_expression_to_pattern(
         | Expression::Switch { .. }
         | Expression::Block(_)
         | Expression::Let { .. }
+        | Expression::Statements { .. }
         | Expression::UnsafeJavascript { .. } => Err(ParseError {
             context,
             kind: ParseErrorKind::ExpectedPattern {
