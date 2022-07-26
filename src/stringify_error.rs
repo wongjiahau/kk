@@ -816,14 +816,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             )
 
         },
-        UnifyErrorKind::NoMatchingFunction { actual_first_argument_type, expected_first_argument_types } => StringifiedError {
+        UnifyErrorKind::NoMatchingValueSymbol {possible_value_symbols} => StringifiedError {
             summary: "No matching overload found.".to_string(),
             body: format!(
-                "\n{}\n\n{}\n\n{}\n\n{}",
-                "I cannot find a version of this function that takes the following type as first argument:",
-                stringify_type(actual_first_argument_type, 2),
-                "But I found other versions of this function that take any of the following type as first argument:",
-                expected_first_argument_types.into_iter().map(|type_value| stringify_type(type_value, 2)).collect::<Vec<String>>().join("\n\n")
+                "todo"
             )
         },
         UnifyErrorKind::ErrorneousImportPath { extra_information } => StringifiedError {
@@ -996,6 +992,11 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::TopLevelLetStatementCannotBeDestructured => todo!(),
         UnifyErrorKind::MissingTypeAnnotationForTopLevelBinding => todo!(),
+        UnifyErrorKind::CannotBeOverloaded => todo!(),
+        UnifyErrorKind::AmbiguousSymbol { matching_value_symbols } => StringifiedError { 
+            summary: "Ambiguous Symbol".to_string(), 
+            body: "Put type annotation for disambiguation".to_string() 
+        },
     }
 }
 

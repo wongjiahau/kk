@@ -1099,15 +1099,6 @@ impl<'a> Parser<'a> {
                     code: self.next_meaningful_token()?.unwrap(),
                 }),
 
-                TokenType::LeftParenthesis => {
-                    let left_parenthesis = self.next_meaningful_token()?.unwrap();
-                    let expression = self.parse_low_precedence_expression()?;
-                    Ok(Expression::Parenthesized {
-                        left_parenthesis,
-                        right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
-                        value: Box::new(expression),
-                    })
-                }
                 TokenType::KeywordLet => {
                     let keyword_let = self.next_meaningful_token()?.unwrap();
                     Ok(Expression::Let {
@@ -1149,6 +1140,15 @@ impl<'a> Parser<'a> {
                 TokenType::Character => Ok(Expression::Character(token.clone())),
                 TokenType::LeftCurlyBracket => self.parse_lambda_or_record(token.clone()),
                 TokenType::LeftSquareBracket => self.parse_array(token.clone()),
+                TokenType::LeftParenthesis => {
+                    let left_parenthesis = token;
+                    let expression = self.parse_low_precedence_expression()?;
+                    Ok(Expression::Parenthesized {
+                        left_parenthesis,
+                        right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
+                        value: Box::new(expression),
+                    })
+                }
                 TokenType::Float => Ok(Expression::Float(token.clone())),
                 TokenType::Integer => Ok(Expression::Integer(token.clone())),
                 TokenType::KeywordTrue => Ok(Expression::Boolean {

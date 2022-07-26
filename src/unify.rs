@@ -1031,6 +1031,9 @@ impl UnifyError {
 
 #[derive(Debug)]
 pub enum UnifyErrorKind {
+    AmbiguousSymbol {
+        matching_value_symbols: Vec<(SymbolUid, ValueSymbol)>,
+    },
     ConstraintUnsatisfied {
         interface_name: String,
         for_types: NonEmpty<Type>,
@@ -1094,9 +1097,8 @@ pub enum UnifyErrorKind {
     AmbiguousFunction {
         available_function_signatures: Vec<FunctionSignature>,
     },
-    NoMatchingFunction {
-        actual_first_argument_type: Type,
-        expected_first_argument_types: Vec<Type>,
+    NoMatchingValueSymbol {
+        possible_value_symbols: Vec<(SymbolUid, ValueSymbol)>,
     },
     AmbiguousConstructorUsage {
         constructor_name: String,
@@ -1156,6 +1158,7 @@ pub enum UnifyErrorKind {
     },
     TopLevelLetStatementCannotBeDestructured,
     MissingTypeAnnotationForTopLevelBinding,
+    CannotBeOverloaded,
 }
 
 /// We use IndexMap instead of HashMap for storing imported modules because we need to preserve the insertion order,
@@ -2615,56 +2618,40 @@ fn infer_expression_type_(
             }
         }
         Expression::Identifier(variable) => {
-            // check if the variable name matches any constructor
-            if module.matches_some_enum_constructor(&variable.representation) {
-                infer_expression_type_(
-                    module,
-                    expected_type,
-                    &Expression::EnumConstructor {
-                        name: variable.clone(),
-                        payload: None,
-                    },
-                )
-            } else {
-                let result = module.get_value_symbol(
-                    &variable,
-                    &expected_type,
-                    module.current_scope_name(),
-                )?;
+            let result =
+                module.get_value_symbol(&variable, &expected_type, module.current_scope_name())?;
 
-                // If this variable has type of type scheme, then instantiate the type scheme with fresh type variables.
-                // Note that we have to bubble up the constraints provided by the type scheme if applicable.
-                let identifier = Identifier {
-                    uid: result.symbol_uid,
-                    token: variable.clone(),
-                };
-                match result.type_value {
-                    Type::TypeScheme(type_scheme) => {
-                        let (type_value, constraints) =
-                            instantiate_type_scheme(module, *type_scheme);
+            // If this variable has type of type scheme, then instantiate the type scheme with fresh type variables.
+            // Note that we have to bubble up the constraints provided by the type scheme if applicable.
+            let identifier = Identifier {
+                uid: result.symbol_uid,
+                token: variable.clone(),
+            };
+            match result.type_value {
+                Type::TypeScheme(type_scheme) => {
+                    let (type_value, constraints) = instantiate_type_scheme(module, *type_scheme);
 
-                        match constraints.split_first() {
-                            Some((head, tail)) => Ok(InferExpressionResult {
-                                type_value,
-                                expression: InferredExpression::ConstrainedVariable {
-                                    constraints: NonEmpty {
-                                        head: head.clone(),
-                                        tail: tail.to_vec(),
-                                    },
-                                    identifier,
+                    match constraints.split_first() {
+                        Some((head, tail)) => Ok(InferExpressionResult {
+                            type_value,
+                            expression: InferredExpression::ConstrainedVariable {
+                                constraints: NonEmpty {
+                                    head: head.clone(),
+                                    tail: tail.to_vec(),
                                 },
-                            }),
-                            None => Ok(InferExpressionResult {
-                                type_value,
-                                expression: InferredExpression::Variable(identifier),
-                            }),
-                        }
+                                identifier,
+                            },
+                        }),
+                        None => Ok(InferExpressionResult {
+                            type_value,
+                            expression: InferredExpression::Variable(identifier),
+                        }),
                     }
-                    other => Ok(InferExpressionResult {
-                        type_value: other,
-                        expression: InferredExpression::Variable(identifier),
-                    }),
                 }
+                other => Ok(InferExpressionResult {
+                    type_value: other,
+                    expression: InferredExpression::Variable(identifier),
+                }),
             }
         }
         Expression::RecordAccess {
@@ -4029,32 +4016,15 @@ fn infer_destructure_pattern_(
             kind: InferredDestructurePatternKind::Underscore(token.clone()),
         }),
         DestructurePattern::Identifier(identifier) => {
-            // If this identifier matches any enum constructor,
-            // then treat it as an enum constructor
-            if module.matches_some_enum_constructor(&identifier.representation) {
-                infer_destructure_pattern(
-                    module,
-                    expected_type,
-                    &DestructurePattern::EnumConstructor {
-                        name: identifier.clone(),
-                        payload: None,
-                    },
-                    exported,
-                )
-            }
-            // If this identifier does not match any enum constructor
-            // then treat it as a new variable
-            else {
-                let (uid, type_value) =
-                    module.insert_value_symbol_with_type(identifier, expected_type, exported)?;
-                Ok(InferredDestructurePattern {
-                    type_value,
-                    kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
-                        uid,
-                        token: identifier.clone(),
-                    })),
-                })
-            }
+            let (uid, type_value) =
+                module.insert_value_symbol_with_type(identifier, expected_type, exported)?;
+            Ok(InferredDestructurePattern {
+                type_value,
+                kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
+                    uid,
+                    token: identifier.clone(),
+                })),
+            })
         }
         DestructurePattern::Tuple(tuple) => {
             let typechecked_values = tuple.values.clone().fold_result(|destructure_pattern| {

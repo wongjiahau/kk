@@ -640,7 +640,9 @@ impl Module {
                 self.symbol_entries
                     .iter()
                     .map(|entry| {
-                        if entry.scope_name == scope_name && entry.symbol.meta.name.representation == name {
+                        if entry.scope_name == scope_name
+                            && entry.symbol.meta.name.representation == name
+                        {
                             let error = Err(UnifyError {
                                 position: new_symbol.meta.name.position,
                                 kind: UnifyErrorKind::DuplicatedIdentifier {
@@ -651,46 +653,23 @@ impl Module {
                             });
                             match &entry.symbol.kind {
                                 SymbolKind::EnumConstructor(constructor)
-                                    if constructor.constructor_name == new_symbol.meta.name.representation => {
+                                    if constructor.constructor_name
+                                        == new_symbol.meta.name.representation =>
+                                {
                                     error
                                 }
                                 SymbolKind::Value(existing_value_symbol) => {
-                                    fn extract_function_type(type_value: Type) -> Option<FunctionType> {
-                                        match type_value {
-                                            Type::Function(function_type) => Some(function_type),
-                                            Type::TypeScheme(type_scheme) => {
-                                                match &type_scheme.type_value {
-                                                    Type::Function(function_type) => Some(function_type.clone()),
-                                                    _ => None
-                                                }
-                                            }
-                                            _ => None
-                                        }
-                                    }
-                                    let existing_function_type = extract_function_type(existing_value_symbol.type_value.clone());
-                                    let new_function_type = extract_function_type(new_value_symbol.type_value.clone());
-                                    match (existing_function_type, new_function_type) {
-                                        (Some(existing_function_type), Some(new_function_type)) => {
-                                            if overlap(
-                                                &existing_function_type.parameter_type,
-                                                &new_function_type.parameter_type,
-                                                true
-                                            ) {
-                                                Err(UnifyError {
-                                                    position: new_symbol.meta.name.position,
-                                                    kind: UnifyErrorKind::ConflictingFunctionDefinition {
-                                                        function_name: new_symbol.meta.name.representation.clone(),
-                                                        existing_first_parameter_type: *existing_function_type.parameter_type.clone(),
-                                                        new_first_parameter_type: *new_function_type.parameter_type.clone(),
-                                                        first_declared_at: entry.symbol.meta.name.position,
-                                                    }
-                                                })
-                                            }
-                                            else {
-                                                Ok(())
-                                            }
-                                        }
-                                        _ => error
+                                    if overlap(
+                                        &existing_value_symbol.type_value,
+                                        &new_value_symbol.type_value,
+                                        true,
+                                    ) {
+                                        Err(UnifyError {
+                                            position: new_symbol.meta.name.position,
+                                            kind: UnifyErrorKind::CannotBeOverloaded,
+                                        })
+                                    } else {
+                                        Ok(())
                                     }
                                 }
                                 _ => Ok(()),
@@ -963,53 +942,21 @@ impl Module {
                         type_value: head.1.type_value.clone(),
                     })
                 } else {
-                    let matching_function_signatures = matching_value_symbols
-                        .iter()
-                        .filter_map(|(symbol_uid, symbol)| match &symbol.type_value {
-                            Type::Function(function_type) => Some(FunctionSignature {
-                                constraints: vec![],
-                                symbol_uid: symbol_uid.clone(),
-                                type_variables: None,
-                                function_type: function_type.clone(),
-                            }),
-                            Type::TypeScheme(type_scheme) => match type_scheme.type_value.clone() {
-                                Type::Function(function_type) => Some(FunctionSignature {
-                                    constraints: type_scheme.constraints.clone(),
-                                    symbol_uid: symbol_uid.clone(),
-                                    type_variables: Some(type_scheme.type_variables.clone()),
-                                    function_type,
-                                }),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .collect::<Vec<FunctionSignature>>();
-
                     match expected_type {
-                        Some(Type::Function(expected_function_type)) => {
-                            // check if the actual first parameter type is not implicit type variable
-                            if let Type::ImplicitTypeVariable { .. } = self
-                                .apply_subtitution_to_type(&expected_function_type.parameter_type)
-                            {
-                                return Err(UnifyError {
-                                    position: symbol_name.position,
-                                    kind: UnifyErrorKind::AmbiguousFunction {
-                                        available_function_signatures: matching_function_signatures,
-                                    },
-                                });
-                            }
-
+                        None => Err(UnifyError {
+                            position: symbol_name.position,
+                            kind: UnifyErrorKind::AmbiguousSymbol {
+                                matching_value_symbols,
+                            },
+                        }),
+                        Some(expected_type) => {
                             // find matching function signatures based on concrete type
-                            let matching_function_signature =
-                                matching_function_signatures.iter().find(|signature| {
-                                    overlap(
-                                        signature.function_type.parameter_type.as_ref(),
-                                        expected_function_type.parameter_type.as_ref(),
-                                        true,
-                                    )
+                            let matching_value_symbol =
+                                matching_value_symbols.iter().find(|(uid, value_symbol)| {
+                                    overlap(&expected_type, &value_symbol.type_value, true)
                                 });
 
-                            match matching_function_signature {
+                            match matching_value_symbol {
                                 // If no matching function signature found, search in parent scope
                                 None => {
                                     let parent_scope_name =
@@ -1017,43 +964,25 @@ impl Module {
                                     match parent_scope_name {
                                         None => Err(UnifyError {
                                             position: symbol_name.position,
-                                            kind: UnifyErrorKind::NoMatchingFunction {
-                                                actual_first_argument_type: *expected_function_type
-                                                    .parameter_type
-                                                    .clone(),
-                                                expected_first_argument_types:
-                                                    matching_function_signatures
-                                                        .into_iter()
-                                                        .map(|signature| {
-                                                            *signature
-                                                                .function_type
-                                                                .parameter_type
-                                                                .clone()
-                                                        })
-                                                        .collect(),
+                                            kind: UnifyErrorKind::NoMatchingValueSymbol {
+                                                possible_value_symbols: matching_value_symbols,
                                             },
                                         }),
                                         Some(parent_scope_name) => self.get_value_symbol(
                                             symbol_name,
-                                            &Some(Type::Function(expected_function_type.clone())),
+                                            &Some(expected_type.clone()),
                                             parent_scope_name,
                                         ),
                                     }
                                 }
 
                                 // If found one matching function signature, return Ok
-                                Some(signature) => Ok(GetValueSymbolResult {
-                                    symbol_uid: signature.symbol_uid.clone(),
-                                    type_value: signature.as_type_value(),
+                                Some((symbol_uid, symbol)) => Ok(GetValueSymbolResult {
+                                    symbol_uid: symbol_uid.clone(),
+                                    type_value: symbol.type_value.clone(),
                                 }),
                             }
                         }
-                        _ => Err(UnifyError {
-                            position: symbol_name.position,
-                            kind: UnifyErrorKind::AmbiguousFunction {
-                                available_function_signatures: matching_function_signatures,
-                            },
-                        }),
                     }
                 }
             }
