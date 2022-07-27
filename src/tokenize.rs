@@ -238,31 +238,6 @@ impl Tokenizer {
                 //     }
                 //     .into_parse_error()),
                 // },
-                // Tag
-                '\'' => {
-                    let quote = character;
-                    let mut characters = self
-                        .characters_iterator
-                        .by_ref()
-                        .peeking_take_while(|character| character.value != quote.value)
-                        .collect::<Vec<Character>>();
-
-                    match self.characters_iterator.next() {
-                        Some(backtick) => {
-                            characters.push(backtick);
-
-                            let representation =
-                                format!("{}{}", quote.value, stringify(characters.clone()),);
-                            Ok(Some(Token {
-                                // token_type:  get_token_type(representation.clone()),
-                                token_type: TokenType::String,
-                                representation,
-                                position: make_position(quote, characters.last()),
-                            }))
-                        }
-                        None => panic!("missing closing single quote(') for string"),
-                    }
-                }
                 // Quoted Identifers
                 // Similar to Postgres Quoted Identifier using double-quote
                 '"' => {
@@ -286,7 +261,7 @@ impl Tokenizer {
                     }
                 }
                 // String
-                '`' => {
+                '\'' => {
                     let start_quote = character;
                     enum StartOf {
                         Nothing,
@@ -307,7 +282,7 @@ impl Tokenizer {
                                             _ => StartOf::Escape,
                                         },
                                     ),
-                                    '`' => match start_of {
+                                    '\'' => match start_of {
                                         StartOf::Escape => (Some(character), StartOf::Nothing),
                                         _ => break Ok(character),
                                     },
