@@ -219,6 +219,10 @@ pub enum TypeAnnotation {
         parameter: Box<TypeAnnotation>,
         return_type: Box<TypeAnnotation>,
     },
+    Unit {
+        left_parenthesis: Token,
+        right_parenthesis: Token,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,7 +243,10 @@ pub enum DestructurePattern {
         token: Token,
         value: bool,
     },
-    Null(Token),
+    Unit {
+        left_parenthesis: Token,
+        right_parenthesis: Token,
+    },
     Underscore(Token),
     Identifier(Token),
     EnumConstructor {
@@ -291,7 +298,10 @@ pub enum Expression {
         current: Box<Expression>,
         next: Box<Expression>,
     },
-    Null(Token),
+    Unit {
+        left_parenthesis: Token,
+        right_parenthesis: Token,
+    },
     Parenthesized {
         left_parenthesis: Token,
         right_parenthesis: Token,
@@ -602,8 +612,6 @@ pub enum TokenType {
     KeywordWhere,
     KeywordInterface,
     KeywordImplements,
-    KeywordIf,
-    KeywordElse,
     KeywordSwitch,
     KeywordCase,
     KeywordEntry,
@@ -611,7 +619,6 @@ pub enum TokenType {
     KeywordType,
     KeywordEnum,
     KeywordDo,
-    KeywordNull,
     KeywordTrue,
     KeywordFalse,
     KeywordImport,

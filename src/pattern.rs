@@ -55,7 +55,10 @@ pub enum CheckablePatternKind {
         token: Token,
         value: bool,
     },
-    Null(Token),
+    Unit {
+        left_parenthesis: Token,
+        right_parenthesis: Token,
+    },
     Underscore(Token),
     Identifier(Box<Identifier>),
     EnumConstructor {
@@ -82,8 +85,11 @@ impl Positionable for CheckablePatternKind {
         match self {
             CheckablePatternKind::Infinite { token, .. }
             | CheckablePatternKind::Boolean { token, .. }
-            | CheckablePatternKind::Null(token)
             | CheckablePatternKind::Underscore(token) => token.position,
+            CheckablePatternKind::Unit {
+                left_parenthesis,
+                right_parenthesis,
+            } => left_parenthesis.position.join(right_parenthesis.position),
             CheckablePatternKind::Identifier(identifier) => identifier.token.position,
             CheckablePatternKind::EnumConstructor {
                 constructor_name,
@@ -715,13 +721,13 @@ pub fn match_pattern(
             },
         ),
         (
-            CheckablePatternKind::Null(_),
+            CheckablePatternKind::Unit { .. },
             ExpandablePattern::Any {
-                type_value: Type::Null,
+                type_value: Type::Unit,
             },
         ) => {
-            // Since Null has only one case, we can just return Matched
-            // as long as there is one branch matching for null
+            // Since Unit has only one case, we can just return Matched
+            // as long as there is one branch matching for unit
             MatchPatternResult::Matched
         }
         (_, ExpandablePattern::Any { type_value }) => MatchPatternResult::PartiallyMatched {

@@ -44,7 +44,7 @@ pub struct Identifier {
 
 #[derive(Debug, Clone)]
 pub enum InferredExpression {
-    Null,
+    Unit,
     Boolean(bool),
     Float {
         representation: String,
@@ -156,7 +156,10 @@ pub enum InferredDestructurePatternKind {
         token: Token,
         value: bool,
     },
-    Null(Token),
+    Unit {
+        left_parenthesis: Token,
+        right_parenthesis: Token,
+    },
     Underscore(Token),
     Identifier(Box<Identifier>),
     EnumConstructor {
@@ -193,9 +196,12 @@ impl InferredDestructurePatternKind {
         match self {
             InferredDestructurePatternKind::Infinite { token, .. }
             | InferredDestructurePatternKind::Boolean { token, .. }
-            | InferredDestructurePatternKind::Null(token)
             | InferredDestructurePatternKind::Underscore(token) => token.position,
             InferredDestructurePatternKind::Identifier(identifier) => identifier.token.position,
+            InferredDestructurePatternKind::Unit {
+                left_parenthesis,
+                right_parenthesis,
+            } => left_parenthesis.position.join(right_parenthesis.position),
             InferredDestructurePatternKind::EnumConstructor {
                 constructor_name,
                 payload,

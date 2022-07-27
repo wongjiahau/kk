@@ -365,7 +365,7 @@ impl Module {
             Type::Boolean => Type::Boolean,
             Type::String => Type::String,
             Type::Character => Type::Character,
-            Type::Null => Type::Null,
+            Type::Unit => Type::Unit,
             Type::ExplicitTypeVariable(type_variable) => {
                 Type::ExplicitTypeVariable(type_variable.clone())
             }
@@ -1211,7 +1211,7 @@ fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bo
         }
 
         (Type::ImplicitTypeVariable { .. }, _) | (_, Type::ImplicitTypeVariable { .. }) => true,
-        (Type::Null, Type::Null) => true,
+        (Type::Unit, Type::Unit) => true,
         (Type::String, Type::String) => true,
         (Type::Boolean, Type::Boolean) => true,
         (Type::Integer, Type::Integer) => true,
@@ -1344,7 +1344,7 @@ fn built_in_symbols() -> Vec<Symbol> {
                     },
                     type_value: Type::Function(FunctionType {
                         parameter_type: Box::new(Type::ExplicitTypeVariable(type_variable)),
-                        return_type: Box::new(Type::Null),
+                        return_type: Box::new(Type::Unit),
                     }),
                 })),
             }),
@@ -1377,7 +1377,7 @@ fn built_in_symbols() -> Vec<Symbol> {
         Symbol {
             meta: meta("Null".to_string()),
             kind: SymbolKind::Type(TypeSymbol {
-                type_value: Type::Null,
+                type_value: Type::Unit,
             }),
         },
         Symbol {

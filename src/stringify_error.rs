@@ -238,13 +238,10 @@ struct ParseContextDescription {
 
 fn explain_token_type_usage(token_type: TokenType) -> &'static str {
     match token_type {
-        TokenType::KeywordIf => "used for creating if-expression, for example:\n\n\tif(happy) \"red\" else \"blue\"",
-        TokenType::KeywordElse => "used for creating if-expression, for example:\n\n\tif(happy) \"red\" else \"blue\"",
         TokenType::KeywordLet => "used for defining variables, for example:\n\n\tlet x = 1",
         TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
         TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example:\n\n\tenum Color = Red Blue",
         TokenType::KeywordDo => "used for defining expression with side effects, such as:\n\n\tdo \"Hello world\".print",
-        TokenType::KeywordNull => "only used to create a value with the null type (i.e. unit type)",
         TokenType::KeywordTrue | TokenType::KeywordFalse
             => "only used to create a boolean value",
         TokenType::KeywordImport => "only used for importing symbols from other files, for example:\n\n\timport \"./foo.kk\" { bar spam hello: hello2}",
@@ -461,13 +458,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
 
 fn stringify_token_type(token_type: TokenType) -> &'static str {
     match token_type {
-        TokenType::KeywordIf => "if",
-        TokenType::KeywordElse => "else",
         TokenType::KeywordLet => "let",
         TokenType::KeywordType => "type",
         TokenType::KeywordEnum => "enum",
         TokenType::KeywordDo => "do",
-        TokenType::KeywordNull => "null",
         TokenType::KeywordTrue => "true",
         TokenType::KeywordFalse => "false",
         TokenType::KeywordImport => "import",
@@ -1062,7 +1056,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Boolean => indent_string("Boolean".to_string(), indent_level * 2),
         Type::Float => indent_string("Float".to_string(), indent_level * 2),
         Type::Integer => indent_string("Integer".to_string(), indent_level * 2),
-        Type::Null => indent_string("Null".to_string(), indent_level * 2),
+        Type::Unit => indent_string("Null".to_string(), indent_level * 2),
         Type::String => indent_string("String".to_string(), indent_level * 2),
         Type::Character => indent_string("Character".to_string(), indent_level * 2),
         Type::BuiltInOneArgumentType {
@@ -1162,7 +1156,7 @@ impl CheckablePatternKind {
                 InfinitePatternKind::Integer => token.representation.clone(),
             },
             CheckablePatternKind::Boolean { token, .. } => token.representation.clone(),
-            CheckablePatternKind::Null(_) => "null".to_string(),
+            CheckablePatternKind::Unit{..} => "()".to_string(),
             CheckablePatternKind::Underscore(_) => "_".to_string(),
             CheckablePatternKind::Identifier(identifier) => identifier.token.representation.clone(),
             CheckablePatternKind::EnumConstructor {

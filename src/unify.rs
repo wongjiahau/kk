@@ -413,7 +413,7 @@ pub fn unify_statements(
                 exported: implement_statement.keyword_export.is_some(),
                 left: InferredDestructurePattern {
                     // TODO: remove this unnecessary field
-                    type_value: Type::Null,
+                    type_value: Type::Unit,
                     kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
                         uid,
                         // TODO: remove this dummy field
@@ -449,7 +449,7 @@ pub fn unify_statements(
     let typechecked_top_level_expressions_statements = top_level_expressions
         .into_iter()
         .map(|expression| {
-            let result = infer_expression_type(&mut module, Some(Type::Null), &expression)?;
+            let result = infer_expression_type(&mut module, Some(Type::Unit), &expression)?;
             let expression = solve_constraints(&mut module, result.expression)?;
             Ok(InferredStatement::Expression(expression))
         })
@@ -690,7 +690,7 @@ fn solve_constraints(
                 argument: Box::new(implementations.head),
             })))
         }
-        Null => Ok(Null),
+        Unit => Ok(Unit),
         Boolean(value) => Ok(Boolean(value)),
         Float { representation } => Ok(Float { representation }),
         Integer { representation } => Ok(Integer { representation }),
@@ -936,7 +936,7 @@ fn populate_explicit_type_variables(
 /// If found, return the position of the function call
 fn has_direct_function_call(expression: &Expression) -> Option<Position> {
     match expression {
-        Expression::Null(_)
+        Expression::Unit { .. }
         | Expression::Boolean { .. }
         | Expression::Float(_)
         | Expression::Integer(_)
@@ -1613,6 +1613,10 @@ impl Positionable for TypeAnnotation {
                 left_parenthesis,
                 right_parenthesis,
                 ..
+            }
+            | TypeAnnotation::Unit {
+                left_parenthesis,
+                right_parenthesis,
             } => left_parenthesis.position.join(right_parenthesis.position),
         }
     }
@@ -1624,12 +1628,16 @@ impl Positionable for DestructurePattern {
             DestructurePattern::Infinite { token, .. }
             | DestructurePattern::Identifier(token)
             | DestructurePattern::Underscore(token)
-            | DestructurePattern::Boolean { token, .. }
-            | DestructurePattern::Null(token) => token.position,
+            | DestructurePattern::Boolean { token, .. } => token.position,
             DestructurePattern::EnumConstructor { name, payload, .. } => match payload {
                 None => name.position,
                 Some(payload) => name.position.join(payload.position()),
             },
+
+            DestructurePattern::Unit {
+                left_parenthesis,
+                right_parenthesis,
+            } => left_parenthesis.position.join(right_parenthesis.position),
             DestructurePattern::Record {
                 left_curly_bracket,
                 right_curly_bracket,
@@ -1689,8 +1697,12 @@ impl Positionable for Expression {
             | Expression::Float(token)
             | Expression::Integer(token)
             | Expression::Identifier(token)
-            | Expression::Null(token)
             | Expression::Boolean { token, .. } => token.position,
+
+            Expression::Unit {
+                left_parenthesis,
+                right_parenthesis,
+            } => left_parenthesis.position.join(right_parenthesis.position),
             Expression::InterpolatedString {
                 start_quote,
                 end_quote,
@@ -1867,7 +1879,7 @@ pub fn unify_type_(
         (Type::Boolean, Type::Boolean) => Ok(Type::Boolean),
         (Type::String, Type::String) => Ok(Type::String),
         (Type::Character, Type::Character) => Ok(Type::Character),
-        (Type::Null, Type::Null) => Ok(Type::Null),
+        (Type::Unit, Type::Unit) => Ok(Type::Unit),
         (
             Type::ExplicitTypeVariable(expected_type_variable),
             Type::ExplicitTypeVariable(actual_type_variable),
@@ -2249,7 +2261,7 @@ pub fn rewrite_type_variable_in_type(
         Type::Boolean => Type::Boolean,
         Type::String => Type::String,
         Type::Character => Type::Character,
-        Type::Null => Type::Null,
+        Type::Unit => Type::Unit,
 
         Type::ExplicitTypeVariable(type_variable) => {
             if type_variable.name == *from_type_variable {
@@ -2444,9 +2456,9 @@ fn infer_expression_type_(
     expression: &Expression,
 ) -> Result<InferExpressionResult, UnifyError> {
     let result: InferExpressionResult = match expression {
-        Expression::Null(_) => Ok(InferExpressionResult {
-            expression: InferredExpression::Null,
-            type_value: Type::Null,
+        Expression::Unit { .. } => Ok(InferExpressionResult {
+            expression: InferredExpression::Unit,
+            type_value: Type::Unit,
         }),
         Expression::String(token) => Ok(InferExpressionResult {
             type_value: Type::String,
@@ -2850,23 +2862,48 @@ fn infer_expression_type_(
             // in the end.
             //
             // Should only have one and only one satisfying solution, otherwise is failure.
-            let typechecked_argument =
-                infer_expression_type(module, None, function_call.argument.as_ref())?;
 
-            // Get expected function type
-            let expected_function_type = Type::Function(FunctionType {
-                parameter_type: Box::new(typechecked_argument.type_value),
-                return_type: Box::new(module.introduce_implicit_type_variable(None)?),
-            });
+            // If the function is a function call, then typecheck the function first,
+            // otherwise typecheck the argument first.
+            //
+            // This is so that we can typecheck function call similar to the following function:
+            //
+            //   xs map {| x -> x + 2 }
+            //
+            // Remember function call is curried, so the above expression is the same as:
+            //
+            //   map(xs)({| x -> x + 2 })
+            //
+            let typechecked_function = match function_call.function.as_ref() {
+                Expression::FunctionCall(_) => {
+                    // Get the actual function type
+                    // note that we use infer_expression_type_ instead of infer_expression_type
+                    // This is so that we can throw the error of `cannot invoke non-function`
+                    infer_expression_type_(module, None, function_call.function.as_ref())?
+                }
 
-            // Get the actual function type
-            // note that we use infer_expression_type_ instead of infer_expression_type
-            // This is so that we can throw the error of `cannot invoke non-function`
-            let typechecked_function = infer_expression_type_(
-                module,
-                Some(expected_function_type),
-                function_call.function.as_ref(),
-            )?;
+                // If function is not a function call
+                _ => {
+                    let typechecked_argument =
+                        infer_expression_type(module, None, function_call.argument.as_ref())?;
+
+                    // Get expected function type
+                    let expected_function_type = Type::Function(FunctionType {
+                        parameter_type: Box::new(typechecked_argument.type_value),
+                        return_type: Box::new(module.introduce_implicit_type_variable(None)?),
+                    });
+
+                    // Get the actual function type
+                    // note that we use infer_expression_type_ instead of infer_expression_type
+                    // This is so that we can throw the error of `cannot invoke non-function`
+                    let typechecked_function = infer_expression_type_(
+                        module,
+                        Some(expected_function_type),
+                        function_call.function.as_ref(),
+                    )?;
+                    typechecked_function
+                }
+            };
 
             // Check if expression being invoked is a function
             match typechecked_function.type_value {
@@ -3156,9 +3193,9 @@ fn infer_expression_type_(
                         (InferredStatement::Expression(expression), type_value) => {
                             (initial.to_vec(), expression.clone(), type_value.clone())
                         }
-                        _ => (initial.to_vec(), InferredExpression::Null, Type::Null),
+                        _ => (initial.to_vec(), InferredExpression::Unit, Type::Unit),
                     },
-                    None => (vec![], InferredExpression::Null, Type::Null),
+                    None => (vec![], InferredExpression::Unit, Type::Unit),
                 };
 
             Ok(InferExpressionResult {
@@ -3279,7 +3316,7 @@ fn infer_block_level_statements(
             let expected_type = if tail.is_empty() {
                 expected_final_type.clone()
             } else {
-                Some(Type::Null)
+                Some(Type::Unit)
             };
             let mut result = vec![infer_block_level_statement(module, expected_type, head)?];
             let tail =
@@ -3325,7 +3362,7 @@ fn infer_block_level_statement(
 ) -> Result<(InferredStatement, Type), UnifyError> {
     let result = match statement {
         Statement::Let(let_statement) => {
-            Ok((infer_let_statement(module, let_statement)?, Type::Null))
+            Ok((infer_let_statement(module, let_statement)?, Type::Unit))
         }
         Statement::Expression(expression) => {
             let typechecked_expression = infer_expression_type(module, expected_type, &expression)?;
@@ -3676,10 +3713,16 @@ pub fn to_checkable_pattern(
                 },
             }]
         }
-        InferredDestructurePatternKind::Null(token) => {
+        InferredDestructurePatternKind::Unit {
+            left_parenthesis,
+            right_parenthesis,
+        } => {
             vec![CheckablePattern {
                 is_result_of_expansion,
-                kind: CheckablePatternKind::Null(token.clone()),
+                kind: CheckablePatternKind::Unit {
+                    left_parenthesis: left_parenthesis.clone(),
+                    right_parenthesis: right_parenthesis.clone(),
+                },
             }]
         }
         InferredDestructurePatternKind::Underscore(token) => {
@@ -3831,6 +3874,7 @@ pub fn type_annotation_to_type(
 ) -> Result<Type, UnifyError> {
     match &type_annotation {
         TypeAnnotation::Underscore(_) => Ok(Type::Underscore),
+        TypeAnnotation::Unit { .. } => Ok(Type::Unit),
         TypeAnnotation::Named {
             name,
             type_arguments: actual_type_arguments,
@@ -4009,9 +4053,15 @@ fn infer_destructure_pattern_(
                 token: token.clone(),
             },
         }),
-        DestructurePattern::Null(token) => Ok(InferredDestructurePattern {
-            type_value: Type::Null,
-            kind: InferredDestructurePatternKind::Null(token.clone()),
+        DestructurePattern::Unit {
+            left_parenthesis,
+            right_parenthesis,
+        } => Ok(InferredDestructurePattern {
+            type_value: Type::Unit,
+            kind: InferredDestructurePatternKind::Unit {
+                left_parenthesis: left_parenthesis.clone(),
+                right_parenthesis: right_parenthesis.clone(),
+            },
         }),
         DestructurePattern::Boolean { value, token } => Ok(InferredDestructurePattern {
             type_value: Type::Boolean,
@@ -4380,7 +4430,7 @@ fn match_bindings(
             remaining_expected_bindings: expected_bindings,
             pattern: InferredDestructurePattern { kind, ..source },
         }),
-        kind @ InferredDestructurePatternKind::Null(_) => Ok(MatchingBindingResult {
+        kind @ InferredDestructurePatternKind::Unit { .. } => Ok(MatchingBindingResult {
             remaining_expected_bindings: expected_bindings,
             pattern: InferredDestructurePattern { kind, ..source },
         }),
@@ -4531,7 +4581,7 @@ impl InferredDestructurePattern {
         match &self.kind {
             InferredDestructurePatternKind::Infinite { .. }
             | InferredDestructurePatternKind::Boolean { .. }
-            | InferredDestructurePatternKind::Null(_)
+            | InferredDestructurePatternKind::Unit { .. }
             | InferredDestructurePatternKind::Underscore(_) => vec![],
             InferredDestructurePatternKind::Identifier(identifier) => vec![Binding {
                 identifier: *identifier.clone(),
@@ -4598,7 +4648,7 @@ fn apply_type_variable_substitution_to_type(
     match type_value {
         Type::String => Type::String,
         Type::Character => Type::Character,
-        Type::Null => Type::Null,
+        Type::Unit => Type::Unit,
         Type::Float => Type::Float,
         Type::Integer => Type::Integer,
         Type::Boolean => Type::Boolean,
@@ -4684,7 +4734,7 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
         | Type::Integer
         | Type::String
         | Type::Character
-        | Type::Null
+        | Type::Unit
         | Type::Boolean
         | Type::Underscore
         | Type::ExplicitTypeVariable { .. } => HashSet::new(),

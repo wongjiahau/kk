@@ -31,7 +31,7 @@ pub enum Type {
     Integer,
     String,
     Character,
-    Null,
+    Unit,
 }
 
 /// Type scheme means a type that is quantified over some type variables.  

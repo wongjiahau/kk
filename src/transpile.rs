@@ -378,7 +378,7 @@ pub fn get_destructure_pattern_bindings(
     match destructure_pattern {
         InferredDestructurePatternKind::Infinite { .. }
         | InferredDestructurePatternKind::Boolean { .. }
-        | InferredDestructurePatternKind::Null(_)
+        | InferredDestructurePatternKind::Unit { .. }
         | InferredDestructurePatternKind::Underscore(_) => vec![],
         InferredDestructurePatternKind::Identifier(name) => vec![*name],
         InferredDestructurePatternKind::EnumConstructor { payload, .. } => match payload {
@@ -470,7 +470,7 @@ fn transpile_identifier(identifier: Identifier) -> javascript::Identifier {
 
 pub fn transpile_expression(expression: InferredExpression) -> javascript::Expression {
     match expression {
-        InferredExpression::Null => javascript::Expression::Null,
+        InferredExpression::Unit => javascript::Expression::Null,
         InferredExpression::Boolean(value) => javascript::Expression::Boolean(value),
         InferredExpression::String { representation }
         | InferredExpression::Character { representation } => {
@@ -754,7 +754,7 @@ pub fn transpile_destructure_pattern(
             }],
             bindings: vec![],
         },
-        InferredDestructurePatternKind::Null { .. } => TranspiledDestructurePattern {
+        InferredDestructurePatternKind::Unit { .. } => TranspiledDestructurePattern {
             conditions: vec![javascript::Expression::Equals {
                 left: Box::new(from_expression),
                 right: Box::new(javascript::Expression::Null),

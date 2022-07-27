@@ -825,7 +825,7 @@ impl<'a> Parser<'a> {
     ) -> Result<TypeAnnotation, ParseError> {
         if let Some(token) = self.next_meaningful_token()? {
             let potential_function_parameter_type = match token.token_type {
-                TokenType::Identifier | TokenType::KeywordNull => {
+                TokenType::Identifier => {
                     let name = token;
                     Ok(TypeAnnotation::Named {
                         name,
@@ -869,7 +869,16 @@ impl<'a> Parser<'a> {
                 }
                 TokenType::LeftParenthesis => {
                     let left_parenthesis = token;
-                    self.parse_parenthesized_type_annotation(left_parenthesis)
+                    if let Some(right_parenthesis) =
+                        self.try_eat_token(TokenType::RightParenthesis)?
+                    {
+                        Ok(TypeAnnotation::Unit {
+                            left_parenthesis,
+                            right_parenthesis,
+                        })
+                    } else {
+                        self.parse_parenthesized_type_annotation(left_parenthesis)
+                    }
                 }
                 _ => Err(Parser::invalid_token(token, context)),
             }?;
@@ -930,51 +939,10 @@ impl<'a> Parser<'a> {
         let context = Some(ParseContext::DotExpression);
 
         let first_argument = {
-            if let Some(left_curly_bracket) = self.try_eat_token(TokenType::LeftCurlyBracket)? {
-                // Then this is a record update
-                self.parse_record_update(first_argument, left_curly_bracket)?
-            } else if self.try_eat_token(TokenType::LeftParenthesis)?.is_some() {
-                // Then this is a immediately invoked function
-                let function = self.parse_mid_precedence_expression()?;
-                self.eat_token(
-                    TokenType::RightParenthesis,
-                    Some(ParseContext::ExpressionFunctionCall),
-                )?;
-                let type_arguments = self.try_parse_type_arguments()?;
-                let function_call_arguments = self.parse_function_call_rest_arguments()?;
-                Expression::FunctionCall(Box::new(FunctionCall {
-                    argument: Box::new(first_argument),
-                    type_arguments,
-                    function: Box::new(function),
-                }))
-            } else {
-                let name = self.eat_token(TokenType::Identifier, context)?;
-                match self.peek_next_meaningful_token()? {
-                    Some(Token {
-                        token_type: TokenType::LeftParenthesis,
-                        ..
-                    })
-                    | Some(Token {
-                        token_type: TokenType::LessThan,
-                        ..
-                    }) => {
-                        // Then this is a function call
-                        let type_arguments = self.try_parse_type_arguments()?;
-                        let function_call_arguments = self.parse_function_call_rest_arguments()?;
-                        Expression::FunctionCall(Box::new(FunctionCall {
-                            argument: Box::new(first_argument),
-                            type_arguments,
-                            function: Box::new(Expression::Identifier(name)),
-                        }))
-                    }
-                    _ => {
-                        // Then this is a property access or single-argument function call
-                        Expression::RecordAccess {
-                            expression: Box::new(first_argument),
-                            property_name: name,
-                        }
-                    }
-                }
+            let name = self.eat_token(TokenType::Identifier, context)?;
+            Expression::RecordAccess {
+                expression: Box::new(first_argument),
+                property_name: name,
             }
         };
         self.try_parse_dot_expression(first_argument)
@@ -1101,10 +1069,6 @@ impl<'a> Parser<'a> {
                 TokenType::Underscore => Ok(Expression::Identifier(
                     self.next_meaningful_token()?.unwrap(),
                 )),
-                TokenType::KeywordIf => {
-                    let keyword_if = self.next_meaningful_token()?.unwrap();
-                    self.parse_if_expression(keyword_if)
-                }
                 TokenType::KeywordSwitch => {
                     let keyword_switch = self.next_meaningful_token()?.unwrap();
                     self.parse_switch_expression(keyword_switch)
@@ -1156,12 +1120,21 @@ impl<'a> Parser<'a> {
                 TokenType::LeftSquareBracket => self.parse_array(token.clone()),
                 TokenType::LeftParenthesis => {
                     let left_parenthesis = token;
-                    let expression = self.parse_low_precedence_expression()?;
-                    Ok(Expression::Parenthesized {
-                        left_parenthesis,
-                        right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
-                        value: Box::new(expression),
-                    })
+                    if let Some(right_parenthesis) =
+                        self.try_eat_token(TokenType::RightParenthesis)?
+                    {
+                        Ok(Expression::Unit {
+                            left_parenthesis,
+                            right_parenthesis,
+                        })
+                    } else {
+                        let expression = self.parse_low_precedence_expression()?;
+                        Ok(Expression::Parenthesized {
+                            left_parenthesis,
+                            right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
+                            value: Box::new(expression),
+                        })
+                    }
                 }
                 TokenType::Float => Ok(Expression::Float(token.clone())),
                 TokenType::Integer => Ok(Expression::Integer(token.clone())),
@@ -1173,7 +1146,6 @@ impl<'a> Parser<'a> {
                     token: token.clone(),
                     value: false,
                 }),
-                TokenType::KeywordNull => Ok(Expression::Null(token.clone())),
                 TokenType::Identifier => Ok(Expression::Identifier(token.clone())),
                 TokenType::Tag => Ok(Expression::EnumConstructor {
                     name: token.clone(),
@@ -1321,17 +1293,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_if_expression(&mut self, keyword_if: Token) -> Result<Expression, ParseError> {
-        let context = Some(ParseContext::ExpressionIf);
-        Ok(Expression::If {
-            keyword_if,
-            condition: Box::new(self.parse_mid_precedence_expression()?),
-            if_true: Box::new(self.parse_mid_precedence_expression()?),
-            keyword_else: self.eat_token(TokenType::KeywordElse, context)?,
-            if_false: Box::new(self.parse_mid_precedence_expression()?),
-        })
-    }
-
     fn parse_destructure_pattern(&mut self) -> Result<DestructurePattern, ParseError> {
         let simple_pattern = self.parse_simple_destructure_pattern()?;
         let mut tail_patterns = vec![];
@@ -1365,9 +1326,18 @@ impl<'a> Parser<'a> {
                 TokenType::Identifier => Ok(DestructurePattern::Identifier(token)),
                 TokenType::Underscore => Ok(DestructurePattern::Underscore(token)),
                 TokenType::LeftParenthesis => {
-                    let pattern = self.parse_destructure_pattern()?;
-                    self.eat_token(TokenType::RightParenthesis, None)?;
-                    Ok(pattern)
+                    if let Some(right_parenthesis) =
+                        self.try_eat_token(TokenType::RightParenthesis)?
+                    {
+                        Ok(DestructurePattern::Unit {
+                            left_parenthesis: token,
+                            right_parenthesis,
+                        })
+                    } else {
+                        let pattern = self.parse_destructure_pattern()?;
+                        self.eat_token(TokenType::RightParenthesis, None)?;
+                        Ok(pattern)
+                    }
                 }
                 TokenType::LeftCurlyBracket => {
                     let context = Some(ParseContext::PatternRecord);
@@ -1428,7 +1398,6 @@ impl<'a> Parser<'a> {
                     token,
                     value: false,
                 }),
-                TokenType::KeywordNull => Ok(DestructurePattern::Null(token)),
                 TokenType::LeftSquareBracket => {
                     let context = Some(ParseContext::PatternArray);
                     let left_square_bracket = token;
@@ -1531,9 +1500,26 @@ impl<'a> Parser<'a> {
                     }
                 }
             } else {
+                // This is a block
                 (
                     NonEmpty {
-                        head: self.parse_function_branch(left_curly_bracket.clone())?,
+                        head: FunctionBranch {
+                            start_token: left_curly_bracket.clone(),
+                            parameter: Box::new(DestructurePattern::Unit {
+                                left_parenthesis: Token {
+                                    token_type: TokenType::LeftParenthesis,
+                                    position: left_curly_bracket.position.clone(),
+                                    representation: "(".to_string(),
+                                },
+
+                                right_parenthesis: Token {
+                                    token_type: TokenType::RightParenthesis,
+                                    position: left_curly_bracket.position.clone(),
+                                    representation: ")".to_string(),
+                                },
+                            }),
+                            body: Box::new(self.parse_low_precedence_expression()?),
+                        },
                         tail: vec![],
                     },
                     self.eat_token(TokenType::RightCurlyBracket, context)?,
@@ -1657,7 +1643,13 @@ fn convert_expression_to_pattern(
             "_" => Ok(DestructurePattern::Underscore(token)),
             _ => Ok(DestructurePattern::Identifier(token)),
         },
-        Expression::Null(token) => Ok(DestructurePattern::Null(token)),
+        Expression::Unit {
+            left_parenthesis,
+            right_parenthesis,
+        } => Ok(DestructurePattern::Unit {
+            left_parenthesis,
+            right_parenthesis,
+        }),
         Expression::Record {
             wildcard,
             left_curly_bracket,
