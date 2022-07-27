@@ -1,11 +1,11 @@
-let and = (x: Boolean, y: Boolean): Boolean =>
-  switch ({ x, y }) {
-    case {x: true, y: true}: true
-    case _: false
-  }
+let (x: Boolean) and (y: Boolean): Boolean = 
+  {
+  | {.x = true, .y = true} -> true
+  | _ -> false
+  } {.x, .y} 
 
-
-true.and(true).print()
-true.and(false).print()
-false.and(true).print()
-false.and(false).print()
+entry
+  true and (true) print;
+  true and (false) print;
+  false and (true) print;
+  false and (false) print

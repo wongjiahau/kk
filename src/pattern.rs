@@ -60,7 +60,7 @@ pub enum CheckablePatternKind {
     Identifier(Box<Identifier>),
     EnumConstructor {
         constructor_name: Token,
-        payload: Option<CheckablePatternEnumConstructorPayload>,
+        payload: Option<Box<CheckablePattern>>,
     },
     Record {
         left_curly_bracket: Token,
@@ -89,9 +89,7 @@ impl Positionable for CheckablePatternKind {
                 constructor_name,
                 payload,
             } => match payload {
-                Some(payload) => constructor_name
-                    .position
-                    .join(payload.right_parenthesis.position),
+                Some(payload) => constructor_name.position.join(payload.kind.position()),
                 None => constructor_name.position,
             },
             CheckablePatternKind::Record {
@@ -124,8 +122,6 @@ pub struct CheckablePatternArraySpread {
 #[derive(Debug, Clone)]
 pub struct CheckablePatternEnumConstructorPayload {
     pub pattern: Box<CheckablePattern>,
-    pub left_parenthesis: Token,
-    pub right_parenthesis: Token,
 }
 
 #[derive(Debug)]
@@ -583,7 +579,7 @@ pub fn match_pattern(
             if actual_name.representation != *expected_name {
                 MatchPatternResult::NotMatched
             } else {
-                match match_pattern(module, &actual_payload.pattern.kind, expected_payload) {
+                match match_pattern(module, &actual_payload.kind, expected_payload) {
                     MatchPatternResult::Matched => MatchPatternResult::Matched,
                     MatchPatternResult::NotMatched => MatchPatternResult::NotMatched,
                     MatchPatternResult::PartiallyMatched { expanded_patterns } => {

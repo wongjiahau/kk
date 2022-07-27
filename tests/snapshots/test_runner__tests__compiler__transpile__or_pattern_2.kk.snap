@@ -5,28 +5,23 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// Nested
-enum Vehicle {
-  Car(Color),
-  Motor
-}
+// Nested pattern
+enum Vehicle = #car(Color) | #motor
 
-enum Color {
-  White,
-  Gold,
-  Black
-}
+enum Color = #white | #gold | #black
 
-let isShinyCar = (vehicle: Vehicle): Boolean =>
-  switch (vehicle) {
-    case Car(White | Gold): true
-    case _: false
+let "is shiny car"
+  : Vehicle -> Boolean
+  = {
+  | #car(#white | #gold) -> true
+  | _ -> false
   }
 
-Car(White).isShinyCar().print()
-Car(Gold).isShinyCar().print()
-Car(Black).isShinyCar().print()
-Motor.isShinyCar().print()
+entry
+  #car(#white) "is shiny car" print;
+  #car(#gold) "is shiny car" print;
+  #car(#black) "is shiny car" print;
+  #motor "is shiny car" print
 
 ============
 EXIT CODE

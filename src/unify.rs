@@ -957,7 +957,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         Expression::Quoted { expression, .. } => has_direct_function_call(expression),
         Expression::EnumConstructor { payload, .. } => match payload {
             None => None,
-            Some(expression) => has_direct_function_call(&expression.expression),
+            Some(expression) => has_direct_function_call(&expression),
         },
         Expression::Record {
             key_value_pairs, ..
@@ -1628,7 +1628,7 @@ impl Positionable for DestructurePattern {
             | DestructurePattern::Null(token) => token.position,
             DestructurePattern::EnumConstructor { name, payload, .. } => match payload {
                 None => name.position,
-                Some(payload) => name.position.join(payload.right_parenthesis.position),
+                Some(payload) => name.position.join(payload.position()),
             },
             DestructurePattern::Record {
                 left_curly_bracket,
@@ -1703,7 +1703,7 @@ impl Positionable for Expression {
             } => opening_backtick.position.join(closing_backtick.position),
             Expression::EnumConstructor { name, payload, .. } => match payload {
                 None => name.position,
-                Some(payload) => name.position.join(payload.right_parenthesis.position),
+                Some(payload) => name.position.join(payload.position()),
             },
             Expression::RecordAccess {
                 expression,
@@ -2592,7 +2592,7 @@ fn infer_expression_type_(
                     },
                 }),
                 (None, Some(payload)) => Err(UnifyError {
-                    position: payload.expression.position(),
+                    position: payload.position(),
                     kind: UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
@@ -2602,11 +2602,8 @@ fn infer_expression_type_(
                     },
                 }),
                 (Some(expected_payload_type), Some(payload)) => {
-                    let typechecked_payload = infer_expression_type(
-                        module,
-                        Some(expected_payload_type),
-                        &payload.expression,
-                    )?;
+                    let typechecked_payload =
+                        infer_expression_type(module, Some(expected_payload_type), &payload)?;
                     Ok(InferExpressionResult {
                         type_value: result.expected_enum_type,
                         expression: InferredExpression::EnumConstructor {
@@ -2823,20 +2820,36 @@ fn infer_expression_type_(
         // NOTE: Let expression is desugared into immediately invoked function call
         // For example, `let x = 1 x.plus(1)` means `(x => x.plus(1))(1)
         Expression::Lambda(function) => {
-            let expected_function_type = match expected_type {
-                Some(Type::Function(function_type)) => Some(function_type),
+            let expected_function_type = match &expected_type {
+                Some(Type::Function(function_type)) => Some(function_type.clone()),
+                Some(Type::TypeScheme(type_scheme)) => match &type_scheme.type_value {
+                    Type::Function(function_type) => Some(function_type.clone()),
+                    _ => None,
+                },
                 _ => None,
             };
             let typechecked_function =
                 infer_branched_function(module, expected_function_type, function)?;
+
             Ok(InferExpressionResult {
-                type_value: Type::Function(typechecked_function.function_type),
+                type_value: match expected_type {
+                    Some(Type::TypeScheme(type_scheme)) => Type::TypeScheme(Box::new(TypeScheme {
+                        type_variables: type_scheme.type_variables,
+                        type_value: Type::Function(typechecked_function.function_type),
+                        constraints: vec![],
+                    })),
+                    _ => Type::Function(typechecked_function.function_type),
+                },
                 expression: InferredExpression::BranchedFunction(Box::new(
                     typechecked_function.function,
                 )),
             })
         }
         Expression::FunctionCall(function_call) => {
+            // TODO: get the possible types of each symbols, and try to get a satisfying solution
+            // in the end.
+            //
+            // Should only have one and only one satisfying solution, otherwise is failure.
             let typechecked_argument =
                 infer_expression_type(module, None, function_call.argument.as_ref())?;
 
@@ -3548,17 +3561,13 @@ pub fn to_checkable_pattern(
             constructor_name,
             payload,
         } => match &payload {
-            Some(payload) => to_checkable_pattern(&payload.pattern.kind, is_result_of_expansion)
+            Some(payload) => to_checkable_pattern(&payload.kind, is_result_of_expansion)
                 .into_iter()
                 .map(|pattern| CheckablePattern {
                     is_result_of_expansion: pattern.is_result_of_expansion,
                     kind: CheckablePatternKind::EnumConstructor {
                         constructor_name: constructor_name.clone(),
-                        payload: Some(CheckablePatternEnumConstructorPayload {
-                            pattern: Box::new(pattern),
-                            left_parenthesis: payload.left_parenthesis.clone(),
-                            right_parenthesis: payload.right_parenthesis.clone(),
-                        }),
+                        payload: Some(Box::new(pattern)),
                     },
                 })
                 .collect(),
@@ -4051,7 +4060,7 @@ fn infer_destructure_pattern_(
                     },
                 }),
                 (None, Some(payload)) => Err(UnifyError {
-                    position: payload.pattern.position(),
+                    position: payload.position(),
                     kind: UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
@@ -4064,18 +4073,14 @@ fn infer_destructure_pattern_(
                     let typechecked_payload = infer_destructure_pattern(
                         module,
                         Some(expected_payload_type),
-                        &payload.pattern,
+                        &payload,
                         exported,
                     )?;
                     Ok(InferredDestructurePattern {
                         type_value: result.expected_enum_type,
                         kind: InferredDestructurePatternKind::EnumConstructor {
                             constructor_name: name.clone(),
-                            payload: Some(InferredDestructurePatternEnumConstructorPayload {
-                                right_parenthesis: payload.right_parenthesis,
-                                left_parenthesis: payload.left_parenthesis,
-                                pattern: Box::new(typechecked_payload),
-                            }),
+                            payload: Some(Box::new(typechecked_payload)),
                         },
                     })
                 }
@@ -4441,17 +4446,14 @@ fn match_bindings(
                 },
             }),
             Some(payload) => {
-                let result = match_bindings(module, *payload.pattern.clone(), expected_bindings)?;
+                let result = match_bindings(module, *payload.clone(), expected_bindings)?;
                 Ok(MatchingBindingResult {
                     remaining_expected_bindings: result.remaining_expected_bindings,
                     pattern: InferredDestructurePattern {
                         type_value: source.type_value,
                         kind: InferredDestructurePatternKind::EnumConstructor {
                             constructor_name,
-                            payload: Some(InferredDestructurePatternEnumConstructorPayload {
-                                pattern: Box::new(result.pattern),
-                                ..payload
-                            }),
+                            payload: Some(Box::new(result.pattern)),
                         },
                     },
                 })
@@ -4536,7 +4538,7 @@ impl InferredDestructurePattern {
                 type_value: self.type_value.clone(),
             }],
             InferredDestructurePatternKind::EnumConstructor { payload, .. } => match payload {
-                Some(payload) => payload.pattern.bindings(),
+                Some(payload) => payload.bindings(),
                 None => vec![],
             },
             InferredDestructurePatternKind::Record {

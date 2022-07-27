@@ -214,30 +214,30 @@ impl Tokenizer {
                         }),
                     }),
                 },
-                // // Character
-                // '\'' => match self.characters_iterator.next() {
-                //     Some(quote @ Character { value: '\'', .. }) => {
-                //         Err(TokenizeError::CharacterLiteralCannotBeEmpty {
-                //             position: make_position(character, Some(&quote)),
-                //         }
-                //         .into_parse_error())
-                //     }
-                //     Some(c) => match self.characters_iterator.next() {
-                //         Some(end_quote @ Character { value: '\'', .. }) => Ok(Some(Token {
-                //             token_type: TokenType::Character,
-                //             representation: format!("'{}'", c.value),
-                //             position: make_position(character, Some(&end_quote)),
-                //         })),
-                //         other => Err(TokenizeError::UnterminatedCharacterLiteral {
-                //             position: make_position(character, other.as_ref()),
-                //         }
-                //         .into_parse_error()),
-                //     },
-                //     None => Err(TokenizeError::UnterminatedCharacterLiteral {
-                //         position: make_position(character, None),
-                //     }
-                //     .into_parse_error()),
-                // },
+                // Character
+                '\'' => match self.characters_iterator.next() {
+                    Some(quote @ Character { value: '\'', .. }) => {
+                        Err(TokenizeError::CharacterLiteralCannotBeEmpty {
+                            position: make_position(character, Some(&quote)),
+                        }
+                        .into_parse_error())
+                    }
+                    Some(c) => match self.characters_iterator.next() {
+                        Some(end_quote @ Character { value: '\'', .. }) => Ok(Some(Token {
+                            token_type: TokenType::Character,
+                            representation: format!("'{}'", c.value),
+                            position: make_position(character, Some(&end_quote)),
+                        })),
+                        other => Err(TokenizeError::UnterminatedCharacterLiteral {
+                            position: make_position(character, other.as_ref()),
+                        }
+                        .into_parse_error()),
+                    },
+                    None => Err(TokenizeError::UnterminatedCharacterLiteral {
+                        position: make_position(character, None),
+                    }
+                    .into_parse_error()),
+                },
                 // Quoted Identifers
                 // Similar to Postgres Quoted Identifier using double-quote
                 '"' => {
@@ -261,7 +261,7 @@ impl Tokenizer {
                     }
                 }
                 // String
-                '\'' => {
+                '`' => {
                     let start_quote = character;
                     enum StartOf {
                         Nothing,
@@ -282,7 +282,7 @@ impl Tokenizer {
                                             _ => StartOf::Escape,
                                         },
                                     ),
-                                    '\'' => match start_of {
+                                    '`' => match start_of {
                                         StartOf::Escape => (Some(character), StartOf::Nothing),
                                         _ => break Ok(character),
                                     },

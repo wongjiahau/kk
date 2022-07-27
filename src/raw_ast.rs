@@ -244,7 +244,7 @@ pub enum DestructurePattern {
     Identifier(Token),
     EnumConstructor {
         name: Token,
-        payload: Option<Box<DestructurePatternEnumConstructorPayload>>,
+        payload: Option<Box<DestructurePattern>>,
     },
     Record {
         wildcard: Option<Token>,
@@ -318,7 +318,7 @@ pub enum Expression {
     },
     EnumConstructor {
         name: Token,
-        payload: Option<Box<ExpressionEnumConstructorPayload>>,
+        payload: Option<Box<Expression>>,
     },
 
     /// This cannot be constructed directly from syntax, it is only for internal usage

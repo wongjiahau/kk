@@ -1173,7 +1173,7 @@ impl CheckablePatternKind {
                     format!(
                         "{}({})",
                         constructor_name.representation,
-                        payload.pattern.kind.to_string()
+                        payload.kind.to_string()
                     )
                 }
                 None => constructor_name.representation.clone(),

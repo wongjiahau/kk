@@ -6,7 +6,8 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 // This is a comment
-"Hello".print()
+entry
+  `Hello` print
 
 ============
 EXIT CODE

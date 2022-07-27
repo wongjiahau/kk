@@ -161,7 +161,7 @@ pub enum InferredDestructurePatternKind {
     Identifier(Box<Identifier>),
     EnumConstructor {
         constructor_name: Token,
-        payload: Option<InferredDestructurePatternEnumConstructorPayload>,
+        payload: Option<Box<InferredDestructurePattern>>,
     },
     Record {
         left_curly_bracket: Token,
@@ -202,9 +202,7 @@ impl InferredDestructurePatternKind {
                 ..
             } => match payload {
                 None => constructor_name.position,
-                Some(payload) => constructor_name
-                    .position
-                    .join(payload.right_parenthesis.position),
+                Some(payload) => constructor_name.position.join(payload.kind.position()),
             },
             InferredDestructurePatternKind::Record {
                 left_curly_bracket,

@@ -383,7 +383,7 @@ pub fn get_destructure_pattern_bindings(
         InferredDestructurePatternKind::Identifier(name) => vec![*name],
         InferredDestructurePatternKind::EnumConstructor { payload, .. } => match payload {
             None => vec![],
-            Some(payload) => get_destructure_pattern_bindings(payload.pattern.kind),
+            Some(payload) => get_destructure_pattern_bindings(payload.kind),
         },
         InferredDestructurePatternKind::Record {
             key_pattern_pairs, ..
@@ -816,7 +816,7 @@ pub fn transpile_destructure_pattern(
             let rest = match payload {
                 None => None,
                 Some(payload) => Some(transpile_destructure_pattern(
-                    payload.pattern.kind,
+                    payload.kind,
                     javascript::Expression::MemberAccess {
                         object: Box::new(from_expression),
                         property: Box::new(javascript::Expression::String(

@@ -1,13 +1,9 @@
-enum Foo {
-  A(String),
-  B({hello: String})
-}
+enum Foo = #a(String) | #b {hello: String}
 
-let toString = (foo: Foo): String =>
-  switch foo {
-    case A(x) | B({hello: x}): x
-  }
+let toString
+  : Foo -> String
+  = { #a(x) | #b {.hello = x} -> x }
 
-
-A("Spongebob").toString().print()
-B({hello: "Squarepants"}).toString().print()
+entry
+  #a(`Spongebob`) toString print;
+  #b {.hello = `Squarepants`} toString print
