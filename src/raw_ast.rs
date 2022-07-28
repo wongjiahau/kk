@@ -205,9 +205,9 @@ pub enum TypeAnnotation {
         type_arguments: Option<TypeArguments>,
     },
     Record {
-        left_curly_bracket: Token,
+        left_square_bracket: Token,
         key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
-        right_curly_bracket: Token,
+        right_square_bracket: Token,
     },
     Array {
         left_square_bracket: Token,
@@ -337,9 +337,9 @@ pub enum Expression {
     FunctionCall(Box<FunctionCall>),
     Record {
         wildcard: Option<Token>,
-        left_curly_bracket: Token,
+        left_square_bracket: Token,
         key_value_pairs: Vec<RecordKeyValue>,
-        right_curly_bracket: Token,
+        right_square_bracket: Token,
     },
     RecordAccess {
         expression: Box<Expression>,
@@ -617,7 +617,6 @@ pub enum TokenType {
     KeywordEntry,
     KeywordLet,
     KeywordType,
-    KeywordEnum,
     KeywordDo,
     KeywordTrue,
     KeywordFalse,

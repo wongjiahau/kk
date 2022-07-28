@@ -240,7 +240,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
     match token_type {
         TokenType::KeywordLet => "used for defining variables, for example:\n\n\tlet x = 1",
         TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
-        TokenType::KeywordEnum => "used for defining enum type (i.e. sum type or tagged union), for example:\n\n\tenum Color = Red Blue",
         TokenType::KeywordDo => "used for defining expression with side effects, such as:\n\n\tdo \"Hello world\".print",
         TokenType::KeywordTrue | TokenType::KeywordFalse
             => "only used to create a boolean value",
@@ -460,7 +459,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
     match token_type {
         TokenType::KeywordLet => "let",
         TokenType::KeywordType => "type",
-        TokenType::KeywordEnum => "enum",
         TokenType::KeywordDo => "do",
         TokenType::KeywordTrue => "true",
         TokenType::KeywordFalse => "false",

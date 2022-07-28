@@ -1581,8 +1581,8 @@ impl Positionable for TypeAnnotation {
                 .position
                 .join(right_square_bracket.position),
             TypeAnnotation::Record {
-                left_curly_bracket,
-                right_curly_bracket,
+                left_square_bracket: left_curly_bracket,
+                right_square_bracket: right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
@@ -1722,8 +1722,8 @@ impl Positionable for Expression {
                 property_name,
             } => expression.position().join(property_name.position),
             Expression::Record {
-                left_curly_bracket,
-                right_curly_bracket,
+                left_square_bracket: left_curly_bracket,
+                right_square_bracket: right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
@@ -2977,8 +2977,8 @@ fn infer_expression_type_(
         }
         Expression::Record {
             key_value_pairs,
-            left_curly_bracket,
-            right_curly_bracket,
+            left_square_bracket: left_curly_bracket,
+            right_square_bracket: right_curly_bracket,
             wildcard,
             ..
         } => {

@@ -1,12 +1,12 @@
-enum Bool
+type Bool
   = #true
   | #false
 
-enum List<A>
+type List<A>
   = #nil
-  | #cons { current: A, next: List<A> }
+  | #cons [ current: A, next: List<A> ]
 
-enum Option<A>
+type Option<A>
   = #none
   | #some(A)
 
@@ -15,45 +15,45 @@ let <A, B> (a: A) match (f: A -> B): B = a f
 let <A, B> (xs: List<A>) "find map" (f: A -> Option<B>): Option<B> = 
   xs match {
   | #nil -> #none
-  | #cons {.current, .next} -> current f match {
+  | #cons [ current, next ] -> current f match {
     | #none -> next "find map" (f)
     | #some(o) -> #some(o)
     }
   }
 
-
-type Branch<A> = {condition: () -> Bool, body: () -> A}
+type Branch<A> = [ condition: () -> Bool, body: () -> A ]
 
 let <A> (xs: List<A>) push (x: A): List<A> = 
   xs match {
-  | #nil -> #cons {.current = x, .next = #nil}
-  | #cons {.current, .next} -> #cons {.current, .next = next push (x)}
+  | #nil -> #cons [current = x, next = #nil]
+  | #cons [current, next] -> #cons [current, next = next push (x)]
   }
 
 let <A> if (condition: () -> Bool) (body: () -> A): List<Branch<A>> =
-  #nil push {.condition, .body}
+  #nil push [condition, body]
 
 let <A> (branches: List<Branch<A>>) elif (condition: () -> Bool) (body: () -> A): List<Branch<A>> = 
-  branches push {.condition, .body}
+  branches push [condition, body]
 
 let <A> (branches: List<Branch<A>>) else (body: () -> A): A =
-  branches "find map" { 
-    | branch -> branch.condition () match {
+  branches 
+    "find map" { branch -> 
+      branch.condition () match {
       | #true -> #some (branch.body ())
       | #false -> #none
       }
-  } 
-  match {
-  | #some (body) -> body
-  | #none -> body ()
-  }
+    } 
+    match {
+    | #some (body) -> body
+    | #none -> body ()
+    }
 
 let <A> (branches: List<Branch<A>>) end: Option<A> =
-  branches "find map" { 
-    | branch -> branch.condition () match {
-      | #true -> #some (branch.body ())
-      | #false -> #none
-      }
+  branches "find map" { branch -> 
+    branch.condition () match {
+    | #true -> #some (branch.body ())
+    | #false -> #none
+    }
   } 
 
 entry
