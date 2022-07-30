@@ -19,9 +19,42 @@ pub enum Statement {
     /// This represents named sum types (a.k.a tagged union).
     Enum(EnumStatement),
 
+    Module(ModuleStatement),
+
     Import(ImportStatement),
 
     Entry(EntryStatement),
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleStatement {
+    pub keyword_export: Option<Token>,
+    pub keyword_module: Token,
+    pub left: ModuleDestructurePattern,
+    pub right: ModuleValue,
+}
+
+#[derive(Debug, Clone)]
+pub enum ModuleDestructurePattern {
+    Identifier(Token),
+    Record {
+        left_square_bracket: Token,
+        spread: Option<Token>,
+        pairs: Vec<ModuleDestructurePatternPair>,
+        right_square_bracket: Token,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleDestructurePatternPair {
+    pub name: Token,
+    pub pattern: Option<ModuleDestructurePattern>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ModuleValue {
+    Import { keyword_import: Token, url: Token },
+    Name(Token),
 }
 
 #[derive(Debug, Clone)]
@@ -377,7 +410,6 @@ pub enum Expression {
         type_annotation: Option<TypeAnnotation>,
         body: Box<Expression>,
     },
-    Block(Block),
     UnsafeJavascript {
         code: Token,
     },
@@ -618,10 +650,10 @@ pub enum TokenType {
     KeywordLet,
     KeywordType,
     KeywordDo,
+    KeywordModule,
     KeywordTrue,
     KeywordFalse,
     KeywordImport,
-    KeywordFrom,
     KeywordAs,
     KeywordExport,
     Whitespace,
@@ -712,6 +744,17 @@ impl Position {
             column_end: 0,
             character_index_start: 0,
             character_index_end: 0,
+        }
+    }
+}
+impl ModuleValue {
+    pub fn position(&self) -> Position {
+        match self {
+            ModuleValue::Import {
+                keyword_import,
+                url,
+            } => keyword_import.position.join(url.position),
+            ModuleValue::Name(token) => token.position,
         }
     }
 }

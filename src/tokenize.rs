@@ -594,14 +594,14 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordType
     } else if s.eq("do") {
         TokenType::KeywordDo
+    } else if s.eq("module") {
+        TokenType::KeywordModule
     } else if s.eq("true") {
         TokenType::KeywordTrue
     } else if s.eq("false") {
         TokenType::KeywordFalse
     } else if s.eq("import") {
         TokenType::KeywordImport
-    } else if s.eq("from") {
-        TokenType::KeywordFrom
     } else if s.eq("as") {
         TokenType::KeywordAs
     } else if s.eq("export") {

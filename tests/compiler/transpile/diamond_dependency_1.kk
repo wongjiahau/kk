@@ -1,1 +1,1 @@
-export let foo = (null: Null): Integer => 1
+export let (n: Integer) foo: Integer = n

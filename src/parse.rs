@@ -44,7 +44,7 @@ pub enum ParseContext {
     StatementLet,
     StatementType,
     StatementEnum,
-    StatementImport,
+    StatementModule,
     StatementWith,
     StatementInterface,
     StatementImplements,
@@ -177,9 +177,10 @@ impl<'a> Parser<'a> {
                     let token = self.next_meaningful_token()?.unwrap();
                     Ok(vec![self.parse_entry_statement(keyword_export, token)?])
                 }
-                TokenType::KeywordImport => {
+                TokenType::KeywordModule => {
                     let token = self.next_meaningful_token()?.unwrap();
-                    self.parse_import_statement(token).map(vectorized)
+                    self.parse_module_statement(keyword_export, token)
+                        .map(vectorized)
                 }
                 TokenType::KeywordInterface => {
                     let keyword_interface = self.next_meaningful_token()?.unwrap();
@@ -427,14 +428,27 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_parameter(&mut self, left_parenthesis: Token) -> Result<Parameter, ParseError> {
-        let pattern = self.parse_destructure_pattern()?;
-        self.eat_token(TokenType::Colon, None)?;
-        let type_annotation = self.parse_type_annotation(None)?;
-        self.eat_token(TokenType::RightParenthesis, None)?;
-        Ok(Parameter {
-            pattern,
-            type_annotation,
-        })
+        if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+            Ok(Parameter {
+                pattern: DestructurePattern::Unit {
+                    left_parenthesis: left_parenthesis.clone(),
+                    right_parenthesis: right_parenthesis.clone(),
+                },
+                type_annotation: TypeAnnotation::Unit {
+                    left_parenthesis,
+                    right_parenthesis,
+                },
+            })
+        } else {
+            let pattern = self.parse_destructure_pattern()?;
+            self.eat_token(TokenType::Colon, None)?;
+            let type_annotation = self.parse_type_annotation(None)?;
+            self.eat_token(TokenType::RightParenthesis, None)?;
+            Ok(Parameter {
+                pattern,
+                type_annotation,
+            })
+        }
     }
 
     fn parse_type_alias_or_enum_statement(
@@ -508,39 +522,81 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_import_statement(&mut self, keyword_import: Token) -> Result<Statement, ParseError> {
-        let context = Some(ParseContext::StatementImport);
+    fn parse_module_statement(
+        &mut self,
+        keyword_export: Option<Token>,
+        keyword_module: Token,
+    ) -> Result<Statement, ParseError> {
+        let context = Some(ParseContext::StatementModule);
 
-        let import_type = if let Some(asterisk) = self.try_eat_token(TokenType::Asterisk)? {
-            ImportType::All { asterisk }
-        } else {
-            self.eat_token(TokenType::LeftCurlyBracket, context)?;
+        let left = self.parse_module_destructure_pattern()?;
+        self.eat_token(TokenType::Equals, context)?;
+        let right = self.parse_module_value()?;
 
-            let first_name = self.parse_imported_name(context)?;
-            let other_names = {
-                let mut other_names = Vec::new();
-                loop {
-                    if self.try_eat_token(TokenType::RightCurlyBracket)?.is_some() {
-                        break other_names;
-                    } else if self.try_eat_token(TokenType::Comma)?.is_some() {
-                        other_names.push(self.parse_imported_name(context)?)
-                    }
-                }
-            };
-            ImportType::Selected {
-                imported_names: NonEmpty {
-                    head: first_name,
-                    tail: other_names,
-                },
-            }
-        };
-        self.eat_token(TokenType::KeywordFrom, context)?;
-        let url = self.eat_token(TokenType::String, context)?;
-        Ok(Statement::Import(ImportStatement {
-            keyword_import,
-            url,
-            import_type,
+        Ok(Statement::Module(ModuleStatement {
+            keyword_export,
+            keyword_module,
+            left,
+            right,
         }))
+    }
+
+    fn parse_module_value(&mut self) -> Result<ModuleValue, ParseError> {
+        let context = None;
+        let token = self.next_meaningful_token()?;
+        match token {
+            None => Err(Parser::unexpected_eof(context)),
+            Some(token) => match token.token_type {
+                TokenType::KeywordImport => {
+                    let url = self.eat_token(TokenType::Identifier, context)?;
+                    Ok(ModuleValue::Import {
+                        keyword_import: token,
+                        url,
+                    })
+                }
+                _ => Err(Parser::invalid_token(token, context)),
+            },
+        }
+    }
+
+    fn parse_module_destructure_pattern(&mut self) -> Result<ModuleDestructurePattern, ParseError> {
+        let context = None;
+        let token = self.next_meaningful_token()?;
+        match token {
+            None => Err(Parser::unexpected_eof(context)),
+            Some(token) => match token.token_type {
+                TokenType::Identifier => Ok(ModuleDestructurePattern::Identifier(token)),
+                TokenType::LeftSquareBracket => {
+                    let mut pairs = vec![];
+                    let (pairs, right_square_bracket) = loop {
+                        if let Some(right_square_bracket) =
+                            self.try_eat_token(TokenType::RightSquareBracket)?
+                        {
+                            break (pairs, right_square_bracket);
+                        }
+                        pairs.push(ModuleDestructurePatternPair {
+                            name: self.eat_token(TokenType::Identifier, context)?,
+                            pattern: {
+                                if self.next_token_is_terminating()? {
+                                    None
+                                } else {
+                                    Some(self.parse_module_destructure_pattern()?)
+                                }
+                            },
+                        })
+                    };
+                    Ok(ModuleDestructurePattern::Record {
+                        left_square_bracket: token,
+                        spread: None,
+                        pairs,
+                        right_square_bracket,
+                    })
+                }
+                _ => {
+                    todo!()
+                }
+            },
+        }
     }
 
     fn validate_token(
@@ -1606,6 +1662,7 @@ impl<'a> Parser<'a> {
                     | TokenType::Semicolon
                     | TokenType::Colon
                     | TokenType::ArrowRight
+                    | TokenType::Comma
             )),
         }
     }
@@ -1710,7 +1767,6 @@ fn convert_expression_to_pattern(
         | Expression::RecordUpdate { .. }
         | Expression::If { .. }
         | Expression::Switch { .. }
-        | Expression::Block(_)
         | Expression::Let { .. }
         | Expression::Statements { .. }
         | Expression::UnsafeJavascript { .. } => Err(ParseError {

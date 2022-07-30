@@ -1,5 +1,6 @@
 use crate::{
     compile::{CompileError, CompileErrorKind},
+    module,
     non_empty::NonEmpty,
     parse::Parser,
     tokenize::Tokenizer,
@@ -42,7 +43,7 @@ pub fn unify_statements(
 ) -> Result<UnifyProgramResult, CompileError> {
     // 1. Partition statements based on their types
     let (
-        import_statements,
+        module_statments,
         type_statements,
         enum_statements,
         let_statements,
@@ -51,7 +52,7 @@ pub fn unify_statements(
         implements_statements,
         entry_statements,
     ) = {
-        let mut import_statements = Vec::new();
+        let mut module_statements = Vec::new();
         let mut type_statements = Vec::new();
         let mut enum_statements = Vec::new();
         let mut let_statements = Vec::new();
@@ -62,7 +63,7 @@ pub fn unify_statements(
         for statement in statements {
             match statement {
                 Statement::Import(import_statement) => {
-                    import_statements.push(import_statement);
+                    todo!("Remove import statement, as it is replaced by module statement")
                 }
                 Statement::Type(type_statement) => {
                     type_statements.push(type_statement);
@@ -86,10 +87,11 @@ pub fn unify_statements(
                     implements_statements.push(implement_statement)
                 }
                 Statement::Entry(entry_statement) => entry_statements.push(entry_statement),
+                Statement::Module(module_statement) => module_statements.push(module_statement),
             }
         }
         (
-            import_statements,
+            module_statements,
             type_statements,
             enum_statements,
             let_statements,
@@ -107,13 +109,13 @@ pub fn unify_statements(
     let init: (Vec<InferredStatement>, _) = (vec![], imported_modules.clone());
 
     let (typechecked_import_statements, imported_modules) =
-        import_statements
+        module_statments
             .into_iter()
-            .fold(Ok(init), |result, import_statement| match result {
+            .fold(Ok(init), |result, module_statement| match result {
                 Err(error) => Err(error),
                 Ok((mut statements, mut imported_modules)) => {
                     let current =
-                        infer_import_statement(&mut module, &imported_modules, import_statement)?;
+                        infer_module_statement(&mut module, &imported_modules, module_statement)?;
 
                     statements.extend(
                         current
@@ -988,24 +990,6 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
             expression, cases, ..
         } => has_direct_function_call(&expression)
             .or_else(|| cases.find_map(|case| has_direct_function_call(&case.body))),
-        Expression::Block(block) => {
-            block
-                .clone()
-                .statements()
-                .iter()
-                .find_map(|statement| match statement {
-                    Statement::Let(let_statement) => {
-                        has_direct_function_call(&let_statement.expression)
-                    }
-                    Statement::Expression(expression) => has_direct_function_call(expression),
-                    Statement::Type(_)
-                    | Statement::Entry(_)
-                    | Statement::Enum(_)
-                    | Statement::Import(_)
-                    | Statement::Interface(_)
-                    | Statement::Implement(_) => None,
-                })
-        }
         Expression::Parenthesized { value, .. } => has_direct_function_call(value),
         Expression::Let { body, .. } => has_direct_function_call(&body),
         Expression::Statements { current, next } => {
@@ -1177,128 +1161,151 @@ pub struct InferImportStatementResult {
     pub imported_modules: ImportedModules,
 }
 
-pub fn infer_import_statement(
+pub fn infer_module_statement(
     module: &mut Module,
     imported_modules: &ImportedModules,
-    ImportStatement {
-        url, import_type, ..
-    }: ImportStatement,
+    module_statement: ModuleStatement,
 ) -> Result<InferImportStatementResult, CompileError> {
     let importer_path = module.uid().string_value();
-    let import_path = url.representation.trim_matches('"');
-    let path = RelativePath::new(&importer_path)
-        .parent()
-        .expect("Should always have parent")
-        .join(RelativePath::new(import_path))
-        .normalize();
-    let path_string = path.to_string();
-    if module
-        .meta
-        .import_relations
-        .iter()
-        .any(|relation| path_string == relation.importer_path)
-    {
-        return Err(UnifyError {
-            position: url.position,
-            kind: UnifyErrorKind::CyclicDependency {
-                import_relations: {
-                    let mut relations = module.meta.import_relations.clone();
-                    relations.push(ImportRelation {
-                        importer_path,
-                        importee_path: path_string,
-                    });
-                    relations
-                },
-            },
-        }
-        .into_compile_error(module.meta.clone()));
-    }
-    let relative_path = path.to_path(Path::new("."));
-    let uid = ModuleUid::Local {
-        relative_path: path.to_string(),
-    };
 
-    // Look up for memoize imported modules
-    let imported = match imported_modules.get(&uid) {
-        Some(module) => {
-            println!("Compile cache hit: {}", uid.string_value());
-            UnifyProgramResult {
-                entrypoint: module.clone(),
-                imported_modules: IndexMap::new(),
-            }
-        }
-        None => {
-            match fs::read_to_string(relative_path) {
-                Ok(code) => {
-                    let module_meta = ModuleMeta {
-                        uid: uid.clone(),
-                        code: code.clone(),
+    let inferred_right: UnifyProgramResult = match module_statement.right {
+        ModuleValue::Name(_) => todo!("module aliasing"),
+        ModuleValue::Import {
+            keyword_import,
+            url,
+        } => {
+            let import_path = url.representation.trim_matches('"');
+            let path = RelativePath::new(&importer_path)
+                .parent()
+                .expect("Should always have parent")
+                .join(RelativePath::new(import_path))
+                .normalize();
+            let path_string = path.to_string();
+            if module
+                .meta
+                .import_relations
+                .iter()
+                .any(|relation| path_string == relation.importer_path)
+            {
+                return Err(UnifyError {
+                    position: url.position,
+                    kind: UnifyErrorKind::CyclicDependency {
                         import_relations: {
-                            let mut importer_paths = module.meta.import_relations.clone();
-                            importer_paths.push(ImportRelation {
-                                importer_path: module.meta.uid.string_value(),
+                            let mut relations = module.meta.import_relations.clone();
+                            relations.push(ImportRelation {
+                                importer_path,
                                 importee_path: path_string,
                             });
-                            importer_paths
+                            relations
                         },
-                    };
-
-                    // Parse the imported module
-                    let statements = match Parser::parse(&mut Tokenizer::new(code)) {
-                        Ok(statements) => Ok(statements),
-                        Err(parse_error) => Err(CompileError {
-                            module_meta: module_meta.clone(),
-                            kind: CompileErrorKind::ParseError(Box::new(parse_error)),
-                        }),
-                    }?;
-
-                    // Typecheck the imported module
-                    unify_statements(module_meta, statements, imported_modules, false)?
+                    },
                 }
-                Err(error) => {
-                    return Err(UnifyError {
-                        position: url.position,
-                        kind: UnifyErrorKind::ErrorneousImportPath {
-                            extra_information: format!("{}", error),
-                        },
+                .into_compile_error(module.meta.clone()));
+            }
+            let relative_path = path.to_path(Path::new("."));
+            let uid = ModuleUid::Local {
+                relative_path: path.to_string(),
+            };
+
+            // Look up for memoize imported modules
+            match imported_modules.get(&uid) {
+                Some(module) => {
+                    println!("Compile cache hit: {}", uid.string_value());
+                    UnifyProgramResult {
+                        entrypoint: module.clone(),
+                        imported_modules: IndexMap::new(),
                     }
-                    .into_compile_error(module.meta.clone()))
+                }
+                None => {
+                    match fs::read_to_string(relative_path) {
+                        Ok(code) => {
+                            let module_meta = ModuleMeta {
+                                uid: uid.clone(),
+                                code: code.clone(),
+                                import_relations: {
+                                    let mut importer_paths = module.meta.import_relations.clone();
+                                    importer_paths.push(ImportRelation {
+                                        importer_path: module.meta.uid.string_value(),
+                                        importee_path: path_string,
+                                    });
+                                    importer_paths
+                                },
+                            };
+
+                            // Parse the imported module
+                            let statements = match Parser::parse(&mut Tokenizer::new(code)) {
+                                Ok(statements) => Ok(statements),
+                                Err(parse_error) => Err(CompileError {
+                                    module_meta: module_meta.clone(),
+                                    kind: CompileErrorKind::ParseError(Box::new(parse_error)),
+                                }),
+                            }?;
+
+                            // Typecheck the imported module
+                            unify_statements(module_meta, statements, imported_modules, false)?
+                        }
+                        Err(error) => {
+                            return Err(UnifyError {
+                                position: url.position,
+                                kind: UnifyErrorKind::ErrorneousImportPath {
+                                    extra_information: format!("{}", error),
+                                },
+                            }
+                            .into_compile_error(module.meta.clone()))
+                        }
+                    }
                 }
             }
         }
     };
 
+    infer_module_destructure_pattern(module, module_statement.left, inferred_right)
+}
+
+pub fn infer_module_destructure_pattern(
+    module: &mut Module,
+    pattern: ModuleDestructurePattern,
+    inferred_right: UnifyProgramResult,
+) -> Result<InferImportStatementResult, CompileError> {
     // Check whether each imported name exists and is exported in this program
-    let matching_symbol_entries: Vec<(SymbolEntry, Option<Token>)> = {
-        match import_type {
-            ImportType::All { asterisk } => imported
-                .entrypoint
-                .module
-                .get_all_exported_symbols()
-                .into_iter()
-                .map(|entry| {
-                    let name = entry.symbol.meta.name.clone();
-                    (
-                        entry,
-                        Some(Token {
-                            position: asterisk.position,
-                            ..name
-                        }),
-                    )
-                })
-                .collect(),
-            ImportType::Selected { imported_names } => imported_names
-                .into_vector()
-                .into_iter()
-                .map(|imported_name| {
-                    let matching_symbol_entries = imported
+    let matching_symbol_entries: Vec<(SymbolEntry, Option<Token>)> = match pattern {
+        ModuleDestructurePattern::Identifier(_) => todo!("module alias"),
+        ModuleDestructurePattern::Record { spread, pairs, .. } => match spread {
+            Some(token) => {
+                if pairs.is_empty() {
+                    inferred_right
                         .entrypoint
                         .module
-                        .get_all_matching_symbols(&imported_name.name);
+                        .get_all_exported_symbols()
+                        .into_iter()
+                        .map(|entry| {
+                            let name = entry.symbol.meta.name.clone();
+                            (
+                                entry,
+                                Some(Token {
+                                    position: token.position,
+                                    ..name
+                                }),
+                            )
+                        })
+                        .collect()
+                } else {
+                    todo!("Get all exported symbols, but set difference with names found in pairs")
+                }
+            }
+
+            // Not importing all symbols
+            None => pairs
+                .into_iter()
+                .map(|pair| {
+                    let matching_symbol_entries = inferred_right
+                        .entrypoint
+                        .module
+                        .get_all_matching_symbols(&pair.name);
 
                     if matching_symbol_entries.is_empty() {
                         Err(UnifyError {
-                            position: imported_name.name.position,
+                            position: pair.name.position,
                             kind: UnifyErrorKind::UnknownImportedName,
                         }
                         .into_compile_error(module.meta.clone()))
@@ -1308,12 +1315,21 @@ pub fn infer_import_statement(
                             .map(|entry| {
                                 if !entry.symbol.meta.exported {
                                     Err(UnifyError {
-                                        position: imported_name.name.position,
+                                        position: pair.name.position,
                                         kind: UnifyErrorKind::CannotImportPrivateSymbol,
                                     }
                                     .into_compile_error(module.meta.clone()))
                                 } else {
-                                    Ok((entry, imported_name.alias_as.clone()))
+                                    match &pair.pattern {
+                                        Some(ModuleDestructurePattern::Identifier(alias)) => {
+                                            Ok((entry, Some(alias.clone())))
+                                        }
+                                        Some(ModuleDestructurePattern::Record { .. }) => {
+                                            todo!("Destructure nested module")
+                                        }
+
+                                        None => Ok((entry, Some(pair.name.clone()))),
+                                    }
                                 }
                             })
                             .collect::<Result<Vec<(SymbolEntry, Option<Token>)>, CompileError>>()?)
@@ -1323,7 +1339,7 @@ pub fn infer_import_statement(
                 .into_iter()
                 .flatten()
                 .collect(),
-        }
+        },
     };
 
     let import_statements = matching_symbol_entries
@@ -1344,7 +1360,7 @@ pub fn infer_import_statement(
                     // only insert import statement if the imported symbol is a value (i.e. not type)
                     match entry.symbol.kind {
                         SymbolKind::Value(_) => Ok(vec![InferredImportStatement {
-                            module_uid: imported.entrypoint.module.uid(),
+                            module_uid: inferred_right.entrypoint.module.uid(),
                             imported_name: Identifier {
                                 uid: entry.uid.clone(),
                                 token: entry.symbol.meta.name,
@@ -1368,9 +1384,9 @@ pub fn infer_import_statement(
     Ok(InferImportStatementResult {
         import_statements,
         imported_modules: {
-            let mut imported_modules = imported.imported_modules;
-            let uid = imported.entrypoint.module.uid();
-            imported_modules.insert(uid, imported.entrypoint);
+            let mut imported_modules = inferred_right.imported_modules;
+            let uid = inferred_right.entrypoint.module.uid();
+            imported_modules.insert(uid, inferred_right.entrypoint);
             imported_modules
         },
     })
@@ -1758,16 +1774,6 @@ impl Positionable for Expression {
                 right_curly_bracket,
                 ..
             } => keyword_switch.position.join(right_curly_bracket.position),
-            Expression::Block(block) => match block {
-                Block::WithBrackets {
-                    left_curly_bracket,
-                    right_curly_bracket,
-                    ..
-                } => left_curly_bracket
-                    .position
-                    .join(right_curly_bracket.position),
-                Block::WithoutBrackets { statements } => statements.position(),
-            },
             Expression::Parenthesized {
                 left_parenthesis,
                 right_parenthesis,
@@ -1826,6 +1832,10 @@ impl Positionable for Statement {
                 .keyword_entry
                 .position
                 .join(entry_statement.expression.position()),
+            Statement::Module(module_statement) => module_statement
+                .keyword_module
+                .position
+                .join(module_statement.right.position()),
         }
     }
 }
@@ -3181,32 +3191,6 @@ fn infer_expression_type_(
                     ))),
                     argument: Box::new(typechecked_expression.expression),
                 })),
-            })
-        }
-        Expression::Block(block) => {
-            let typechecked_statements =
-                infer_block_level_statements(module, expected_type, block.clone().statements())?;
-
-            let (typechecked_statements, return_value, type_value) =
-                match typechecked_statements.split_last() {
-                    Some((last, initial)) => match last {
-                        (InferredStatement::Expression(expression), type_value) => {
-                            (initial.to_vec(), expression.clone(), type_value.clone())
-                        }
-                        _ => (initial.to_vec(), InferredExpression::Unit, Type::Unit),
-                    },
-                    None => (vec![], InferredExpression::Unit, Type::Unit),
-                };
-
-            Ok(InferExpressionResult {
-                type_value,
-                expression: InferredExpression::Block {
-                    statements: typechecked_statements
-                        .into_iter()
-                        .map(|(statement, _)| statement)
-                        .collect(),
-                    return_value: Box::new(return_value),
-                },
             })
         }
         Expression::Parenthesized { value, .. } => {

@@ -275,7 +275,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordSwitch => "used for pattern matching",
         TokenType::KeywordCase => "used for pattern matching",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
-        TokenType::KeywordFrom => "used for importing modules",
         TokenType::KeywordAs => "used for aliasing imported symbols",
         TokenType::Asterisk => "used for glob import",
         TokenType::KeywordInterface => "used for declaring interface",
@@ -285,6 +284,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Operator => "used for defining symbolic functions",
         TokenType::KeywordEntry => "used for defining the entry point of a file",
         TokenType::Semicolon => "used for separating statements",
+        TokenType::KeywordModule => "used for declaring/importing/aliasing modules",
 
     }
 }
@@ -340,7 +340,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
                 "enum Color { Red, Green }",
             ],
         },
-        ParseContext::StatementImport => ParseContextDescription {
+        ParseContext::StatementModule => ParseContextDescription {
             name: "Import Statement",
             examples: vec![
                 "import { bar } from \"./foo.kk\"",
@@ -463,7 +463,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordTrue => "true",
         TokenType::KeywordFalse => "false",
         TokenType::KeywordImport => "import",
-        TokenType::KeywordFrom => "from",
         TokenType::KeywordExport => "export",
         TokenType::Whitespace => " ",
         TokenType::LeftCurlyBracket => "{",
@@ -510,6 +509,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Operator => todo!(),
         TokenType::KeywordEntry => "entry",
         TokenType::Semicolon => ";",
+        TokenType::KeywordModule => "module",
     }
 }
 
