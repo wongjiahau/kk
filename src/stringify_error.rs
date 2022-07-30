@@ -240,9 +240,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
     match token_type {
         TokenType::KeywordLet => "used for defining variables, for example:\n\n\tlet x = 1",
         TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
-        TokenType::KeywordDo => "used for defining expression with side effects, such as:\n\n\tdo \"Hello world\".print",
-        TokenType::KeywordTrue | TokenType::KeywordFalse
-            => "only used to create a boolean value",
         TokenType::KeywordImport => "only used for importing symbols from other files, for example:\n\n\timport \"./foo.kk\" { bar spam hello: hello2}",
         TokenType::KeywordExport => "only used for exporting symbols, for example:\n\n\texport let foo = 1",
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
@@ -272,10 +269,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Bang => "used for annotating Promise type, for example: \n\n\t!Integer",
         TokenType::Slash => "used for applicative let",
         TokenType::TripleBacktick => "used for writing code snippet in documentation comments",
-        TokenType::KeywordSwitch => "used for pattern matching",
-        TokenType::KeywordCase => "used for pattern matching",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
-        TokenType::KeywordAs => "used for aliasing imported symbols",
         TokenType::Asterisk => "used for glob import",
         TokenType::KeywordInterface => "used for declaring interface",
         TokenType::KeywordImplements => "used for implementing an interface",
@@ -298,10 +292,6 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::ExpressionFunction => ParseContextDescription {
             name: "Function",
             examples: vec!["x => x.add(1)", "(x: Boolean, y: Integer): Boolean => true"],
-        },
-        ParseContext::ExpressionSwitch => ParseContextDescription {
-            name: "Switch Expression",
-            examples: vec!["switch(x) {case true: \"Yes\" case false: \"No\"}"],
         },
         ParseContext::ExpressionIf => ParseContextDescription {
             name: "If Expression",
@@ -459,9 +449,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
     match token_type {
         TokenType::KeywordLet => "let",
         TokenType::KeywordType => "type",
-        TokenType::KeywordDo => "do",
-        TokenType::KeywordTrue => "true",
-        TokenType::KeywordFalse => "false",
         TokenType::KeywordImport => "import",
         TokenType::KeywordExport => "export",
         TokenType::Whitespace => " ",
@@ -498,9 +485,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::InterpolatedString { .. } => "\"Hello #{my_name}\"",
         TokenType::TripleBacktick => "```",
         TokenType::Other(_) => "unknown character",
-        TokenType::KeywordSwitch => "switch",
-        TokenType::KeywordCase => "case",
-        TokenType::KeywordAs => "as",
         TokenType::Asterisk => "*",
         TokenType::KeywordInterface => "interface",
         TokenType::KeywordImplements => "implements",

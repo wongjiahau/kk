@@ -21,8 +21,6 @@ pub enum Statement {
 
     Module(ModuleStatement),
 
-    Import(ImportStatement),
-
     Entry(EntryStatement),
 }
 
@@ -164,30 +162,6 @@ impl EnumStatement {
     pub fn type_variables(&self) -> Vec<Token> {
         get_type_variables(&self.type_variables_declaration)
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ImportStatement {
-    pub keyword_import: Token,
-    pub url: Token,
-    pub import_type: ImportType,
-}
-
-#[derive(Debug, Clone)]
-pub enum ImportType {
-    /// This means import selected exported symbols
-    Selected {
-        imported_names: NonEmpty<ImportedName>,
-    },
-
-    /// This means to import all exported symbols
-    All { asterisk: Token },
-}
-
-#[derive(Debug, Clone)]
-pub struct ImportedName {
-    pub name: Token,
-    pub alias_as: Option<Token>,
 }
 
 #[derive(Debug, Clone)]
@@ -644,17 +618,11 @@ pub enum TokenType {
     KeywordWhere,
     KeywordInterface,
     KeywordImplements,
-    KeywordSwitch,
-    KeywordCase,
     KeywordEntry,
     KeywordLet,
     KeywordType,
-    KeywordDo,
     KeywordModule,
-    KeywordTrue,
-    KeywordFalse,
     KeywordImport,
-    KeywordAs,
     KeywordExport,
     Whitespace,
     LeftCurlyBracket,

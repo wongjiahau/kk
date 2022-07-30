@@ -36,7 +36,6 @@ pub enum ParseContext {
     ExpressionRecordUpdate,
     ExpressionEnumConstructor,
     ExpressionQuoted,
-    ExpressionSwitch,
     ExpressionIf,
 
     // Statement
@@ -501,25 +500,6 @@ impl<'a> Parser<'a> {
             type_variables_declaration: type_variables,
             constructors,
         }))
-    }
-
-    fn parse_imported_name(
-        &mut self,
-        context: Option<ParseContext>,
-    ) -> Result<ImportedName, ParseError> {
-        let name = self.eat_token(TokenType::Identifier, context)?;
-        Ok(if self.try_eat_token(TokenType::KeywordAs)?.is_some() {
-            let alias_as = self.eat_token(TokenType::Identifier, context)?;
-            ImportedName {
-                name,
-                alias_as: Some(alias_as),
-            }
-        } else {
-            ImportedName {
-                name,
-                alias_as: None,
-            }
-        })
     }
 
     fn parse_module_statement(
@@ -1127,10 +1107,6 @@ impl<'a> Parser<'a> {
                 TokenType::Underscore => Ok(Expression::Identifier(
                     self.next_meaningful_token()?.unwrap(),
                 )),
-                TokenType::KeywordSwitch => {
-                    let keyword_switch = self.next_meaningful_token()?.unwrap();
-                    self.parse_switch_expression(keyword_switch)
-                }
                 TokenType::JavascriptCode => Ok(Expression::UnsafeJavascript {
                     code: self.next_meaningful_token()?.unwrap(),
                 }),
@@ -1196,14 +1172,6 @@ impl<'a> Parser<'a> {
                 }
                 TokenType::Float => Ok(Expression::Float(token.clone())),
                 TokenType::Integer => Ok(Expression::Integer(token.clone())),
-                TokenType::KeywordTrue => Ok(Expression::Boolean {
-                    token: token.clone(),
-                    value: true,
-                }),
-                TokenType::KeywordFalse => Ok(Expression::Boolean {
-                    token: token.clone(),
-                    value: false,
-                }),
                 TokenType::Identifier => Ok(Expression::Identifier(token.clone())),
                 TokenType::Tag => Ok(Expression::EnumConstructor {
                     name: token.clone(),
@@ -1313,43 +1281,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_switch_expression(&mut self, keyword_switch: Token) -> Result<Expression, ParseError> {
-        let context = Some(ParseContext::ExpressionSwitch);
-        let expression = self.parse_mid_precedence_expression()?;
-        let left_curly_bracket = self.eat_token(TokenType::LeftCurlyBracket, context)?;
-        let head = self.parse_switch_case(context)?;
-        let mut tail = vec![];
-        let (tail, right_curly_bracket) = loop {
-            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
-                break (tail, right_curly_bracket);
-            } else {
-                tail.push(self.parse_switch_case(context)?)
-            }
-        };
-        Ok(Expression::Switch {
-            keyword_switch,
-            expression: Box::new(expression),
-            left_curly_bracket,
-            cases: Box::new(NonEmpty { head, tail }),
-            right_curly_bracket,
-        })
-    }
-
-    fn parse_switch_case(
-        &mut self,
-        context: Option<ParseContext>,
-    ) -> Result<SwitchCase, ParseError> {
-        let keyword_case = self.eat_token(TokenType::KeywordCase, context)?;
-        let pattern = self.parse_destructure_pattern()?;
-        self.eat_token(TokenType::Colon, context)?;
-        let body = self.parse_mid_precedence_expression()?;
-        Ok(SwitchCase {
-            keyword_case,
-            pattern,
-            body: Box::new(body),
-        })
-    }
-
     fn parse_destructure_pattern(&mut self) -> Result<DestructurePattern, ParseError> {
         let simple_pattern = self.parse_simple_destructure_pattern()?;
         let mut tail_patterns = vec![];
@@ -1450,11 +1381,6 @@ impl<'a> Parser<'a> {
                 TokenType::Character => Ok(DestructurePattern::Infinite {
                     token,
                     kind: InfinitePatternKind::Character,
-                }),
-                TokenType::KeywordTrue => Ok(DestructurePattern::Boolean { token, value: true }),
-                TokenType::KeywordFalse => Ok(DestructurePattern::Boolean {
-                    token,
-                    value: false,
                 }),
                 TokenType::LeftSquareBracket => {
                     let context = Some(ParseContext::PatternArray);

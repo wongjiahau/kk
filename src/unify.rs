@@ -62,9 +62,6 @@ pub fn unify_statements(
         let mut entry_statements = Vec::new();
         for statement in statements {
             match statement {
-                Statement::Import(import_statement) => {
-                    todo!("Remove import statement, as it is replaced by module statement")
-                }
                 Statement::Type(type_statement) => {
                     type_statements.push(type_statement);
                 }
@@ -1816,10 +1813,6 @@ impl Positionable for Statement {
                     .last()
                     .map(|constructor| constructor.position()),
             ),
-            Statement::Import(import_statement) => import_statement
-                .keyword_import
-                .position
-                .join(import_statement.url.position),
             Statement::Interface(interface_statement) => interface_statement
                 .keyword_interface
                 .position
