@@ -191,6 +191,11 @@ impl<'a> Parser<'a> {
                     self.parse_implements_statement(keyword_export, keyword_implements)
                         .map(vectorized)
                 }
+                TokenType::KeywordEffect => {
+                    let keyword_effect = self.next_meaningful_token()?.unwrap();
+                    self.parse_effect_statement(keyword_export, keyword_effect)
+                        .map(vectorized)
+                }
                 TokenType::MultilineComment { characters } => {
                     // Remove the asterisk at the first column
                     // This is because multiline comments looks like the following
@@ -256,6 +261,46 @@ impl<'a> Parser<'a> {
         Ok(Statement::Entry(EntryStatement {
             keyword_entry,
             expression: self.parse_low_precedence_expression()?,
+        }))
+    }
+
+    fn parse_effect_statement(
+        &mut self,
+        keyword_export: Option<Token>,
+        keyword_effect: Token,
+    ) -> Result<Statement, ParseError> {
+        let context = None;
+        let name = self.eat_token(TokenType::Identifier, context)?;
+        let type_variables_declaration = self.try_parse_type_variables_declaration()?;
+        self.eat_token(TokenType::Equals, context)?;
+        self.eat_token(TokenType::LeftSquareBracket, context)?;
+        let mut operations = vec![];
+        let operations = loop {
+            if self.try_eat_token(TokenType::RightSquareBracket)?.is_some() {
+                break operations;
+            }
+            let name = self.eat_token(TokenType::Identifier, context)?;
+            let type_variables_declaration = self.try_parse_type_variables_declaration()?;
+            let left_parenthesis = self.eat_token(TokenType::LeftParenthesis, context)?;
+            let parameter = self.parse_parameter(left_parenthesis)?;
+            self.eat_token(TokenType::Colon, context)?;
+            let return_type_annotation = self.parse_type_annotation(context)?;
+            operations.push(EffectOperation {
+                name,
+                type_variables_declaration,
+                parameter,
+                return_type_annotation,
+            });
+            if self.try_eat_token(TokenType::Comma)?.is_none() {
+                break operations;
+            }
+        };
+        self.eat_token(TokenType::RightSquareBracket, context)?;
+        Ok(Statement::Effect(EffectStatement {
+            keyword_export,
+            name,
+            type_variables_declaration,
+            operations,
         }))
     }
 
@@ -1045,25 +1090,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_function_call_rest_arguments(
-        &mut self,
-    ) -> Result<Option<FunctionCallRestArguments>, ParseError> {
-        if self.next_token_is_terminating()? {
-            return Ok(None);
-        }
-        let mut arguments = vec![];
-        loop {
-            if let Some(token) = self.peek_next_meaningful_token()? {
-                match token.token_type {
-                    TokenType::Identifier | TokenType::Operator => {
-                        return Ok(Some(FunctionCallRestArguments { arguments }))
-                    }
-                    _ => arguments.push(self.parse_high_precedence_expression()?),
-                }
-            }
-        }
-    }
-
     fn try_parse_dot_expression(
         &mut self,
         first_argument: Expression,
@@ -1211,23 +1237,6 @@ impl<'a> Parser<'a> {
             left_square_bracket,
             elements,
             right_square_bracket,
-        })
-    }
-
-    fn parse_block(&mut self, left_curly_bracket: Token) -> Result<Block, ParseError> {
-        let statements = self.parse_statement()?;
-        let mut statements = statements;
-        let right_curly_bracket = loop {
-            if self.try_eat_token(TokenType::Comma)?.is_some() {
-                statements.extend(self.parse_statement()?);
-            } else {
-                break self.eat_token(TokenType::RightCurlyBracket, None)?;
-            }
-        };
-        Ok(Block::WithBrackets {
-            left_curly_bracket,
-            statements,
-            right_curly_bracket,
         })
     }
 
@@ -1537,11 +1546,18 @@ impl<'a> Parser<'a> {
             return Ok(previous);
         }
 
+        if self.try_eat_token(TokenType::Bang)?.is_some() {
+            return Ok(Expression::PerformEffectOperation {
+                name: self.eat_token(TokenType::Identifier, None)?,
+                argument: Box::new(previous),
+            });
+        }
+
         let next = self.parse_high_precedence_expression()?;
         let (function, argument) = match &next {
             // TODO: handle operator
 
-            // Postfix or infix function call
+            // Postfix
             Expression::Identifier(_) => (next, previous),
 
             // Prefix function call
@@ -1588,7 +1604,6 @@ impl<'a> Parser<'a> {
                     | TokenType::Semicolon
                     | TokenType::Colon
                     | TokenType::ArrowRight
-                    | TokenType::Comma
             )),
         }
     }
@@ -1691,10 +1706,10 @@ fn convert_expression_to_pattern(
         | Expression::FunctionCall(_)
         | Expression::RecordAccess { .. }
         | Expression::RecordUpdate { .. }
-        | Expression::If { .. }
-        | Expression::Switch { .. }
         | Expression::Let { .. }
         | Expression::Statements { .. }
+        | Expression::EffectHandler { .. }
+        | Expression::PerformEffectOperation { .. }
         | Expression::UnsafeJavascript { .. } => Err(ParseError {
             context,
             kind: ParseErrorKind::ExpectedPattern {

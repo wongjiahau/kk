@@ -573,8 +573,8 @@ impl Eval for Object {
         let mut env = env.new_child();
         let mut promises = vec![];
         for pair in self.pairs {
-            let (value, mut newPromises) = pair.value.eval(&mut env)?;
-            promises.append(&mut newPromises);
+            let (value, mut new_promises) = pair.value.eval(&mut env)?;
+            promises.append(&mut new_promises);
             let pattern = pair.key;
             if let Some(bindings) = pattern.matches(&value)? {
                 env.combine(bindings);

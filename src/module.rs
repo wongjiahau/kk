@@ -680,6 +680,40 @@ impl Module {
                     })
                     .collect::<Result<Vec<()>, UnifyError>>()?;
             }
+            SymbolKind::Effect(_) => {
+                let conflicting_entry =
+                    self.symbol_entries
+                        .iter()
+                        .find_map(|entry| match entry.symbol.kind {
+                            SymbolKind::Effect(_)
+                                if name == entry.symbol.meta.name.representation =>
+                            {
+                                Some(entry.clone())
+                            }
+                            _ => None,
+                        });
+                match conflicting_entry {
+                    Some(conflicting_entry) => panic!("Duplicated effect entry"),
+                    None => {}
+                }
+            }
+            SymbolKind::EffectOperation(_) => {
+                let conflicting_entry =
+                    self.symbol_entries
+                        .iter()
+                        .find_map(|entry| match entry.symbol.kind {
+                            SymbolKind::EffectOperation(_)
+                                if name == entry.symbol.meta.name.representation =>
+                            {
+                                Some(entry.clone())
+                            }
+                            _ => None,
+                        });
+                match conflicting_entry {
+                    Some(conflicting_entry) => panic!("Duplicated effect operation"),
+                    None => {}
+                }
+            }
         };
 
         let uid = uid.unwrap_or_else(|| self.get_next_symbol_uid());
@@ -1060,6 +1094,35 @@ impl Module {
             }
         }
     }
+
+    pub fn get_effect_operations(
+        &self,
+        effect_name: &Token,
+    ) -> Result<Vec<EffectOperation>, UnifyError> {
+        todo!()
+    }
+
+    pub fn get_effect_operation(&self, name: &Token) -> Result<EffectOperation, UnifyError> {
+        let matching_effect_operation =
+            self.symbol_entries
+                .iter()
+                .find_map(|entry| match &entry.symbol.kind {
+                    SymbolKind::EffectOperation(effect_operation)
+                        if entry.symbol.meta.name.representation == name.representation =>
+                    {
+                        Some(effect_operation.clone())
+                    }
+                    _ => None,
+                });
+        match matching_effect_operation {
+            Some(effect_operation) => Ok(effect_operation),
+            None => panic!("No such operation"),
+        }
+    }
+
+    pub fn get_effect_by_uid(&self, effect_uid: SymbolUid) -> Effect {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1073,8 +1136,19 @@ pub struct Symbol {
 pub enum SymbolKind {
     Value(ValueSymbol),
     Type(TypeSymbol),
+    Effect(EffectSymbol),
     EnumConstructor(EnumConstructorSymbol),
+    EffectOperation(EffectOperation),
     Interface(InterfaceSymbol),
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectOperation {
+    pub name: Token,
+    pub type_variables: Vec<ExplicitTypeVariable>,
+    pub argument_type: Type,
+    pub return_type: Type,
+    pub effect_uid: SymbolUid,
 }
 
 #[derive(Debug, Clone)]
@@ -1142,6 +1216,17 @@ pub struct InferredInterfaceDefinition {
 #[derive(Debug, Clone)]
 pub struct TypeSymbol {
     pub type_value: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectSymbol {
+    pub effect_type: EffectType,
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectType {
+    pub name: String,
+    pub type_arguments: Vec<(String, Type)>,
 }
 
 #[derive(Debug, Clone)]

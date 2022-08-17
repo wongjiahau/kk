@@ -279,6 +279,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordEntry => "used for defining the entry point of a file",
         TokenType::Semicolon => "used for separating statements",
         TokenType::KeywordModule => "used for declaring/importing/aliasing modules",
+        TokenType::KeywordEffect => todo!(),
 
     }
 }
@@ -494,6 +495,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordEntry => "entry",
         TokenType::Semicolon => ";",
         TokenType::KeywordModule => "module",
+        TokenType::KeywordEffect => "effect",
     }
 }
 

@@ -2,6 +2,12 @@
 use crate::{module::SymbolUid, non_empty::NonEmpty};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Effect {
+    name: String,
+    arguments: Vec<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Underscore,
     ExplicitTypeVariable(ExplicitTypeVariable),

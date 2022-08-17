@@ -3,6 +3,7 @@ use crate::{
     non_empty::NonEmpty,
     raw_ast::{InfinitePatternKind, Position, Token},
     typ::{InstantiatedConstraint, Type},
+    unify::InferExpressionResult,
 };
 /// The syntax tree here represents the syntax tree that is type-checked
 /// Which contain information necessary for the transpilation
@@ -91,11 +92,6 @@ pub enum InferredExpression {
     Javascript {
         code: String,
     },
-    If {
-        condition: Box<InferredExpression>,
-        if_true: Box<InferredExpression>,
-        if_false: Box<InferredExpression>,
-    },
     Block {
         statements: Vec<InferredStatement>,
         return_value: Box<InferredExpression>,
@@ -105,7 +101,7 @@ pub enum InferredExpression {
 #[derive(Debug, Clone)]
 pub enum InferredInterpolatedStringSection {
     String(String),
-    Expression(Box<InferredExpression>),
+    Expression(Box<InferExpressionResult>),
 }
 
 /// This is to ensure that we transpile property name properly.
@@ -137,7 +133,7 @@ pub struct InferredBranchedFunction {
 #[derive(Debug, Clone)]
 pub struct InferredFunctionBranch {
     pub parameter: Box<InferredDestructurePattern>,
-    pub body: Box<InferredExpression>,
+    pub body: Box<InferExpressionResult>,
 }
 
 #[derive(Debug, Clone)]

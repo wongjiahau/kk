@@ -489,7 +489,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                             javascript::Expression::String(string)
                         }
                         InferredInterpolatedStringSection::Expression(expression) => {
-                            transpile_expression(*expression)
+                            transpile_expression(expression.expression)
                         }
                     })
                     .collect::<Vec<javascript::Expression>>(),
@@ -610,15 +610,6 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
         InferredExpression::Javascript { code } => {
             javascript::Expression::UnsafeJavascriptCode(code)
         }
-        InferredExpression::If {
-            condition,
-            if_true,
-            if_false,
-        } => javascript::Expression::Conditional {
-            condition: Box::new(transpile_expression(*condition)),
-            if_true: Box::new(transpile_expression(*if_true)),
-            if_false: Box::new(transpile_expression(*if_false)),
-        },
         InferredExpression::Block {
             statements,
             return_value,
@@ -669,7 +660,7 @@ pub fn transpile_function_branch(
             assignment: binding,
         })
         .chain(vec![javascript::Statement::Return(transpile_expression(
-            *function_branch.body,
+            function_branch.body.expression,
         ))])
         .collect::<Vec<javascript::Statement>>();
     match join_expressions(transpiled_destructure_pattern.conditions, |left, right| {

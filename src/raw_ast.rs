@@ -1,6 +1,4 @@
-use crate::{
-    non_empty::NonEmpty, tokenize::Character, typ::ExplicitTypeVariable, unify::Positionable,
-};
+use crate::{non_empty::NonEmpty, tokenize::Character, unify::Positionable};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -22,6 +20,24 @@ pub enum Statement {
     Module(ModuleStatement),
 
     Entry(EntryStatement),
+
+    Effect(EffectStatement),
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectStatement {
+    pub keyword_export: Option<Token>,
+    pub name: Token,
+    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
+    pub operations: Vec<EffectOperation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectOperation {
+    pub name: Token,
+    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
+    pub parameter: Parameter,
+    pub return_type_annotation: TypeAnnotation,
 }
 
 #[derive(Debug, Clone)]
@@ -363,20 +379,6 @@ pub enum Expression {
         elements: Vec<Expression>,
         right_square_bracket: Token,
     },
-    If {
-        keyword_if: Token,
-        condition: Box<Expression>,
-        if_true: Box<Expression>,
-        keyword_else: Token,
-        if_false: Box<Expression>,
-    },
-    Switch {
-        keyword_switch: Token,
-        expression: Box<Expression>,
-        left_curly_bracket: Token,
-        cases: Box<NonEmpty<SwitchCase>>,
-        right_curly_bracket: Token,
-    },
     Let {
         keyword_let: Token,
         left: DestructurePattern,
@@ -387,6 +389,30 @@ pub enum Expression {
     UnsafeJavascript {
         code: Token,
     },
+    EffectHandler {
+        expression: Box<Expression>,
+        keyword_handle: Token,
+        effect_name: Token,
+        left_square_bracket: Token,
+        operations: Vec<EffectHandlerOperation>,
+        r#return: Option<EffectHandlerReturn>,
+        right_square_bracket: Token,
+    },
+    PerformEffectOperation {
+        name: Token,
+        argument: Box<Expression>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectHandlerReturn {
+    lambda: Lambda,
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectHandlerOperation {
+    name: Token,
+    lambda: Lambda,
 }
 
 #[derive(Debug, Clone)]
@@ -619,6 +645,7 @@ pub enum TokenType {
     KeywordInterface,
     KeywordImplements,
     KeywordEntry,
+    KeywordEffect,
     KeywordLet,
     KeywordType,
     KeywordModule,

@@ -515,6 +515,11 @@ impl Tokenizer {
                     representation: "_".to_string(),
                     position: make_position(character, None),
                 })),
+                '!' => Ok(Some(Token {
+                    token_type: TokenType::Bang,
+                    representation: "!".to_string(),
+                    position: make_position(character, None),
+                })),
                 // Symbolic identifer
                 other if is_symbol(other) => {
                     let characters = self
@@ -604,6 +609,8 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordImplements
     } else if s.eq("where") {
         TokenType::KeywordWhere
+    } else if s.eq("effect") {
+        TokenType::KeywordEffect
     } else {
         TokenType::Identifier
     }
