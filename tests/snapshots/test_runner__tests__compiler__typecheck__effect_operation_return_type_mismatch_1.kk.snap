@@ -1,0 +1,39 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+effect Exception = [
+  raise <A>(code: Int) : Int
+]
+
+entry
+  let x : String = 123 ! raise;
+  x print
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/effect_operation_return_type_mismatch_1.kk:6:20
+  │
+6 │   let x : String = 123 ! raise;
+  │                    ^^^^^^^^^^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - String      | + Integer   |
+    +---------------+-------------+
