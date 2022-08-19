@@ -153,9 +153,9 @@ pub fn unify_statements(
         .into_iter()
         .map(|effect_definition| {
             let enum_uid = insert_effect_symbol(&mut module, effect_definition.clone())?;
-            Ok((enum_uid, effect_definition))
+            Ok((enum_uid, effect_definition.name.clone(), effect_definition))
         })
-        .collect::<Result<Vec<(SymbolUid, EffectStatement)>, UnifyError>>()
+        .collect::<Result<Vec<(SymbolUid, Token, EffectStatement)>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     // Check the definition of type alias statement
@@ -177,7 +177,10 @@ pub fn unify_statements(
     // Insert effect operations
     effect_statements
         .into_iter()
-        .map(|(uid, effect_statement)| {
+        // TODO: store effect UID in effect operation,
+        //       this is to allow better error reporting in case two files declared effect using
+        //       the same name
+        .map(|(_effect_uid, effect_name, effect_statement)| {
             effect_statement
                 .operations
                 .iter()
@@ -186,7 +189,7 @@ pub fn unify_statements(
                         &mut module,
                         operation,
                         effect_statement.keyword_export.is_some(),
-                        &uid,
+                        &effect_name,
                     )
                 })
                 .collect()
@@ -500,7 +503,7 @@ fn infer_effect_operation(
     module: &mut Module,
     operation: &EffectOperation,
     exported: bool,
-    effect_uid: &SymbolUid,
+    effect_name: &Token,
 ) -> Result<(), UnifyError> {
     let symbol = Symbol {
         meta: SymbolMeta {
@@ -529,7 +532,7 @@ fn infer_effect_operation(
                         module,
                         &operation.return_type_annotation,
                     )?,
-                    effect_uid: effect_uid.clone(),
+                    effect_name: effect_name.clone(),
                 })
             })?
         }),
@@ -915,6 +918,11 @@ fn solve_constraints(
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         }),
+        PerformEffect {
+            effect_name,
+            operation_name,
+            argument,
+        } => todo!(),
     }
 }
 
@@ -1228,6 +1236,10 @@ pub enum UnifyErrorKind {
     TopLevelLetStatementCannotBeDestructured,
     MissingTypeAnnotationForTopLevelBinding,
     CannotBeOverloaded,
+    EffectMismatch {
+        expected_effects: Vec<Effect>,
+        actual_effects: Vec<Effect>,
+    },
 }
 
 /// We use IndexMap instead of HashMap for storing imported modules because we need to preserve the insertion order,
@@ -2407,6 +2419,7 @@ pub fn rewrite_type_variable_in_type(
         Type::Function(FunctionType {
             parameter_type,
             return_type,
+            effects,
         }) => Type::Function(FunctionType {
             parameter_type: Box::new(rewrite_type_variable_in_type(
                 from_type_variable,
@@ -2418,6 +2431,7 @@ pub fn rewrite_type_variable_in_type(
                 to_type,
                 *return_type,
             )),
+            effects,
         }),
         Type::Record { key_type_pairs } => Type::Record {
             key_type_pairs: key_type_pairs
@@ -2915,6 +2929,7 @@ fn infer_expression_type_(
                                         let expected_type = Type::Function(FunctionType {
                                             parameter_type: Box::new(expected_type.clone()),
                                             return_type: Box::new(expected_type.clone()),
+                                            effects: todo!(),
                                         });
                                         let typechecked_function = infer_expression_type(
                                             module,
@@ -2959,8 +2974,29 @@ fn infer_expression_type_(
                 },
                 _ => None,
             };
+
             let typechecked_function =
-                infer_branched_function(module, expected_function_type, function)?;
+                infer_branched_function(module, &expected_function_type, function)?;
+
+            // Check for effects
+            let effects: Vec<Effect> = typechecked_function
+                .function
+                .branches
+                .clone()
+                .into_vector()
+                .into_iter()
+                .flat_map(|branch| branch.body.effects)
+                .collect();
+
+            match &expected_function_type {
+                None => {}
+                Some(function_type) => {
+                    let expected_effects = &function_type.effects;
+                    let actual_effects = &effects;
+
+                    unify_effects(&expected_effects, &actual_effects, function.position())?;
+                }
+            }
 
             Ok(InferExpressionResult {
                 type_value: match expected_type {
@@ -2974,13 +3010,7 @@ fn infer_expression_type_(
                 expression: InferredExpression::BranchedFunction(Box::new(
                     typechecked_function.function.clone(),
                 )),
-                effects: typechecked_function
-                    .function
-                    .branches
-                    .into_vector()
-                    .into_iter()
-                    .flat_map(|branch| branch.body.effects)
-                    .collect(),
+                effects,
             })
         }
         Expression::FunctionCall(function_call) => {
@@ -3017,6 +3047,7 @@ fn infer_expression_type_(
                     let expected_function_type = Type::Function(FunctionType {
                         parameter_type: Box::new(typechecked_argument.type_value),
                         return_type: Box::new(module.introduce_implicit_type_variable(None)?),
+                        effects: typechecked_argument.effects,
                     });
 
                     // Get the actual function type
@@ -3081,6 +3112,7 @@ fn infer_expression_type_(
                     let actual_function_type = Type::Function(FunctionType {
                         parameter_type: Box::new(typechecked_argument.type_value),
                         return_type: Box::new(return_type.clone()),
+                        effects: typechecked_argument.effects.clone(),
                     });
 
                     unify_type(
@@ -3309,7 +3341,7 @@ fn infer_expression_type_(
             effect_name,
             ..
         } => {
-            let operations = module.get_effect_operations(&effect_name)?;
+            let operations = module.get_effect_operations(&effect_name);
             todo!()
         }
         Expression::PerformEffectOperation { name, argument } => {
@@ -3317,9 +3349,12 @@ fn infer_expression_type_(
 
             // Instantiate the argument type and return type of this operation if there's type
             // variables
+            //
+            // We are reusing existing code by using the FunctionType
             let function_type = FunctionType {
                 parameter_type: Box::new(operation.argument_type.clone()),
                 return_type: Box::new(operation.return_type),
+                effects: vec![],
             };
             let function_type = match operation.type_variables.split_first() {
                 Some((head, tail)) => {
@@ -3361,10 +3396,14 @@ fn infer_expression_type_(
             Ok(InferExpressionResult {
                 effects: {
                     let mut effects = typechecked_argument.effects;
-                    effects.push(module.get_effect_by_uid(operation.effect_uid));
+                    effects.push(operation.effect_name.representation.clone());
                     effects
                 },
-                expression: todo!(),
+                expression: InferredExpression::PerformEffect {
+                    effect_name: operation.effect_name,
+                    operation_name: operation.name,
+                    argument: Box::new(typechecked_argument.expression),
+                },
                 type_value: result_type,
             })
         }
@@ -3374,6 +3413,18 @@ fn infer_expression_type_(
         type_value: module.apply_subtitution_to_type(&result.type_value),
         expression: result.expression,
     })
+}
+
+fn unique_sorted_effects(effects: &[Effect]) -> Vec<Effect> {
+    effects.to_vec().into_iter().unique().collect()
+}
+
+impl Lambda {
+    fn position(&self) -> Position {
+        self.left_curly_bracket
+            .position
+            .join(self.right_curly_bracket.position)
+    }
 }
 
 impl Positionable for EnumConstructorDefinition {
@@ -3551,7 +3602,7 @@ struct InferFunctionResult {
 }
 fn infer_branched_function(
     module: &mut Module,
-    expected_function_type: Option<FunctionType>,
+    expected_function_type: &Option<FunctionType>,
     function: &Lambda,
 ) -> Result<InferFunctionResult, UnifyError> {
     let typechecked_first_branch =
@@ -3564,7 +3615,7 @@ fn infer_branched_function(
         .map(|function_branch| {
             infer_function_branch(
                 module,
-                Some(typechecked_first_branch.function_type.clone()),
+                &Some(typechecked_first_branch.function_type.clone()),
                 &function_branch,
             )
         })
@@ -3594,8 +3645,22 @@ fn infer_branched_function(
         Expression::Lambda(Box::new(function.clone())).position(),
     )?;
 
+    let effects = typechecked_first_branch
+        .function_type
+        .effects
+        .into_iter()
+        .chain(
+            typechecked_rest_branches
+                .iter()
+                .flat_map(|branch| branch.function_type.effects.clone()),
+        )
+        .collect();
+
     Ok(InferFunctionResult {
-        function_type,
+        function_type: FunctionType {
+            effects,
+            ..function_type
+        },
         function: InferredBranchedFunction {
             branches: Box::new(NonEmpty {
                 head: typechecked_first_branch.function_branch,
@@ -3864,6 +3929,11 @@ pub fn unify_function_type(
                 Ok(return_type) => Ok(FunctionType {
                     parameter_type: Box::new(parameter_type),
                     return_type: Box::new(return_type),
+                    effects: unify_effects(
+                        &expected_function_type.effects,
+                        &actual_function_type.effects,
+                        position,
+                    )?,
                 }),
                 Err(_) => Err(UnifyError {
                     position,
@@ -3888,13 +3958,31 @@ pub fn unify_function_type(
     }
 }
 
+fn unify_effects(
+    expected_effects: &[Effect],
+    actual_effects: &[Effect],
+    position: Position,
+) -> Result<Vec<Effect>, UnifyError> {
+    if unique_sorted_effects(expected_effects) != unique_sorted_effects(actual_effects) {
+        Err(UnifyError {
+            position,
+            kind: UnifyErrorKind::EffectMismatch {
+                expected_effects: expected_effects.to_vec(),
+                actual_effects: actual_effects.to_vec(),
+            },
+        })
+    } else {
+        Ok(expected_effects.to_vec())
+    }
+}
+
 struct InferFunctionBranchResult {
     function_branch: InferredFunctionBranch,
     function_type: FunctionType,
 }
 fn infer_function_branch(
     module: &mut Module,
-    expected_function_type: Option<FunctionType>,
+    expected_function_type: &Option<FunctionType>,
     function_branch: &FunctionBranch,
 ) -> Result<InferFunctionBranchResult, UnifyError> {
     module.run_in_new_child_scope(|module| {
@@ -3917,10 +4005,23 @@ fn infer_function_branch(
         let result_type = FunctionType {
             parameter_type: Box::new(typechecked_parameter.type_value.clone()),
             return_type: Box::new(module.apply_subtitution_to_type(&typechecked_body.type_value)),
+            effects: typechecked_body.effects.clone(),
         };
 
         // Check for unused variables
         module.check_for_unused_symbols(module.current_scope_name())?;
+
+        // Check for effects
+        match expected_function_type {
+            None => {}
+            Some(function_type) => {
+                unify_effects(
+                    &function_type.effects,
+                    &typechecked_body.effects,
+                    function_branch.body.position(),
+                )?;
+            }
+        }
 
         Ok(InferFunctionBranchResult {
             function_type: module.apply_subtitution_to_function_type(&result_type),
@@ -4081,10 +4182,14 @@ pub fn type_annotation_to_type(
         TypeAnnotation::Function {
             parameter,
             return_type,
-            ..
+            effects,
         } => Ok(Type::Function(FunctionType {
             parameter_type: Box::new(type_annotation_to_type(module, &parameter)?),
             return_type: Box::new(type_annotation_to_type(module, return_type)?),
+            effects: effects
+                .into_iter()
+                .map(|effect_name| module.get_effect(effect_name))
+                .collect::<Result<Vec<Effect>, UnifyError>>()?,
         })),
         TypeAnnotation::Scheme {
             type_variables,
@@ -4776,7 +4881,9 @@ fn apply_type_variable_substitution_to_type(
         Type::Function(FunctionType {
             parameter_type,
             return_type,
+            effects,
         }) => Type::Function(FunctionType {
+            effects: effects.to_vec(),
             parameter_type: Box::new(apply_type_variable_substitution_to_type(
                 substitution,
                 &parameter_type,
@@ -4853,6 +4960,7 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
         Type::Function(FunctionType {
             parameter_type,
             return_type,
+            ..
         }) => {
             let mut result: HashSet<String> = HashSet::new();
             result.extend(get_free_type_variables_in_type(parameter_type.as_ref()));

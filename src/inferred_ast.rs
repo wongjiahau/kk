@@ -96,6 +96,11 @@ pub enum InferredExpression {
         statements: Vec<InferredStatement>,
         return_value: Box<InferredExpression>,
     },
+    PerformEffect {
+        effect_name: Token,
+        operation_name: Token,
+        argument: Box<InferredExpression>,
+    },
 }
 
 #[derive(Debug, Clone)]

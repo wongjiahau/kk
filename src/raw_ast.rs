@@ -241,6 +241,7 @@ pub enum TypeAnnotation {
     Function {
         parameter: Box<TypeAnnotation>,
         return_type: Box<TypeAnnotation>,
+        effects: Vec<Token>,
     },
     Unit {
         left_parenthesis: Token,

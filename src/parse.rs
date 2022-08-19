@@ -451,6 +451,8 @@ impl<'a> Parser<'a> {
         match parameters.split_first() {
             Some((head, tail)) => TypeAnnotation::Function {
                 parameter: Box::new(head.type_annotation.clone()),
+                // TODO: parse effect annotation
+                effects: vec![],
                 return_type: Box::new(Self::convert_to_function_type_annotation(
                     tail.to_vec(),
                     return_type,
@@ -1004,6 +1006,8 @@ impl<'a> Parser<'a> {
     ) -> Result<TypeAnnotation, ParseError> {
         if self.try_eat_token(TokenType::ArrowRight)?.is_some() {
             Ok(TypeAnnotation::Function {
+                // TODO: parse effect annotation
+                effects: vec![],
                 parameter: Box::new(potential_function_parameter_type),
                 return_type: Box::new(self.parse_type_annotation(None)?),
             })

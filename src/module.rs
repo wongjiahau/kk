@@ -426,11 +426,13 @@ impl Module {
         FunctionType {
             parameter_type,
             return_type,
+            effects,
         }: &FunctionType,
     ) -> FunctionType {
         FunctionType {
             parameter_type: Box::new(self.apply_subtitution_to_type(&parameter_type)),
             return_type: Box::new(self.apply_subtitution_to_type(return_type.as_ref())),
+            effects: effects.to_vec(),
         }
     }
 
@@ -1095,11 +1097,19 @@ impl Module {
         }
     }
 
-    pub fn get_effect_operations(
-        &self,
-        effect_name: &Token,
-    ) -> Result<Vec<EffectOperation>, UnifyError> {
-        todo!()
+    pub fn get_effect_operations(&self, effect_name: &Token) -> Vec<EffectOperation> {
+        self.symbol_entries
+            .iter()
+            .filter_map(|entry| match &entry.symbol.kind {
+                SymbolKind::EffectOperation(effect_operation)
+                    if effect_operation.effect_name.representation
+                        == effect_name.representation =>
+                {
+                    Some(effect_operation.clone())
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn get_effect_operation(&self, name: &Token) -> Result<EffectOperation, UnifyError> {
@@ -1121,6 +1131,10 @@ impl Module {
     }
 
     pub fn get_effect_by_uid(&self, effect_uid: SymbolUid) -> Effect {
+        todo!()
+    }
+
+    pub fn get_effect(&self, effect_name: &Token) -> Result<Effect, UnifyError> {
         todo!()
     }
 }
@@ -1148,7 +1162,7 @@ pub struct EffectOperation {
     pub type_variables: Vec<ExplicitTypeVariable>,
     pub argument_type: Type,
     pub return_type: Type,
-    pub effect_uid: SymbolUid,
+    pub effect_name: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -1430,6 +1444,7 @@ fn built_in_symbols() -> Vec<Symbol> {
                     type_value: Type::Function(FunctionType {
                         parameter_type: Box::new(Type::ExplicitTypeVariable(type_variable)),
                         return_type: Box::new(Type::Unit),
+                        effects: vec![],
                     }),
                 })),
             }),
@@ -1448,7 +1463,7 @@ fn built_in_symbols() -> Vec<Symbol> {
             }),
         },
         Symbol {
-            meta: meta("Integer".to_string()),
+            meta: meta("Int".to_string()),
             kind: SymbolKind::Type(TypeSymbol {
                 type_value: Type::Integer,
             }),

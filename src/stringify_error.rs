@@ -975,6 +975,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Ambiguous Symbol".to_string(), 
             body: "Put type annotation for disambiguation".to_string() 
         },
+        UnifyErrorKind::EffectMismatch { expected_effects, actual_effects } => StringifiedError { 
+            summary: "Effects Mismatch".to_string(), 
+            body: format!("Expected effects = ({}), Actual effects = ({})", expected_effects.join(", "), actual_effects.join(", ")) 
+        },
     }
 }
 

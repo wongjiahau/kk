@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+effect Exception = [
+  raise <A>(message: String) : A
+]
+
+// Error, expected Int, but got Int ! (Exception)
+let f (message: String) : Int =
+  message ! raise
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/effect_mismatch_1.kk:7:3
+  │
+7 │   message ! raise
+  │   ^^^^^^^^^^^^^^^ Effects Mismatch
+  │
+  = Expected effects = (), Actual effects = (Exception)
