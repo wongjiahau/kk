@@ -635,7 +635,6 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
         }
         InferredExpression::PerformEffect {
             effect_name,
-            operation_name,
             argument,
         } => todo!(),
     }

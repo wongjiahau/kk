@@ -98,7 +98,6 @@ pub enum InferredExpression {
     },
     PerformEffect {
         effect_name: Token,
-        operation_name: Token,
         argument: Box<InferredExpression>,
     },
 }

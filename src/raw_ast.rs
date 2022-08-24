@@ -29,15 +29,7 @@ pub struct EffectStatement {
     pub keyword_export: Option<Token>,
     pub name: Token,
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
-    pub operations: Vec<EffectOperation>,
-}
-
-#[derive(Debug, Clone)]
-pub struct EffectOperation {
-    pub name: Token,
-    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
-    pub parameter: Parameter,
-    pub return_type_annotation: TypeAnnotation,
+    pub type_annotation: TypeAnnotation,
 }
 
 #[derive(Debug, Clone)]
@@ -112,7 +104,7 @@ pub struct InterfaceStatement {
     pub keyword_export: Option<Token>,
     pub keyword_interface: Token,
     pub name: Token,
-    pub type_variables_declartion: TypeVariablesDeclaration,
+    pub type_variables_declaration: TypeVariablesDeclaration,
     pub left_curly_bracket: Token,
     pub definitions: Vec<InterfaceDefinition>,
     pub right_curly_bracket: Token,
@@ -391,13 +383,12 @@ pub enum Expression {
         code: Token,
     },
     EffectHandler {
-        expression: Box<Expression>,
-        keyword_handle: Token,
+        /// The `try` section
+        handled: Box<Expression>,
+        keyword_effect: Token,
         effect_name: Token,
-        left_square_bracket: Token,
-        operations: Vec<EffectHandlerOperation>,
-        r#return: Option<EffectHandlerReturn>,
-        right_square_bracket: Token,
+        /// The `catch` section
+        handler: Box<Expression>,
     },
     PerformEffectOperation {
         name: Token,
@@ -412,8 +403,8 @@ pub struct EffectHandlerReturn {
 
 #[derive(Debug, Clone)]
 pub struct EffectHandlerOperation {
-    name: Token,
-    lambda: Lambda,
+    pub name: Token,
+    pub expression: Expression,
 }
 
 #[derive(Debug, Clone)]

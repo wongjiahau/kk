@@ -272,35 +272,14 @@ impl<'a> Parser<'a> {
         let context = None;
         let name = self.eat_token(TokenType::Identifier, context)?;
         let type_variables_declaration = self.try_parse_type_variables_declaration()?;
-        self.eat_token(TokenType::Equals, context)?;
-        self.eat_token(TokenType::LeftSquareBracket, context)?;
-        let mut operations = vec![];
-        let operations = loop {
-            if self.try_eat_token(TokenType::RightSquareBracket)?.is_some() {
-                break operations;
-            }
-            let name = self.eat_token(TokenType::Identifier, context)?;
-            let type_variables_declaration = self.try_parse_type_variables_declaration()?;
-            let left_parenthesis = self.eat_token(TokenType::LeftParenthesis, context)?;
-            let parameter = self.parse_parameter(left_parenthesis)?;
-            self.eat_token(TokenType::Colon, context)?;
-            let return_type_annotation = self.parse_type_annotation(context)?;
-            operations.push(EffectOperation {
-                name,
-                type_variables_declaration,
-                parameter,
-                return_type_annotation,
-            });
-            if self.try_eat_token(TokenType::Comma)?.is_none() {
-                break operations;
-            }
-        };
-        self.eat_token(TokenType::RightSquareBracket, context)?;
+        self.eat_token(TokenType::Colon, context)?;
+        let type_annotation = self.parse_type_annotation(context)?;
+
         Ok(Statement::Effect(EffectStatement {
             keyword_export,
             name,
+            type_annotation,
             type_variables_declaration,
-            operations,
         }))
     }
 
@@ -374,7 +353,7 @@ impl<'a> Parser<'a> {
             keyword_export,
             keyword_interface,
             name,
-            type_variables_declartion: type_variables,
+            type_variables_declaration: type_variables,
             left_curly_bracket,
             definitions,
             right_curly_bracket,
@@ -1551,10 +1530,22 @@ impl<'a> Parser<'a> {
         }
 
         if self.try_eat_token(TokenType::Bang)?.is_some() {
-            return Ok(Expression::PerformEffectOperation {
+            let expression = Expression::PerformEffectOperation {
                 name: self.eat_token(TokenType::Identifier, None)?,
                 argument: Box::new(previous),
-            });
+            };
+            return self.try_parse_function_call(expression);
+        }
+
+        if let Some(keyword_effect) = self.try_eat_token(TokenType::KeywordEffect)? {
+            let context = None;
+            let expression = Expression::EffectHandler {
+                handled: Box::new(previous),
+                keyword_effect,
+                effect_name: self.eat_token(TokenType::Identifier, context)?,
+                handler: Box::new(self.parse_low_precedence_expression()?),
+            };
+            return self.try_parse_function_call(expression);
         }
 
         let next = self.parse_high_precedence_expression()?;

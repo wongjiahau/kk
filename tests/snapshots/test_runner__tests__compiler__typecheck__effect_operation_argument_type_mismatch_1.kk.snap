@@ -5,12 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-effect Exception = [
-  raise <A>(message: String) : A
-]
+effect throw : <A> String -> A
 
 entry
-  123 ! raise
+  123 throw
+
+// Note:
+// throw has the type : <A> String -> A effect throw
+// the body of throw will be injected with a perform effect node
 
 ============
 EXIT CODE
@@ -26,9 +28,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/effect_operation_argument_type_mismatch_1.kk:6:3
+  ┌─ tests/compiler/typecheck/effect_operation_argument_type_mismatch_1.kk:4:3
   │
-6 │   123 ! raise
+4 │   123 throw
   │   ^^^ Type mismatch
   │
   = +---------------+-------------+

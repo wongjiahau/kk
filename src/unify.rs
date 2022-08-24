@@ -175,26 +175,107 @@ pub fn unify_statements(
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     // Insert effect operations
-    effect_statements
+    let effect_functions = effect_statements
         .into_iter()
         // TODO: store effect UID in effect operation,
         //       this is to allow better error reporting in case two files declared effect using
         //       the same name
         .map(|(_effect_uid, effect_name, effect_statement)| {
-            effect_statement
-                .operations
-                .iter()
-                .map(|operation| {
-                    infer_effect_operation(
-                        &mut module,
-                        operation,
-                        effect_statement.keyword_export.is_some(),
-                        &effect_name,
-                    )
-                })
-                .collect()
+            // Insert effect operation as function
+            let type_value =
+                type_annotation_to_type(&mut module, &effect_statement.type_annotation)?;
+
+            // Verify that the type annotation is a function type, or a type scheme of a function type
+            let (type_value, parameter_type, return_type) = match type_value {
+                Type::Function(function_type) => (
+                    Type::Function(FunctionType {
+                        parameter_type: function_type.parameter_type.clone(),
+                        return_type: function_type.return_type.clone(),
+                        effects: {
+                            let mut effects = function_type.effects;
+                            effects.push(effect_name.representation.clone());
+                            effects
+                        },
+                    }),
+                    function_type.parameter_type,
+                    function_type.return_type,
+                ),
+                Type::TypeScheme(type_scheme) => match type_scheme.type_value {
+                    Type::Function(function_type) => (
+                        Type::TypeScheme(Box::new(TypeScheme {
+                            constraints: vec![],
+                            type_variables: type_scheme.type_variables,
+                            type_value: Type::Function(FunctionType {
+                                parameter_type: function_type.parameter_type.clone(),
+                                return_type: function_type.return_type.clone(),
+                                effects: {
+                                    let mut effects = function_type.effects;
+                                    effects.push(effect_name.representation.clone());
+                                    effects
+                                },
+                            }),
+                        })),
+                        function_type.parameter_type,
+                        function_type.return_type,
+                    ),
+                    _ => panic!("Effect must be function type"),
+                },
+                _ => panic!("Effect must be function type"),
+            };
+            let exported = effect_statement.keyword_export.is_some();
+            let uid = module.insert_symbol(
+                None,
+                Symbol {
+                    meta: SymbolMeta {
+                        name: effect_name.clone(),
+                        exported,
+                    },
+                    kind: SymbolKind::Value(ValueSymbol {
+                        type_value: type_value.clone(),
+                    }),
+                },
+            )?;
+            Ok(InferredStatement::Let {
+                exported,
+                left: InferredDestructurePattern {
+                    type_value,
+                    kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
+                        uid,
+                        token: effect_name.clone(),
+                    })),
+                },
+                right: InferredExpression::BranchedFunction(Box::new(InferredBranchedFunction {
+                    branches: Box::new(NonEmpty {
+                        head: {
+                            let identifier = Identifier {
+                                uid: module.get_next_symbol_uid(),
+                                token: effect_name.clone(),
+                            };
+                            InferredFunctionBranch {
+                                parameter: Box::new(InferredDestructurePattern {
+                                    type_value: *parameter_type,
+                                    kind: InferredDestructurePatternKind::Identifier(Box::new(
+                                        identifier.clone(),
+                                    )),
+                                }),
+                                body: Box::new(InferExpressionResult {
+                                    expression: InferredExpression::PerformEffect {
+                                        effect_name: effect_name.clone(),
+                                        argument: Box::new(InferredExpression::Variable(
+                                            identifier,
+                                        )),
+                                    },
+                                    type_value: *return_type,
+                                    effects: vec![effect_name.representation],
+                                }),
+                            }
+                        },
+                        tail: vec![],
+                    }),
+                })),
+            })
         })
-        .collect::<Result<Vec<()>, UnifyError>>()
+        .collect::<Result<Vec<InferredStatement>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     // 4. Insert interfaces
@@ -205,7 +286,7 @@ pub fn unify_statements(
                 // insert type variables into current scope
                 populate_explicit_type_variables(
                     module,
-                    &Some(interface_statement.type_variables_declartion.clone()),
+                    &Some(interface_statement.type_variables_declaration.clone()),
                 )?;
 
                 // validate the type annotations of each definition
@@ -233,7 +314,7 @@ pub fn unify_statements(
                     },
                     kind: SymbolKind::Interface(InterfaceSymbol {
                         type_variables: interface_statement
-                            .type_variables_declartion
+                            .type_variables_declaration
                             .type_variables
                             .clone()
                             .map(|type_variable| ExplicitTypeVariable {
@@ -258,7 +339,7 @@ pub fn unify_statements(
                 .iter()
                 .map(|definition| {
                     let type_variables = interface_statement
-                        .type_variables_declartion
+                        .type_variables_declaration
                         .type_variables
                         .clone()
                         .map(|type_variable| ExplicitTypeVariable {
@@ -497,48 +578,6 @@ pub fn unify_statements(
         },
         imported_modules,
     })
-}
-
-fn infer_effect_operation(
-    module: &mut Module,
-    operation: &EffectOperation,
-    exported: bool,
-    effect_name: &Token,
-) -> Result<(), UnifyError> {
-    let symbol = Symbol {
-        meta: SymbolMeta {
-            name: operation.name.clone(),
-            exported,
-        },
-        kind: SymbolKind::EffectOperation({
-            module.run_in_new_child_scope(|module| {
-                let type_variables = populate_explicit_type_variables(
-                    module,
-                    &operation.type_variables_declaration,
-                )?;
-                Ok(module::EffectOperation {
-                    name: operation.name.clone(),
-                    type_variables: match type_variables {
-                        Some(type_variables) => {
-                            type_variables.declared_type_variables.into_vector()
-                        }
-                        None => vec![],
-                    },
-                    argument_type: type_annotation_to_type(
-                        module,
-                        &operation.parameter.type_annotation,
-                    )?,
-                    return_type: type_annotation_to_type(
-                        module,
-                        &operation.return_type_annotation,
-                    )?,
-                    effect_name: effect_name.clone(),
-                })
-            })?
-        }),
-    };
-    module.insert_symbol(None, symbol)?;
-    Ok(())
 }
 
 /// Insert effect symbol without typechecking the body
@@ -920,7 +959,6 @@ fn solve_constraints(
         }),
         PerformEffect {
             effect_name,
-            operation_name,
             argument,
         } => todo!(),
     }
@@ -1086,7 +1124,10 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         Expression::Statements { current, next } => {
             has_direct_function_call(current).or(has_direct_function_call(next))
         }
-        Expression::EffectHandler { expression, .. } => has_direct_function_call(expression),
+        Expression::EffectHandler {
+            handled: expression,
+            ..
+        } => has_direct_function_call(expression),
         Expression::PerformEffectOperation { name, argument } => todo!(),
     }
 }
@@ -1871,14 +1912,11 @@ impl Positionable for Expression {
             } => keyword_let.position.join(body.position()),
             Expression::Statements { current, next } => current.position().join(next.position()),
             Expression::EffectHandler {
-                operations,
-                r#return,
-                expression,
-                keyword_handle,
+                handled: expression,
+                handler,
+                keyword_effect: keyword_handle,
                 effect_name,
-                left_square_bracket,
-                right_square_bracket,
-            } => expression.position().join(right_square_bracket.position),
+            } => expression.position().join(handler.position()),
             Expression::PerformEffectOperation { name, argument } => {
                 name.position.join(argument.position())
             }
@@ -3335,9 +3373,7 @@ fn infer_expression_type_(
             })
         }
         Expression::EffectHandler {
-            operations,
-            r#return,
-            expression,
+            handled: expression,
             effect_name,
             ..
         } => {
@@ -3401,7 +3437,6 @@ fn infer_expression_type_(
                 },
                 expression: InferredExpression::PerformEffect {
                     effect_name: operation.effect_name,
-                    operation_name: operation.name,
                     argument: Box::new(typechecked_argument.expression),
                 },
                 type_value: result_type,
