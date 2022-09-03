@@ -298,6 +298,7 @@ impl Module {
                     },
                     kind: SymbolKind::Value(ValueSymbol {
                         type_value: type_value.clone(),
+                        is_constraint_variable: false,
                     }),
                 },
             )?;
@@ -518,6 +519,7 @@ impl Module {
         variable_name: &Token,
         type_value: Option<Type>,
         exported: bool,
+        is_implicit_variable: bool,
     ) -> Result<(SymbolUid, Type), UnifyError> {
         let type_value = match type_value {
             None => Type::ImplicitTypeVariable(ImplicitTypeVariable {
@@ -534,6 +536,7 @@ impl Module {
                 },
                 kind: SymbolKind::Value(ValueSymbol {
                     type_value: type_value.clone(),
+                    is_constraint_variable: is_implicit_variable,
                 }),
             },
         )?;
@@ -921,7 +924,19 @@ impl Module {
                     if entry.scope_name == scope_name
                         && entry.symbol.meta.name.representation == symbol_name.representation =>
                 {
-                    Some((entry.uid.clone(), value_symbol.clone()))
+                    match expected_type {
+                        None => Some((entry.uid.clone(), value_symbol.clone())),
+                        Some(expected_type)
+                            if overlap(
+                                &expected_type,
+                                &value_symbol.type_value,
+                                !value_symbol.is_constraint_variable,
+                            ) =>
+                        {
+                            Some((entry.uid.clone(), value_symbol.clone()))
+                        }
+                        _ => None,
+                    }
                 }
                 _ => None,
             })
@@ -954,7 +969,11 @@ impl Module {
                             // find matching function signatures based on concrete type
                             let matching_value_symbol =
                                 matching_value_symbols.iter().find(|(uid, value_symbol)| {
-                                    overlap(&expected_type, &value_symbol.type_value, true)
+                                    overlap(
+                                        &expected_type,
+                                        &value_symbol.type_value,
+                                        !value_symbol.is_constraint_variable,
+                                    )
                                 });
 
                             match matching_value_symbol {
@@ -1148,6 +1167,8 @@ pub struct TypeSymbol {
 #[derive(Debug, Clone)]
 pub struct ValueSymbol {
     pub type_value: Type,
+    /// True means that this is a variable declared in the function type constraint list
+    pub is_constraint_variable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1296,6 +1317,12 @@ fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bo
             &type_scheme_b.type_value,
             explicit_type_variable_overlaps_with_any_type,
         ),
+        (Type::TypeScheme(type_scheme), other_type)
+        | (other_type, Type::TypeScheme(type_scheme)) => overlap(
+            &type_scheme.type_value,
+            &other_type,
+            explicit_type_variable_overlaps_with_any_type,
+        ),
 
         // otherwise
         _ => false,
@@ -1348,6 +1375,7 @@ fn built_in_symbols() -> Vec<Symbol> {
                         type_constraints: vec![],
                     }),
                 })),
+                is_constraint_variable: false,
             }),
         },
         // built-in types

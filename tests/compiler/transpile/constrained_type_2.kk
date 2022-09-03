@@ -1,0 +1,37 @@
+// Constraint with type variables
+type List<T> = #nil | #cons [ head : T, tail : List<T> ]
+
+type Color = #red | #green
+
+type Boolean = #true | #false
+
+let (left : Color) equals (right : Color) : Boolean = 
+  {
+  | [left = #red, right = #red] -> #true
+  | [left = #green, right = #green] -> #true
+  | _ -> #false
+  } [left, right]
+
+let (left : Boolean) and (right : Boolean) : Boolean = 
+  {
+  | [left = #true, right = #true] -> #true
+  | _ -> #false
+  } [left, right]
+
+let<T> (left : List<T>) equals (right : List<T>) : Boolean 
+  | [ equals: T -> T -> Boolean ]
+  = {
+  | [left = #nil, right = #nil] -> 
+      #true
+  | [left = #cons (left), right = #cons (right)] ->
+      left .head equals (right .head) and (left .tail equals (right .tail))
+
+  | _ -> #false
+  } [left, right]
+
+
+entry 
+  let xs = #cons [ head = #red, tail = #cons [ head = #green, tail = #nil ] ];
+  let ys = #cons [ head = #green, tail = #nil ];
+  xs equals (xs) print; // true
+  xs equals (ys) print // false

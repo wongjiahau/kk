@@ -249,6 +249,7 @@ pub fn unify_statements(
                             },
                             kind: SymbolKind::Value(ValueSymbol {
                                 type_value: type_value.clone(),
+                                is_constraint_variable: true,
                             }),
                         },
                     )?;
@@ -316,7 +317,10 @@ pub fn unify_statements(
                         name: name.clone(),
                         exported: let_statement.keyword_export.is_some(),
                     },
-                    kind: SymbolKind::Value(ValueSymbol { type_value }),
+                    kind: SymbolKind::Value(ValueSymbol {
+                        type_value,
+                        is_constraint_variable: false,
+                    }),
                 },
             )?;
             Ok((uid, name, let_statement))
@@ -2830,6 +2834,7 @@ fn infer_expression_type_(
                                         &Token::dummy_identifier(type_constraint.name.clone()),
                                         Some(type_constraint.type_value.clone()),
                                         false,
+                                        true,
                                     )?,
                                 ))
                             })
@@ -4099,7 +4104,7 @@ fn infer_destructure_pattern_(
         }),
         DestructurePattern::Identifier(identifier) => {
             let (uid, type_value) =
-                module.insert_value_symbol_with_type(identifier, expected_type, exported)?;
+                module.insert_value_symbol_with_type(identifier, expected_type, exported, false)?;
             Ok(InferredDestructurePattern {
                 type_value,
                 kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
@@ -4310,6 +4315,7 @@ fn infer_destructure_pattern_(
                                 key,
                                 expected_type,
                                 exported,
+                                false,
                             )?;
                             Ok((
                                 actual_key.clone(),
