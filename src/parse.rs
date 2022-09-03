@@ -191,11 +191,6 @@ impl<'a> Parser<'a> {
                     self.parse_implements_statement(keyword_export, keyword_implements)
                         .map(vectorized)
                 }
-                TokenType::KeywordEffect => {
-                    let keyword_effect = self.next_meaningful_token()?.unwrap();
-                    self.parse_effect_statement(keyword_export, keyword_effect)
-                        .map(vectorized)
-                }
                 TokenType::MultilineComment { characters } => {
                     // Remove the asterisk at the first column
                     // This is because multiline comments looks like the following
@@ -261,25 +256,6 @@ impl<'a> Parser<'a> {
         Ok(Statement::Entry(EntryStatement {
             keyword_entry,
             expression: self.parse_low_precedence_expression()?,
-        }))
-    }
-
-    fn parse_effect_statement(
-        &mut self,
-        keyword_export: Option<Token>,
-        keyword_effect: Token,
-    ) -> Result<Statement, ParseError> {
-        let context = None;
-        let name = self.eat_token(TokenType::Identifier, context)?;
-        let type_variables_declaration = self.try_parse_type_variables_declaration()?;
-        self.eat_token(TokenType::Colon, context)?;
-        let type_annotation = self.parse_type_annotation(context)?;
-
-        Ok(Statement::Effect(EffectStatement {
-            keyword_export,
-            name,
-            type_annotation,
-            type_variables_declaration,
         }))
     }
 
@@ -382,12 +358,38 @@ impl<'a> Parser<'a> {
 
         self.eat_token(TokenType::Colon, context)?;
         let type_annotation = self.parse_type_annotation(context)?;
+
+        let type_constraints = self.try_parse_type_constraints()?;
+
         self.eat_token(TokenType::Equals, context)?;
         let expression = self.parse_low_precedence_expression()?;
 
         let type_annotation = {
-            let type_annotation =
-                Self::convert_to_function_type_annotation(parameters.clone(), type_annotation);
+            let type_annotation = match parameters.split_last() {
+                // If no parameter is found
+                None => type_annotation,
+
+                // If some parameters are found
+                Some((last, init)) => {
+                    TypeAnnotation::Function(Self::convert_to_function_type_annotation(
+                        init.to_vec(),
+                        FunctionTypeAnnotation {
+                            parameter: Box::new(last.type_annotation.clone()),
+                            return_type: Box::new(type_annotation),
+                            // We place the type constraints at the most inner function type
+                            //
+                            // For example, if the function type is A -> B -> C, and we have a
+                            // constraints X,
+                            // X will be placed at (B -> C), not (A -> (B -> C))
+                            //
+                            // Therefore, we will get A -> ((B -> C) | X)
+                            // instead of (A -> (B -> C)) | X
+                            type_constraints,
+                        },
+                    ))
+                }
+            };
+
             match type_variables_declaration {
                 Some(type_variables) => TypeAnnotation::Scheme {
                     type_variables,
@@ -425,17 +427,15 @@ impl<'a> Parser<'a> {
 
     fn convert_to_function_type_annotation(
         parameters: Vec<Parameter>,
-        return_type: TypeAnnotation,
-    ) -> TypeAnnotation {
+        return_type: FunctionTypeAnnotation,
+    ) -> FunctionTypeAnnotation {
         match parameters.split_first() {
-            Some((head, tail)) => TypeAnnotation::Function {
+            Some((head, tail)) => FunctionTypeAnnotation {
                 parameter: Box::new(head.type_annotation.clone()),
-                // TODO: parse effect annotation
-                effects: vec![],
-                return_type: Box::new(Self::convert_to_function_type_annotation(
-                    tail.to_vec(),
-                    return_type,
+                return_type: Box::new(TypeAnnotation::Function(
+                    Self::convert_to_function_type_annotation(tail.to_vec(), return_type),
                 )),
+                type_constraints: None,
             },
             None => return_type,
         }
@@ -984,12 +984,11 @@ impl<'a> Parser<'a> {
         potential_function_parameter_type: TypeAnnotation,
     ) -> Result<TypeAnnotation, ParseError> {
         if self.try_eat_token(TokenType::ArrowRight)?.is_some() {
-            Ok(TypeAnnotation::Function {
-                // TODO: parse effect annotation
-                effects: vec![],
+            Ok(TypeAnnotation::Function(FunctionTypeAnnotation {
                 parameter: Box::new(potential_function_parameter_type),
                 return_type: Box::new(self.parse_type_annotation(None)?),
-            })
+                type_constraints: self.try_parse_type_constraints()?,
+            }))
         } else {
             Ok(potential_function_parameter_type)
         }
@@ -1529,25 +1528,6 @@ impl<'a> Parser<'a> {
             return Ok(previous);
         }
 
-        if self.try_eat_token(TokenType::Bang)?.is_some() {
-            let expression = Expression::PerformEffectOperation {
-                name: self.eat_token(TokenType::Identifier, None)?,
-                argument: Box::new(previous),
-            };
-            return self.try_parse_function_call(expression);
-        }
-
-        if let Some(keyword_effect) = self.try_eat_token(TokenType::KeywordEffect)? {
-            let context = None;
-            let expression = Expression::EffectHandler {
-                handled: Box::new(previous),
-                keyword_effect,
-                effect_name: self.eat_token(TokenType::Identifier, context)?,
-                handler: Box::new(self.parse_low_precedence_expression()?),
-            };
-            return self.try_parse_function_call(expression);
-        }
-
         let next = self.parse_high_precedence_expression()?;
         let (function, argument) = match &next {
             // TODO: handle operator
@@ -1615,6 +1595,36 @@ impl<'a> Parser<'a> {
             right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
         })
     }
+
+    fn try_parse_type_constraints(
+        &mut self,
+    ) -> Result<Option<TypeConstraintsAnnotation>, ParseError> {
+        let context = None;
+        if self.try_eat_token(TokenType::Pipe)?.is_some() {
+            Ok(Some(TypeConstraintsAnnotation {
+                left_square_bracket: self.eat_token(TokenType::LeftSquareBracket, context)?,
+                type_constraints: {
+                    let mut type_constraints = vec![];
+                    loop {
+                        if let Some(identifier) = self.try_eat_token(TokenType::Identifier)? {
+                            type_constraints.push(TypeConstraintAnnotation {
+                                identifier,
+                                type_annotation: {
+                                    self.eat_token(TokenType::Colon, context)?;
+                                    self.parse_type_annotation(context)?
+                                },
+                            })
+                        } else {
+                            break type_constraints;
+                        }
+                    }
+                },
+                right_square_bracket: self.eat_token(TokenType::RightSquareBracket, context)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 fn is_token_meaningless(token: &Token) -> bool {
@@ -1681,7 +1691,6 @@ fn convert_expression_to_pattern(
                 )?)),
             },
         }),
-        Expression::Boolean { token, value } => Ok(DestructurePattern::Boolean { token, value }),
         Expression::Integer(token) => Ok(DestructurePattern::Infinite {
             token,
             kind: InfinitePatternKind::Integer,
@@ -1703,8 +1712,6 @@ fn convert_expression_to_pattern(
         | Expression::RecordUpdate { .. }
         | Expression::Let { .. }
         | Expression::Statements { .. }
-        | Expression::EffectHandler { .. }
-        | Expression::PerformEffectOperation { .. }
         | Expression::UnsafeJavascript { .. } => Err(ParseError {
             context,
             kind: ParseErrorKind::ExpectedPattern {

@@ -470,10 +470,10 @@ fn transpile_identifier(identifier: Identifier) -> javascript::Identifier {
 
 pub fn transpile_expression(expression: InferredExpression) -> javascript::Expression {
     match expression {
-        InferredExpression::Unit => javascript::Expression::Null,
-        InferredExpression::Boolean(value) => javascript::Expression::Boolean(value),
-        InferredExpression::String { representation }
-        | InferredExpression::Character { representation } => {
+        InferredExpression::String { representation } => {
+            javascript::Expression::String(representation.representation)
+        }
+        InferredExpression::Character { representation } => {
             javascript::Expression::String(representation)
         }
         InferredExpression::Float { representation }
@@ -633,10 +633,6 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
             Raw -> Inferred -> Solved
             ")
         }
-        InferredExpression::PerformEffect {
-            effect_name,
-            argument,
-        } => todo!(),
     }
 }
 

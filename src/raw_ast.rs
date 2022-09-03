@@ -20,16 +20,6 @@ pub enum Statement {
     Module(ModuleStatement),
 
     Entry(EntryStatement),
-
-    Effect(EffectStatement),
-}
-
-#[derive(Debug, Clone)]
-pub struct EffectStatement {
-    pub keyword_export: Option<Token>,
-    pub name: Token,
-    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
-    pub type_annotation: TypeAnnotation,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +190,27 @@ pub struct NamedTypeAnnotationArguments {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypeConstraintsAnnotation {
+    pub left_square_bracket: Token,
+    pub right_square_bracket: Token,
+    pub type_constraints: Vec<TypeConstraintAnnotation>,
+}
+
+impl TypeConstraintsAnnotation {
+    pub fn position(&self) -> Position {
+        self.left_square_bracket
+            .position
+            .join(self.right_square_bracket.position)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeConstraintAnnotation {
+    pub identifier: Token,
+    pub type_annotation: TypeAnnotation,
+}
+
+#[derive(Debug, Clone)]
 pub enum TypeAnnotation {
     Parenthesized {
         left_parenthesis: Token,
@@ -230,15 +241,18 @@ pub enum TypeAnnotation {
         right_square_bracket: Token,
     },
     Underscore(Token),
-    Function {
-        parameter: Box<TypeAnnotation>,
-        return_type: Box<TypeAnnotation>,
-        effects: Vec<Token>,
-    },
+    Function(FunctionTypeAnnotation),
     Unit {
         left_parenthesis: Token,
         right_parenthesis: Token,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionTypeAnnotation {
+    pub parameter: Box<TypeAnnotation>,
+    pub return_type: Box<TypeAnnotation>,
+    pub type_constraints: Option<TypeConstraintsAnnotation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,10 +268,6 @@ pub enum DestructurePattern {
     Infinite {
         kind: InfinitePatternKind,
         token: Token,
-    },
-    Boolean {
-        token: Token,
-        value: bool,
     },
     Unit {
         left_parenthesis: Token,
@@ -323,10 +333,6 @@ pub enum Expression {
         right_parenthesis: Token,
         value: Box<Expression>,
     },
-    Boolean {
-        token: Token,
-        value: bool,
-    },
     Float(Token),
     Integer(Token),
     String(Token),
@@ -382,29 +388,6 @@ pub enum Expression {
     UnsafeJavascript {
         code: Token,
     },
-    EffectHandler {
-        /// The `try` section
-        handled: Box<Expression>,
-        keyword_effect: Token,
-        effect_name: Token,
-        /// The `catch` section
-        handler: Box<Expression>,
-    },
-    PerformEffectOperation {
-        name: Token,
-        argument: Box<Expression>,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct EffectHandlerReturn {
-    lambda: Lambda,
-}
-
-#[derive(Debug, Clone)]
-pub struct EffectHandlerOperation {
-    pub name: Token,
-    pub expression: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -637,7 +620,6 @@ pub enum TokenType {
     KeywordInterface,
     KeywordImplements,
     KeywordEntry,
-    KeywordEffect,
     KeywordLet,
     KeywordType,
     KeywordModule,

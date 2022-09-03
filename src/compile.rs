@@ -31,6 +31,7 @@ pub fn compile(module_meta: ModuleMeta) {
         Ok(statements) => match unify_statements(module_meta, statements, &IndexMap::new(), true) {
             Err(compile_error) => print_compile_error(compile_error),
             Ok(result) => {
+                // result.interpret(result..into());
                 use std::process::Command;
                 let javascript = transpile_program(result);
                 // println!("{}", javascript);

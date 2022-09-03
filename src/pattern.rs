@@ -306,10 +306,6 @@ fn match_pattern_matrix(module: &Module, pattern_matrix: PatternMatrix) -> Match
 
 pub fn expand_pattern(module: &Module, type_value: &Type) -> Vec<ExpandablePattern> {
     match type_value {
-        Type::Boolean => vec![
-            ExpandablePattern::Boolean(true),
-            ExpandablePattern::Boolean(false),
-        ],
         Type::Integer => vec![ExpandablePattern::Infinite {
             handled_cases: vec![],
             kind: InfinitePatternKind::Integer,
@@ -448,7 +444,7 @@ fn test_cartesian_product() {
     )
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct EnumType {
     pub name: String,
     pub type_arguments: Vec<(String, Type)>,
@@ -468,7 +464,6 @@ pub enum ExpandablePattern {
     Record {
         key_pattern_pairs: Vec<(String, ExpandablePattern)>,
     },
-    Boolean(bool),
     EmptyArray,
     NonEmptyArray {
         first_element: Box<ExpandablePattern>,
@@ -523,12 +518,6 @@ pub fn match_pattern(
             } else {
                 MatchPatternResult::Matched
             }
-        }
-        (CheckablePatternKind::Boolean { value: true, .. }, ExpandablePattern::Boolean(true)) => {
-            MatchPatternResult::Matched
-        }
-        (CheckablePatternKind::Boolean { value: false, .. }, ExpandablePattern::Boolean(false)) => {
-            MatchPatternResult::Matched
         }
         (
             CheckablePatternKind::Infinite { token, .. },

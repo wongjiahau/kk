@@ -362,7 +362,6 @@ impl Module {
         match type_value {
             Type::Float => Type::Float,
             Type::Integer => Type::Integer,
-            Type::Boolean => Type::Boolean,
             Type::String => Type::String,
             Type::Character => Type::Character,
             Type::Unit => Type::Unit,
@@ -426,13 +425,13 @@ impl Module {
         FunctionType {
             parameter_type,
             return_type,
-            effects,
+            type_constraints,
         }: &FunctionType,
     ) -> FunctionType {
         FunctionType {
             parameter_type: Box::new(self.apply_subtitution_to_type(&parameter_type)),
             return_type: Box::new(self.apply_subtitution_to_type(return_type.as_ref())),
-            effects: effects.to_vec(),
+            type_constraints: type_constraints.to_vec(),
         }
     }
 
@@ -681,40 +680,6 @@ impl Module {
                         }
                     })
                     .collect::<Result<Vec<()>, UnifyError>>()?;
-            }
-            SymbolKind::Effect(_) => {
-                let conflicting_entry =
-                    self.symbol_entries
-                        .iter()
-                        .find_map(|entry| match entry.symbol.kind {
-                            SymbolKind::Effect(_)
-                                if name == entry.symbol.meta.name.representation =>
-                            {
-                                Some(entry.clone())
-                            }
-                            _ => None,
-                        });
-                match conflicting_entry {
-                    Some(conflicting_entry) => panic!("Duplicated effect entry"),
-                    None => {}
-                }
-            }
-            SymbolKind::EffectOperation(_) => {
-                let conflicting_entry =
-                    self.symbol_entries
-                        .iter()
-                        .find_map(|entry| match entry.symbol.kind {
-                            SymbolKind::EffectOperation(_)
-                                if name == entry.symbol.meta.name.representation =>
-                            {
-                                Some(entry.clone())
-                            }
-                            _ => None,
-                        });
-                match conflicting_entry {
-                    Some(conflicting_entry) => panic!("Duplicated effect operation"),
-                    None => {}
-                }
             }
         };
 
@@ -1096,47 +1061,6 @@ impl Module {
             }
         }
     }
-
-    pub fn get_effect_operations(&self, effect_name: &Token) -> Vec<EffectOperation> {
-        self.symbol_entries
-            .iter()
-            .filter_map(|entry| match &entry.symbol.kind {
-                SymbolKind::EffectOperation(effect_operation)
-                    if effect_operation.effect_name.representation
-                        == effect_name.representation =>
-                {
-                    Some(effect_operation.clone())
-                }
-                _ => None,
-            })
-            .collect()
-    }
-
-    pub fn get_effect_operation(&self, name: &Token) -> Result<EffectOperation, UnifyError> {
-        let matching_effect_operation =
-            self.symbol_entries
-                .iter()
-                .find_map(|entry| match &entry.symbol.kind {
-                    SymbolKind::EffectOperation(effect_operation)
-                        if entry.symbol.meta.name.representation == name.representation =>
-                    {
-                        Some(effect_operation.clone())
-                    }
-                    _ => None,
-                });
-        match matching_effect_operation {
-            Some(effect_operation) => Ok(effect_operation),
-            None => panic!("No such operation"),
-        }
-    }
-
-    pub fn get_effect_by_uid(&self, effect_uid: SymbolUid) -> Effect {
-        todo!()
-    }
-
-    pub fn get_effect(&self, effect_name: &Token) -> Result<Effect, UnifyError> {
-        todo!()
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -1150,19 +1074,8 @@ pub struct Symbol {
 pub enum SymbolKind {
     Value(ValueSymbol),
     Type(TypeSymbol),
-    Effect(EffectSymbol),
     EnumConstructor(EnumConstructorSymbol),
-    EffectOperation(EffectOperation),
     Interface(InterfaceSymbol),
-}
-
-#[derive(Debug, Clone)]
-pub struct EffectOperation {
-    pub name: Token,
-    pub type_variables: Vec<ExplicitTypeVariable>,
-    pub argument_type: Type,
-    pub return_type: Type,
-    pub effect_name: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -1230,17 +1143,6 @@ pub struct InferredInterfaceDefinition {
 #[derive(Debug, Clone)]
 pub struct TypeSymbol {
     pub type_value: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct EffectSymbol {
-    pub effect_type: EffectType,
-}
-
-#[derive(Debug, Clone)]
-pub struct EffectType {
-    pub name: String,
-    pub type_arguments: Vec<(String, Type)>,
 }
 
 #[derive(Debug, Clone)]
@@ -1312,7 +1214,6 @@ fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bo
         (Type::ImplicitTypeVariable { .. }, _) | (_, Type::ImplicitTypeVariable { .. }) => true,
         (Type::Unit, Type::Unit) => true,
         (Type::String, Type::String) => true,
-        (Type::Boolean, Type::Boolean) => true,
         (Type::Integer, Type::Integer) => true,
         (Type::Float, Type::Float) => true,
         (Type::Tuple(xs), Type::Tuple(ys)) => {
@@ -1444,7 +1345,7 @@ fn built_in_symbols() -> Vec<Symbol> {
                     type_value: Type::Function(FunctionType {
                         parameter_type: Box::new(Type::ExplicitTypeVariable(type_variable)),
                         return_type: Box::new(Type::Unit),
-                        effects: vec![],
+                        type_constraints: vec![],
                     }),
                 })),
             }),
@@ -1478,12 +1379,6 @@ fn built_in_symbols() -> Vec<Symbol> {
             meta: meta("Null".to_string()),
             kind: SymbolKind::Type(TypeSymbol {
                 type_value: Type::Unit,
-            }),
-        },
-        Symbol {
-            meta: meta("Boolean".to_string()),
-            kind: SymbolKind::Type(TypeSymbol {
-                type_value: Type::Boolean,
             }),
         },
     ]

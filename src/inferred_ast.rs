@@ -45,8 +45,6 @@ pub struct Identifier {
 
 #[derive(Debug, Clone)]
 pub enum InferredExpression {
-    Unit,
-    Boolean(bool),
     Float {
         representation: String,
     },
@@ -54,7 +52,7 @@ pub enum InferredExpression {
         representation: String,
     },
     String {
-        representation: String,
+        representation: Token,
     },
     InterpolatedString {
         sections: Vec<InferredInterpolatedStringSection>,
@@ -95,10 +93,6 @@ pub enum InferredExpression {
     Block {
         statements: Vec<InferredStatement>,
         return_value: Box<InferredExpression>,
-    },
-    PerformEffect {
-        effect_name: Token,
-        argument: Box<InferredExpression>,
     },
 }
 

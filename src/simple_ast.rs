@@ -1,4 +1,4 @@
-use crate::{non_empty::NonEmpty, raw_ast::Token};
+use crate::{inferred_ast, non_empty::NonEmpty, raw_ast::Token};
 
 #[derive(Debug, Clone)]
 pub enum Pattern {
@@ -135,4 +135,48 @@ pub struct FunctionBranch {
 pub enum Number {
     Int64(i64),
     Float64(f64),
+}
+
+impl From<inferred_ast::InferredExpression> for Expression {
+    fn from(expression: inferred_ast::InferredExpression) -> Self {
+        match expression {
+            inferred_ast::InferredExpression::Float { representation } => {
+                Expression::Number(Number::Float64(representation.parse().unwrap()))
+            }
+            inferred_ast::InferredExpression::Integer { representation } => {
+                Expression::Number(Number::Int64(representation.parse().unwrap()))
+            }
+            inferred_ast::InferredExpression::String { representation } => {
+                Expression::String(representation)
+            }
+            inferred_ast::InferredExpression::InterpolatedString { sections } => todo!(),
+            inferred_ast::InferredExpression::Character { representation } => todo!(),
+            inferred_ast::InferredExpression::Variable(_) => todo!(),
+            inferred_ast::InferredExpression::ConstrainedVariable {
+                identifier,
+                constraints,
+            } => todo!(),
+            inferred_ast::InferredExpression::EnumConstructor {
+                constructor_name,
+                payload,
+            } => todo!(),
+            inferred_ast::InferredExpression::BranchedFunction(_) => todo!(),
+            inferred_ast::InferredExpression::FunctionCall(_) => todo!(),
+            inferred_ast::InferredExpression::Record { key_value_pairs } => todo!(),
+            inferred_ast::InferredExpression::RecordAccess {
+                expression,
+                property_name,
+            } => todo!(),
+            inferred_ast::InferredExpression::RecordUpdate {
+                expression,
+                updates,
+            } => todo!(),
+            inferred_ast::InferredExpression::Array { elements } => todo!(),
+            inferred_ast::InferredExpression::Javascript { code } => todo!(),
+            inferred_ast::InferredExpression::Block {
+                statements,
+                return_value,
+            } => todo!(),
+        }
+    }
 }

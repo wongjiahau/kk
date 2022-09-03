@@ -1,8 +1,5 @@
 // This module stores the representation of Type
-use crate::{module::SymbolUid, non_empty::NonEmpty};
-
-// TODO: support Effect with arguments
-pub type Effect = String;
+use crate::{module::SymbolUid, non_empty::NonEmpty, raw_ast::Token};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
@@ -29,7 +26,6 @@ pub enum Type {
     Function(FunctionType),
     TypeScheme(Box<TypeScheme>),
     Tuple(Box<NonEmpty<Type>>),
-    Boolean,
     Float,
     Integer,
     String,
@@ -64,7 +60,13 @@ pub struct TypeScheme {
 pub struct FunctionType {
     pub parameter_type: Box<Type>,
     pub return_type: Box<Type>,
-    pub effects: Vec<Effect>,
+    pub type_constraints: Vec<TypeConstraint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeConstraint {
+    pub name: String,
+    pub type_value: Type,
 }
 
 /// Example of constraint:

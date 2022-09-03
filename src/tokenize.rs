@@ -239,8 +239,8 @@ impl Tokenizer {
                     .into_parse_error()),
                 },
                 // Quoted Identifers
-                // Similar to Postgres Quoted Identifier using double-quote
-                '"' => {
+                // Similar to Java Quoted Identifier using double-quote
+                '`' => {
                     let quote = character;
                     let characters = self
                         .characters_iterator
@@ -257,11 +257,11 @@ impl Tokenizer {
                                 position: make_position(quote, Some(&end_quote)),
                             }))
                         }
-                        None => panic!("missing closing double quote(\") for quoted identifier"),
+                        None => panic!("missing closing backtick(`) for quoted identifier"),
                     }
                 }
                 // String
-                '`' => {
+                '"' => {
                     let start_quote = character;
                     enum StartOf {
                         Nothing,
@@ -282,7 +282,7 @@ impl Tokenizer {
                                             _ => StartOf::Escape,
                                         },
                                     ),
-                                    '`' => match start_of {
+                                    '"' => match start_of {
                                         StartOf::Escape => (Some(character), StartOf::Nothing),
                                         _ => break Ok(character),
                                     },
@@ -609,8 +609,6 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordImplements
     } else if s.eq("where") {
         TokenType::KeywordWhere
-    } else if s.eq("effect") {
-        TokenType::KeywordEffect
     } else {
         TokenType::Identifier
     }

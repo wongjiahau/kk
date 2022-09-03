@@ -279,7 +279,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordEntry => "used for defining the entry point of a file",
         TokenType::Semicolon => "used for separating statements",
         TokenType::KeywordModule => "used for declaring/importing/aliasing modules",
-        TokenType::KeywordEffect => todo!(),
 
     }
 }
@@ -495,7 +494,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordEntry => "entry",
         TokenType::Semicolon => ";",
         TokenType::KeywordModule => "module",
-        TokenType::KeywordEffect => "effect",
     }
 }
 
@@ -975,10 +973,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Ambiguous Symbol".to_string(), 
             body: "Put type annotation for disambiguation".to_string() 
         },
-        UnifyErrorKind::EffectMismatch { expected_effects, actual_effects } => StringifiedError { 
-            summary: "Effects Mismatch".to_string(), 
-            body: format!("Expected effects = ({}), Actual effects = ({})", expected_effects.join(", "), actual_effects.join(", ")) 
-        },
     }
 }
 
@@ -994,13 +988,6 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
                 stringify_expandable_pattern(*first_element),
                 stringify_expandable_pattern(*rest_elements)
             )
-        }
-        ExpandablePattern::Boolean(value) => {
-            if value {
-                "true".to_string()
-            } else {
-                "false".to_string()
-            }
         }
         ExpandablePattern::Record { key_pattern_pairs } => format!(
             "{{ {} }}",
@@ -1041,7 +1028,6 @@ pub fn indent_string(string: String, number_of_spaces: usize) -> String {
 
 pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
     match type_value {
-        Type::Boolean => indent_string("Boolean".to_string(), indent_level * 2),
         Type::Float => indent_string("Float".to_string(), indent_level * 2),
         Type::Integer => indent_string("Integer".to_string(), indent_level * 2),
         Type::Unit => indent_string("Null".to_string(), indent_level * 2),
