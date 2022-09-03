@@ -271,9 +271,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::TripleBacktick => "used for writing code snippet in documentation comments",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
         TokenType::Asterisk => "used for glob import",
-        TokenType::KeywordInterface => "used for declaring interface",
-        TokenType::KeywordImplements => "used for implementing an interface",
-        TokenType::KeywordWhere => "used for defining type variable constraints",
         TokenType::Tag => "used as constructor of enum",
         TokenType::Operator => "used for defining symbolic functions",
         TokenType::KeywordEntry => "used for defining the entry point of a file",
@@ -292,10 +289,6 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
         ParseContext::ExpressionFunction => ParseContextDescription {
             name: "Function",
             examples: vec!["x => x.add(1)", "(x: Boolean, y: Integer): Boolean => true"],
-        },
-        ParseContext::ExpressionIf => ParseContextDescription {
-            name: "If Expression",
-            examples: vec!["if(x > 2) \"Yes\" else \"No\""],
         },
         ParseContext::DotExpression => ParseContextDescription {
             name: "Dot Expression: Function Call, Property Access, or Record Update",
@@ -405,21 +398,9 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Documentation Code Snippet",
             examples: vec!["```\"Hello world\".print()```"],
         },
-        ParseContext::StatementWith => ParseContextDescription {
-            name: "With Statement",
-            examples: vec!["{ with x = [1, 2, 3].map; x + 1 }"],
-        },
         ParseContext::FunctionParameters => ParseContextDescription {
             name: "Function Parameters",
             examples: vec!["(a: string, b: number)"],
-        },
-        ParseContext::StatementInterface => ParseContextDescription {
-            name: "Interface Statement",
-            examples: vec!["interface Equatable<T> { let equals: (a: T, b: T) => Boolean }"],
-        },
-        ParseContext::StatementImplements => ParseContextDescription {
-            name: "Implements Statement",
-            examples: vec!["implements Equatable<MyType> { let equals  = (_, _) => true }"],
         },
         ParseContext::TypeVariableConstraint => ParseContextDescription {
             name: "Type Variable Constraint",
@@ -485,10 +466,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::InterpolatedString { .. } => "\"Hello #{my_name}\"",
         TokenType::TripleBacktick => "```",
         TokenType::Other(_) => "unknown character",
-        TokenType::Asterisk => "*",
-        TokenType::KeywordInterface => "interface",
-        TokenType::KeywordImplements => "implements",
-        TokenType::KeywordWhere => "where",
         TokenType::Tag => "tag",
         TokenType::Operator => todo!(),
         TokenType::KeywordEntry => "entry",

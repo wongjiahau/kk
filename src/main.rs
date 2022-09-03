@@ -16,8 +16,6 @@ mod tokenize;
 mod stringify_error;
 
 mod cli;
-mod interpret;
-mod simple_parse;
 mod solved_ast;
 mod typ;
 use cli::*;

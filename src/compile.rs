@@ -2,8 +2,6 @@ use std::process;
 
 use indexmap::IndexMap;
 
-use crate::interpret::interpret;
-use crate::simple_parse;
 use crate::tokenize::Tokenizer;
 use crate::transpile::transpile_program;
 use crate::unify::unify_statements;

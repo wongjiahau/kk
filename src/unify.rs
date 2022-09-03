@@ -43,22 +43,12 @@ pub fn unify_statements(
     is_entry_point: bool,
 ) -> Result<UnifyProgramResult, CompileError> {
     // 1. Partition statements based on their types
-    let (
-        module_statments,
-        type_statements,
-        enum_statements,
-        let_statements,
-        top_level_expressions,
-        interface_statements,
-        implements_statements,
-    ) = {
+    let (module_statments, type_statements, enum_statements, let_statements, top_level_expressions) = {
         let mut module_statements = Vec::new();
         let mut type_statements = Vec::new();
         let mut enum_statements = Vec::new();
         let mut let_statements = Vec::new();
         let mut top_level_expressions = Vec::new();
-        let mut interface_statements = Vec::new();
-        let mut implements_statements = Vec::new();
         for statement in statements {
             match statement {
                 Statement::Type(type_statement) => {
@@ -76,12 +66,6 @@ pub fn unify_statements(
                         top_level_expressions.push(expression);
                     }
                 }
-                Statement::Interface(interface_statement) => {
-                    interface_statements.push(interface_statement)
-                }
-                Statement::Implement(implement_statement) => {
-                    implements_statements.push(implement_statement)
-                }
                 Statement::Entry(entry_statement) => {
                     top_level_expressions.push(entry_statement.expression)
                 }
@@ -94,8 +78,6 @@ pub fn unify_statements(
             enum_statements,
             let_statements,
             top_level_expressions,
-            interface_statements,
-            implements_statements,
         )
     };
 
@@ -160,151 +142,7 @@ pub fn unify_statements(
         .collect::<Result<Vec<()>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
-    // 4. Insert interfaces
-    let inferface_definitions = interface_statements
-        .into_iter()
-        .map(|interface_statement| {
-            let definitions = module.run_in_new_child_scope(|module| {
-                // insert type variables into current scope
-                populate_explicit_type_variables(
-                    module,
-                    &Some(interface_statement.type_variables_declaration.clone()),
-                )?;
-
-                // validate the type annotations of each definition
-                interface_statement
-                    .definitions
-                    .iter()
-                    .map(|definition| {
-                        let type_value =
-                            type_annotation_to_type(module, &definition.type_annotation)?;
-                        Ok(InferredInterfaceDefinition {
-                            name: definition.name.clone(),
-                            type_value,
-                        })
-                    })
-                    .collect::<Result<Vec<InferredInterfaceDefinition>, UnifyError>>()
-            })?;
-
-            // Insert the interface into current module
-            let interface_uid = module.insert_symbol(
-                None,
-                Symbol {
-                    meta: SymbolMeta {
-                        name: interface_statement.name.clone(),
-                        exported: interface_statement.keyword_export.is_some(),
-                    },
-                    kind: SymbolKind::Interface(InterfaceSymbol {
-                        type_variables: interface_statement
-                            .type_variables_declaration
-                            .type_variables
-                            .clone()
-                            .map(|type_variable| ExplicitTypeVariable {
-                                name: type_variable.representation,
-                            }),
-                        definitions: definitions.clone(),
-                    }),
-                },
-            )?;
-
-            // Insert each definition as functions, to prevent overlapping functions
-            // For example, if we have the following interface:
-            //
-            //      interface Equatable<T> { let equals: (a: T, b: T) => Boolean }
-            //
-            // Then, the following function(s) also needs to be included in the current module.
-            //
-            //      equals: <T>(a: T, b: T) => Boolean where Equatable<T>
-            //
-            // This also helps prevent duplicated definitions
-            let definitions = definitions
-                .iter()
-                .map(|definition| {
-                    let type_variables = interface_statement
-                        .type_variables_declaration
-                        .type_variables
-                        .clone()
-                        .map(|type_variable| ExplicitTypeVariable {
-                            name: type_variable.representation,
-                        });
-
-                    let injected_parameter_uid = module.get_next_symbol_uid();
-
-                    let type_value = Type::TypeScheme(Box::new(TypeScheme {
-                        constraints: vec![InferredConstraint {
-                            interface_uid: interface_uid.clone(),
-                            type_variables: type_variables.clone(),
-                            injected_parameter_uid: injected_parameter_uid.clone(),
-                        }],
-                        type_variables,
-                        type_value: definition.type_value.clone(),
-                    }));
-
-                    module.insert_symbol(
-                        Some(injected_parameter_uid.clone()),
-                        Symbol {
-                            meta: SymbolMeta {
-                                name: definition.name.clone(),
-                                exported: interface_statement.keyword_export.is_some(),
-                            },
-                            kind: SymbolKind::Value(ValueSymbol {
-                                type_value: type_value.clone(),
-                                is_constraint_variable: true,
-                            }),
-                        },
-                    )?;
-
-                    // Convert each definition as function that takes implementation-dictionary as parameters,
-                    // and unpack the definition from the implementation-dictionary.
-                    //
-                    // Each constraint represents an implementation-dictionary.
-                    //
-                    // For more information, read
-                    //      How to make ad-hoc polymorphism less ad hoc
-                    //          by Philip Wadler and Stephen Blott
-                    // Link: http://users.csc.calpoly.edu/~akeen/courses/csc530/references/wadler.pdf
-                    Ok(InferredStatement::Let {
-                        exported: interface_statement.keyword_export.is_some(),
-                        left: InferredDestructurePattern {
-                            type_value,
-                            kind: InferredDestructurePatternKind::Identifier(Box::new(
-                                Identifier {
-                                    uid: injected_parameter_uid.clone(),
-                                    token: definition.name.clone(),
-                                },
-                            )),
-                        },
-                        right: {
-                            let dictionary_identifier = Identifier {
-                                uid: injected_parameter_uid,
-                                token: Token::dummy(),
-                            };
-                            parameterise_expression_with_implementation_dictionary_parameters(
-                                NonEmpty {
-                                    head: dictionary_identifier.clone(),
-                                    tail: vec![],
-                                },
-                                InferredExpression::RecordAccess {
-                                    expression: Box::new(InferredExpression::Variable(
-                                        dictionary_identifier,
-                                    )),
-                                    property_name: PropertyName(definition.name.clone()),
-                                },
-                            )
-                        },
-                    })
-                })
-                .collect::<Result<Vec<InferredStatement>, UnifyError>>()?;
-
-            Ok(definitions)
-        })
-        .collect::<Result<Vec<Vec<InferredStatement>>, UnifyError>>()
-        .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<InferredStatement>>();
-
-    // 5a. Insert the type of top-level let statement (for implementing mutually recursive functions)
+    // 4. Insert the type of top-level let statement (for implementing mutually recursive functions)
     let unchecked_let_statements = let_statements
         .into_iter()
         .map(|let_statement| {
@@ -328,7 +166,7 @@ pub fn unify_statements(
         .collect::<Result<Vec<_>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
-    // 5b. Insert top-level constant expression (i.e. expressions that does not have direct function call)
+    // 5. Insert top-level constant expression (i.e. expressions that does not have direct function call)
     let typechecked_let_statements = unchecked_let_statements
         .into_iter()
         .map(|(uid, name, let_statement)| {
@@ -361,91 +199,12 @@ pub fn unify_statements(
         .collect::<Result<Vec<InferredStatement>, UnifyError>>()
         .map_err(|e| e.into_compile_error(module.meta.clone()))?;
 
-    let implementation_dictionaries = implements_statements
-        .into_iter()
-        .map(|implement_statement| {
-            let (interface_uid, interface_symbol) =
-                module.get_interface_symbol_by_name(&implement_statement.interface_name)?;
-
-            let uid = module.get_next_symbol_uid();
-            let scope_name = module.current_scope_name();
-            let (populated_type_variables, definitions) =
-                module.run_in_new_child_scope(|module| {
-                    let populated_type_variables = populate_explicit_type_variables(
-                        module,
-                        &implement_statement.type_variables_declaration,
-                    )?;
-                    let subject_types = implement_statement
-                        .for_types
-                        .type_annotations
-                        .clone()
-                        .fold_result(|type_annotation| {
-                            type_annotation_to_type(module, &type_annotation)
-                        })?;
-
-                    // Insert this implementation into the current module before inferring the definitions,
-                    // so that recursive definitions can be defined
-                    module.insert_implementation(InferredImplementation {
-                        uid: uid.clone(),
-                        scope_name, // Note: using parent scope, not the current scope
-                        declared_at: implement_statement
-                            .interface_name
-                            .position
-                            .join(implement_statement.for_types.right_angular_bracket.position),
-                        interface_uid: interface_uid.clone(),
-                        for_types: subject_types.clone(),
-                        kind: InferredImplementationKind::Provided {
-                            populated_type_variables: populated_type_variables.clone(),
-                        },
-                    })?;
-
-                    let definitions = infer_implement_statement(
-                        module,
-                        &interface_symbol,
-                        &subject_types,
-                        &implement_statement,
-                    )?;
-
-                    Ok((populated_type_variables, definitions))
-                })?;
-
-            let dictionary = InferredExpression::Record {
-                key_value_pairs: definitions
-                    .into_iter()
-                    .map(|definition| (PropertyName(definition.name), definition.expression))
-                    .collect(),
-            };
-
-            Ok(InferredStatement::Let {
-                exported: implement_statement.keyword_export.is_some(),
-                left: InferredDestructurePattern {
-                    // TODO: remove this unnecessary field
-                    type_value: Type::Unit,
-                    kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
-                        uid,
-                        // TODO: remove this dummy field
-                        token: Token::dummy(),
-                    })),
-                },
-
-                right: try_parameterise_expression_with_implementation_dictionary_parameters(
-                    populated_type_variables
-                        .map(|result| result.constraints)
-                        .unwrap_or_else(Vec::new),
-                    dictionary,
-                ),
-            })
-        })
-        .collect::<Result<Vec<InferredStatement>, UnifyError>>()
-        .map_err(|error| error.into_compile_error(module.meta.clone()))?;
-
-    // 8. Lastly we will infer expression statements
+    // 6. Lastly we will infer expression statements
     let typechecked_top_level_expressions_statements = top_level_expressions
         .into_iter()
         .map(|expression| {
             let expression = infer_expression_type(&mut module, Some(Type::Unit), &expression)?;
-            let expression = solve_constraints(&mut module, expression.expression)?;
-            Ok(InferredStatement::Expression(expression))
+            Ok(InferredStatement::Expression(expression.expression))
         })
         .collect::<Result<Vec<InferredStatement>, UnifyError>>()
         .map_err(|error| error.into_compile_error(module.meta.clone()))?;
@@ -455,8 +214,6 @@ pub fn unify_statements(
             statements: {
                 let mut statements = Vec::new();
                 statements.extend(typechecked_import_statements);
-                statements.extend(inferface_definitions);
-                statements.extend(implementation_dictionaries);
                 statements.extend(typechecked_let_statements);
                 statements.extend(typechecked_top_level_expressions_statements);
                 statements
@@ -464,346 +221,6 @@ pub fn unify_statements(
         },
         imported_modules,
     })
-}
-
-fn infer_implement_statement(
-    module: &mut Module,
-    interface_symbol: &InterfaceSymbol,
-    subject_types: &NonEmpty<Type>,
-    implement_statement: &ImplementStatement,
-) -> Result<Vec<InferredImplementationDefinition>, UnifyError> {
-    let expected_definitions = interface_symbol
-        .definitions
-        .clone()
-        .iter()
-        .map(|definition| InferredInterfaceDefinition {
-            name: definition.name.clone(),
-            type_value: rewrite_type_variables_in_type(
-                interface_symbol
-                    .type_variables
-                    .clone()
-                    .into_vector()
-                    .iter()
-                    .map(|type_variable| type_variable.name.clone())
-                    .zip(subject_types.clone().into_vector().into_iter())
-                    .collect(),
-                definition.type_value.clone(),
-            ),
-        })
-        .collect::<Vec<InferredInterfaceDefinition>>();
-    let zipped = match_key_values_pairs(
-        &expected_definitions,
-        &implement_statement.definitions,
-        |expected_definition| &expected_definition.name,
-        |actual_implementation| &actual_implementation.name,
-        |expeced_key, actual_key| expeced_key.representation == actual_key.representation,
-    )
-    .map_err(|error| match error {
-        MatchKeyValueError::MissingKeys(missing_definition_names) => UnifyError {
-            position: implement_statement.interface_name.position,
-            kind: UnifyErrorKind::MissingImplementationDefinition {
-                missing_definition_names,
-            },
-        },
-        MatchKeyValueError::ExtraneousKey(extraneous_definition_names) => UnifyError {
-            position: extraneous_definition_names.head.position,
-            kind: UnifyErrorKind::ExtraneousImplementationDefinition {
-                extraneous_definition_names,
-            },
-        },
-    })?;
-    let definitions = zipped
-        .into_iter()
-        .map(|(expected_definition, actual_definition)| {
-            let typechecked_expression = infer_expression_type(
-                module,
-                Some(expected_definition.type_value),
-                &actual_definition.expression,
-            )?;
-            Ok(InferredImplementationDefinition {
-                name: expected_definition.name,
-                expression: solve_constraints(module, typechecked_expression.expression)?,
-            })
-        })
-        .collect::<Result<Vec<_>, UnifyError>>()?;
-    Ok(definitions)
-}
-
-fn try_parameterise_expression_with_implementation_dictionary_parameters(
-    constraints: Vec<InferredConstraint>,
-    expression: InferredExpression,
-) -> InferredExpression {
-    match constraints.split_first() {
-        Some((head, tail)) => {
-            let dictionary_parameters = NonEmpty {
-                head: Identifier {
-                    uid: head.injected_parameter_uid.clone(),
-                    token: Token::dummy(),
-                },
-                tail: tail
-                    .to_vec()
-                    .into_iter()
-                    .map(|constraint| Identifier {
-                        uid: constraint.injected_parameter_uid,
-                        token: Token::dummy(),
-                    })
-                    .collect(),
-            };
-            parameterise_expression_with_implementation_dictionary_parameters(
-                dictionary_parameters,
-                expression,
-            )
-        }
-        None => expression,
-    }
-}
-
-/// This function parameterises a constrained expression with the given `injected_parameter_uid`.
-fn parameterise_expression_with_implementation_dictionary_parameters(
-    injected_dictionary_parameters: NonEmpty<Identifier>,
-    expression: InferredExpression,
-) -> InferredExpression {
-    InferredExpression::BranchedFunction(Box::new(InferredBranchedFunction {
-        branches: Box::new(NonEmpty {
-            head: InferredFunctionBranch {
-                parameter: todo!(),
-                // Box::new(injected_dictionary_parameters.map(|dictionary_identifier| {
-                // InferredDestructurePattern {
-                //     // TODO: remove unnecessary field
-                //     type_value: Type::Null,
-                //     kind: InferredDestructurePatternKind::Identifier(Box::new(
-                //         dictionary_identifier,
-                //     )),
-                // }
-                // })),
-                body: todo!(), // Box::new(expression),
-            },
-            tail: vec![],
-        }),
-    }))
-}
-
-/// Solve the constraint of an inferred expression.  
-/// Every solvable constraint will be turned into an extra argument for the given `expression`
-fn solve_constraints(
-    module: &mut Module,
-    expression: InferredExpression,
-) -> Result<InferredExpression, UnifyError> {
-    use InferredExpression::*;
-    match expression {
-        ConstrainedVariable {
-            identifier,
-            constraints,
-        } => {
-            // TODO: perform constraints reduction, i.e.
-            //  1) remove duplicated constraints,
-            //  2) remove implied constraints (for example if A is super class of B, and if we have A and B, we can elide A)
-            let implementations = constraints.fold_result(|constraint| {
-                let current_scope_name = module.current_scope_name();
-                let (substituted_types, implementation) = module.find_matching_implementation(
-                    constraint,
-                    identifier.token.position,
-                    current_scope_name,
-                )?;
-
-                let dictionary_implementation_id = Identifier {
-                    uid: implementation.uid,
-                    token: Token::dummy(),
-                };
-                match implementation.kind {
-                    InferredImplementationKind::Provided {
-                        populated_type_variables: None,
-                    }
-                    | InferredImplementationKind::Required => {
-                        Ok(Variable(dictionary_implementation_id))
-                    }
-                    InferredImplementationKind::Provided {
-                        populated_type_variables: Some(populated_type_variables),
-                    } => match populated_type_variables.constraints.split_first() {
-                        None => Ok(Variable(dictionary_implementation_id)),
-
-                        Some((first_constraint, tail_constraints)) => {
-                            let type_variable_substitutions = instantiate_type_variables(
-                                module,
-                                populated_type_variables
-                                    .declared_type_variables
-                                    .into_vector(),
-                            );
-
-                            // Unify the substituted types with the instantiated `implementation.for_types`
-                            let instantiated_for_types = apply_type_variable_substitutions_to_types(
-                                &type_variable_substitutions,
-                                implementation.for_types.into_vector(),
-                            );
-
-                            instantiated_for_types
-                                .iter()
-                                .zip(substituted_types.into_vector().iter())
-                                .map(|(instantiated_for_type, substituted_type)| {
-                                    unify_type(
-                                        module,
-                                        instantiated_for_type,
-                                        substituted_type,
-                                        // TODO: This position might be incorrect
-                                        identifier.token.position,
-                                    )
-                                })
-                                .collect::<Result<Vec<_>, UnifyError>>()?;
-
-                            solve_constraints(
-                                module,
-                                InferredExpression::ConstrainedVariable {
-                                    identifier: dictionary_implementation_id,
-                                    constraints: NonEmpty {
-                                        head: instantiate_constraint(
-                                            first_constraint.clone(),
-                                            &type_variable_substitutions,
-                                        ),
-                                        tail: tail_constraints
-                                            .to_vec()
-                                            .into_iter()
-                                            .map(|constraint| {
-                                                instantiate_constraint(
-                                                    constraint,
-                                                    &type_variable_substitutions,
-                                                )
-                                            })
-                                            .collect(),
-                                    },
-                                },
-                            )
-                        }
-                    },
-                }
-            })?;
-
-            // Pass the found implementations as parameter (a.k.a dictionary passing)
-            Ok(FunctionCall(Box::new(InferredFunctionCall {
-                function: Box::new(Variable(identifier)),
-                argument: Box::new(implementations.head),
-            })))
-        }
-        Unit => Ok(Unit),
-        Float { representation } => Ok(Float { representation }),
-        Integer { representation } => Ok(Integer { representation }),
-        String { representation } => Ok(String { representation }),
-        Character { representation } => Ok(Character { representation }),
-        Variable(identifier) => Ok(Variable(identifier)),
-        InterpolatedString { sections } => Ok(InterpolatedString {
-            sections: sections
-                .into_iter()
-                .map(|section| match section {
-                    InferredInterpolatedStringSection::String(string) => {
-                        Ok(InferredInterpolatedStringSection::String(string))
-                    }
-                    InferredInterpolatedStringSection::Expression(expression) => {
-                        Ok(InferredInterpolatedStringSection::Expression(Box::new(
-                            *expression, // solve_constraints(module, *expression)?,
-                        )))
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
-        EnumConstructor {
-            constructor_name,
-            payload,
-        } => Ok(EnumConstructor {
-            constructor_name,
-            payload: match payload {
-                Some(payload) => Some(Box::new(solve_constraints(module, *payload)?)),
-                None => None,
-            },
-        }),
-        BranchedFunction(branched_function) => {
-            Ok(BranchedFunction(Box::new(InferredBranchedFunction {
-                branches: Box::new(branched_function.branches.fold_result(|branch| {
-                    Ok(InferredFunctionBranch {
-                        parameter: branch.parameter,
-                        body: Box::new(
-                            *branch.body, // solve_constraints(module, *branch.body)?
-                        ),
-                    })
-                })?),
-            })))
-        }
-        FunctionCall(function_call) => Ok(FunctionCall(Box::new(InferredFunctionCall {
-            function: Box::new(solve_constraints(module, *function_call.function)?),
-            argument: Box::new(solve_constraints(module, *function_call.argument)?),
-        }))),
-        Record { key_value_pairs } => Ok(Record {
-            key_value_pairs: key_value_pairs
-                .into_iter()
-                .map(|(property_name, expression)| {
-                    Ok((property_name, solve_constraints(module, expression)?))
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
-        RecordAccess {
-            expression,
-            property_name,
-        } => Ok(RecordAccess {
-            expression: Box::new(solve_constraints(module, *expression)?),
-            property_name,
-        }),
-        RecordUpdate {
-            expression,
-            updates,
-        } => Ok(RecordUpdate {
-            expression: Box::new(solve_constraints(module, *expression)?),
-            updates: updates
-                .into_iter()
-                .map(|update| match update {
-                    InferredRecordUpdate::ValueUpdate {
-                        property_name,
-                        new_value,
-                    } => Ok(InferredRecordUpdate::ValueUpdate {
-                        property_name,
-                        new_value: solve_constraints(module, new_value)?,
-                    }),
-                    InferredRecordUpdate::FunctionalUpdate {
-                        property_name,
-                        function,
-                    } => Ok(InferredRecordUpdate::FunctionalUpdate {
-                        property_name,
-                        function: solve_constraints(module, function)?,
-                    }),
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
-        Array { elements } => Ok(Array {
-            elements: elements
-                .into_iter()
-                .map(|element| solve_constraints(module, element))
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
-        Javascript { code } => Ok(Javascript { code }),
-        Block {
-            statements,
-            return_value,
-        } => Ok(Block {
-            return_value: Box::new(solve_constraints(module, *return_value)?),
-            statements: statements
-                .into_iter()
-                .map(|statement| match statement {
-                    InferredStatement::ImportStatement(import_statement) => {
-                        Ok(InferredStatement::ImportStatement(import_statement))
-                    }
-                    InferredStatement::Let {
-                        exported,
-                        left,
-                        right,
-                    } => Ok(InferredStatement::Let {
-                        exported,
-                        left,
-                        right: solve_constraints(module, right)?,
-                    }),
-                    InferredStatement::Expression(expression) => Ok({
-                        InferredStatement::Expression(solve_constraints(module, expression)?)
-                    }),
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -1780,14 +1197,6 @@ impl Positionable for Statement {
                     .last()
                     .map(|constructor| constructor.position()),
             ),
-            Statement::Interface(interface_statement) => interface_statement
-                .keyword_interface
-                .position
-                .join(interface_statement.right_curly_bracket.position),
-            Statement::Implement(implements_statement) => implements_statement
-                .keyword_implements
-                .position
-                .join(implements_statement.right_curly_bracket.position),
             Statement::Entry(entry_statement) => entry_statement
                 .keyword_entry
                 .position
@@ -2159,7 +1568,7 @@ where
     G: Fn(&B) -> &ActualKey,
     H: Fn(&ExpectedKey, &ActualKey) -> bool,
 {
-    use itertools::{Either, Itertools};
+    use itertools::Either;
 
     let (zipped, missing_expected_keys): (Vec<(A, B)>, Vec<ExpectedKey>) =
         expected_pairs.iter().partition_map(|expected_pair| {

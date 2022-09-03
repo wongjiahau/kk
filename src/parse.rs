@@ -36,7 +36,6 @@ pub enum ParseContext {
     ExpressionRecordUpdate,
     ExpressionEnumConstructor,
     ExpressionQuoted,
-    ExpressionIf,
 
     // Statement
     Statement,
@@ -44,9 +43,6 @@ pub enum ParseContext {
     StatementType,
     StatementEnum,
     StatementModule,
-    StatementWith,
-    StatementInterface,
-    StatementImplements,
 
     // Type annotation
     TypeAnnotationRecord,
@@ -181,16 +177,6 @@ impl<'a> Parser<'a> {
                     self.parse_module_statement(keyword_export, token)
                         .map(vectorized)
                 }
-                TokenType::KeywordInterface => {
-                    let keyword_interface = self.next_meaningful_token()?.unwrap();
-                    self.parse_interface_statement(keyword_export, keyword_interface)
-                        .map(vectorized)
-                }
-                TokenType::KeywordImplements => {
-                    let keyword_implements = self.next_meaningful_token()?.unwrap();
-                    self.parse_implements_statement(keyword_export, keyword_implements)
-                        .map(vectorized)
-                }
                 TokenType::MultilineComment { characters } => {
                     // Remove the asterisk at the first column
                     // This is because multiline comments looks like the following
@@ -256,83 +242,6 @@ impl<'a> Parser<'a> {
         Ok(Statement::Entry(EntryStatement {
             keyword_entry,
             expression: self.parse_low_precedence_expression()?,
-        }))
-    }
-
-    fn parse_implements_statement(
-        &mut self,
-        keyword_export: Option<Token>,
-        keyword_implements: Token,
-    ) -> Result<Statement, ParseError> {
-        let context = Some(ParseContext::StatementImplements);
-        let type_variables_declaration = self.try_parse_type_variables_declaration()?;
-        let interface_name = self.eat_token(TokenType::Identifier, context)?;
-        let less_than = self.eat_token(TokenType::LessThan, context)?;
-        let for_types = self.parse_type_arguments(less_than, context)?;
-        let left_curly_bracket = self.eat_token(TokenType::LeftCurlyBracket, context)?;
-        let mut definitions = vec![];
-        let (definitions, right_curly_bracket) = loop {
-            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
-                break (definitions, right_curly_bracket);
-            } else {
-                let keyword_let = self.eat_token(TokenType::KeywordLet, context)?;
-                let name = self.eat_token(TokenType::Identifier, context)?;
-                self.eat_token(TokenType::Equals, context)?;
-                let expression = self.parse_mid_precedence_expression()?;
-                definitions.push(ImplementDefinition {
-                    keyword_let,
-                    name,
-                    expression,
-                })
-            }
-        };
-        Ok(Statement::Implement(ImplementStatement {
-            keyword_export,
-            keyword_implements,
-            type_variables_declaration,
-            interface_name,
-            for_types,
-            left_curly_bracket,
-            definitions,
-            right_curly_bracket,
-        }))
-    }
-
-    fn parse_interface_statement(
-        &mut self,
-        keyword_export: Option<Token>,
-        keyword_interface: Token,
-    ) -> Result<Statement, ParseError> {
-        let context = Some(ParseContext::StatementInterface);
-        let name = self.eat_token(TokenType::Identifier, context)?;
-        let less_than = self.eat_token(TokenType::LessThan, context)?;
-        let type_variables = self.parse_type_variables_declaration(less_than)?;
-        let left_curly_bracket = self.eat_token(TokenType::LeftCurlyBracket, context)?;
-
-        let mut definitions = vec![];
-        let (definitions, right_curly_bracket) = loop {
-            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
-                break (definitions, right_curly_bracket);
-            } else {
-                let keyword_let = self.eat_token(TokenType::KeywordLet, context)?;
-                let name = self.eat_token(TokenType::Identifier, context)?;
-                self.eat_token(TokenType::Colon, context)?;
-                let type_annotation = self.parse_type_annotation(context)?;
-                definitions.push(InterfaceDefinition {
-                    keyword_let,
-                    name,
-                    type_annotation,
-                })
-            }
-        };
-        Ok(Statement::Interface(InterfaceStatement {
-            keyword_export,
-            keyword_interface,
-            name,
-            type_variables_declaration: type_variables,
-            left_curly_bracket,
-            definitions,
-            right_curly_bracket,
         }))
     }
 
@@ -741,18 +650,6 @@ impl<'a> Parser<'a> {
         let right_angular_bracket = loop {
             if self.try_eat_token(TokenType::Comma)?.is_some() {
                 tail.push(self.eat_token(TokenType::Identifier, context)?);
-            } else if self.try_eat_token(TokenType::KeywordWhere)?.is_some() {
-                loop {
-                    if let Some(interface_name) = self.try_eat_token(TokenType::Identifier)? {
-                        constraints.push(self.parse_type_variable_constraint(interface_name)?);
-                        if self.try_eat_token(TokenType::Comma)?.is_none() {
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                break self.eat_token(TokenType::MoreThan, context)?;
             } else {
                 break self.eat_token(TokenType::MoreThan, context)?;
             }
@@ -816,63 +713,6 @@ impl<'a> Parser<'a> {
         //         tail: vec![],
         //     },
         // })
-    }
-
-    fn parse_function_parameters(&mut self) -> Result<FunctionParameters, ParseError> {
-        let context = Some(ParseContext::FunctionParameters);
-        let left_parenthesis = self.eat_token(TokenType::LeftParenthesis, context)?;
-        if self.try_eat_token(TokenType::RightParenthesis)?.is_some() {
-            panic!("Still pending design decision")
-        } else {
-            let first_parameter = FunctionParameter {
-                pattern: self.parse_destructure_pattern()?,
-                type_annotation: Box::new(self.try_parse_type_annotation()?),
-            };
-            self.parse_function_parameters_tail(left_parenthesis, first_parameter, false)
-        }
-    }
-
-    /// This function assumes that left parenthesis and the first parameter is already parsed
-    fn parse_function_parameters_tail(
-        &mut self,
-        left_parenthesis: Token,
-        first_parameter: FunctionParameter,
-        comma_is_eaten: bool,
-    ) -> Result<FunctionParameters, ParseError> {
-        let context = Some(ParseContext::FunctionParameters);
-        let mut tail_parameters = vec![];
-        let right_parenthesis = if comma_is_eaten || self.try_eat_token(TokenType::Comma)?.is_some()
-        {
-            loop {
-                match self.peek_next_meaningful_token()? {
-                    Some(
-                        right_parenthesis @ Token {
-                            token_type: TokenType::RightParenthesis,
-                            ..
-                        },
-                    ) => break right_parenthesis,
-                    _ => {
-                        let pattern = self.parse_destructure_pattern()?;
-                        let type_annotation = self.try_parse_type_annotation()?;
-                        tail_parameters.push(FunctionParameter {
-                            pattern,
-                            type_annotation: Box::new(type_annotation),
-                        });
-                        if self.try_eat_token(TokenType::Comma)?.is_none() {
-                            break self.eat_token(TokenType::RightParenthesis, context)?;
-                        }
-                    }
-                };
-            }
-        } else {
-            self.eat_token(TokenType::RightParenthesis, context)?
-        };
-        Ok(FunctionParameters {
-            parameters: Box::new(NonEmpty {
-                head: first_parameter,
-                tail: tail_parameters,
-            }),
-        })
     }
 
     fn try_parse_type_annotation(&mut self) -> Result<Option<TypeAnnotation>, ParseError> {

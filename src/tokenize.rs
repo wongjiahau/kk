@@ -108,26 +108,6 @@ impl Tokenizer {
         self.characters_iterator.collect()
     }
 
-    fn eat_character(&mut self, value: char) -> Result<Character, ParseError> {
-        match self.characters_iterator.next() {
-            Some(character) => {
-                if character.value == value {
-                    Ok(character)
-                } else {
-                    Err(TokenizeError::UnexpectedCharacter {
-                        position: make_position(character, None),
-                        expected_character_value: value,
-                    }
-                    .into_parse_error())
-                }
-            }
-            None => Err(TokenizeError::UnexpectedEof {
-                expected_character_value: value,
-            }
-            .into_parse_error()),
-        }
-    }
-
     pub fn peek(&mut self) -> Result<Option<Token>, ParseError> {
         match self.peeked_tokens.last() {
             Some(token) => Ok(Some(token.clone())),
@@ -603,10 +583,6 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordImport
     } else if s.eq("export") {
         TokenType::KeywordExport
-    } else if s.eq("interface") {
-        TokenType::KeywordInterface
-    } else if s.eq("implements") {
-        TokenType::KeywordImplements
     } else if s.eq("where") {
         TokenType::KeywordWhere
     } else {

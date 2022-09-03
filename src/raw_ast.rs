@@ -3,8 +3,6 @@ use crate::{non_empty::NonEmpty, tokenize::Character, unify::Positionable};
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Interface(InterfaceStatement),
-    Implement(ImplementStatement),
     Let(LetStatement),
 
     /// This represents the entry points of a module.
@@ -57,47 +55,6 @@ pub enum ModuleValue {
 pub struct EntryStatement {
     pub keyword_entry: Token,
     pub expression: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct Assignment {
-    pub left: DestructurePattern,
-    pub type_annotation: Option<TypeAnnotation>,
-    pub right: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct ImplementStatement {
-    pub keyword_export: Option<Token>,
-    pub keyword_implements: Token,
-    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
-
-    pub interface_name: Token,
-
-    /// The type where we are implementing the interface for.    
-    /// For example, in `implements Foo<Bar>`, `Bar` is the considered the subject type
-    pub for_types: TypeArguments,
-    pub left_curly_bracket: Token,
-    pub definitions: Vec<ImplementDefinition>,
-    pub right_curly_bracket: Token,
-}
-
-#[derive(Debug, Clone)]
-pub struct ImplementDefinition {
-    pub keyword_let: Token,
-    pub name: Token,
-    pub expression: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct InterfaceStatement {
-    pub keyword_export: Option<Token>,
-    pub keyword_interface: Token,
-    pub name: Token,
-    pub type_variables_declaration: TypeVariablesDeclaration,
-    pub left_curly_bracket: Token,
-    pub definitions: Vec<InterfaceDefinition>,
-    pub right_curly_bracket: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -616,9 +573,6 @@ impl Token {
 
 #[derive(Debug, Clone)]
 pub enum TokenType {
-    KeywordWhere,
-    KeywordInterface,
-    KeywordImplements,
     KeywordEntry,
     KeywordLet,
     KeywordType,
@@ -679,7 +633,6 @@ pub enum TokenType {
     },
 
     JavascriptCode,
-    Asterisk,
     Other(char),
 }
 
