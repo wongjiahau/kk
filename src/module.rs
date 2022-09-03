@@ -1,7 +1,7 @@
+use crate::non_empty::NonEmpty;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
-use crate::{inferred_ast::InferredExpression, raw_ast::*, typ::*};
-use crate::{non_empty::NonEmpty, unify::PopulatedTypeVariables};
+use crate::{raw_ast::*, typ::*};
 use std::cell::Cell;
 use std::collections::HashMap;
 
@@ -294,7 +294,6 @@ impl Module {
                     },
                     kind: SymbolKind::Value(ValueSymbol {
                         type_value: type_value.clone(),
-                        is_constraint_variable: false,
                     }),
                 },
             )?;
@@ -531,7 +530,6 @@ impl Module {
                 },
                 kind: SymbolKind::Value(ValueSymbol {
                     type_value: type_value.clone(),
-                    is_constraint_variable: is_implicit_variable,
                 }),
             },
         )?;
@@ -792,11 +790,7 @@ impl Module {
                     match expected_type {
                         None => Some((entry.uid.clone(), value_symbol.clone())),
                         Some(expected_type)
-                            if overlap(
-                                &expected_type,
-                                &value_symbol.type_value,
-                                !value_symbol.is_constraint_variable,
-                            ) =>
+                            if overlap(&expected_type, &value_symbol.type_value, false) =>
                         {
                             Some((entry.uid.clone(), value_symbol.clone()))
                         }
@@ -834,11 +828,7 @@ impl Module {
                             // find matching function signatures based on concrete type
                             let matching_value_symbol =
                                 matching_value_symbols.iter().find(|(uid, value_symbol)| {
-                                    overlap(
-                                        &expected_type,
-                                        &value_symbol.type_value,
-                                        !value_symbol.is_constraint_variable,
-                                    )
+                                    overlap(&expected_type, &value_symbol.type_value, false)
                                 });
 
                             match matching_value_symbol {
@@ -969,8 +959,6 @@ pub struct TypeSymbol {
 #[derive(Debug, Clone)]
 pub struct ValueSymbol {
     pub type_value: Type,
-    /// True means that this is a variable declared in the function type constraint list
-    pub is_constraint_variable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -998,23 +986,12 @@ impl FunctionSignature {
     }
 }
 
-fn types_overlap(
-    xs: Vec<Type>,
-    ys: Vec<Type>,
-    explicit_type_variable_overlaps_with_any_type: bool,
-) -> bool {
-    if xs.len().ne(&ys.len()) {
-        false
-    } else {
-        xs.iter()
-            .zip(ys.iter())
-            .all(|(x, y)| overlap(x, y, explicit_type_variable_overlaps_with_any_type))
-    }
-}
-
 /// To check whether the given pair of types overlapped
 /// This is used to prevent user from overloading a function that is
-/// indistinguishable from some existing function
+/// indistinguishable from some existing function.
+///
+/// Note: only bounded explicit type variables overlap with any type,
+///       in other words, free explicit type variables do not overlap with any type.
 fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bool) -> bool {
     match (a, b) {
         (Type::ExplicitTypeVariable(explicit_type_variable), other_type)
@@ -1112,17 +1089,23 @@ fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bo
                         overlap(a, b, explicit_type_variable_overlaps_with_any_type)
                     })
         }
-        (Type::TypeScheme(type_scheme_a), Type::TypeScheme(type_scheme_b)) => overlap(
-            &type_scheme_a.type_value,
-            &type_scheme_b.type_value,
-            explicit_type_variable_overlaps_with_any_type,
-        ),
+        (Type::TypeScheme(type_scheme_a), Type::TypeScheme(type_scheme_b)) => {
+            let explicit_type_variable_overlaps_with_any_type = true;
+            overlap(
+                &type_scheme_a.type_value,
+                &type_scheme_b.type_value,
+                explicit_type_variable_overlaps_with_any_type,
+            )
+        }
         (Type::TypeScheme(type_scheme), other_type)
-        | (other_type, Type::TypeScheme(type_scheme)) => overlap(
-            &type_scheme.type_value,
-            &other_type,
-            explicit_type_variable_overlaps_with_any_type,
-        ),
+        | (other_type, Type::TypeScheme(type_scheme)) => {
+            let explicit_type_variable_overlaps_with_any_type = true;
+            overlap(
+                &type_scheme.type_value,
+                &other_type,
+                explicit_type_variable_overlaps_with_any_type,
+            )
+        }
 
         // otherwise
         _ => false,
@@ -1174,7 +1157,6 @@ fn built_in_symbols() -> Vec<Symbol> {
                         type_constraints: vec![],
                     }),
                 })),
-                is_constraint_variable: false,
             }),
         },
         // built-in types

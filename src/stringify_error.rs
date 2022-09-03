@@ -910,7 +910,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::TopLevelLetStatementCannotBeDestructured => todo!(),
         UnifyErrorKind::MissingTypeAnnotationForTopLevelBinding => todo!(),
-        UnifyErrorKind::CannotBeOverloaded => todo!(),
+        UnifyErrorKind::CannotBeOverloaded => StringifiedError { 
+            summary: "Cannot be overloaded".to_string(), 
+            body: "".to_string() 
+        },
         UnifyErrorKind::AmbiguousSymbol { matching_value_symbols } => StringifiedError { 
             summary: "Ambiguous Symbol".to_string(), 
             body: "Put type annotation for disambiguation".to_string() 

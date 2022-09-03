@@ -155,10 +155,7 @@ pub fn unify_statements(
                         name: name.clone(),
                         exported: let_statement.keyword_export.is_some(),
                     },
-                    kind: SymbolKind::Value(ValueSymbol {
-                        type_value,
-                        is_constraint_variable: false,
-                    }),
+                    kind: SymbolKind::Value(ValueSymbol { type_value }),
                 },
             )?;
             Ok((uid, name, let_statement))
