@@ -225,8 +225,6 @@ pub fn unify_statements(
 
 #[derive(Debug, Clone)]
 pub struct PopulatedTypeVariables {
-    /// The corresponding `SymbolUid` represents the UID of the injected dictionary parameter
-    pub constraints: Vec<InferredConstraint>,
     pub declared_type_variables: NonEmpty<ExplicitTypeVariable>,
 }
 
@@ -261,74 +259,8 @@ fn populate_explicit_type_variables(
                         name: type_variable.representation,
                     });
 
-            // Insert each constraint as a provided implementation
-            let typechecked_constraints = declaration
-                .constraints
-                .iter()
-                .map(|constraint| {
-                    let (interface_uid, interface_symbol) =
-                        module.get_interface_symbol_by_name(&constraint.interface_name)?;
-
-                    // Tally number of type arguments
-                    if interface_symbol.type_variables.len() != constraint.type_variables.len() {
-                        return Err(UnifyError {
-                            position: constraint.interface_name.position,
-                            kind: UnifyErrorKind::InvalidArgumentLength {
-                                expected_length: interface_symbol.type_variables.len(),
-                                actual_length: constraint.type_variables.len(),
-                            },
-                        });
-                    }
-
-                    let for_types =
-                        constraint
-                            .type_variables
-                            .clone()
-                            .fold_result(|type_variable_name| {
-                                if declared_type_variables.any(|declared_type_variable| {
-                                    declared_type_variable
-                                        .name
-                                        .eq(&type_variable_name.representation)
-                                }) {
-                                    Ok(Type::ExplicitTypeVariable(ExplicitTypeVariable {
-                                        name: type_variable_name.representation,
-                                    }))
-                                } else {
-                                    Err(UnifyError {
-                                        position: type_variable_name.position,
-                                        kind: UnifyErrorKind::UnknownTypeVariable {
-                                            unknown_type_variable_name: type_variable_name
-                                                .representation,
-                                        },
-                                    })
-                                }
-                            })?;
-
-                    let injected_parameter_uid = module.get_next_symbol_uid();
-                    let scope_name = module.current_scope_name();
-                    module.insert_implementation(InferredImplementation {
-                        uid: injected_parameter_uid.clone(),
-                        scope_name,
-                        declared_at: constraint.interface_name.position,
-                        interface_uid: interface_uid.clone(),
-                        for_types,
-                        kind: InferredImplementationKind::Required,
-                    })?;
-                    Ok(InferredConstraint {
-                        interface_uid,
-                        type_variables: constraint.type_variables.clone().map(|type_variable| {
-                            ExplicitTypeVariable {
-                                name: type_variable.representation,
-                            }
-                        }),
-                        injected_parameter_uid,
-                    })
-                })
-                .collect::<Result<Vec<InferredConstraint>, UnifyError>>()?;
-
             Ok(Some(PopulatedTypeVariables {
                 declared_type_variables,
-                constraints: typechecked_constraints,
             }))
         }
     }
@@ -409,18 +341,8 @@ pub enum UnifyErrorKind {
         interface_name: String,
         for_types: NonEmpty<Type>,
     },
-    OverlappingImplementation {
-        new_implementation: InferredImplementation,
-        existing_implementation: InferredImplementation,
-    },
-    ExtraneousImplementationDefinition {
-        extraneous_definition_names: NonEmpty<Token>,
-    },
-    MissingImplementationDefinition {
-        missing_definition_names: NonEmpty<Token>,
-    },
-    UnknownInterfaceSymbol {
-        unknown_interface_name: String,
+    UnsatisfiedConstraint {
+        missing_constraint: TypeConstraint,
     },
     UnknownTypeVariable {
         unknown_type_variable_name: String,
@@ -812,7 +734,6 @@ pub fn insert_enum_symbol(
     let type_value = match type_variable_names.split_first() {
         None => enum_type,
         Some((head, tail)) => Type::TypeScheme(Box::new(TypeScheme {
-            constraints: vec![],
             type_variables: NonEmpty {
                 head: ExplicitTypeVariable { name: head.clone() },
                 tail: tail
@@ -946,7 +867,6 @@ pub fn try_lift_as_type_scheme(
     match type_variables.split_first() {
         None => type_value,
         Some((head, tail)) => Type::TypeScheme(Box::new(TypeScheme {
-            constraints: vec![],
             type_value,
             type_variables: NonEmpty {
                 head: head.clone(),
@@ -963,7 +883,6 @@ pub fn generalize_type(type_value: Type) -> TypeScheme {
     TypeScheme {
         type_variables: panic!(), // type_variables.into_iter().collect(),
         type_value,
-        constraints: vec![],
     }
 }
 
@@ -1726,7 +1645,6 @@ pub fn rewrite_type_variable_in_type(
                 .collect(),
         },
         Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
-            constraints: type_scheme.constraints,
             type_variables: type_scheme.type_variables,
             type_value: rewrite_type_variable_in_type(
                 from_type_variable,
@@ -2025,24 +1943,12 @@ fn infer_expression_type_(
             };
             match result.type_value {
                 Type::TypeScheme(type_scheme) => {
-                    let (type_value, constraints) = instantiate_type_scheme(module, *type_scheme);
+                    let type_value = instantiate_type_scheme(module, *type_scheme);
 
-                    match constraints.split_first() {
-                        Some((head, tail)) => Ok(InferExpressionResult {
-                            type_value,
-                            expression: InferredExpression::ConstrainedVariable {
-                                constraints: NonEmpty {
-                                    head: head.clone(),
-                                    tail: tail.to_vec(),
-                                },
-                                identifier,
-                            },
-                        }),
-                        None => Ok(InferExpressionResult {
-                            type_value,
-                            expression: InferredExpression::Variable(identifier),
-                        }),
-                    }
+                    Ok(InferExpressionResult {
+                        type_value,
+                        expression: InferredExpression::Variable(identifier),
+                    })
                 }
                 other => Ok(InferExpressionResult {
                     type_value: other,
@@ -2259,7 +2165,6 @@ fn infer_expression_type_(
                 Some(Type::TypeScheme(type_scheme)) => Type::TypeScheme(Box::new(TypeScheme {
                     type_variables: type_scheme.type_variables.clone(),
                     type_value: Type::Function(typechecked_function.function_type),
-                    constraints: type_scheme.constraints.clone(),
                 })),
                 _ => Type::Function(typechecked_function.function_type),
             };
@@ -2409,9 +2314,19 @@ fn infer_expression_type_(
                                     &Some(type_constraint.type_value.clone()),
                                     module.current_scope_name(),
                                 ) {
-                                    Ok(result) => result,
-                                    Err(_) => panic!("Constraint variable not satisfied"),
-                                };
+                                    Ok(result) => Ok(result),
+                                    Err(_) => Err(UnifyError {
+                                        position: function_call.function.position(),
+                                        kind: UnifyErrorKind::UnsatisfiedConstraint {
+                                            missing_constraint: TypeConstraint {
+                                                name: type_constraint.name.clone(),
+                                                type_value: module.apply_subtitution_to_type(
+                                                    &type_constraint.type_value,
+                                                ),
+                                            },
+                                        },
+                                    }),
+                                }?;
                                 Ok((type_constraint.name.clone(), symbol.symbol_uid))
                             })
                             .collect::<Result<Vec<_>, _>>()?;
@@ -3446,7 +3361,6 @@ pub fn type_annotation_to_type(
 
                 type_annotation_to_type(module, type_annotation)
             })?,
-            constraints: vec![],
         }))),
         TypeAnnotation::Parenthesized {
             type_annotation, ..
@@ -4125,7 +4039,16 @@ fn apply_type_variable_substitution_to_type(
                 substitution,
                 return_type.as_ref(),
             )),
-            type_constraints: type_constraints.to_vec(),
+            type_constraints: type_constraints
+                .iter()
+                .map(|type_constraint| TypeConstraint {
+                    name: type_constraint.name.clone(),
+                    type_value: apply_type_variable_substitution_to_type(
+                        substitution,
+                        &type_constraint.type_value,
+                    ),
+                })
+                .collect(),
         }),
         Type::Record { key_type_pairs } => Type::Record {
             key_type_pairs: key_type_pairs
@@ -4157,7 +4080,6 @@ fn apply_type_variable_substitution_to_type(
                 .collect(),
         },
         Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
-            constraints: type_scheme.constraints.clone(),
             type_variables: type_scheme.type_variables.clone(),
             type_value: apply_type_variable_substitution_to_type(
                 substitution,
@@ -4235,10 +4157,7 @@ fn type_variable_occurs_in_type(type_variable: &str, typ: &Type) -> bool {
 ///
 /// This function also returns the instantiated constraints of the given `type_scheme`,
 /// which should be resolved after the unification of each top level let-binding
-pub fn instantiate_type_scheme(
-    module: &mut Module,
-    type_scheme: TypeScheme,
-) -> (Type, Vec<InstantiatedConstraint>) {
+pub fn instantiate_type_scheme(module: &mut Module, type_scheme: TypeScheme) -> Type {
     let type_variable_substitutions =
         instantiate_type_variables(module, type_scheme.type_variables.into_vector());
 
@@ -4247,44 +4166,7 @@ pub fn instantiate_type_scheme(
         &type_scheme.type_value,
     );
 
-    let instantiated_constraints =
-        instantiate_constraints(type_scheme.constraints, &type_variable_substitutions);
-
-    (instantiated_type, instantiated_constraints)
-}
-
-pub fn instantiate_constraints(
-    constraints: Vec<InferredConstraint>,
-    type_variable_substitutions: &Vec<TypeVariableSubstitution>,
-) -> Vec<InstantiatedConstraint> {
-    constraints
-        .into_iter()
-        .map(|constraint| instantiate_constraint(constraint, type_variable_substitutions))
-        .collect()
-}
-
-pub fn instantiate_constraint(
-    constraint: InferredConstraint,
-    type_variable_substitutions: &Vec<TypeVariableSubstitution>,
-) -> InstantiatedConstraint {
-    InstantiatedConstraint {
-        interface_uid: constraint.interface_uid,
-        type_variables: constraint.type_variables.map(|type_variable| {
-            type_variable_substitutions.iter().find_map(
-                |TypeVariableSubstitution {
-                     from_type_variable,
-                     to_type_variable,
-                 }| {
-                    if *from_type_variable.name == *type_variable.name {
-                        Some(to_type_variable.clone())
-                    } else {
-                        None
-                    }
-                },
-            )
-            .expect("Compiler error, all type variables in each constraint should be quantified by the inferface")
-        }),
-    }
+    instantiated_type
 }
 
 #[derive(Debug, Clone)]

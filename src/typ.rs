@@ -50,10 +50,6 @@ pub enum Type {
 pub struct TypeScheme {
     pub type_variables: NonEmpty<ExplicitTypeVariable>,
     pub type_value: Type,
-
-    /// List of constraints that is bounded to this type scheme.  
-    /// The order of constraints does not matter.
-    pub constraints: Vec<InferredConstraint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,30 +63,6 @@ pub struct FunctionType {
 pub struct TypeConstraint {
     pub name: String,
     pub type_value: Type,
-}
-
-/// Example of constraint:
-/// ```
-/// Equatable<A, B>
-/// Printable<A>
-/// ```
-/// `Equatable` is the interface name, while `A` or/and `B` are the type variables.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InferredConstraint {
-    pub interface_uid: SymbolUid,
-
-    /// Note that the order of these type variables matters.  
-    /// For example, `Equatable<A, B>` is not always the same as `Equatable<B, A>`.
-    pub type_variables: NonEmpty<ExplicitTypeVariable>,
-
-    /// Variable that is bounded by this contraint should be parameterised using `injected_parameter_uid`
-    pub injected_parameter_uid: SymbolUid,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InstantiatedConstraint {
-    pub interface_uid: SymbolUid,
-    pub type_variables: NonEmpty<ImplicitTypeVariable>,
 }
 
 /// Type variable that is declared by user (a.k.a quantified). Cannot be substituted before instantiation.

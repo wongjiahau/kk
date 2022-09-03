@@ -13,7 +13,7 @@ fn run_all_tests() {
         let folder = folder.unwrap().path();
         let folder = folder.to_str().unwrap();
         // TODO: remove the following temp code
-        if !folder.ends_with("transpile") {
+        if !folder.ends_with("typecheck") {
             continue;
         }
         let files = fs::read_dir(folder).expect("Failed to read directory");
@@ -25,7 +25,7 @@ fn run_all_tests() {
                 .expect("Failed to convert entry to string")
                 .to_string();
 
-            if filename.ends_with("mutually_recursive_function_1.kk") {
+            if filename.ends_with("constrained_type_2.kk") {
                 let input_filename = filename;
                 print!("{}", input_filename);
                 let input = fs::read_to_string(&input_filename).expect("failed to read input file");

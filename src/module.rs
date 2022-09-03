@@ -184,9 +184,6 @@ pub struct Module {
     /// List of symbols in this module
     symbol_entries: Vec<SymbolEntry>,
 
-    /// List of interface-implementations
-    implementations: Vec<InferredImplementation>,
-
     /// This is used for Hindley-Milner type inference algorithm
     type_variable_substitutions: Substitution,
     type_variable_index: Cell<usize>,
@@ -208,7 +205,6 @@ impl Module {
             symbol_entries: Vec::new(),
             type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
-            implementations: Vec::new(),
             scope: Scope::new(),
             current_uid: Cell::new(0),
             meta: module_meta,
@@ -414,7 +410,6 @@ impl Module {
                     .collect(),
             },
             Type::TypeScheme(type_scheme) => Type::TypeScheme(Box::new(TypeScheme {
-                constraints: type_scheme.constraints.clone(),
                 type_variables: type_scheme.type_variables.clone(),
                 type_value: self.apply_subtitution_to_type(&type_scheme.type_value),
             })),
@@ -548,42 +543,6 @@ impl Module {
         Ok(())
     }
 
-    pub fn insert_implementation(
-        &mut self,
-        new_implementation: InferredImplementation,
-    ) -> Result<(), UnifyError> {
-        let overlapped_implementation = self
-            .implementations
-            .iter()
-            // Only check for overlapping against implementations that has the same scope as `new_implementation`
-            .filter(|existing_implementation| {
-                existing_implementation
-                    .scope_name
-                    .eq(&new_implementation.scope_name)
-            })
-            .find(|existing_implementation| {
-                types_overlap(
-                    existing_implementation.for_types.clone().into_vector(),
-                    new_implementation.for_types.clone().into_vector(),
-                    true,
-                )
-            });
-
-        match overlapped_implementation {
-            Some(overlapped_implementation) => Err(UnifyError {
-                position: new_implementation.declared_at,
-                kind: UnifyErrorKind::OverlappingImplementation {
-                    new_implementation: new_implementation.clone(),
-                    existing_implementation: overlapped_implementation.clone(),
-                },
-            }),
-            None => Ok(()),
-        }?;
-
-        self.implementations.push(new_implementation);
-        Ok(())
-    }
-
     /// Inserts a new symbol into this module.  
     /// `uid` should be `None` under normal circumstances.
     ///     It should only be defined when for example we want to allow recursive definition.
@@ -597,7 +556,7 @@ impl Module {
         let name = new_symbol.meta.name.representation.clone();
         let scope_name = self.current_scope_name();
         match &new_symbol.kind {
-            SymbolKind::Interface(_) | SymbolKind::Type(_) => {
+            SymbolKind::Type(_) => {
                 if let Some(conflicting_entry) = self.symbol_entries.iter().find(|entry| {
                     entry.scope_name == scope_name
                         && entry.symbol.meta.name.representation == name
@@ -792,100 +751,6 @@ impl Module {
             Some(entry) => match entry.symbol.kind {
                 SymbolKind::Type(type_symbol) => Some(type_symbol),
                 _ => None,
-            },
-        }
-    }
-
-    /// Find a matching implementation that satisfies the given `constraint`.
-    ///
-    /// `scope_name` is required such that `Required` implementation will not be wrongly selected.
-    ///
-    /// Returns the substituted types and the matching implementation.
-    pub fn find_matching_implementation(
-        &self,
-        constraint: InstantiatedConstraint,
-        position: Position,
-        scope_name: usize,
-    ) -> Result<(NonEmpty<Type>, InferredImplementation), UnifyError> {
-        let substituted_types = constraint.type_variables.clone().map(|type_variable| {
-            match self.get_type_variable_terminal_type(type_variable.name.clone()) {
-                Some(type_value) => type_value,
-                None => Type::ImplicitTypeVariable(type_variable),
-            }
-        });
-
-        let matching_implementation = match self.implementations.iter().find(|implementation| {
-            // If the implementation is Required, then `T` only overlaps with `T`, not other types
-            let explicit_type_variable_overlaps_with_any_type = match implementation.kind {
-                InferredImplementationKind::Provided { .. } => true,
-                InferredImplementationKind::Required => false,
-            };
-            implementation.scope_name.eq(&scope_name)
-                && implementation.interface_uid.eq(&constraint.interface_uid)
-                && types_overlap(
-                    implementation.for_types.clone().into_vector(),
-                    substituted_types.clone().into_vector(),
-                    explicit_type_variable_overlaps_with_any_type,
-                )
-        }) {
-            Some(implementation) => Some(implementation.clone()),
-            None => None,
-        };
-
-        match matching_implementation {
-            Some(implementation) => Ok((substituted_types, implementation)),
-            None => match self.scope.get_parent_scope_name(scope_name) {
-                Some(scope_name) => {
-                    self.find_matching_implementation(constraint, position, scope_name)
-                }
-                None => {
-                    let interface = self
-                        .get_interface_symbol_by_uid(&constraint.interface_uid)
-                        .expect("Compile error, cannot find interface");
-                    Err(UnifyError {
-                        position,
-                        kind: UnifyErrorKind::ConstraintUnsatisfied {
-                            interface_name: interface.0.name.representation,
-                            for_types: substituted_types,
-                        },
-                    })
-                }
-            },
-        }
-    }
-
-    pub fn get_interface_symbol_by_uid(
-        &self,
-        uid: &SymbolUid,
-    ) -> Option<(SymbolMeta, InterfaceSymbol)> {
-        match self.get_symbol_entry_by(|entry| entry.uid.eq(uid), self.current_scope_name()) {
-            None => None,
-            Some(entry) => match entry.symbol.kind {
-                SymbolKind::Interface(interface_symbol) => {
-                    Some((entry.symbol.meta, interface_symbol))
-                }
-                _ => None,
-            },
-        }
-    }
-
-    pub fn get_interface_symbol_by_name(
-        &self,
-        symbol_name: &Token,
-    ) -> Result<(SymbolUid, InterfaceSymbol), UnifyError> {
-        let error = Err(UnifyError {
-            position: symbol_name.position,
-            kind: UnifyErrorKind::UnknownInterfaceSymbol {
-                unknown_interface_name: symbol_name.representation.clone(),
-            },
-        });
-        match self.get_symbol_entry(symbol_name, self.current_scope_name()) {
-            None => error,
-            Some(entry) => match entry.symbol.kind {
-                SymbolKind::Interface(interface_symbol) => {
-                    Ok((entry.uid.clone(), interface_symbol))
-                }
-                _ => error,
             },
         }
     }
@@ -1094,69 +959,6 @@ pub enum SymbolKind {
     Value(ValueSymbol),
     Type(TypeSymbol),
     EnumConstructor(EnumConstructorSymbol),
-    Interface(InterfaceSymbol),
-}
-
-#[derive(Debug, Clone)]
-pub struct InferredImplementation {
-    /// Used for transpiling dictionary passing.
-    pub uid: SymbolUid,
-
-    /// `scope_name` is used to determine where this implementation is declared.
-    ///
-    /// Usually,
-    /// - `Provided` implementations should have the top-level `scope_name`;
-    /// - `Required` implementations has lower-level `scope_name`, namely the scope of the corresponding function
-    pub scope_name: usize,
-
-    pub declared_at: Position,
-    pub interface_uid: SymbolUid,
-    pub for_types: NonEmpty<Type>,
-    pub kind: InferredImplementationKind,
-}
-
-/// There are two kinds of implementation:  
-/// 1. Required
-/// 2. Provided
-///
-/// Suppose we have the code below:
-///
-/// ```
-/// interface Equatable<T> {  }
-///
-/// implements Equatable<String> {}
-///         // ^^^^^^^^^^^^^^^^^ Provided implementation
-///
-/// let notEquals = <T> where Equatable<T>(a: T, b: T): Boolean => {
-///                        // ^^^^^^^^^^^^ Required implementation
-/// }
-/// ```
-///
-/// In this example, required implementation should be passed as an extra dictionary parameter to the `notEquals` function.
-#[derive(Debug, Clone)]
-pub enum InferredImplementationKind {
-    Provided {
-        /// Provided implementation can have type variabes and constraints
-        populated_type_variables: Option<PopulatedTypeVariables>,
-    },
-    Required,
-}
-
-#[derive(Debug, Clone)]
-pub struct InferredImplementationDefinition {
-    pub name: Token,
-    pub expression: InferredExpression,
-}
-
-#[derive(Debug, Clone)]
-pub struct InterfaceSymbol {
-    pub type_variables: NonEmpty<ExplicitTypeVariable>,
-    pub definitions: Vec<InferredInterfaceDefinition>,
-}
-#[derive(Debug, Clone)]
-pub struct InferredInterfaceDefinition {
-    pub name: Token,
-    pub type_value: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -1182,14 +984,12 @@ pub struct FunctionSignature {
     pub symbol_uid: SymbolUid,
     pub type_variables: Option<NonEmpty<ExplicitTypeVariable>>,
     pub function_type: FunctionType,
-    pub constraints: Vec<InferredConstraint>,
 }
 
 impl FunctionSignature {
     fn as_type_value(&self) -> Type {
         match &self.type_variables {
             Some(type_variables) => Type::TypeScheme(Box::new(TypeScheme {
-                constraints: self.constraints.clone(),
                 type_variables: type_variables.clone(),
                 type_value: Type::Function(self.function_type.clone()),
             })),
@@ -1364,7 +1164,6 @@ fn built_in_symbols() -> Vec<Symbol> {
             meta: meta("print".to_string()),
             kind: SymbolKind::Value(ValueSymbol {
                 type_value: Type::TypeScheme(Box::new(TypeScheme {
-                    constraints: vec![],
                     type_variables: NonEmpty {
                         head: type_variable.clone(),
                         tail: vec![],

@@ -625,14 +625,6 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                     .collect(),
             }),
         },
-        InferredExpression::ConstrainedVariable { .. } => {
-            todo!("Use a different AST for transpiling, because transpiling should not has ConstraintVariable,
-            they should be solved as dictionary.
-            Suggested naming: 
-
-            Raw -> Inferred -> Solved
-            ")
-        }
     }
 }
 

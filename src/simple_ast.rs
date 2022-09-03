@@ -152,10 +152,6 @@ impl From<inferred_ast::InferredExpression> for Expression {
             inferred_ast::InferredExpression::InterpolatedString { sections } => todo!(),
             inferred_ast::InferredExpression::Character { representation } => todo!(),
             inferred_ast::InferredExpression::Variable(_) => todo!(),
-            inferred_ast::InferredExpression::ConstrainedVariable {
-                identifier,
-                constraints,
-            } => todo!(),
             inferred_ast::InferredExpression::EnumConstructor {
                 constructor_name,
                 payload,

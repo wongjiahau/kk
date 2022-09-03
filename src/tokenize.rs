@@ -583,8 +583,6 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordImport
     } else if s.eq("export") {
         TokenType::KeywordExport
-    } else if s.eq("where") {
-        TokenType::KeywordWhere
     } else {
         TokenType::Identifier
     }

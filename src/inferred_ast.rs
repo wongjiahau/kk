@@ -2,7 +2,7 @@ use crate::{
     module::{ModuleUid, SymbolUid},
     non_empty::NonEmpty,
     raw_ast::{InfinitePatternKind, Position, Token},
-    typ::{InstantiatedConstraint, Type},
+    typ::Type,
     unify::InferExpressionResult,
 };
 /// The syntax tree here represents the syntax tree that is type-checked
@@ -62,11 +62,6 @@ pub enum InferredExpression {
     },
     Variable(Identifier),
 
-    /// This should be replace with a dictionary during the constraint resolvation.
-    ConstrainedVariable {
-        identifier: Identifier,
-        constraints: NonEmpty<InstantiatedConstraint>,
-    },
     EnumConstructor {
         constructor_name: String,
         payload: Option<Box<InferredExpression>>,

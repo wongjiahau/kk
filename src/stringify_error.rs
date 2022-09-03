@@ -3,7 +3,7 @@ use crate::{
     compile::CompileErrorKind,
     parse::{ParseContext, ParseError, ParseErrorKind},
 };
-use crate::{module::InferredImplementationKind, tokenize::TokenizeError};
+use crate::tokenize::TokenizeError;
 use crate::{module::ModuleMeta, pattern::ExpandablePattern};
 use crate::{
     pattern::CheckablePatternKind,
@@ -270,7 +270,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Slash => "used for applicative let",
         TokenType::TripleBacktick => "used for writing code snippet in documentation comments",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
-        TokenType::Asterisk => "used for glob import",
         TokenType::Tag => "used as constructor of enum",
         TokenType::Operator => "used for defining symbolic functions",
         TokenType::KeywordEntry => "used for defining the entry point of a file",
@@ -884,48 +883,14 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 .join("\n")
             )
         },
-        UnifyErrorKind::UnknownInterfaceSymbol {
-            unknown_interface_name
-        } => StringifiedError{
-            summary: "Unknown Interface".to_string(),
-            body: format!("No interface in the current module has the name of {}", unknown_interface_name)
-        },
-        UnifyErrorKind::ExtraneousImplementationDefinition { .. } => StringifiedError {
-           summary: "Extraneous definitions".to_string(),
-            body: "This interface does not require this definition.".to_string()
-        },
-        UnifyErrorKind::MissingImplementationDefinition { missing_definition_names } => StringifiedError {
-            summary: "Missing definitions".to_string(),
+        UnifyErrorKind::UnsatisfiedConstraint { missing_constraint } => StringifiedError {
+            summary: "Unsatisfied Constraint".to_string(),
             body: format!(
-                "Some definitions of this interface are not implemented, namely:\n\n{}",
-                missing_definition_names
-                    .map(|missing_definition_name| indent_string(missing_definition_name.representation, 4))
-                    .into_vector()
-                    .join("\n")
+                "The following variable is required but not found:\n\n{}: {}",
+                missing_constraint.name,
+                stringify_type(missing_constraint.type_value, 0)
+                
             )
-        },
-        UnifyErrorKind::OverlappingImplementation {existing_implementation, ..} =>  {
-            let word = match existing_implementation.kind {
-                InferredImplementationKind::Provided { .. } => {
-                    "implementation"
-                }
-                InferredImplementationKind::Required => {
-                    "constraint"
-                }
-            };
-            StringifiedError {
-                summary: format!("Overlapping {}", word),
-                // TODO: show the existing implementation position
-                body: format!(
-                    "This {} overlapped with an existing {}:\n{}",
-                        word,
-                        word,
-                        existing_implementation.for_types
-                            .map(|type_value| stringify_type(type_value, 1))
-                            .into_vector()
-                            .join("\n")
-                )
-            }
         },
         UnifyErrorKind::ConstraintUnsatisfied { interface_name, for_types } => StringifiedError {
             summary: "Constraint unsatisfied".to_string(),
