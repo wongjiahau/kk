@@ -500,6 +500,11 @@ impl Tokenizer {
                     representation: "!".to_string(),
                     position: make_position(character, None),
                 })),
+                '~' => Ok(Some(Token {
+                    token_type: TokenType::Tilde,
+                    representation: "~".to_string(),
+                    position: make_position(character, None),
+                })),
                 // Symbolic identifer
                 other if is_symbol(other) => {
                     let characters = self

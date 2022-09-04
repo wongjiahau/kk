@@ -273,6 +273,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::Character(_)
         | Expression::Identifier(_)
         | Expression::String(_)
+        | Expression::CpsBang { .. }
         | Expression::Lambda(_) => None,
         Expression::FunctionCall(function_call) => Some(function_call.function.position()),
         Expression::UnsafeJavascript { code } => Some(code.position),
@@ -311,6 +312,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         Expression::Statements { current, next } => {
             has_direct_function_call(current).or(has_direct_function_call(next))
         }
+        Expression::CpsClosure { expression, .. } => has_direct_function_call(expression),
     }
 }
 
@@ -1080,6 +1082,12 @@ impl Positionable for Expression {
                 keyword_let, body, ..
             } => keyword_let.position.join(body.position()),
             Expression::Statements { current, next } => current.position().join(next.position()),
+            Expression::CpsClosure { tilde, expression } => {
+                tilde.position.join(expression.position())
+            }
+            Expression::CpsBang {
+                argument, function, ..
+            } => argument.position().join(function.position()),
         }
     }
 }
@@ -2598,11 +2606,200 @@ fn infer_expression_type_(
                 },
             })
         }
+        Expression::CpsClosure { expression, .. } => {
+            // Collect CpsBangs
+            let (bangs, expression) = expression.clone().collect_cps_bangs(module);
+
+            let expression = bangs.into_iter().fold(expression, |expression, bang| {
+                Expression::FunctionCall(Box::new(FunctionCall {
+                    function: Box::new(Expression::FunctionCall(Box::new(FunctionCall {
+                        function: Box::new(bang.function),
+                        argument: Box::new(bang.argument),
+                        type_arguments: None,
+                    }))),
+                    argument: Box::new(Expression::Lambda(Box::new(Lambda {
+                        left_curly_bracket: Token::dummy(),
+                        branches: NonEmpty {
+                            head: FunctionBranch {
+                                start_token: Token::dummy(),
+                                parameter: Box::new(bang.temporary_variable),
+                                body: Box::new(expression),
+                            },
+                            tail: vec![],
+                        },
+                        right_curly_bracket: Token::dummy(),
+                    }))),
+                    type_arguments: None,
+                }))
+            });
+            infer_expression_type(module, expected_type, &expression)
+        }
+        Expression::CpsBang {
+            argument,
+            bang,
+            function,
+        } => panic!("Missing CPS closure"),
     }?;
     Ok(InferExpressionResult {
         type_value: module.apply_subtitution_to_type(&result.type_value),
         expression: result.expression,
     })
+}
+
+impl Expression {
+    fn collect_cps_bangs(self, module: &mut Module) -> (Vec<CollectCpsBangResult>, Expression) {
+        match self {
+            Expression::Unit { .. }
+            | Expression::Float(_)
+            | Expression::Integer(_)
+            | Expression::String(_)
+            | Expression::Character(_)
+            | Expression::Identifier(_)
+            | Expression::CpsClosure { .. } => (vec![], self),
+
+            Expression::Statements { current, next } => {
+                let (bangs1, current) = current.collect_cps_bangs(module);
+                let (bangs2, next) = next.collect_cps_bangs(module);
+                (
+                    bangs1.into_iter().chain(bangs2.into_iter()).collect(),
+                    Expression::Statements {
+                        current: Box::new(current),
+                        next: Box::new(next),
+                    },
+                )
+            }
+            Expression::Parenthesized {
+                left_parenthesis,
+                right_parenthesis,
+                value,
+            } => {
+                let (bangs, value) = value.collect_cps_bangs(module);
+                (
+                    bangs,
+                    Expression::Parenthesized {
+                        left_parenthesis,
+                        right_parenthesis,
+                        value: Box::new(value),
+                    },
+                )
+            }
+            Expression::InterpolatedString {
+                start_quote,
+                sections,
+                end_quote,
+            } => todo!(),
+            Expression::Quoted {
+                opening_backtick,
+                expression,
+                closing_backtick,
+            } => todo!(),
+            Expression::EnumConstructor { name, payload } => match payload {
+                Some(payload) => {
+                    let (bangs, payload) = payload.collect_cps_bangs(module);
+                    (
+                        bangs,
+                        Expression::EnumConstructor {
+                            name,
+                            payload: Some(Box::new(payload)),
+                        },
+                    )
+                }
+                None => (
+                    vec![],
+                    Expression::EnumConstructor {
+                        name,
+                        payload: None,
+                    },
+                ),
+            },
+            Expression::Lambda(lambda) => {
+                todo!()
+            }
+            Expression::FunctionCall(function_call) => todo!(),
+            Expression::Record {
+                wildcard,
+                left_square_bracket,
+                key_value_pairs,
+                right_square_bracket,
+            } => {
+                let (bangs, key_value_pairs): (
+                    Vec<Vec<CollectCpsBangResult>>,
+                    Vec<RecordKeyValue>,
+                ) = key_value_pairs
+                    .into_iter()
+                    .map(|key_value_pair| {
+                        let (bangs, value) = key_value_pair.value.collect_cps_bangs(module);
+                        (
+                            bangs,
+                            RecordKeyValue {
+                                key: key_value_pair.key,
+                                value,
+                            },
+                        )
+                    })
+                    .unzip();
+                (
+                    bangs.into_iter().flatten().collect(),
+                    Expression::Record {
+                        wildcard,
+                        left_square_bracket,
+                        key_value_pairs,
+                        right_square_bracket,
+                    },
+                )
+            }
+            Expression::RecordAccess {
+                expression,
+                property_name,
+            } => todo!(),
+            Expression::RecordUpdate {
+                expression,
+                left_curly_bracket,
+                updates,
+                right_curly_bracket,
+            } => todo!(),
+            Expression::Array {
+                left_square_bracket,
+                elements,
+                right_square_bracket,
+            } => todo!(),
+            Expression::Let {
+                keyword_let,
+                left,
+                right,
+                type_annotation,
+                body,
+            } => todo!(),
+            Expression::UnsafeJavascript { code } => todo!(),
+            Expression::CpsBang {
+                argument,
+                bang,
+                function,
+            } => {
+                let temporary_variable = Token {
+                    position: function.position().join(argument.position()),
+                    token_type: TokenType::Identifier,
+                    representation: format!("temp{}", module.get_next_symbol_uid().index),
+                };
+                (
+                    vec![CollectCpsBangResult {
+                        temporary_variable: DestructurePattern::Identifier(
+                            temporary_variable.clone(),
+                        ),
+                        function: function.as_ref().clone(),
+                        argument: argument.as_ref().clone(),
+                    }],
+                    Expression::Identifier(temporary_variable),
+                )
+            }
+        }
+    }
+}
+
+struct CollectCpsBangResult {
+    temporary_variable: DestructurePattern,
+    function: Expression,
+    argument: Expression,
 }
 
 impl Lambda {

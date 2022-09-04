@@ -1036,6 +1036,10 @@ impl<'a> Parser<'a> {
                         closing_backtick,
                     })
                 }
+                TokenType::Tilde => Ok(Expression::CpsClosure {
+                    tilde: token.clone(),
+                    expression: Box::new(self.parse_high_precedence_expression()?),
+                }),
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             }
         } else {
@@ -1368,6 +1372,14 @@ impl<'a> Parser<'a> {
             return Ok(previous);
         }
 
+        if let Some(bang) = self.try_eat_token(TokenType::Bang)? {
+            return Ok(Expression::CpsBang {
+                argument: Box::new(previous),
+                bang,
+                function: Box::new(self.parse_low_precedence_expression()?),
+            });
+        }
+
         let next = self.parse_high_precedence_expression()?;
         let (function, argument) = match &next {
             // TODO: handle operator
@@ -1552,6 +1564,8 @@ fn convert_expression_to_pattern(
         | Expression::RecordUpdate { .. }
         | Expression::Let { .. }
         | Expression::Statements { .. }
+        | Expression::CpsBang { .. }
+        | Expression::CpsClosure { .. }
         | Expression::UnsafeJavascript { .. } => Err(ParseError {
             context,
             kind: ParseErrorKind::ExpectedPattern {

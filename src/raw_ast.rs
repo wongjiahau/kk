@@ -345,6 +345,16 @@ pub enum Expression {
     UnsafeJavascript {
         code: Token,
     },
+    /// CPS = Continuation Passing Style
+    CpsClosure {
+        tilde: Token,
+        expression: Box<Expression>,
+    },
+    CpsBang {
+        argument: Box<Expression>,
+        bang: Token,
+        function: Box<Expression>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -589,6 +599,7 @@ pub enum TokenType {
     Newline,
     /// Also known as Exclamation Mark (!)
     Bang,
+    Tilde,
     Colon,
 
     /// Also known as Left Angular Bracket (<)
