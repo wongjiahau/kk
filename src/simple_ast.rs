@@ -173,6 +173,7 @@ impl From<inferred_ast::InferredExpression> for Expression {
                 statements,
                 return_value,
             } => todo!(),
+            inferred_ast::InferredExpression::Unit => todo!(),
         }
     }
 }

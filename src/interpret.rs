@@ -254,6 +254,8 @@ type Evalled = (Value, Vec<Promise>);
 trait Eval {
     fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError>;
 }
+// if (x > 0) { 2 } else { 3 }
+// if (x > 0) [ 2 ] else [ 3 ]
 
 pub fn interpret(expression: Expression) {
     tokio::runtime::Builder::new_multi_thread()

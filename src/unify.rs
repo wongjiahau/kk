@@ -274,7 +274,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::Identifier(_)
         | Expression::String(_)
         | Expression::CpsBang { .. }
-        | Expression::Lambda(_) => None,
+        | Expression::Function(_) => None,
         Expression::FunctionCall(function_call) => Some(function_call.function.position()),
         Expression::UnsafeJavascript { code } => Some(code.position),
         Expression::InterpolatedString { sections, .. } => {
@@ -908,8 +908,8 @@ impl Positionable for TypeAnnotation {
                 .position
                 .join(right_square_bracket.position),
             TypeAnnotation::Record {
-                left_square_bracket: left_curly_bracket,
-                right_square_bracket: right_curly_bracket,
+                left_parenthesis: left_curly_bracket,
+                right_parenthesis: right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
@@ -965,8 +965,8 @@ impl Positionable for DestructurePattern {
                 right_parenthesis,
             } => left_parenthesis.position.join(right_parenthesis.position),
             DestructurePattern::Record {
-                left_curly_bracket,
-                right_curly_bracket,
+                left_parenthesis: left_curly_bracket,
+                right_parenthesis: right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
@@ -1047,8 +1047,8 @@ impl Positionable for Expression {
                 property_name,
             } => expression.position().join(property_name.position),
             Expression::Record {
-                left_square_bracket: left_curly_bracket,
-                right_square_bracket: right_curly_bracket,
+                left_parenthesis: left_curly_bracket,
+                right_parenthesis: right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
@@ -1067,11 +1067,12 @@ impl Positionable for Expression {
 
                 argument_position.join(function_position)
             }
-            Expression::Lambda(function) => {
-                let start_position = function.branches.first().start_token.position;
-                let end_position = function.branches.last().body.position();
-                start_position.join(end_position)
-            }
+            Expression::Function(function) => function
+                .branches
+                .first()
+                .parameter
+                .position()
+                .join(function.branches.last().body.position()),
             Expression::UnsafeJavascript { code } => code.position,
             Expression::Parenthesized {
                 left_parenthesis,
@@ -1769,10 +1770,7 @@ fn infer_expression_type_(
 ) -> Result<InferExpressionResult, UnifyError> {
     let result: InferExpressionResult = match expression {
         Expression::Unit { .. } => Ok(InferExpressionResult {
-            expression: InferredExpression::EnumConstructor {
-                constructor_name: "Unit".to_string(),
-                payload: None,
-            },
+            expression: InferredExpression::Unit,
             type_value: Type::Unit,
         }),
         Expression::String(token) => Ok(InferExpressionResult {
@@ -2128,7 +2126,7 @@ fn infer_expression_type_(
             }
         }
 
-        Expression::Lambda(function) => module.run_in_new_child_scope(|module| {
+        Expression::Function(function) => module.run_in_new_child_scope(|module| {
             let expected_function_type = match &expected_type {
                 Some(Type::Function(function_type)) => Some(function_type.clone()),
                 Some(Type::TypeScheme(type_scheme)) => match &type_scheme.type_value {
@@ -2432,8 +2430,8 @@ fn infer_expression_type_(
         }
         Expression::Record {
             key_value_pairs,
-            left_square_bracket: left_curly_bracket,
-            right_square_bracket: right_curly_bracket,
+            left_parenthesis: left_curly_bracket,
+            right_parenthesis: right_curly_bracket,
             wildcard,
             ..
         } => {
@@ -2617,11 +2615,10 @@ fn infer_expression_type_(
                         argument: Box::new(bang.argument),
                         type_arguments: None,
                     }))),
-                    argument: Box::new(Expression::Lambda(Box::new(Lambda {
+                    argument: Box::new(Expression::Function(Box::new(Function {
                         left_curly_bracket: Token::dummy(),
                         branches: NonEmpty {
                             head: FunctionBranch {
-                                start_token: Token::dummy(),
                                 parameter: Box::new(bang.temporary_variable),
                                 body: Box::new(expression),
                             },
@@ -2712,15 +2709,15 @@ impl Expression {
                     },
                 ),
             },
-            Expression::Lambda(lambda) => {
+            Expression::Function(lambda) => {
                 todo!()
             }
             Expression::FunctionCall(function_call) => todo!(),
             Expression::Record {
                 wildcard,
-                left_square_bracket,
+                left_parenthesis: left_square_bracket,
                 key_value_pairs,
-                right_square_bracket,
+                right_parenthesis: right_square_bracket,
             } => {
                 let (bangs, key_value_pairs): (
                     Vec<Vec<CollectCpsBangResult>>,
@@ -2742,9 +2739,9 @@ impl Expression {
                     bangs.into_iter().flatten().collect(),
                     Expression::Record {
                         wildcard,
-                        left_square_bracket,
+                        left_parenthesis: left_square_bracket,
                         key_value_pairs,
-                        right_square_bracket,
+                        right_parenthesis: right_square_bracket,
                     },
                 )
             }
@@ -2802,7 +2799,7 @@ struct CollectCpsBangResult {
     argument: Expression,
 }
 
-impl Lambda {
+impl Function {
     fn position(&self) -> Position {
         self.left_curly_bracket
             .position
@@ -2982,7 +2979,7 @@ struct InferFunctionResult {
 fn infer_branched_function(
     module: &mut Module,
     expected_function_type: &Option<FunctionType>,
-    function: &Lambda,
+    function: &Function,
 ) -> Result<InferFunctionResult, UnifyError> {
     let typechecked_first_branch =
         infer_function_branch(module, expected_function_type, &function.branches.first())?;
@@ -3021,7 +3018,7 @@ fn infer_branched_function(
         module,
         expected_type,
         actual_patterns,
-        Expression::Lambda(Box::new(function.clone())).position(),
+        Expression::Function(Box::new(function.clone())).position(),
     )?;
 
     Ok(InferFunctionResult {
@@ -3060,8 +3057,6 @@ pub fn check_exhaustiveness_(
     actual_patterns: NonEmpty<InferredDestructurePatternKind>,
     position: Position,
 ) -> Result<(), UnifyError> {
-    // println!("expected_patterns = {:#?}", expected_patterns);
-    // println!("actual_patterns = {:#?}", actual_patterns);
     let remaining_expected_patterns = actual_patterns
         .into_vector()
         .iter()
@@ -3747,8 +3742,8 @@ fn infer_destructure_pattern_(
         DestructurePattern::Record {
             wildcard,
             key_value_pairs,
-            left_curly_bracket,
-            right_curly_bracket,
+            left_parenthesis: left_curly_bracket,
+            right_parenthesis: right_curly_bracket,
             ..
         } => {
             let expected_key_type_pairs = match expected_type {

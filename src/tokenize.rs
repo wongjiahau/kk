@@ -530,7 +530,7 @@ impl Tokenizer {
                         '}' => TokenType::RightCurlyBracket,
                         '(' => TokenType::LeftParenthesis,
                         ')' => TokenType::RightParenthesis,
-                        '[' => TokenType::LeftSquareBracket,
+                        '[' => TokenType::LeftCurlyBracket,
                         ']' => TokenType::RightSquareBracket,
                         '<' => TokenType::LessThan,
                         '>' => TokenType::MoreThan,

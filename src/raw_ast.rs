@@ -32,10 +32,10 @@ pub struct ModuleStatement {
 pub enum ModuleDestructurePattern {
     Identifier(Token),
     Record {
-        left_square_bracket: Token,
+        left_parenthesis: Token,
         spread: Option<Token>,
         pairs: Vec<ModuleDestructurePatternPair>,
-        right_square_bracket: Token,
+        right_parenthesis: Token,
     },
 }
 
@@ -188,9 +188,9 @@ pub enum TypeAnnotation {
         type_arguments: Option<TypeArguments>,
     },
     Record {
-        left_square_bracket: Token,
+        left_parenthesis: Token,
         key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
-        right_square_bracket: Token,
+        right_parenthesis: Token,
     },
     Array {
         left_square_bracket: Token,
@@ -238,9 +238,9 @@ pub enum DestructurePattern {
     },
     Record {
         wildcard: Option<Token>,
-        left_curly_bracket: Token,
+        left_parenthesis: Token,
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
-        right_curly_bracket: Token,
+        right_parenthesis: Token,
     },
     Array {
         left_square_bracket: Token,
@@ -311,14 +311,14 @@ pub enum Expression {
     },
 
     /// This cannot be constructed directly from syntax, it is only for internal usage
-    Lambda(Box<Lambda>),
+    Function(Box<Function>),
 
     FunctionCall(Box<FunctionCall>),
     Record {
         wildcard: Option<Token>,
-        left_square_bracket: Token,
+        left_parenthesis: Token,
         key_value_pairs: Vec<RecordKeyValue>,
-        right_square_bracket: Token,
+        right_parenthesis: Token,
     },
     RecordAccess {
         expression: Box<Expression>,
@@ -458,7 +458,7 @@ pub struct FunctionCallRestArguments {
 }
 
 #[derive(Debug, Clone)]
-pub struct Lambda {
+pub struct Function {
     pub left_curly_bracket: Token,
     pub branches: NonEmpty<FunctionBranch>,
     pub right_curly_bracket: Token,
@@ -530,7 +530,6 @@ pub struct FunctionParameter {
 
 #[derive(Debug, Clone)]
 pub struct FunctionBranch {
-    pub start_token: Token,
     pub parameter: Box<DestructurePattern>,
     pub body: Box<Expression>,
 }

@@ -45,6 +45,7 @@ pub struct Identifier {
 
 #[derive(Debug, Clone)]
 pub enum InferredExpression {
+    Unit,
     Float {
         representation: String,
     },

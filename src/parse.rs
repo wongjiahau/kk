@@ -311,20 +311,19 @@ impl<'a> Parser<'a> {
             keyword_export,
             keyword_let,
             name,
-            expression: Self::convert_to_lambda(parameters, expression),
+            expression: Self::convert_to_function(parameters, expression),
             type_annotation,
         })
     }
 
-    fn convert_to_lambda(parameters: Vec<Parameter>, return_value: Expression) -> Expression {
+    fn convert_to_function(parameters: Vec<Parameter>, return_value: Expression) -> Expression {
         match parameters.split_first() {
-            Some((head, tail)) => Expression::Lambda(Box::new(Lambda {
+            Some((head, tail)) => Expression::Function(Box::new(Function {
                 left_curly_bracket: Token::dummy(),
                 branches: NonEmpty {
                     head: FunctionBranch {
-                        start_token: Token::dummy(),
                         parameter: Box::new(head.pattern.clone()),
-                        body: Box::new(Self::convert_to_lambda(tail.to_vec(), return_value)),
+                        body: Box::new(Self::convert_to_function(tail.to_vec(), return_value)),
                     },
                     tail: vec![],
                 },
@@ -481,11 +480,11 @@ impl<'a> Parser<'a> {
             None => Err(Parser::unexpected_eof(context)),
             Some(token) => match token.token_type {
                 TokenType::Identifier => Ok(ModuleDestructurePattern::Identifier(token)),
-                TokenType::LeftSquareBracket => {
+                TokenType::LeftCurlyBracket => {
                     let mut pairs = vec![];
-                    let (pairs, right_square_bracket) = loop {
+                    let (pairs, right_parenthesis) = loop {
                         if let Some(right_square_bracket) =
-                            self.try_eat_token(TokenType::RightSquareBracket)?
+                            self.try_eat_token(TokenType::RightParenthesis)?
                         {
                             break (pairs, right_square_bracket);
                         }
@@ -501,10 +500,10 @@ impl<'a> Parser<'a> {
                         })
                     };
                     Ok(ModuleDestructurePattern::Record {
-                        left_square_bracket: token,
+                        left_parenthesis: token,
                         spread: None,
                         pairs,
-                        right_square_bracket,
+                        right_parenthesis,
                     })
                 }
                 _ => {
@@ -608,17 +607,8 @@ impl<'a> Parser<'a> {
             Ok(EnumConstructorDefinition {
                 name,
                 payload: Some(Box::new(EnumConstructorDefinitionPayload {
-                    type_annotation: self.parse_parenthesized_type_annotation(left_parenthesis)?,
-                })),
-            })
-        } else if let Some(left_square_bracket) =
-            self.try_eat_token(TokenType::LeftSquareBracket)?
-        {
-            let type_annotation = self.parse_record_type_annotation(left_square_bracket)?;
-            Ok(EnumConstructorDefinition {
-                name,
-                payload: Some(Box::new(EnumConstructorDefinitionPayload {
-                    type_annotation,
+                    type_annotation: self
+                        .parse_parenthesized_or_record_type_annotation(left_parenthesis)?,
                 })),
             })
         } else {
@@ -690,7 +680,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_shorthand_dot_expression(&mut self, period: Token) -> Result<Lambda, ParseError> {
+    fn parse_shorthand_dot_expression(&mut self, period: Token) -> Result<Function, ParseError> {
         // This is a function shorthand expression
         let phantom_variable = Token {
             token_type: TokenType::Identifier,
@@ -748,10 +738,6 @@ impl<'a> Parser<'a> {
                     })
                 }
                 TokenType::LeftSquareBracket => {
-                    let left_square_bracket = token;
-                    self.parse_record_type_annotation(left_square_bracket)
-                }
-                TokenType::LeftSquareBracket => {
                     let context = Some(ParseContext::TypeAnnotationArray);
                     let left_square_bracket = token;
                     let element_type = self.parse_type_annotation(context)?;
@@ -781,7 +767,7 @@ impl<'a> Parser<'a> {
                             right_parenthesis,
                         })
                     } else {
-                        self.parse_parenthesized_type_annotation(left_parenthesis)
+                        self.parse_parenthesized_or_record_type_annotation(left_parenthesis)
                     }
                 }
                 _ => Err(Parser::invalid_token(token, context)),
@@ -794,29 +780,38 @@ impl<'a> Parser<'a> {
 
     fn parse_record_type_annotation(
         &mut self,
-        left_square_bracket: Token,
+        left_parenthesis: Token,
+        first_key_type_pair: (Token, TypeAnnotation),
     ) -> Result<TypeAnnotation, ParseError> {
         let context = Some(ParseContext::TypeAnnotationRecord);
-        let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = Vec::new();
-        let right_square_bracket = loop {
-            if let Some(right_square_bracket) = self.try_eat_token(TokenType::RightSquareBracket)? {
-                break right_square_bracket;
+        let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = vec![first_key_type_pair];
+        let right_parenthesis = loop {
+            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+                break right_parenthesis;
             }
+            self.eat_token(TokenType::Comma, context)?;
             let key = self.eat_token(TokenType::Identifier, context)?;
             self.eat_token(TokenType::Colon, context)?;
             let type_annotation = self.parse_type_annotation(context)?;
             key_type_annotation_pairs.push((key, type_annotation));
-            if let Some(right_square_bracket) = self.try_eat_token(TokenType::RightSquareBracket)? {
-                break right_square_bracket;
+            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+                break right_parenthesis;
             } else {
                 self.eat_token(TokenType::Comma, context)?;
             }
         };
-        Ok(TypeAnnotation::Record {
-            left_square_bracket,
-            key_type_annotation_pairs,
-            right_square_bracket,
-        })
+        if key_type_annotation_pairs.is_empty() {
+            Ok(TypeAnnotation::Unit {
+                left_parenthesis,
+                right_parenthesis,
+            })
+        } else {
+            Ok(TypeAnnotation::Record {
+                left_parenthesis,
+                key_type_annotation_pairs,
+                right_parenthesis,
+            })
+        }
     }
 
     fn try_parse_function_type_annotation(
@@ -867,10 +862,9 @@ impl<'a> Parser<'a> {
                 let phantom_variable = Expression::Identifier(property_name.clone());
                 let function_body = self.parse_dot_expression(period.clone(), phantom_variable)?;
                 record_updates.push(RecordUpdate::FunctionalUpdate {
-                    function: Expression::Lambda(Box::new(Lambda {
+                    function: Expression::Function(Box::new(Function {
                         branches: NonEmpty {
                             head: FunctionBranch {
-                                start_token: period.clone(),
                                 parameter: Box::new(DestructurePattern::Identifier(
                                     property_name.clone(),
                                 )),
@@ -948,7 +942,7 @@ impl<'a> Parser<'a> {
             let expression = match &token.token_type {
                 TokenType::Period => {
                     let period = self.next_meaningful_token()?.unwrap();
-                    Ok(Expression::Lambda(Box::new(
+                    Ok(Expression::Function(Box::new(
                         self.parse_shorthand_dot_expression(period)?,
                     )))
                 }
@@ -998,8 +992,7 @@ impl<'a> Parser<'a> {
                     end_quote,
                 }),
                 TokenType::Character => Ok(Expression::Character(token.clone())),
-                TokenType::LeftCurlyBracket => self.parse_lambda(token.clone()),
-                TokenType::LeftSquareBracket => self.parse_record(token.clone()),
+                TokenType::LeftCurlyBracket => self.parse_function(token.clone()),
                 TokenType::LeftParenthesis => {
                     let left_parenthesis = token;
                     if let Some(right_parenthesis) =
@@ -1011,6 +1004,43 @@ impl<'a> Parser<'a> {
                         })
                     } else {
                         let expression = self.parse_low_precedence_expression()?;
+                        if self.try_eat_token(TokenType::Comma)?.is_some() {
+                            let first_key_value_pair = match &expression {
+                                Expression::Identifier(key) => RecordKeyValue {
+                                    key: key.clone(),
+                                    value: expression,
+                                },
+                                other => RecordKeyValue {
+                                    key: Token {
+                                        token_type: TokenType::Identifier,
+                                        representation: "0".to_string(),
+                                        position: other.position(),
+                                    },
+                                    value: other.clone(),
+                                },
+                            };
+                            return self.parse_record(left_parenthesis, first_key_value_pair);
+                        }
+                        if self.try_eat_token(TokenType::Equals)?.is_some() {
+                            let key = match expression {
+                                Expression::Identifier(token) => Ok(token),
+                                _ => panic!("Expected identifier"),
+                            }?;
+                            let value = self.parse_low_precedence_expression()?;
+                            if self.try_eat_token(TokenType::Comma)?.is_some() {
+                                return self
+                                    .parse_record(left_parenthesis, RecordKeyValue { key, value });
+                            } else {
+                                return Ok(Expression::Record {
+                                    wildcard: None,
+                                    left_parenthesis,
+                                    key_value_pairs: vec![RecordKeyValue { key, value }],
+                                    right_parenthesis: self
+                                        .eat_token(TokenType::RightParenthesis, context)?,
+                                });
+                            }
+                        }
+
                         Ok(Expression::Parenthesized {
                             left_parenthesis,
                             right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
@@ -1066,11 +1096,15 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_record(&mut self, left_square_bracket: Token) -> Result<Expression, ParseError> {
+    fn parse_record(
+        &mut self,
+        left_parenthesis: Token,
+        first_key_value_pair: RecordKeyValue,
+    ) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::ExpressionRecord);
         let mut wildcard = None;
-        let mut key_value_pairs: Vec<RecordKeyValue> = vec![];
-        let right_square_bracket = loop {
+        let mut key_value_pairs: Vec<RecordKeyValue> = vec![first_key_value_pair];
+        let right_parenthesis = loop {
             match self.next_meaningful_token()? {
                 Some(
                     double_period @ Token {
@@ -1089,6 +1123,19 @@ impl<'a> Parser<'a> {
                         });
                     }
                 }
+                Some(
+                    right_parenthesis @ Token {
+                        token_type: TokenType::RightParenthesis,
+                        ..
+                    },
+                ) => {
+                    return {
+                        Ok(Expression::Unit {
+                            left_parenthesis,
+                            right_parenthesis,
+                        })
+                    }
+                }
                 other => {
                     let key = Parser::validate_token(TokenType::Identifier, other, context)?;
                     let value = if self.try_eat_token(TokenType::Equals)?.is_some() {
@@ -1105,14 +1152,14 @@ impl<'a> Parser<'a> {
             }
 
             if self.try_eat_token(TokenType::Comma)?.is_none() {
-                break self.eat_token(TokenType::RightSquareBracket, context)?;
+                break self.eat_token(TokenType::RightParenthesis, context)?;
             }
         };
         Ok(Expression::Record {
             wildcard,
             key_value_pairs,
-            left_square_bracket,
-            right_square_bracket,
+            left_parenthesis,
+            right_parenthesis,
         })
     }
 
@@ -1137,6 +1184,52 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_record_pattern(
+        &mut self,
+        left_parenthesis: Token,
+        first_key_pattern_pair: DestructuredRecordKeyValue,
+    ) -> Result<DestructurePattern, ParseError> {
+        let context = Some(ParseContext::PatternRecord);
+        let mut wildcard = None;
+        let mut key_value_pairs: Vec<DestructuredRecordKeyValue> = vec![first_key_pattern_pair];
+        let right_parenthesis = loop {
+            match self.next_meaningful_token()? {
+                Some(
+                    right_parenthesis @ Token {
+                        token_type: TokenType::RightParenthesis,
+                        ..
+                    },
+                ) => {
+                    break right_parenthesis;
+                }
+                Some(
+                    double_period @ Token {
+                        token_type: TokenType::TriplePeriod,
+                        ..
+                    },
+                ) => wildcard = Some(double_period),
+                other => {
+                    let key = Parser::validate_token(TokenType::Identifier, other, context)?;
+                    let as_value = if self.try_eat_token(TokenType::Equals)?.is_some() {
+                        Some(self.parse_destructure_pattern()?)
+                    } else {
+                        None
+                    };
+                    key_value_pairs.push(DestructuredRecordKeyValue { key, as_value });
+                    if self.try_eat_token(TokenType::Comma)?.is_none() {
+                        break self.eat_token(TokenType::RightParenthesis, context)?;
+                    }
+                }
+            }
+        };
+        Ok(DestructurePattern::Record {
+            wildcard,
+            left_parenthesis,
+            key_value_pairs,
+            right_parenthesis,
+        })
+    }
+
     /// Simple destructure pattern means all kinds of destructure pattern except for OR patterns
     /// OR patterns means `P1 | P2 | P3`
     fn parse_simple_destructure_pattern(&mut self) -> Result<DestructurePattern, ParseError> {
@@ -1149,61 +1242,43 @@ impl<'a> Parser<'a> {
                 TokenType::Identifier => Ok(DestructurePattern::Identifier(token)),
                 TokenType::Underscore => Ok(DestructurePattern::Underscore(token)),
                 TokenType::LeftParenthesis => {
+                    let left_parenthesis = token;
                     if let Some(right_parenthesis) =
                         self.try_eat_token(TokenType::RightParenthesis)?
                     {
                         Ok(DestructurePattern::Unit {
-                            left_parenthesis: token,
+                            left_parenthesis,
                             right_parenthesis,
                         })
                     } else {
                         let pattern = self.parse_destructure_pattern()?;
+                        if self.try_eat_token(TokenType::Comma)?.is_some() {
+                            let key = match pattern {
+                                DestructurePattern::Identifier(key) => key,
+                                other => panic!(),
+                            };
+                            return self.parse_record_pattern(
+                                left_parenthesis,
+                                DestructuredRecordKeyValue {
+                                    key,
+                                    as_value: None,
+                                },
+                            );
+                        }
+                        if self.try_eat_token(TokenType::Colon)?.is_some() {
+                            let key = match pattern {
+                                DestructurePattern::Identifier(key) => key,
+                                other => panic!(),
+                            };
+                            let as_value = Some(self.parse_destructure_pattern()?);
+                            return self.parse_record_pattern(
+                                left_parenthesis,
+                                DestructuredRecordKeyValue { key, as_value },
+                            );
+                        }
                         self.eat_token(TokenType::RightParenthesis, None)?;
                         Ok(pattern)
                     }
-                }
-                TokenType::LeftSquareBracket => {
-                    let context = Some(ParseContext::PatternRecord);
-                    let mut wildcard = None;
-                    let mut key_value_pairs: Vec<DestructuredRecordKeyValue> = Vec::new();
-                    let right_curly_bracket = loop {
-                        match self.next_meaningful_token()? {
-                            Some(
-                                right_square_bracket @ Token {
-                                    token_type: TokenType::RightSquareBracket,
-                                    ..
-                                },
-                            ) => {
-                                break right_square_bracket;
-                            }
-                            Some(
-                                double_period @ Token {
-                                    token_type: TokenType::TriplePeriod,
-                                    ..
-                                },
-                            ) => wildcard = Some(double_period),
-                            other => {
-                                let key =
-                                    Parser::validate_token(TokenType::Identifier, other, context)?;
-                                let as_value = if self.try_eat_token(TokenType::Equals)?.is_some() {
-                                    Some(self.parse_destructure_pattern()?)
-                                } else {
-                                    None
-                                };
-                                key_value_pairs.push(DestructuredRecordKeyValue { key, as_value });
-                                if self.try_eat_token(TokenType::Comma)?.is_none() {
-                                    break self
-                                        .eat_token(TokenType::RightSquareBracket, context)?;
-                                }
-                            }
-                        }
-                    };
-                    Ok(DestructurePattern::Record {
-                        wildcard,
-                        left_curly_bracket: token,
-                        key_value_pairs,
-                        right_curly_bracket,
-                    })
                 }
                 TokenType::Integer => Ok(DestructurePattern::Infinite {
                     token,
@@ -1217,7 +1292,7 @@ impl<'a> Parser<'a> {
                     token,
                     kind: InfinitePatternKind::Character,
                 }),
-                TokenType::LeftSquareBracket => {
+                TokenType::LeftCurlyBracket => {
                     let context = Some(ParseContext::PatternArray);
                     let left_square_bracket = token;
                     if let Some(right_square_bracket) =
@@ -1283,85 +1358,57 @@ impl<'a> Parser<'a> {
         self.try_parse_enum_constructor_with_payload_pattern(pattern)
     }
 
-    fn parse_lambda(&mut self, left_curly_bracket: Token) -> Result<Expression, ParseError> {
+    fn parse_function(&mut self, left_curly_bracket: Token) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::Lambda);
-        let (branches, right_curly_bracket) =
-            if let Some(pipe) = self.try_eat_token(TokenType::Pipe)? {
-                let head_branch = self.parse_function_branch(pipe)?;
-                let mut tail_branches = vec![];
-                loop {
-                    if let Some(right_curly_bracket) =
-                        self.try_eat_token(TokenType::RightCurlyBracket)?
-                    {
-                        break (
-                            NonEmpty {
-                                head: head_branch,
-                                tail: tail_branches,
-                            },
-                            right_curly_bracket,
-                        );
+        let (branches, right_curly_bracket) = {
+            let expression = self.parse_low_precedence_expression()?;
+            if self.try_eat_token(TokenType::ArrowRight)?.is_some() {
+                let head = FunctionBranch {
+                    parameter: Box::new(convert_expression_to_pattern(expression, context)?),
+                    body: Box::new(self.parse_low_precedence_expression()?),
+                };
+                // This lambda
+                let mut tail = vec![];
+                let tail = loop {
+                    if self.try_eat_token(TokenType::Comma)?.is_some() {
+                        tail.push(self.parse_function_branch()?)
                     } else {
-                        let pipe = self.eat_token(TokenType::Pipe, context)?;
-                        tail_branches.push(self.parse_function_branch(pipe)?)
+                        break tail;
                     }
-                }
+                };
+                (
+                    NonEmpty { head, tail },
+                    self.eat_token(TokenType::RightCurlyBracket, context)?,
+                )
             } else {
-                let expression = self.parse_low_precedence_expression()?;
-                if self.try_eat_token(TokenType::ArrowRight)?.is_some() {
-                    // This is a single branch lambda
-                    (
-                        NonEmpty {
-                            head: FunctionBranch {
-                                start_token: left_curly_bracket.clone(),
-                                parameter: Box::new(convert_expression_to_pattern(
-                                    expression, context,
-                                )?),
-                                body: Box::new(self.parse_low_precedence_expression()?),
-                            },
-                            tail: vec![],
+                // This is a block
+                (
+                    NonEmpty {
+                        head: FunctionBranch {
+                            parameter: Box::new(DestructurePattern::Unit {
+                                left_parenthesis: left_curly_bracket.clone(),
+                                right_parenthesis: left_curly_bracket.clone(),
+                            }),
+                            body: Box::new(expression),
                         },
-                        self.eat_token(TokenType::RightCurlyBracket, context)?,
-                    )
-                } else {
-                    // This is a block
-                    (
-                        NonEmpty {
-                            head: FunctionBranch {
-                                start_token: left_curly_bracket.clone(),
-                                parameter: Box::new(DestructurePattern::Unit {
-                                    left_parenthesis: Token {
-                                        token_type: TokenType::LeftParenthesis,
-                                        position: left_curly_bracket.position.clone(),
-                                        representation: "(".to_string(),
-                                    },
-
-                                    right_parenthesis: Token {
-                                        token_type: TokenType::RightParenthesis,
-                                        position: left_curly_bracket.position.clone(),
-                                        representation: ")".to_string(),
-                                    },
-                                }),
-                                body: Box::new(expression),
-                            },
-                            tail: vec![],
-                        },
-                        self.eat_token(TokenType::RightCurlyBracket, context)?,
-                    )
-                }
-            };
-        Ok(Expression::Lambda(Box::new(Lambda {
+                        tail: vec![],
+                    },
+                    self.eat_token(TokenType::RightCurlyBracket, context)?,
+                )
+            }
+        };
+        Ok(Expression::Function(Box::new(Function {
             left_curly_bracket,
             branches,
             right_curly_bracket,
         })))
     }
 
-    fn parse_function_branch(&mut self, start_token: Token) -> Result<FunctionBranch, ParseError> {
+    fn parse_function_branch(&mut self) -> Result<FunctionBranch, ParseError> {
         let parameter = self.parse_destructure_pattern()?;
         self.eat_token(TokenType::ArrowRight, None)?;
         let body = self.parse_low_precedence_expression()?;
         Ok(FunctionBranch {
-            start_token,
             parameter: Box::new(parameter),
             body: Box::new(body),
         })
@@ -1435,17 +1482,37 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_parenthesized_type_annotation(
+    fn parse_parenthesized_or_record_type_annotation(
         &mut self,
         left_parenthesis: Token,
     ) -> Result<TypeAnnotation, ParseError> {
         let context = None;
         let type_annotation = self.parse_type_annotation(context)?;
-        Ok(TypeAnnotation::Parenthesized {
-            left_parenthesis,
-            type_annotation: Box::new(type_annotation),
-            right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
-        })
+        match &type_annotation {
+            TypeAnnotation::Named {
+                name,
+                type_arguments: None,
+            } => {
+                if self.try_eat_token(TokenType::Colon)?.is_some() {
+                    let type_annotation = self.parse_type_annotation(context)?;
+                    self.parse_record_type_annotation(
+                        left_parenthesis,
+                        (name.clone(), type_annotation),
+                    )
+                } else {
+                    Ok(TypeAnnotation::Parenthesized {
+                        left_parenthesis,
+                        type_annotation: Box::new(type_annotation),
+                        right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
+                    })
+                }
+            }
+            _ => Ok(TypeAnnotation::Parenthesized {
+                left_parenthesis,
+                type_annotation: Box::new(type_annotation),
+                right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
+            }),
+        }
     }
 
     fn try_parse_type_constraints(
@@ -1454,7 +1521,7 @@ impl<'a> Parser<'a> {
         let context = None;
         if self.try_eat_token(TokenType::Pipe)?.is_some() {
             Ok(Some(TypeConstraintsAnnotation {
-                left_square_bracket: self.eat_token(TokenType::LeftSquareBracket, context)?,
+                left_square_bracket: self.eat_token(TokenType::LeftCurlyBracket, context)?,
                 type_constraints: {
                     let mut type_constraints = vec![];
                     loop {
@@ -1513,13 +1580,13 @@ fn convert_expression_to_pattern(
         }),
         Expression::Record {
             wildcard,
-            left_square_bracket: left_curly_bracket,
-            right_square_bracket: right_curly_bracket,
+            left_parenthesis,
+            right_parenthesis,
             key_value_pairs,
         } => Ok(DestructurePattern::Record {
             wildcard,
-            left_curly_bracket,
-            right_curly_bracket,
+            left_parenthesis,
+            right_parenthesis,
             key_value_pairs: key_value_pairs
                 .into_iter()
                 .map(|pair| {
@@ -1558,7 +1625,7 @@ fn convert_expression_to_pattern(
         Expression::Float(_)
         | Expression::InterpolatedString { .. }
         | Expression::Quoted { .. }
-        | Expression::Lambda(_)
+        | Expression::Function(_)
         | Expression::FunctionCall(_)
         | Expression::RecordAccess { .. }
         | Expression::RecordUpdate { .. }

@@ -828,7 +828,7 @@ impl Module {
                             // find matching function signatures based on concrete type
                             let matching_value_symbol =
                                 matching_value_symbols.iter().find(|(uid, value_symbol)| {
-                                    overlap(&expected_type, &value_symbol.type_value, false)
+                                    overlap(&expected_type, &value_symbol.type_value, true)
                                 });
 
                             match matching_value_symbol {
@@ -1004,6 +1004,7 @@ fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bo
                     Type::ExplicitTypeVariable(other_type_variable) => {
                         explicit_type_variable.name.eq(&other_type_variable.name)
                     }
+                    Type::ImplicitTypeVariable(_) => true,
                     _ => false,
                 }
             }
