@@ -1,4 +1,4 @@
-let foo = (n: Integer): Integer => n.bar()
+let foo = (n: Int): Int => n.bar()
 
-let bar = (n: Integer): String => n.foo()
-//                                ^^^^^^^ Error: expected String, got Integer
+let bar = (n: Int): String => n.foo()
+//                                ^^^^^^^ Error: expected String, got Int

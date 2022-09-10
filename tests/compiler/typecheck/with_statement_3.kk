@@ -1,4 +1,4 @@
-let lift = (x: Integer): {x: Integer} => {x}
+let lift = (x: Int): {x: Int} => {x}
 
 {
   with x = 123.lift

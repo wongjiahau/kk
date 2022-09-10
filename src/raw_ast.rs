@@ -5,10 +5,6 @@ use crate::{non_empty::NonEmpty, tokenize::Character, unify::Positionable};
 pub enum Statement {
     Let(LetStatement),
 
-    /// This represents the entry points of a module.
-    /// Will be ignored for imported modules.
-    Expression(Expression),
-
     /// This represent type alias definition.
     Type(TypeAliasStatement),
 
@@ -17,6 +13,8 @@ pub enum Statement {
 
     Module(ModuleStatement),
 
+    /// This represents the entry points of a module.
+    /// Will be ignored for imported modules.
     Entry(EntryStatement),
 }
 
@@ -148,16 +146,16 @@ pub struct NamedTypeAnnotationArguments {
 
 #[derive(Debug, Clone)]
 pub struct TypeConstraintsAnnotation {
-    pub left_square_bracket: Token,
-    pub right_square_bracket: Token,
+    pub left_parenthesis: Token,
+    pub right_parenthesis: Token,
     pub type_constraints: Vec<TypeConstraintAnnotation>,
 }
 
 impl TypeConstraintsAnnotation {
     pub fn position(&self) -> Position {
-        self.left_square_bracket
+        self.left_parenthesis
             .position
-            .join(self.right_square_bracket.position)
+            .join(self.right_parenthesis.position)
     }
 }
 
@@ -219,9 +217,11 @@ pub enum InfinitePatternKind {
     Integer,
 }
 
+pub type OrDestructurePattern = Box<NonEmpty<DestructurePattern>>;
+
 #[derive(Debug, Clone)]
 pub enum DestructurePattern {
-    Or(Box<NonEmpty<DestructurePattern>>),
+    Or(OrDestructurePattern),
     Infinite {
         kind: InfinitePatternKind,
         token: Token,
@@ -237,8 +237,8 @@ pub enum DestructurePattern {
         payload: Option<Box<DestructurePattern>>,
     },
     Record {
-        wildcard: Option<Token>,
         left_parenthesis: Token,
+        wildcard: Option<Token>,
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
         right_parenthesis: Token,
     },
@@ -248,6 +248,12 @@ pub enum DestructurePattern {
         spread: Option<DestructurePatternArraySpread>,
     },
     Tuple(DestructurePatternTuple),
+}
+
+#[derive(Debug, Clone)]
+pub struct DestructuredRecordSpread {
+    double_period: Token,
+    identifier: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -315,8 +321,8 @@ pub enum Expression {
 
     FunctionCall(Box<FunctionCall>),
     Record {
-        wildcard: Option<Token>,
         left_parenthesis: Token,
+        wildcard: Option<Token>,
         key_value_pairs: Vec<RecordKeyValue>,
         right_parenthesis: Token,
     },
@@ -326,9 +332,9 @@ pub enum Expression {
     },
     RecordUpdate {
         expression: Box<Expression>,
-        left_curly_bracket: Token,
+        left_parenthesis: Token,
         updates: Vec<RecordUpdate>,
-        right_curly_bracket: Token,
+        right_parenthesis: Token,
     },
     Array {
         left_square_bracket: Token,
@@ -588,6 +594,7 @@ pub enum TokenType {
     KeywordModule,
     KeywordImport,
     KeywordExport,
+    KeywordExists,
     Whitespace,
     LeftCurlyBracket,
     RightCurlyBracket,
@@ -608,7 +615,7 @@ pub enum TokenType {
     MoreThan,
     Equals,
     Period,
-    TriplePeriod,
+    DoublePeriod,
     Comma,
     Semicolon,
     Minus,

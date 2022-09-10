@@ -1,6 +1,6 @@
 {
   let id
-    : (a: Integer) => Integer 
+    : (a: Int) => Int 
     = <T>(t: T): T => t
        // ^^^ Error: expected zero type variable, but got one
 }

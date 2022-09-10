@@ -1,4 +1,4 @@
-let foo = (null: Null): Integer => 123
+let foo = (null: Null): Int => 123
 
 null.foo()
-// Error: expected Null but got Integer 
+// Error: expected Null but got Int 

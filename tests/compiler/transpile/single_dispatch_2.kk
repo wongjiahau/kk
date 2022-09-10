@@ -1,8 +1,9 @@
-let foo = (_: String): String => "Hello"
+let foo (_: String): String = "Hello"
 
-let foo = (_: Boolean): String => "World"
+let foo (_: Int): String = "World"
 
-let map = <A, B>(x: A, f: (a: A) => B): B => x.f()
+let<A, B> (x: A) map (f: A -> B): B = x f
 
-true.map(foo).print()
-true.map(foo).map(x => x.foo()).print()
+entry
+  123 map (foo) print;
+  123 map (foo) map { x -> x foo } print

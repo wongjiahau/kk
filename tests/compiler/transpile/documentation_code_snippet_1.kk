@@ -5,4 +5,4 @@
  * "Hi".foo().print()
  * ```
  */
-let foo = (_: String): Integer => 123
+let foo = (_: String): Int => 123

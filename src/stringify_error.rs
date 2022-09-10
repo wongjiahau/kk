@@ -252,7 +252,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::LessThan | TokenType::MoreThan => "used for declaring type parameters, for example:\n\n\ttype Box<T> = { value: T }",
         TokenType::Equals => "used for declaring variables locally, for example:\n\n\tlet x = 1",
         TokenType::Period => "used for calling a function, for example:\n\n\t1.add(2)",
-        TokenType::TriplePeriod => "used for record wildcard, for example:\n\n\tlet f : |{x: Integer y: Integer} => Integer = |{..} => x.plus(y)",
+        TokenType::DoublePeriod => "used for record wildcard, for example:\n\n\tlet f : |{x: Integer y: Integer} => Integer = |{..} => x.plus(y)",
         TokenType::Comma => "used for separation",
         TokenType::Minus => "only used to represent negative numbers, for example:\n\n\t-123.4",
         TokenType::ArrowRight | TokenType::Pipe => "only used for creating function, for example:\n\n\t| x => x.add(1)",
@@ -276,6 +276,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Semicolon => "used for separating statements",
         TokenType::KeywordModule => "used for declaring/importing/aliasing modules",
         TokenType::Tilde => "used for declaring the start of a CPS Sugar",
+        TokenType::KeywordExists => "used for declaring constraints",
 
     }
 }
@@ -446,7 +447,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::MoreThan => ">",
         TokenType::Equals => "=",
         TokenType::Period => ".",
-        TokenType::TriplePeriod => "...",
+        TokenType::DoublePeriod => "...",
         TokenType::Comma => ",",
         TokenType::Minus => "-",
         TokenType::ArrowRight => "=>",
@@ -472,6 +473,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Semicolon => ";",
         TokenType::KeywordModule => "module",
         TokenType::Tilde => "~",
+        TokenType::KeywordExists => "exists",
     }
 }
 

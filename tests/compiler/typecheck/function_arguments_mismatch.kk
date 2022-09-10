@@ -1,3 +1,3 @@
 {
-  let f : (n: Integer) => Integer = (x, y) => x
+  let f : (n: Int) => Int = (x, y) => x
 }

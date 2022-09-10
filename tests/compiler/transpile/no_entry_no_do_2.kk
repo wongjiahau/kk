@@ -1,6 +1,7 @@
 // This is for testing:
 // Entry points should only be transpiled at entry points
 
-export let foo = (null: Null): String => "Hello"
+export let foo (null: Null): String = "Hello"
 
-"Hello world".print()
+entry
+  "Hello world" print

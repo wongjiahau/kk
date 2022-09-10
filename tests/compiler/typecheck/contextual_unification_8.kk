@@ -1,5 +1,5 @@
 let foo: {
-  f:  (options: { x: Integer }) => Integer
+  f:  (options: { x: Int }) => Int
 } = {
   f: options => options.y
 }

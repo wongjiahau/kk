@@ -1,4 +1,4 @@
-let apply = (x: Integer, f: (a: Integer, b: Integer) => Integer): Integer => x.f(x)
+let apply = (x: Int, f: (a: Int, b: Int) => Int): Int => x.f(x)
 
 {
   with x = 123.apply

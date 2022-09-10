@@ -1,10 +1,10 @@
-enum List<T> {
-  Nil,
-  Cons({current: T, next: List<T>})
-}
+enum List<T>
+  = #nil
+  | #cons { current: T, next: List<T> }
 
-let bomb = <A>(xs: List<A>): Boolean => 
-  switch (xs) {
-    case Nil: true
-    case Cons({current: _, next: Nil}): true
-  }
+let bomb(xs: List<T>) (f: T -> U): Boolean =
+  {
+  | #nil -> true
+  | #cons { .current = _, .next = #nil } -> true
+  } xs
+

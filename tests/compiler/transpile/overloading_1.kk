@@ -1,13 +1,13 @@
-let x: Integer = 1
+let x: Int = 1
 
 let x: String = 'hello'
 
-let (a: String) x: Integer = a print; 999
+let (a: String) x: Int = a print; 999
 
 entry
   'hello' x print; // 'hello' 999
   let y: String = x;
   y print; // 'hello';
-  let z: Integer = x;
+  let z: Int = x;
   z print // 1
 

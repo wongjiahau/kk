@@ -12,4 +12,4 @@
  * null.foo().print() // Compile error: expected `String` but got `Null`
  * ```
  */
-let foo = (s: String): Integer => 123
+let foo = (s: String): Int => 123

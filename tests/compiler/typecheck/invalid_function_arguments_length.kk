@@ -1,3 +1,3 @@
-export let foo = (i: Integer): Integer => 2
+export let foo = (i: Int): Int => 2
 
 2.foo(3).print()

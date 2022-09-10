@@ -10,7 +10,7 @@ INPUT
  * Spongebob Squarepants
  */
  entry
-  `Hello` print
+  "Hello" print
 
 ============
 EXIT CODE

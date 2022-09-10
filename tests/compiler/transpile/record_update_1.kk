@@ -1,7 +1,7 @@
 type R = {
-  x: Integer,
+  x: Int,
   y: {
-    z: Integer
+    z: Int
   }
 }
 {

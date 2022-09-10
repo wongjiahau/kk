@@ -1,4 +1,4 @@
-let foo = (s: String): Integer =>
+let foo = (s: String): Int =>
   switch s { 
     case "hi": 0
     case "hey": 1

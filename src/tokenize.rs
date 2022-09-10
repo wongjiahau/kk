@@ -460,14 +460,29 @@ impl Tokenizer {
                         position: make_position(character, characters.last()),
                     }))
                 }
+                '.' => {
+                    let characters = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| character.value == '.')
+                        .collect::<Vec<Character>>();
+                    match characters.len() {
+                        0 => Ok(Some(Token {
+                            token_type: TokenType::Period,
+                            representation: ".".to_string(),
+                            position: make_position(character, None),
+                        })),
+                        1 => Ok(Some(Token {
+                            token_type: TokenType::DoublePeriod,
+                            representation: "..".to_string(),
+                            position: make_position(character, characters.last()),
+                        })),
+                        _ => panic!(),
+                    }
+                }
                 ':' => Ok(Some(Token {
                     token_type: TokenType::Colon,
                     representation: ":".to_string(),
-                    position: make_position(character, None),
-                })),
-                '.' => Ok(Some(Token {
-                    token_type: TokenType::Period,
-                    representation: ".".to_string(),
                     position: make_position(character, None),
                 })),
                 '=' => Ok(Some(Token {
@@ -530,7 +545,7 @@ impl Tokenizer {
                         '}' => TokenType::RightCurlyBracket,
                         '(' => TokenType::LeftParenthesis,
                         ')' => TokenType::RightParenthesis,
-                        '[' => TokenType::LeftCurlyBracket,
+                        '[' => TokenType::LeftSquareBracket,
                         ']' => TokenType::RightSquareBracket,
                         '<' => TokenType::LessThan,
                         '>' => TokenType::MoreThan,
@@ -588,6 +603,8 @@ pub fn get_token_type(s: String) -> TokenType {
         TokenType::KeywordImport
     } else if s.eq("export") {
         TokenType::KeywordExport
+    } else if s.eq("exists") {
+        TokenType::KeywordExists
     } else {
         TokenType::Identifier
     }

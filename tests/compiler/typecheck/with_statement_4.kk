@@ -1,4 +1,4 @@
-let map = (x: Integer, f: (n: Integer) => Integer): [Integer] => [x.f()]
+let map = (x: Int, f: (n: Int) => Int): [Int] => [x.f()]
 
 {
   with 0 = 123.map

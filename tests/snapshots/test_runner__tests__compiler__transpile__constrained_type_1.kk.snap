@@ -10,19 +10,19 @@ type Grade = #a | #b
 
 let (left : Grade) equals (right : Grade) : Boolean =
   {
-  | [ left = #a, right = #a ] -> #true
-  | [ left = #b, right = #b ] -> #true
-  | _ -> #false
-  } [left, right]
+    (left = #a, right = #a) -> #true,
+    (left = #b, right = #b) -> #true,
+     _ -> #false
+  } (left, right)
 
 let (b : Boolean) not : Boolean =
   {
-  | #true -> #false
-  | #false -> #true
+    #true -> #false,
+    #false -> #true
   } (b)
 
 let<T> (left : T) `not equals` (right : T) : Boolean
-  | [ equals: T -> T -> Boolean ]
+  exists (equals: T -> T -> Boolean)
   = left equals (right) not
 
 entry

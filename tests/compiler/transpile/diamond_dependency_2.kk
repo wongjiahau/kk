@@ -1,3 +1,3 @@
-module [foo] = import "./diamond_dependency_1.kk"
+module (foo) = import "./diamond_dependency_1.kk"
 
-export let bar (): Integer = 2
+export let bar (): Int = 2

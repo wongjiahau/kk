@@ -1,6 +1,6 @@
 // Top level destructuring
 let {x, y} = {
-  x: (i: Integer): String => "Hello",
+  x: (i: Int): String => "Hello",
   y: (b: Boolean): String => "World"
 }
 

@@ -1,36 +1,20 @@
 // async await
-#{
-  run = {
-    f -> f handle #{
-      await = {
-        promise -> promise resume
-      }
-    } ()
-  },
+type Promise<A> = (A -> ()) -> () 
 
-  main = {
-    x = `tests/compiler/intepret/basic1.kk` readFile ! await,
-    y = `tests/compiler/intepret/effectHandlers3.kk` readFile ! await,
-    x print,
+effect Async<A> = [
+  await (promise: Promise<A>) : A
+]
+  
+let run <A>(f: () -> () effect (Async<A>)): A =
+  f () 
+    effect (Async) [
+      await (promise) = promise(resume)
+    ]
+
+entry
+  run {
+    let x = `tests/compiler/intepret/basic1.kk` readFile await;
+    let y = `tests/compiler/intepret/effectHandlers3.kk` readFile await;
+    x print;
     y print
-  } ()
-}
-(
-  run: {
-    f: () | f handle (
-      await : {
-        promise: resume | promise 
-      }
-    )
-  },
-
-  { 
-    (
-      x: `tests/compiler/intepret/basic1.kk` | readFile ! await,
-      y: `tests/compiler/intepret/effectHandlers3.kk` | readFile ! await,
-      x | print,
-      y | print
-    )
-  } | run,
-)
-
+  }

@@ -11,3 +11,4 @@ let loopDown = (n: Integer): Integer => {
 // This will result in stack overflow if loopDown don't have tail call elimination
 // Last tested, any number above 5964 will trigger stack overflow
 5999.loopDown().print()
+

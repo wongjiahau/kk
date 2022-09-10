@@ -1,9 +1,9 @@
-enum Foo = #a(String) | #b {hello: String}
+type Foo = #a(String) | #b (hello: String)
 
 let toString
   : Foo -> String
-  = { #a(x) | #b {.hello = x} -> x }
+  = { #a(x) | #b (hello = x) -> x }
 
 entry
-  #a(`Spongebob`) toString print;
-  #b {.hello = `Squarepants`} toString print
+  #a "Spongebob" toString print;
+  #b (hello = "Squarepants") toString print

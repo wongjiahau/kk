@@ -1,2 +1,3 @@
-"\"Hello world\"".print()
-"\\Hello world\\".print()
+entry
+  "\"Hello world\"" print;
+  "\\Hello world\\" print

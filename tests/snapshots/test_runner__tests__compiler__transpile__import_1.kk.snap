@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-export let showMe = (s: String): Null => s.print()
+export let showMe (s: String): () = s print
 
 ============
 EXIT CODE

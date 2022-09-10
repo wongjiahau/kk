@@ -1,15 +1,15 @@
-let prefix (a: Integer): Integer = a
+let prefix (a: Int): Int = a
 
-let prefix2 (a: Integer) (b: Integer): Integer = b
+let prefix2 (a: Int) (b: Int): Int = b
 
-let (a: Integer) postfix: Integer = a
+let (a: Int) postfix: Int = a
 
-let (a: Integer) infix (b: Integer): String = 
+let (a: Int) infix (b: Int): String = 
   a print;
   b print;
   'hello'
 
-let (a: Integer) infix2 (b: Integer) (c: Integer): String = 
+let (a: Int) infix2 (b: Int) (c: Int): String = 
   a print;
   b print;
   c print;

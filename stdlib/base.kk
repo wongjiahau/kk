@@ -221,7 +221,7 @@ let is_none<A>
 Exit a process with a specific code.
 ###
 export let exit
-  : | Integer => Null
+  : | Int => Null
   = @@@ (code) => process.exit(code) @@@
 
 # String functions
@@ -268,23 +268,23 @@ export let concat
   = @@@ (x,y)=>x+y @@@
 
 
-# Integer and Float functions 
+# Int and Float functions 
 
 ###
-For converting an Integer to String.
+For converting an Int to String.
 ###
 export let to_string
-  : | Integer => String
+  : | Int => String
   = @@@ x => x.toString() @@@
 
 ###
-Add two integers.
+Add two Ints.
 ```
 do `123.plus(987)`.should_be(`1110`)
 ```
 ###
 export let plus
-  : | Integer Integer => Integer
+  : | Int Int => Int
   = @@@ (x, y) => x + y @@@
 
 ###
@@ -307,7 +307,7 @@ do `1.23456789.round(10)`.should_be(`1.23456789`)
 ```
 ###
 export let round
-  : | Float Integer => Float
+  : | Float Int => Float
   = @@@ (number, decimal) => {
     const tens = Math.pow(10, decimal)
     return Math.round((number + Number.EPSILON) * tens) / tens
@@ -316,13 +316,13 @@ export let round
 
 
 ###
-Subtracts two integers.
+Subtracts two Ints.
 ```
 do `100.minus(1)`.should_be(`99`)
 ```
 ###
 export let minus
-  : | Integer Integer => Integer
+  : | Int Int => Int
   = @@@ (x, y) => x - y @@@
 
 ###
@@ -337,13 +337,13 @@ export let minus
   = @@@ (x, y) => x - y @@@
 
 ###
-Multiply two integers.
+Multiply two Ints.
 ```
 do `9.multiply(8)`.should_be(`72`)
 ```
 ###
 export let multiply
-  : | Integer Integer => Integer
+  : | Int Int => Int
   = @@@ (x, y) => x*y @@@
 
 ###
@@ -357,14 +357,14 @@ export let multiply
   = @@@ (x, y) => x * y @@@
 
 ###
-Divide two integers where the remainder will be truncated.
+Divide two Ints where the remainder will be truncated.
 ```
 do `9.divide(3)`.should_be(`3`)
 do `9.divide(4)`.should_be(`2`)
 ```
 ###
 export let divide
-  : | Integer Integer => Integer
+  : | Int Int => Int
   = @@@ (a, b) => Math.floor(a / b) @@@
 
 ###
@@ -384,7 +384,7 @@ do `9.power(2)`.should_be(`81`)
 ```
 ###
 export let power
-  : | Integer Integer => Integer
+  : | Int Int => Int
   = @@@ Math.pow @@@
 
 ###
@@ -408,17 +408,17 @@ export let is_not_a_number
   = @@@ n => Number.isNaN(n) @@@
 
 ###
-Check if a given integer is not a number (NaN).
+Check if a given Int is not a number (NaN).
 ```
 do `0.modulo(0).is_not_a_number`.should_be(`true`)
 ```
 ###
 export let is_not_a_number
-  : | Integer => Boolean
+  : | Int => Boolean
   = @@@ n => Number.isNaN(n) @@@
 
 ###
-Get the remainder of a division between two integers.  
+Get the remainder of a division between two Ints.  
 ```
 do `10.modulo(3)`.should_be(`1`)
 do `-13.modulo(64)`.should_be(`51`)
@@ -426,11 +426,11 @@ do `0.modulo(0).is_not_a_number`.should_be(`true`)
 ```
 ###
 export let modulo
-  : | Integer Integer => Integer
+  : | Int Int => Int
   = @@@ (a, n) => n === 0 ? NaN : ((a % n) + n) % n @@@
 
 ###
-Check if the first integer is less than the second integer.
+Check if the first Int is less than the second Int.
 ```
 do `1.less_than(2)`.should_be(`true`)
 do `1.less_than(1)`.should_be(`false`)
@@ -438,7 +438,7 @@ do `2.less_than(1)`.should_be(`false`)
 ```
 ###
 export let less_than
-  : | Integer Integer => Boolean
+  : | Int Int => Boolean
   = @@@ (x,y) => x < y @@@
 
 ###
@@ -455,7 +455,7 @@ export let less_than
 
 
 ###
-Check if the first integer is more than the second integer.
+Check if the first Int is more than the second Int.
 ```
 do `1.more_than(2)`.should_be(`false`)
 do `1.more_than(1)`.should_be(`false`)
@@ -463,7 +463,7 @@ do `2.more_than(1)`.should_be(`true`)
 ```
 ###
 export let more_than
-  : | Integer Integer => Boolean
+  : | Int Int => Boolean
   = @@@ (x,y) => x > y @@@
 
 ###
@@ -667,13 +667,13 @@ export let cube_root
   = @@@ Math.cbrt @@@
 
 ###
-Round up a float to the nearest integer.
+Round up a float to the nearest Int.
 ```
 do `1.0001.ceiling`.should_be(`2`)
 ```
 ###
 export let ceiling
-  : | Float => Integer
+  : | Float => Int
   = @@@ Math.ceil @@@
 
 ###
@@ -717,13 +717,13 @@ export let expm1
   = @@@ Math.expm1 @@@
 
 ###
-Round down a float to the nearest integer.
+Round down a float to the nearest Int.
 ```
 do `9.9999.floor`.should_be(`9`)
 ```
 ###
 export let floor
-  : | Float => Integer
+  : | Float => Int
   = @@@ Math.floor @@@
 
 ###
@@ -814,7 +814,7 @@ do `[1 2 3].get(1)`.should_be(`Some(2)`)
 ```
 ###
 export let get<A>
-  : | [A] Integer => Option<A>
+  : | [A] Int => Option<A>
   = @@@ (xs, i) => i < xs.length ? {$:"Some",_:xs[i]} : {$:"None",_:null} @@@
 
 ###
@@ -853,7 +853,7 @@ do `[1 2 3 4].drop(5)`.should_be(`[]`)
 ```
 ###
 export let drop<A>
-  : | [A] Integer => [A]
+  : | [A] Int => [A]
   = @@@
     (xs, n) => {
       if(n < 0) {
@@ -927,7 +927,7 @@ export let filter<A>
 Apply a transform function to each matching elements in an array.  
 This is more performant than chaining `filter` and `map` as only one round of iteration is needed.
 ```
-enum Animal = Bird({wings: Integer}) Fish({fins: Integer})
+enum Animal = Bird({wings: Int}) Fish({fins: Int})
 let animals
   : [Animal]
   = [
@@ -1065,7 +1065,7 @@ do `["Hello" "world"].indexed`.should_be(`[{index: 0 value: "Hello"} {index: 1 v
 ```
 ###
 export let indexed<A>
-  : | [A] => [{index: Integer value: A}]
+  : | [A] => [{index: Int value: A}]
   = @@@ (xs) => {
     let length = xs.length
     let result = Array(length)
@@ -1100,7 +1100,7 @@ do `[1 2 3].length`.should_be(`3`)
 ```
 ###
 export let length<A>
-  : | [A] => Integer
+  : | [A] => Int
   = @@@ xs => xs.length @@@
 
 
@@ -1111,7 +1111,7 @@ Loop with a state.
 For example, the factorial function can be implemented as follows:
 ```
 let factorial
-  : | Integer => Integer
+  : | Int => Int
   = | n => {n result: 1}.loop(|{n result} =>
       n.less_than(2).(
         | true => Break(result)
@@ -1222,7 +1222,7 @@ do `[].repeat(2)`.should_be(`[[] []]`)
 ```
 ###
 export let repeat<A>
-  : | A Integer => [A]
+  : | A Int => [A]
   = @@@
     (x, n) => {
       var result = Array(n)
@@ -1295,7 +1295,7 @@ do `[].take(-1)`.should_be(`[]`)
 ```
 ###
 export let take<A>
-  : | [A] Integer => [A]
+  : | [A] Int => [A]
   = @@@
     (xs, n) => {
       if(n > 0) {
@@ -1341,13 +1341,13 @@ export let take_while<A>
 
 
 ###
-Create a range of integers.  
+Create a range of Ints.  
 ```
 do `1.to(10)`.should_be(`[ 1 2 3 4 5 6 7 8 9 10 ]`)
 ```
 ###
 export let to
-  : | Integer Integer => [Integer]
+  : | Int Int => [Int]
   = @@@
     (start, end) => {
       let length = end - start + 1

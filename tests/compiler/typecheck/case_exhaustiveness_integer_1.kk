@@ -1,4 +1,4 @@
-let isZero = (n: Integer): Boolean =>
+let isZero = (n: Int): Boolean =>
   switch (n) {
     case 0: true
     case 1: false

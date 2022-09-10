@@ -3,7 +3,7 @@ enum List<T> {
   Cons({ current: T, next: List<T> })
 }
 
-let xs: Integer = {
+let xs: Int = {
   let x = Cons({
     current: 1,
     next: Cons({

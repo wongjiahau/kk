@@ -39,8 +39,11 @@ let <A> (branches: List<Branch<A>>) else (body: () -> A): A =
   branches 
     `find map` { branch -> 
       branch.condition () match {
-        #true -> #some (branch.body ()),
-        #false -> #none
+        #true -> 
+          #some (branch.body ()),
+
+        #false -> 
+          #none
       }
     } 
     match {

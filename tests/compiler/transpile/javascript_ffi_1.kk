@@ -1,10 +1,10 @@
-let minus = (x: Integer, y: Integer): Integer => @@@ _0 - _1 @@@
+let minus = (x: Int, y: Int): Int => @@@ _0 - _1 @@@
 
-let multiply = (x: Integer, y: Integer): Integer => @@@ _0 * _1 @@@
+let multiply = (x: Int, y: Int): Int => @@@ _0 * _1 @@@
 
-let less_than = (x: Integer, y: Integer): Boolean => @@@ _0 < _1 @@@
+let less_than = (x: Int, y: Int): Boolean => @@@ _0 < _1 @@@
 
-let factorial = (n: Integer): Integer =>
+let factorial = (n: Int): Int =>
   if(n.less_than(2)) 
     1
   else  

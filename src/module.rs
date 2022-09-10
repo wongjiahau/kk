@@ -1013,6 +1013,7 @@ fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bo
         (Type::ImplicitTypeVariable { .. }, _) | (_, Type::ImplicitTypeVariable { .. }) => true,
         (Type::Unit, Type::Unit) => true,
         (Type::String, Type::String) => true,
+        (Type::Character, Type::Character) => true,
         (Type::Integer, Type::Integer) => true,
         (Type::Float, Type::Float) => true,
         (Type::Tuple(xs), Type::Tuple(ys)) => {

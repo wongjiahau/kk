@@ -1,2 +1,2 @@
-let a: Integer = 1
-let b: Integer = 1.0
+let a: Int = 1
+let b: Int = 1.0

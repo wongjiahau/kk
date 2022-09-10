@@ -1,4 +1,4 @@
-let foo = (c: Character): Integer =>
+let foo = (c: Character): Int =>
   switch(c) {
     case 'h': 0
     case 'i': 1

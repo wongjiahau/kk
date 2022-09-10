@@ -1,1 +1,1 @@
-let x: {x: Integer} = {x: 2
+let x: {x: Int} = {x: 2

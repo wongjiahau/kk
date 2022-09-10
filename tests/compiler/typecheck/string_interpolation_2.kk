@@ -1,3 +1,3 @@
 let x
-  : Integer
+  : Int
   = "I am ${"Hello ${"World"}"} years old"

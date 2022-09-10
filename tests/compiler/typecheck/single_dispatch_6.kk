@@ -1,4 +1,4 @@
-let foo = (x: Integer, y: Integer): Integer => 123
+let foo = (x: Int, y: Int): Int => 123
 
 9.foo(8).print()
 

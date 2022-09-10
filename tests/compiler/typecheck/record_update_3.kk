@@ -1,5 +1,5 @@
 let a = { x: 2 }
-let foo = (_: Integer): String => "Hello"
+let foo = (_: Int): String => "Hello"
 {
-  let b = a.{ x.foo() } // expected Integer, got String
+  let b = a.{ x.foo() } // expected Int, got String
 }

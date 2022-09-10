@@ -11,7 +11,7 @@ let map = <A, B>(this: Option<A>, f: (a: A) => Option<B>): Option<B> => {
   }
 }
 
-export let sum = (a: Option<Integer>, b: Option<Integer>): Option<{ a: Integer, b: Integer }> => {
+export let sum = (a: Option<Int>, b: Option<Int>): Option<{ a: Int, b: Int }> => {
   with a = a.map
   with b = b.map
   Some({ a, b })

@@ -60,14 +60,10 @@ pub fn unify_statements(
                 Statement::Let(let_statement) => {
                     let_statements.push(let_statement);
                 }
-                Statement::Expression(expression) => {
-                    // Top level expressions will only be compiled on entrypoint file
-                    if is_entry_point {
-                        top_level_expressions.push(expression);
-                    }
-                }
                 Statement::Entry(entry_statement) => {
-                    top_level_expressions.push(entry_statement.expression)
+                    if is_entry_point {
+                        top_level_expressions.push(entry_statement.expression)
+                    }
                 }
                 Statement::Module(module_statement) => module_statements.push(module_statement),
             }
@@ -306,6 +302,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
                 RecordUpdate::FunctionalUpdate { function, .. } => Some(function.position()),
             })
         }),
+        Expression::RecordAccess { expression, .. } => has_direct_function_call(&expression),
         Expression::Array { elements, .. } => elements.iter().find_map(has_direct_function_call),
         Expression::Parenthesized { value, .. } => has_direct_function_call(value),
         Expression::Let { body, .. } => has_direct_function_call(&body),
@@ -1055,7 +1052,7 @@ impl Positionable for Expression {
                 .join(right_curly_bracket.position),
             Expression::RecordUpdate {
                 expression,
-                right_curly_bracket,
+                right_parenthesis: right_curly_bracket,
                 ..
             } => expression
                 .as_ref()
@@ -1111,7 +1108,6 @@ impl Positionable for Statement {
                 .position
                 .join(let_statement.expression.position()),
 
-            Statement::Expression(expression) => expression.position(),
             Statement::Type(type_statement) => type_statement
                 .keyword_type
                 .position
@@ -2751,9 +2747,9 @@ impl Expression {
             } => todo!(),
             Expression::RecordUpdate {
                 expression,
-                left_curly_bracket,
+                left_parenthesis: left_curly_bracket,
                 updates,
-                right_curly_bracket,
+                right_parenthesis: right_curly_bracket,
             } => todo!(),
             Expression::Array {
                 left_square_bracket,
@@ -2888,13 +2884,6 @@ fn infer_block_level_statement(
     let result = match statement {
         Statement::Let(let_statement) => {
             Ok((infer_let_statement(module, let_statement)?, Type::Unit))
-        }
-        Statement::Expression(expression) => {
-            let typechecked_expression = infer_expression_type(module, expected_type, &expression)?;
-            Ok((
-                InferredStatement::Expression(typechecked_expression.expression),
-                typechecked_expression.type_value,
-            ))
         }
         _ => {
             // TODO: separate Statement enum as TopLevelStatement and BlockLevelStatement

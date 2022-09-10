@@ -1,5 +1,5 @@
 {
   let f 
-    : (o: { x: { y: Integer } }) => Integer
+    : (o: { x: { y: Int } }) => Int
     = { x: { z } } => 2
 }

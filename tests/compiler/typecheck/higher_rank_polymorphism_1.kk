@@ -4,7 +4,7 @@ let {id} = {
 
 {
   let x: String = "Hello".id() // No error
-  let y: Integer = 123.id() // No error
+  let y: Int = 123.id() // No error
   let z: String = 123.id() 
-  //              ^^^^^^^^ Error: expected String, got Integer
+  //              ^^^^^^^^ Error: expected String, got Int
 }

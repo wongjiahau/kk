@@ -3,4 +3,4 @@
  * Spongebob Squarepants
  */
  entry
-  `Hello` print
+  "Hello" print

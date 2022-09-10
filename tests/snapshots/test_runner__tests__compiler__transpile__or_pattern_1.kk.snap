@@ -6,10 +6,12 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 // Subpatterns
+type Boolean = #true | #false
+
 let isVowel
   : Character -> Boolean = {
-  | 'a' | 'e' | 'i' | 'o' | 'u'  -> true
-  | _ -> false
+    'a' | 'e' | 'i' | 'o' | 'u'  -> #true,
+    _ -> #false
   }
 
 entry
@@ -30,13 +32,13 @@ EXIT CODE
 ============
 STDOUT
 ============
-true
-true
-true
-true
-true
-false
-false
+{ '$': '#true', _: null }
+{ '$': '#true', _: null }
+{ '$': '#true', _: null }
+{ '$': '#true', _: null }
+{ '$': '#true', _: null }
+{ '$': '#false', _: null }
+{ '$': '#false', _: null }
 
 ============
 STDERR
