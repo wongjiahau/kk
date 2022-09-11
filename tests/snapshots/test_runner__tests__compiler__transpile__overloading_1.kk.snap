@@ -5,17 +5,17 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let x: Integer = 1
+let x: Int = 1
 
-let x: String = 'hello'
+let x: String = "hello"
 
-let (a: String) x: Integer = a print; 999
+let (a: String) x: Int = a print; 999
 
 entry
-  'hello' x print; // 'hello' 999
+  "hey" x print; // "hello" 999
   let y: String = x;
-  y print; // 'hello';
-  let z: Integer = x;
+  y print; // "hello";
+  let z: Int = x;
   z print // 1
 
 ============
@@ -26,9 +26,9 @@ EXIT CODE
 ============
 STDOUT
 ============
-'hello'
+hey
 999
-'hello'
+hello
 1
 
 ============

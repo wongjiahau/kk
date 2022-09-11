@@ -1186,11 +1186,5 @@ fn built_in_symbols() -> Vec<Symbol> {
                 type_value: Type::Float,
             }),
         },
-        Symbol {
-            meta: meta("Null".to_string()),
-            kind: SymbolKind::Type(TypeSymbol {
-                type_value: Type::Unit,
-            }),
-        },
     ]
 }

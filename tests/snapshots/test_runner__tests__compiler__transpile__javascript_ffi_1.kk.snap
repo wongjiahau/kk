@@ -5,13 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let minus = (x: Integer, y: Integer): Integer => @@@ _0 - _1 @@@
+let minus = (x: Int, y: Int): Int => @@@ _0 - _1 @@@
 
-let multiply = (x: Integer, y: Integer): Integer => @@@ _0 * _1 @@@
+let multiply = (x: Int, y: Int): Int => @@@ _0 * _1 @@@
 
-let less_than = (x: Integer, y: Integer): Boolean => @@@ _0 < _1 @@@
+let less_than = (x: Int, y: Int): Boolean => @@@ _0 < _1 @@@
 
-let factorial = (n: Integer): Integer =>
+let factorial = (n: Int): Int =>
   if(n.less_than(2))
     1
   else
@@ -22,13 +22,35 @@ let factorial = (n: Integer): Integer =>
 ============
 EXIT CODE
 ============
-0
+1
 
 ============
 STDOUT
 ============
-51090942171709440000
+
 
 ============
 STDERR
 ============
+error:
+  ┌─ tests/compiler/transpile/javascript_ffi_1.kk:1:11
+  │
+1 │ let minus = (x: Int, y: Int): Int => @@@ _0 - _1 @@@
+  │           ^ Syntax error: not expecting `=` here
+  │
+  = The expected token here is `:`.
+
+    Note that `=` is used for declaring variables locally, for example:
+
+    let x = 1.
+
+    We found this error when we are trying to parse a Let Statement.
+    Examples of Let Statement are:
+
+    Example #1:
+
+      let x : Integer = 1
+
+    Example #2:
+
+      let identity = <T>(t: T): T => t

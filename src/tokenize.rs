@@ -66,6 +66,7 @@ impl TokenizeError {
 pub struct Tokenizer {
     characters_iterator: Peekable<IntoIter<Character>>,
     peeked_tokens: Vec<Token>,
+    checkpoint: Option<TokenizerCheckpoint>,
 }
 
 impl Tokenizer {
@@ -101,6 +102,7 @@ impl Tokenizer {
         Tokenizer {
             characters_iterator: characters.peekable(),
             peeked_tokens: vec![],
+            checkpoint: None,
         }
     }
 
@@ -130,7 +132,7 @@ impl Tokenizer {
             return Ok(Some(token));
         }
 
-        if let Some(character) = self.characters_iterator.next() {
+        let token = if let Some(character) = self.characters_iterator.next() {
             match character.value {
                 // Comments
                 '/' => match self.characters_iterator.next() {
@@ -278,7 +280,7 @@ impl Tokenizer {
                                             let mut parser = Parser::new(self);
                                             interpolated_string_sections.push(
                                                 InterpolatedStringSection::Expression(Box::new(
-                                                    parser.parse_mid_precedence_expression()?,
+                                                    parser.parse_low_precedence_expression()?,
                                                 )),
                                             );
                                             parser.eat_token(TokenType::RightCurlyBracket, None)?;
@@ -314,14 +316,14 @@ impl Tokenizer {
                                 interpolated_string_sections
                             };
                             Ok(Some(Token {
-                                token_type: TokenType::InterpolatedString {
+                                token_type: TokenType::InterpolatedString(InterpolatedString {
                                     start_quote: Box::new(start_quote.clone()),
                                     sections: NonEmpty {
                                         head: head.clone(),
                                         tail: interpolated_string_sections,
                                     },
                                     end_quote: Box::new(end_quote.clone()),
-                                },
+                                }),
                                 representation: "".to_string(),
                                 position: make_position(start_quote, Some(&end_quote)),
                             }))
@@ -338,60 +340,81 @@ impl Tokenizer {
                     if let Some(next_character) =
                         self.characters_iterator.next_if(|c| c.value == '>')
                     {
-                        if next_character.value == '>' {
-                            return Ok(Some(Token {
-                                token_type: TokenType::ArrowRight,
-                                representation: "->".to_string(),
-                                position: make_position(character, Some(&next_character)),
-                            }));
-                        }
-                    }
-                    let intergral = self
-                        .characters_iterator
-                        .by_ref()
-                        .peeking_take_while(|character| character.value.is_digit(10))
-                        .collect::<Vec<Character>>();
-
-                    if character.value == '-' && intergral.is_empty() {
-                        let characters = self
+                        Ok(Some(Token {
+                            token_type: TokenType::ArrowRight,
+                            representation: "->".to_string(),
+                            position: make_position(character, Some(&next_character)),
+                        }))
+                    } else {
+                        let intergral = self
                             .characters_iterator
                             .by_ref()
-                            .peeking_take_while(|character| is_symbol(character.value))
+                            .peeking_take_while(|character| character.value.is_digit(10))
                             .collect::<Vec<Character>>();
 
-                        let representation =
-                            format!("{}{}", character.value, stringify(characters.clone()));
-                        return Ok(Some(Token {
-                            token_type: TokenType::Identifier,
-                            representation,
-                            position: make_position(character, characters.last()),
-                        }));
-                    };
-
-                    match self.characters_iterator.peek() {
-                        Some(Character { value: '.', .. }) => {
-                            let period = self.characters_iterator.next().unwrap();
-                            let fractional = self
+                        if character.value == '-' && intergral.is_empty() {
+                            let characters = self
                                 .characters_iterator
-                                .peeking_take_while(|character| character.value.is_digit(10))
+                                .by_ref()
+                                .peeking_take_while(|character| is_symbol(character.value))
                                 .collect::<Vec<Character>>();
 
-                            if fractional.is_empty() {
-                                // means there's no fractional part
-                                // that means the next token is a Period
-                                self.peeked_tokens.push(Token {
-                                    token_type: TokenType::Period,
-                                    representation: period.value.to_string(),
-                                    position: Position {
-                                        line_start: period.line_number,
-                                        line_end: period.line_number,
-                                        column_start: period.column_number,
-                                        column_end: period.column_number,
-                                        character_index_start: period.index,
-                                        character_index_end: period.index,
-                                    },
-                                });
-                                Ok(Some(Token {
+                            let representation =
+                                format!("{}{}", character.value, stringify(characters.clone()));
+                            Ok(Some(Token {
+                                token_type: TokenType::Identifier,
+                                representation,
+                                position: make_position(character, characters.last()),
+                            }))
+                        } else {
+                            match self.characters_iterator.peek() {
+                                Some(Character { value: '.', .. }) => {
+                                    let period = self.characters_iterator.next().unwrap();
+                                    let fractional = self
+                                        .characters_iterator
+                                        .peeking_take_while(|character| {
+                                            character.value.is_digit(10)
+                                        })
+                                        .collect::<Vec<Character>>();
+
+                                    if fractional.is_empty() {
+                                        // means there's no fractional part
+                                        // that means the next token is a Period
+                                        self.peeked_tokens.push(Token {
+                                            token_type: TokenType::Period,
+                                            representation: period.value.to_string(),
+                                            position: Position {
+                                                line_start: period.line_number,
+                                                line_end: period.line_number,
+                                                column_start: period.column_number,
+                                                column_end: period.column_number,
+                                                character_index_start: period.index,
+                                                character_index_end: period.index,
+                                            },
+                                        });
+                                        Ok(Some(Token {
+                                            token_type: TokenType::Integer,
+                                            representation: format!(
+                                                "{}{}",
+                                                character.value,
+                                                stringify(intergral.clone())
+                                            ),
+                                            position: make_position(character, intergral.last()),
+                                        }))
+                                    } else {
+                                        Ok(Some(Token {
+                                            token_type: TokenType::Float,
+                                            representation: format!(
+                                                "{}{}.{}",
+                                                character.value,
+                                                stringify(intergral),
+                                                stringify(fractional.clone())
+                                            ),
+                                            position: make_position(character, fractional.last()),
+                                        }))
+                                    }
+                                }
+                                _ => Ok(Some(Token {
                                     token_type: TokenType::Integer,
                                     representation: format!(
                                         "{}{}",
@@ -399,29 +422,9 @@ impl Tokenizer {
                                         stringify(intergral.clone())
                                     ),
                                     position: make_position(character, intergral.last()),
-                                }))
-                            } else {
-                                Ok(Some(Token {
-                                    token_type: TokenType::Float,
-                                    representation: format!(
-                                        "{}{}.{}",
-                                        character.value,
-                                        stringify(intergral),
-                                        stringify(fractional.clone())
-                                    ),
-                                    position: make_position(character, fractional.last()),
-                                }))
+                                })),
                             }
                         }
-                        _ => Ok(Some(Token {
-                            token_type: TokenType::Integer,
-                            representation: format!(
-                                "{}{}",
-                                character.value,
-                                stringify(intergral.clone())
-                            ),
-                            position: make_position(character, intergral.last()),
-                        })),
                     }
                 }
                 // Tag
@@ -559,8 +562,44 @@ impl Tokenizer {
             }
         } else {
             Ok(None)
+        }?;
+        match token {
+            None => Ok(None),
+            Some(token) => {
+                match &mut self.checkpoint {
+                    None => {}
+                    Some(checkpoint) => checkpoint.saved_tokens.push(token.clone()),
+                };
+                Ok(Some(token))
+            }
         }
     }
+
+    pub fn create_checkpoint(&mut self) {
+        self.checkpoint = Some(TokenizerCheckpoint {
+            saved_tokens: vec![],
+        })
+    }
+
+    pub fn delete_checkpoint(&mut self) {
+        self.checkpoint = None;
+    }
+
+    pub fn restore_checkpoint(&mut self) {
+        match &mut self.checkpoint {
+            None => panic!("Calling restore_checkpoint before create_checkpoint is called"),
+            Some(checkpoint) => {
+                let mut tokens = checkpoint.saved_tokens.clone();
+                tokens.reverse();
+                self.peeked_tokens = tokens;
+                self.checkpoint = None;
+            }
+        }
+    }
+}
+
+pub struct TokenizerCheckpoint {
+    saved_tokens: Vec<Token>,
 }
 
 fn is_symbol(c: char) -> bool {

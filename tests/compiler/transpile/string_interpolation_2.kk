@@ -1,2 +1,3 @@
 // Nested interpolations
-"I am ${"Hello ${"World"}"} years old".print()
+entry
+  "I am ${"Hello ${"World"}"} years old" print

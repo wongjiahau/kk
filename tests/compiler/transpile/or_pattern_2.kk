@@ -1,17 +1,17 @@
 // Nested pattern
-enum Vehicle = #car(Color) | #motor
+type Vehicle = #car(Color) | #motor
 
-enum Color = #white | #gold | #black
+type Color = #white | #gold | #black
 
-let "is shiny car"
-  : Vehicle -> Boolean
-  = {
-  | #car(#white | #gold) -> true
-  | _ -> false
-  }
+type Boolean = #true | #false
+
+let `is shiny car`: Vehicle -> Boolean = {
+  #car(#white | #gold) -> #true,
+   _ -> #false
+}
 
 entry
-  #car(#white) "is shiny car" print;
-  #car(#gold) "is shiny car" print;
-  #car(#black) "is shiny car" print;
-  #motor "is shiny car" print
+  #white #car `is shiny car` print;
+  #gold #car `is shiny car` print;
+  #black #car `is shiny car` print;
+  #motor `is shiny car` print

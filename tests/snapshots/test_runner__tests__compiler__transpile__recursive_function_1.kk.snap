@@ -5,24 +5,19 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Nat {
-  Zero,
-  Succ(Nat)
-}
+type Nat = #zero | #succ(Nat)
 
-let add = (x: Nat, y: Nat): Nat =>
-  switch({x, y}) {
-    case {x: Zero, y: n}:
-      n
-    case {x: Succ(n), y: a}:
-      Succ(n.add(a))
-  }
+let (x : Nat) add (y : Nat) : Nat =
+  {
+    (x = #zero, y = n) -> n,
+    (x = #succ(n), y = a) -> #succ(n add (a))
+
+  } (x, y)
 
 
-{
-  let one = Succ(Zero)
-  one.add(one).print()
-}
+entry
+  let one = #succ(#zero);
+  one add (one) print
 
 ============
 EXIT CODE
@@ -32,7 +27,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': 'Succ', _: { '$': 'Succ', _: { '$': 'Zero', _: null } } }
+{ '$': '#succ', _: { '$': '#succ', _: { '$': '#zero', _: null } } }
 
 ============
 STDERR

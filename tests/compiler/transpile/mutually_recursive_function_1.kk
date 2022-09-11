@@ -1,26 +1,26 @@
-enum Nat 
-  = #zero
-  | #succ(Nat)
+type Boolean = #true | #false
 
-let "is even"
+type Nat = #zero | #succ(Nat)
+
+let `is even`
   : Nat -> Boolean
   = {
-  | #zero -> true
-  | #succ(n) -> n "is odd"
+    #zero -> #true,
+    #succ(n) -> n `is odd`
   }
 
-let "is odd"
+let `is odd`
   : Nat -> Boolean
   = {
-  | #zero -> false
-  | #succ(n) -> n "is even"
+    #zero -> #false,
+    #succ(n) -> n `is even`
   }
 
 entry
   let one = #succ(#zero);
-  #zero "is odd" print; // false
+  #zero `is odd` print; // false
   let two = #succ(one);
-  one "is even" print; // false
-  two "is even" print; // true
-  two "is odd" print; // false
-  #succ(two) "is odd" print // false
+  one `is even` print; // false
+  two `is even` print; // true
+  two `is odd` print; // false
+  #succ(two) `is odd` print // false

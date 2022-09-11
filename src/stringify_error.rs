@@ -311,10 +311,6 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Enum Constructor",
             examples: vec!["None", "Some(0)"],
         },
-        ParseContext::ExpressionQuoted => ParseContextDescription {
-            name: "Quoted Expression",
-            examples: vec!["`123`", "`[{x: 2}]`"],
-        },
         ParseContext::Statement => ParseContextDescription {
             name: "Statement",
             examples: vec![
@@ -362,10 +358,6 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
                 "{ [T] Int -> Boolean }",
                 "{ [T] Int -> Boolean where (==): { Int Int -> Boolean } }",
             ],
-        },
-        ParseContext::TypeAnnotationQuoted => ParseContextDescription {
-            name: "Quoted Type Annotation",
-            examples: vec!["`String`", "`{name: String}`"],
         },
         ParseContext::Pattern => ParseContextDescription {
             name: "Pattern",
@@ -450,7 +442,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::DoublePeriod => "...",
         TokenType::Comma => ",",
         TokenType::Minus => "-",
-        TokenType::ArrowRight => "=>",
+        TokenType::ArrowRight => "->",
         TokenType::Pipe => "|",
         TokenType::Underscore => "_",
         TokenType::Identifier => "abc",

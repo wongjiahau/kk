@@ -281,7 +281,6 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
                 _ => None,
             })
         }
-        Expression::Quoted { expression, .. } => has_direct_function_call(expression),
         Expression::EnumConstructor { payload, .. } => match payload {
             None => None,
             Some(expression) => has_direct_function_call(&expression),
@@ -299,7 +298,6 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         } => has_direct_function_call(&expression).or_else(|| {
             updates.iter().find_map(|update| match update {
                 RecordUpdate::ValueUpdate { new_value, .. } => has_direct_function_call(new_value),
-                RecordUpdate::FunctionalUpdate { function, .. } => Some(function.position()),
             })
         }),
         Expression::RecordAccess { expression, .. } => has_direct_function_call(&expression),
@@ -1030,11 +1028,6 @@ impl Positionable for Expression {
                 end_quote,
                 ..
             } => start_quote.position().join(end_quote.position()),
-            Expression::Quoted {
-                opening_backtick,
-                closing_backtick,
-                ..
-            } => opening_backtick.position.join(closing_backtick.position),
             Expression::EnumConstructor { name, payload, .. } => match payload {
                 None => name.position,
                 Some(payload) => name.position.join(payload.position()),
@@ -1782,7 +1775,7 @@ fn infer_expression_type_(
                 .into_iter()
                 .map(|section| match section {
                     InterpolatedStringSection::String(string) => {
-                        Ok(InferredInterpolatedStringSection::String(string))
+                        Ok(InferredInterpolatedStringSection::String(string.clone()))
                     }
                     InterpolatedStringSection::Expression(expression) => {
                         let expression =
@@ -1819,84 +1812,6 @@ fn infer_expression_type_(
                 representation: token.representation.clone(),
             },
         }),
-        Expression::Quoted {
-            expression,
-            opening_backtick,
-            closing_backtick,
-        } => {
-            let position = opening_backtick.position.join(closing_backtick.position);
-            let expected_type = match expected_type {
-                Some(Type::BuiltInOneArgumentType {
-                    kind: BuiltInOneArgumentTypeKind::Quoted,
-                    type_argument,
-                }) => Some(*type_argument),
-                _ => None,
-            };
-            let result = infer_expression_type(module, expected_type, expression)?;
-            Ok(InferExpressionResult {
-                type_value: Type::BuiltInOneArgumentType {
-                    kind: BuiltInOneArgumentTypeKind::Quoted,
-                    type_argument: Box::new(result.type_value),
-                },
-                expression: InferredExpression::Record {
-                    key_value_pairs: vec![
-                        (
-                            PropertyName(Token::dummy_identifier("value".to_string())),
-                            result.expression,
-                        ),
-                        (
-                            PropertyName(Token::dummy_identifier("meta".to_string())),
-                            InferredExpression::Record {
-                                key_value_pairs: vec![
-                                    (
-                                        PropertyName(Token::dummy_identifier(
-                                            "filename".to_string(),
-                                        )),
-                                        InferredExpression::String {
-                                            representation: Token::dummy_identifier(
-                                                module.meta.uid.string_value(),
-                                            ),
-                                        },
-                                    ),
-                                    (
-                                        PropertyName(Token::dummy_identifier(
-                                            "line_start".to_string(),
-                                        )),
-                                        InferredExpression::Integer {
-                                            representation: position.line_start.to_string(),
-                                        },
-                                    ),
-                                    (
-                                        PropertyName(Token::dummy_identifier(
-                                            "line_end".to_string(),
-                                        )),
-                                        InferredExpression::Integer {
-                                            representation: position.line_end.to_string(),
-                                        },
-                                    ),
-                                    (
-                                        PropertyName(Token::dummy_identifier(
-                                            "column_start".to_string(),
-                                        )),
-                                        InferredExpression::Integer {
-                                            representation: position.column_start.to_string(),
-                                        },
-                                    ),
-                                    (
-                                        PropertyName(Token::dummy_identifier(
-                                            "column_end".to_string(),
-                                        )),
-                                        InferredExpression::Integer {
-                                            representation: position.column_end.to_string(),
-                                        },
-                                    ),
-                                ],
-                            },
-                        ),
-                    ],
-                },
-            })
-        }
         Expression::EnumConstructor { name, payload, .. } => {
             let result = get_enum_type(module, expected_type, name)?;
             match (result.expected_payload_type, payload.clone()) {
@@ -2046,9 +1961,6 @@ fn infer_expression_type_(
                         .iter()
                         .map(|update| {
                             let actual_key = match &update {
-                                RecordUpdate::FunctionalUpdate { property_name, .. } => {
-                                    property_name
-                                }
                                 RecordUpdate::ValueUpdate { property_name, .. } => property_name,
                             };
                             let matching_key_type_pair = key_type_pairs
@@ -2079,26 +1991,6 @@ fn infer_expression_type_(
                                         Ok(InferredRecordUpdate::ValueUpdate {
                                             property_name: PropertyName(property_name.clone()),
                                             new_value: typechecked_value.expression,
-                                        })
-                                    }
-                                    RecordUpdate::FunctionalUpdate {
-                                        function,
-                                        property_name,
-                                        ..
-                                    } => {
-                                        let expected_type = Type::Function(FunctionType {
-                                            parameter_type: Box::new(expected_type.clone()),
-                                            return_type: Box::new(expected_type.clone()),
-                                            type_constraints: todo!(),
-                                        });
-                                        let typechecked_function = infer_expression_type(
-                                            module,
-                                            Some(expected_type),
-                                            function,
-                                        )?;
-                                        Ok(InferredRecordUpdate::FunctionalUpdate {
-                                            property_name: PropertyName(property_name.clone()),
-                                            function: typechecked_function.expression,
                                         })
                                     }
                                 },
@@ -2680,11 +2572,6 @@ impl Expression {
                 start_quote,
                 sections,
                 end_quote,
-            } => todo!(),
-            Expression::Quoted {
-                opening_backtick,
-                expression,
-                closing_backtick,
             } => todo!(),
             Expression::EnumConstructor { name, payload } => match payload {
                 Some(payload) => {

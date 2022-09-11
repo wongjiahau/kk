@@ -6,9 +6,9 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 entry
-  let x = 'hello';
-  let y = 'bye';
-  '${x} and ${y}' print
+  let x = "hello";
+  let y = "bye";
+  "${x} and ${y}" print
 
 ============
 EXIT CODE

@@ -1,7 +1,10 @@
-/**
- * Euler's number 
- * ``` 
- * e.print()
- * ```
- */
-let e =  2.718281828459045
+let e 
+  "
+  Euler's number
+  ${e print}
+  "
+  : Float
+  =  2.718281828459045
+
+entry
+  e print

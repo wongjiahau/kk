@@ -7,13 +7,13 @@ let (a: Int) postfix: Int = a
 let (a: Int) infix (b: Int): String = 
   a print;
   b print;
-  'hello'
+  "hello"
 
 let (a: Int) infix2 (b: Int) (c: Int): String = 
   a print;
   b print;
   c print;
-  'hello'
+  "hello"
 
 entry
   prefix 1 print;

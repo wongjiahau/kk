@@ -83,8 +83,15 @@ pub struct LetStatement {
     pub keyword_export: Option<Token>,
     pub keyword_let: Token,
     pub name: Token,
+    pub doc_string: Option<DocString>,
     pub type_annotation: TypeAnnotation,
     pub expression: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub enum DocString {
+    InterpolatedString(InterpolatedString),
+    String(Token),
 }
 
 #[derive(Debug, Clone)]
@@ -306,11 +313,6 @@ pub enum Expression {
     },
     Character(Token),
     Identifier(Token),
-    Quoted {
-        opening_backtick: Token,
-        expression: Box<Expression>,
-        closing_backtick: Token,
-    },
     EnumConstructor {
         name: Token,
         payload: Option<Box<Expression>>,
@@ -429,12 +431,6 @@ pub enum RecordUpdate {
     ValueUpdate {
         property_name: Token,
         new_value: Expression,
-    },
-
-    /// For example, `x.{ a.square() }`
-    FunctionalUpdate {
-        property_name: Token,
-        function: Expression,
     },
 }
 
@@ -628,11 +624,7 @@ pub enum TokenType {
     /// Used for construction of tagged union
     Tag,
     String,
-    InterpolatedString {
-        start_quote: Box<Character>,
-        sections: NonEmpty<InterpolatedStringSection>,
-        end_quote: Box<Character>,
-    },
+    InterpolatedString(InterpolatedString),
     Character,
     Integer,
     Float,
@@ -651,6 +643,13 @@ pub enum TokenType {
 
     JavascriptCode,
     Other(char),
+}
+
+#[derive(Debug, Clone)]
+pub struct InterpolatedString {
+    pub start_quote: Box<Character>,
+    pub sections: NonEmpty<InterpolatedStringSection>,
+    pub end_quote: Box<Character>,
 }
 
 #[derive(Debug, Clone)]

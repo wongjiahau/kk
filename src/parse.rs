@@ -35,7 +35,6 @@ pub enum ParseContext {
     ExpressionRecord,
     ExpressionRecordUpdate,
     ExpressionEnumConstructor,
-    ExpressionQuoted,
 
     // Statement
     Statement,
@@ -47,7 +46,6 @@ pub enum ParseContext {
     // Type annotation
     TypeAnnotationRecord,
     TypeAnnotationArray,
-    TypeAnnotationQuoted,
 
     // Destructure pattern
     Pattern,
@@ -223,7 +221,7 @@ impl<'a> Parser<'a> {
                         iter = tokenizer.remaining_characters().into_iter();
                     }
                 }
-                _ => panic!(),
+                _ => Err(Parser::invalid_token(token, None)),
             },
             None => Err(Parser::unexpected_eof(context)),
         }
@@ -261,6 +259,9 @@ impl<'a> Parser<'a> {
         };
 
         let name = self.eat_token(TokenType::Identifier, context)?;
+
+        let doc_string = self.try_eat_doc_string()?;
+
         parameters.extend(self.try_parse_parameters()?);
 
         self.eat_token(TokenType::Colon, context)?;
@@ -309,6 +310,7 @@ impl<'a> Parser<'a> {
             keyword_export,
             keyword_let,
             name,
+            doc_string,
             expression: Self::convert_to_function(parameters, expression),
             type_annotation,
         })
@@ -724,17 +726,6 @@ impl<'a> Parser<'a> {
                         type_arguments: self.try_parse_type_arguments()?,
                     })
                 }
-                TokenType::Backtick => {
-                    let context = Some(ParseContext::TypeAnnotationQuoted);
-                    let opening_backtick = token;
-                    let type_annotation = self.parse_type_annotation(context)?;
-                    let closing_backtick = self.eat_token(TokenType::Backtick, context)?;
-                    Ok(TypeAnnotation::Quoted {
-                        opening_backtick,
-                        type_annotation: Box::new(type_annotation),
-                        closing_backtick,
-                    })
-                }
                 TokenType::LeftSquareBracket => {
                     let context = Some(ParseContext::TypeAnnotationArray);
                     let left_square_bracket = token;
@@ -836,13 +827,17 @@ impl<'a> Parser<'a> {
     ) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::DotExpression);
 
-        let first_argument = {
-            let name = self.eat_token(TokenType::Identifier, context)?;
-            Expression::RecordAccess {
-                expression: Box::new(first_argument),
-                property_name: name,
-            }
-        };
+        let first_argument =
+            if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
+                self.parse_record_update(left_parenthesis, first_argument)?
+            } else {
+                let name = self.eat_token(TokenType::Identifier, context)?;
+                Expression::RecordAccess {
+                    expression: Box::new(first_argument),
+                    property_name: name,
+                }
+            };
+
         self.try_parse_dot_expression(first_argument)
     }
 
@@ -855,27 +850,7 @@ impl<'a> Parser<'a> {
         let mut record_updates: Vec<RecordUpdate> = Vec::new();
         let (record_updates, right_parenthesis) = loop {
             let property_name = self.eat_token(TokenType::Identifier, context)?;
-            if let Some(period) = self.try_eat_token(TokenType::Period)? {
-                // Then this is functional update
-                let phantom_variable = Expression::Identifier(property_name.clone());
-                let function_body = self.parse_dot_expression(period.clone(), phantom_variable)?;
-                record_updates.push(RecordUpdate::FunctionalUpdate {
-                    function: Expression::Function(Box::new(Function {
-                        branches: NonEmpty {
-                            head: FunctionBranch {
-                                parameter: Box::new(DestructurePattern::Identifier(
-                                    property_name.clone(),
-                                )),
-                                body: Box::new(function_body),
-                            },
-                            tail: vec![],
-                        },
-                        left_curly_bracket: left_parenthesis,
-                        right_curly_bracket: todo!(),
-                    })),
-                    property_name,
-                })
-            } else if self.try_eat_token(TokenType::Equals)?.is_some() {
+            if self.try_eat_token(TokenType::Equals)?.is_some() {
                 // this is a value update
                 let new_value = self.parse_mid_precedence_expression()?;
                 record_updates.push(RecordUpdate::ValueUpdate {
@@ -979,11 +954,11 @@ impl<'a> Parser<'a> {
         let expression = if let Some(token) = self.next_meaningful_token()? {
             match token.token_type {
                 TokenType::String => Ok(Expression::String(token.clone())),
-                TokenType::InterpolatedString {
+                TokenType::InterpolatedString(InterpolatedString {
                     start_quote,
                     sections,
                     end_quote,
-                } => Ok(Expression::InterpolatedString {
+                }) => Ok(Expression::InterpolatedString {
                     start_quote,
                     sections,
                     end_quote,
@@ -1002,17 +977,6 @@ impl<'a> Parser<'a> {
                     name: token.clone(),
                     payload: None,
                 }),
-                TokenType::Backtick => {
-                    let context = Some(ParseContext::ExpressionQuoted);
-                    let opening_backtick = token.clone();
-                    let expression = self.parse_mid_precedence_expression()?;
-                    let closing_backtick = self.eat_token(TokenType::Backtick, context)?;
-                    Ok(Expression::Quoted {
-                        opening_backtick,
-                        expression: Box::new(expression),
-                        closing_backtick,
-                    })
-                }
                 TokenType::Tilde => Ok(Expression::CpsClosure {
                     tilde: token.clone(),
                     expression: Box::new(self.parse_high_precedence_expression()?),
@@ -1317,37 +1281,10 @@ impl<'a> Parser<'a> {
     fn parse_function(&mut self, left_curly_bracket: Token) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::Lambda);
         let (branches, right_curly_bracket) = {
-            let expression = self.parse_low_precedence_expression()?;
-            if self.try_eat_token(TokenType::ArrowRight)?.is_some() {
-                // This lambda
-                let head = FunctionBranch {
-                    parameter: Box::new(convert_expression_to_pattern(expression, context)?),
-                    body: Box::new(self.parse_low_precedence_expression()?),
-                };
-                (
-                    self.parse_function_tail_branches(head)?,
-                    self.eat_token(TokenType::RightCurlyBracket, context)?,
-                )
-            } else if self.try_eat_token(TokenType::Pipe)?.is_some() {
-                // This lambda where the first branch conntains or-pattern
-                let or_pattern = self.parse_or_destructure_pattern()?;
-                let head = FunctionBranch {
-                    parameter: Box::new(DestructurePattern::Or(Box::new(NonEmpty {
-                        head: convert_expression_to_pattern(expression, context)?,
-                        tail: or_pattern.into_vector(),
-                    }))),
-                    body: {
-                        self.eat_token(TokenType::ArrowRight, context)?;
-                        Box::new(self.parse_low_precedence_expression()?)
-                    },
-                };
-                (
-                    self.parse_function_tail_branches(head)?,
-                    self.eat_token(TokenType::RightCurlyBracket, context)?,
-                )
-            } else {
-                // This is a block
-                (
+            // Try parse as block first
+            let block = self._try(|parser| {
+                let expression = parser.parse_low_precedence_expression()?;
+                Ok((
                     NonEmpty {
                         head: FunctionBranch {
                             parameter: Box::new(DestructurePattern::Unit {
@@ -1358,8 +1295,25 @@ impl<'a> Parser<'a> {
                         },
                         tail: vec![],
                     },
-                    self.eat_token(TokenType::RightCurlyBracket, context)?,
-                )
+                    parser.eat_token(TokenType::RightCurlyBracket, context)?,
+                ))
+            });
+            match block {
+                Some(block) => block,
+                None => {
+                    // Otherwise, parse a lambda
+                    let head = FunctionBranch {
+                        parameter: Box::new(self.parse_destructure_pattern()?),
+                        body: {
+                            self.eat_token(TokenType::ArrowRight, context)?;
+                            Box::new(self.parse_low_precedence_expression()?)
+                        },
+                    };
+                    (
+                        self.parse_function_tail_branches(head)?,
+                        self.eat_token(TokenType::RightCurlyBracket, context)?,
+                    )
+                }
             }
         };
         Ok(Expression::Function(Box::new(Function {
@@ -1393,21 +1347,12 @@ impl<'a> Parser<'a> {
             });
         }
 
-        if self.try_eat_token(TokenType::Period)?.is_some() {
-            let context = None;
-            let key = self.eat_token(TokenType::Identifier, context)?;
-            return self.try_parse_function_call(Expression::RecordAccess {
-                expression: Box::new(previous),
-                property_name: key,
-            });
-        }
-
         let next = self.parse_high_precedence_expression()?;
         let (function, argument) = match &next {
             // TODO: handle operator
 
             // Postfix
-            Expression::Identifier(_) => (next, previous),
+            Expression::Identifier(_) | Expression::EnumConstructor { .. } => (next, previous),
 
             // Prefix function call
             _ => (previous, next),
@@ -1531,9 +1476,6 @@ impl<'a> Parser<'a> {
             });
         }
         let expression = self.parse_low_precedence_expression()?;
-        if self.try_eat_token(TokenType::Pipe)?.is_some() {
-            return self.parse_record_update(left_parenthesis, expression);
-        }
         if self.try_eat_token(TokenType::Comma)?.is_some() {
             let first_key_value_pair = match &expression {
                 Expression::Identifier(key) => RecordKeyValue {
@@ -1577,6 +1519,45 @@ impl<'a> Parser<'a> {
             right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
             value: Box::new(expression),
         })
+    }
+
+    fn try_eat_doc_string(&mut self) -> Result<Option<DocString>, ParseError> {
+        match self.peek_next_meaningful_token()? {
+            None => Ok(None),
+            Some(token) => match token.token_type {
+                TokenType::InterpolatedString(interpolated_string) => {
+                    self.next_meaningful_token()?;
+                    Ok(Some(DocString::InterpolatedString(interpolated_string)))
+                }
+                TokenType::String => {
+                    self.next_meaningful_token()?;
+                    Ok(Some(DocString::String(token)))
+                }
+                _ => Ok(None),
+            },
+        }
+    }
+
+    /// Try parsing using `f`,
+    /// if `f` fails, the iterator will be reverted back to its previous state
+    /// (i.e. before calling `f`).
+    ///
+    /// Note: this method should not be used recursively.
+    fn _try<T, F>(&mut self, f: F) -> Option<T>
+    where
+        F: Fn(&mut Parser) -> Result<T, ParseError>,
+    {
+        self.tokenizer.create_checkpoint();
+        match f(self) {
+            Ok(result) => {
+                self.tokenizer.delete_checkpoint();
+                Some(result)
+            }
+            Err(_) => {
+                self.tokenizer.restore_checkpoint();
+                None
+            }
+        }
     }
 }
 
@@ -1662,7 +1643,6 @@ fn convert_expression_to_pattern(
         }),
         Expression::Float(_)
         | Expression::InterpolatedString { .. }
-        | Expression::Quoted { .. }
         | Expression::Function(_)
         | Expression::FunctionCall(_)
         | Expression::RecordAccess { .. }
