@@ -5,9 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Foo { Bar }
+type Foo = #Bar
 
-let a: Foo = Bar("hi")
+let a: Foo = #Bar "hi"
 
 ============
 EXIT CODE
@@ -23,9 +23,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/enum_5.kk:3:18
+  ┌─ tests/compiler/typecheck/enum_5.kk:3:19
   │
-3 │ let a: Foo = Bar("hi")
-  │                  ^^^^ Unexpected Payload
+3 │ let a: Foo = #Bar "hi"
+  │                   ^^^^ Unexpected Payload
   │
   = This enum constructor does not require payload, consider removing this expression.

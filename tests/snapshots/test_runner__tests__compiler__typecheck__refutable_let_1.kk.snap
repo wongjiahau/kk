@@ -5,12 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Option<T> { Some(T), None }
+type Option<T> = #Some(T) | #None
 
-let foo = (x: Option<Integer>): Integer => {
-  let Some(x) = x
+let foo (x: Option<Int>): Int =
+  let #Some(x) = x;
   x
-}
 
 ============
 EXIT CODE
@@ -28,10 +27,10 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/refutable_let_1.kk:4:7
   │
-4 │   let Some(x) = x
-  │       ^^^^^^^ Let Binding Refutable Pattern
+4 │   let #Some(x) = x;
+  │       ^^^^^^^^ Let Binding Refutable Pattern
   │
   = Refutable pattern (non-exhaustive) pattern is not allowed for let binding.
     The cases that are not matched are:
 
-      None
+      #None

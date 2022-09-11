@@ -5,16 +5,15 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum List<T> {
-  Nil,
-  Cons({current: T, next: List<T>})
-}
+type List<T>
+  = #nil
+  | #cons (current: T, next: List<T>)
 
-let bomb = <A>(xs: List<A>): Boolean =>
-  switch (xs) {
-    case Nil: true
-    case Cons({current: _, next: Nil}): true
-  }
+let<T, U> bomb(xs: List<T>) (f: T -> U): Int =
+  {
+    \#nil -> 1
+    \#cons (current = _, next = #nil) -> 0
+  } (xs)
 
 ============
 EXIT CODE
@@ -30,11 +29,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_1.kk:7:3
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_1.kk:7:6
   │
-7 │   switch (xs) {
-  │   ^^^^^^ Non-exhaustive cases
+7 │       \#nil -> 1
+  │ ╭──────^
+8 │ │     \#cons (current = _, next = #nil) -> 0
+  │ ╰──────────────────────────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      case Cons({ current: _, next: Cons(_) }):
+      #cons((current = _, next = #cons(_)))

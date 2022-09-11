@@ -5,12 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo = (n: Integer): Integer =>
-  switch (n) {
-    case 0: 0
-    case 1: 1
-    case 1: 1
-    case _: 2
+let foo
+  : Int -> Int
+  = {
+    \0 -> 0
+    \1 -> 1
+    \1 -> 1
+    \_ -> 2
   }
 
 ============
@@ -27,9 +28,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_integer_1.kk:5:10
+  ┌─ tests/compiler/typecheck/unreachable_case_integer_1.kk:6:6
   │
-5 │     case 1: 1
-  │          ^ Unreachable case
+6 │     \1 -> 1
+  │      ^ Unreachable case
   │
   = This case is unreachable as it is already handled by previous cases.

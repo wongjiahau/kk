@@ -1,5 +1,3 @@
-enum Foo { Bar(String) }
+type Foo = #Bar(String) 
 
-{ 
-  let a = Bar
-}
+let a : Foo = #Bar

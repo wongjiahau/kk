@@ -7,8 +7,8 @@ INPUT
 ============
 type Boolean = #true | #false
 let (a : String) `not equals` (b : String) : Boolean
-  | [ equals : T -> T -> Boolean ]
- //            ^ Error: Unknown type variable
+  exists (equals : T -> T -> Boolean)
+ //                ^ Error: Unknown type symbol
   = #true
 
 ============
@@ -25,9 +25,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/constrained_type_2.kk:3:16
+  ┌─ tests/compiler/typecheck/constrained_type_2.kk:3:20
   │
-3 │   | [ equals : T -> T -> Boolean ]
-  │                ^ Unknown type symbol
+3 │   exists (equals : T -> T -> Boolean)
+  │                    ^ Unknown type symbol
   │
   = Cannot find this type symbol in the current scope

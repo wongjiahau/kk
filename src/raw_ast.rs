@@ -1,4 +1,4 @@
-use crate::{non_empty::NonEmpty, tokenize::Character, unify::Positionable};
+use crate::{module::Access, non_empty::NonEmpty, tokenize::Character, unify::Positionable};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -20,7 +20,7 @@ pub enum Statement {
 
 #[derive(Debug, Clone)]
 pub struct ModuleStatement {
-    pub keyword_export: Option<Token>,
+    pub access: Access,
     pub keyword_module: Token,
     pub left: ModuleDestructurePattern,
     pub right: ModuleValue,
@@ -80,7 +80,7 @@ pub struct InterfaceDefinition {
 
 #[derive(Debug, Clone)]
 pub struct LetStatement {
-    pub keyword_export: Option<Token>,
+    pub access: Access,
     pub keyword_let: Token,
     pub name: Token,
     pub doc_string: Option<DocString>,
@@ -102,7 +102,7 @@ pub struct Parameter {
 
 #[derive(Debug, Clone)]
 pub struct TypeAliasStatement {
-    pub keyword_export: Option<Token>,
+    pub access: Access,
     pub keyword_type: Token,
     pub left: Token,
     pub right: TypeAnnotation,
@@ -111,7 +111,7 @@ pub struct TypeAliasStatement {
 
 #[derive(Debug, Clone)]
 pub struct EnumStatement {
-    pub keyword_export: Option<Token>,
+    pub access: Access,
     pub keyword_enum: Token,
     pub name: Token,
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
@@ -249,6 +249,11 @@ pub enum DestructurePattern {
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
         right_parenthesis: Token,
     },
+    Parenthesized {
+        left_parenthesis: Token,
+        pattern: Box<DestructurePattern>,
+        right_parenthesis: Token,
+    },
     Array {
         left_square_bracket: Token,
         right_square_bracket: Token,
@@ -349,9 +354,6 @@ pub enum Expression {
         right: Box<Expression>,
         type_annotation: Option<TypeAnnotation>,
         body: Box<Expression>,
-    },
-    UnsafeJavascript {
-        code: Token,
     },
     /// CPS = Continuation Passing Style
     CpsClosure {
@@ -589,7 +591,8 @@ pub enum TokenType {
     KeywordType,
     KeywordModule,
     KeywordImport,
-    KeywordExport,
+    KeywordPublic,
+    KeywordPrivate,
     KeywordExists,
     Whitespace,
     LeftCurlyBracket,
@@ -598,6 +601,7 @@ pub enum TokenType {
     RightParenthesis,
     LeftSquareBracket,
     RightSquareBracket,
+    Backslash,
     Newline,
     /// Also known as Exclamation Mark (!)
     Bang,
@@ -614,10 +618,8 @@ pub enum TokenType {
     DoublePeriod,
     Comma,
     Semicolon,
-    Minus,
     ArrowRight,
     Pipe,
-    Slash,
     Underscore,
     Identifier,
     Operator,
@@ -629,19 +631,13 @@ pub enum TokenType {
     Integer,
     Float,
     DoubleColon,
-    Backtick,
-    TripleBacktick,
 
     /// Comments starts with double slash
     Comment,
 
     /// Multiline comment starts with (/*) and ends with (*/)
-    MultilineComment {
-        /// Note that these characters excludeds opening and closing triple-hash
-        characters: Vec<Character>,
-    },
+    MultilineComment,
 
-    JavascriptCode,
     Other(char),
 }
 

@@ -5,8 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-"I am ${{my_age: [123]}} years old".print()
-//          ^^^^^^ Error
+entry
+  "I am ${(my_age = [123])} years old".print()
+//        ^^^^^^^^^^^^^^^^ Error: should be string
 
 ============
 EXIT CODE
@@ -22,18 +23,18 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/string_interpolation_1.kk:1:9
+  ┌─ tests/compiler/typecheck/string_interpolation_1.kk:2:11
   │
-1 │ "I am ${{my_age: [123]}} years old".print()
-  │         ^^^^^^^^^^^^^^^ Type mismatch
+2 │   "I am ${(my_age = [123])} years old".print()
+  │           ^^^^^^^^^^^^^^^^ Type mismatch
   │
-  = +---------------+-----------------+
-    | EXPECTED TYPE |   ACTUAL TYPE   |
-    +---------------+-----------------+
-    | - String      | + {             |
-    |               | +   my_age:     |
-    |               | +     [         |
-    |               | +       Integer |
-    |               | +     ],        |
-    |               | + }             |
-    +---------------+-----------------+
+  = +---------------+--------------+
+    | EXPECTED TYPE | ACTUAL TYPE  |
+    +---------------+--------------+
+    | - String      | + (          |
+    |               | +   my_age = |
+    |               | +     [      |
+    |               | +       Int  |
+    |               | +     ],     |
+    |               | + )          |
+    +---------------+--------------+

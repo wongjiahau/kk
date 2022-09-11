@@ -1,6 +1,5 @@
-enum Option<T> { Some(T), None }
+type Option<T> = #Some(T) | #None
 
-let foo = (x: Option<Int>): Int => {
-  let Some(x) = x
+let foo (x: Option<Int>): Int =
+  let #Some(x) = x;
   x
-}

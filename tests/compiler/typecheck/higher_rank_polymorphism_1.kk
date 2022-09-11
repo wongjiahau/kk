@@ -1,5 +1,5 @@
 let {id} = {
-  id: <T>(t: T): T => t
+  id: <T>(t: T): T -> t
 }
 
 {

@@ -1,10 +1,8 @@
 
-enum Foo {
-  A({x: String, y: String}),
-  Bala
-}
+type Foo = #a(x: String, y: String) | #bala
 
-switch(Bala) {
-  case A({x, y}) | Bala: true
-        //    ^^^^ Error: missing binding `x`
-}
+entry 
+  {
+    \#a (x, y)  | #bala -> #true
+            //    ^^^^^ Error: missing binding `x`
+  } (#bala)

@@ -1,11 +1,6 @@
-enum Foo {
-  Foo(Bar),
-  NullFoo
-}
+type Foo = #foo(Bar) | #nullFoo 
 
-enum Bar {
-  Bar(Foo),
-  NullBar
-}
+type Bar = #bar(Foo) | #nullBar
 
-Foo(Bar(Foo(NullFoo))).print() // Compile Error
+entry
+  #foo(#bar(#foo(#nullFoo))) print // Compile Error

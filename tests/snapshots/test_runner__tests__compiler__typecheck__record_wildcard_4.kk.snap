@@ -5,14 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type People = {
+type People = (
   firstName: String,
   lastName: String
-}
+)
 
-let s = (x: String, lastName: String): People =>
-  {...}
-  // Error: missing property firstName
+let (x: String) s (lastName: String): People =
+  (..)
+// ^^ Error: missing property firstName
 
 ============
 EXIT CODE
@@ -30,7 +30,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_wildcard_4.kk:7:4
   │
-7 │   {...}
-  │    ^^^ Unknown variable `firstName`
+7 │   (..)
+  │    ^^ Unknown variable `firstName`
   │
   = Cannot find this value symbol in the current scope

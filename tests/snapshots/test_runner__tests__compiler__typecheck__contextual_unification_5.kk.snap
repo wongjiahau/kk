@@ -5,10 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-{
+entry {
   let f
-    : (o: { x: { y: Integer } }) => Integer
-    = { x: { z } } => 2
+    : (x: (y: Int)) -> Int
+    = { \(x = (z,)) -> 2 };
+  ()
 }
 
 ============
@@ -25,10 +26,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_5.kk:4:14
+  ┌─ tests/compiler/typecheck/contextual_unification_5.kk:4:16
   │
-4 │     = { x: { z } } => 2
-  │              ^ No such property
+4 │     = { \(x = (z,)) -> 2 };
+  │                ^ No such property
   │
   = Available properties:
       y

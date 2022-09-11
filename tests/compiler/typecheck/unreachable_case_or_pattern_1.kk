@@ -1,11 +1,8 @@
-enum Nat {
-  Zero,
-  Succ(Nat)
-}
+type Nat = #zero | #succ(Nat)
 
-let foo = (n: Nat): Boolean => 
-  switch (n) {
-    case Succ(Succ(Zero)): true
-    case Succ(Zero | Succ(Zero)): false
-    //   ^^^^^^^^^^^^^^^^^^^^^^^ Error: partially unreachable case, namely `Succ(Succ(Zero))`
+let foo (n : Nat) : Int =
+  {
+    \#succ(#succ(#zero)) -> 1
+    \#succ(#zero | #succ(#zero)) -> 0
+//   ^^^^^^^^^^^^^^^^^^^^^^^^^^^ Error: partially unreachable case, namely `succ(succ(zero))`
   }

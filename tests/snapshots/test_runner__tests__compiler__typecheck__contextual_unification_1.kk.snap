@@ -5,11 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-{
-  let f
-    : (x: {foo: Float}) => Float
-    = o => o.bar
-}
+entry
+  let f : (foo: Float) -> Float = { \o -> o.bar };
+  ()
 
 ============
 EXIT CODE
@@ -25,10 +23,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_1.kk:4:14
+  ┌─ tests/compiler/typecheck/contextual_unification_1.kk:2:45
   │
-4 │     = o => o.bar
-  │              ^^^ No such property
+2 │   let f : (foo: Float) -> Float = { \o -> o.bar };
+  │                                             ^^^ No such property
   │
   = Available properties:
       foo

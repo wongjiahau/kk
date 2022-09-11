@@ -5,9 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-{
-  let x: [Integer] = [1, null]
-}
+let x: [Int] = [1, ()]
 
 ============
 EXIT CODE
@@ -23,13 +21,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/array_homogeneity_1.kk:2:26
+  ┌─ tests/compiler/typecheck/array_homogeneity_1.kk:1:20
   │
-2 │   let x: [Integer] = [1, null]
-  │                          ^^^^ Type mismatch
+1 │ let x: [Int] = [1, ()]
+  │                    ^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Integer     | + Null      |
+    | - Int         | + ()        |
     +---------------+-------------+

@@ -6,24 +6,20 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 // Expects no error
-enum Option<T> {
-  Some(T),
-  None
-}
+type Option<T> = #some(T) | #none
 
-let map = <A, B>(o: Option<A>, f: (a: A) => Option<B>): Option<B> =>
-  switch(o) {
-    case Some(o): o.f()
-    case None: None
-  }
+let<A, B> (o : Option<A>) map (f : A -> Option<B>) : Option<B> =
+  {
+    \#some(o) -> o f
+    \#none -> #none
+  } (o)
 
-export let foo = (a: Option<{bar:String}>): Option<String> => {
-  with x = a.map
-  Some(x.bar)
-}
+let foo (a : Option<(bar : String)>): Option<String> =
+  ~(#some((a ! map).bar))
 
-Some({bar: "hello world"}).foo().print()
-None.foo().print()
+entry
+  #some(bar = "hello world") foo print;
+  #none foo print
 
 ============
 EXIT CODE
@@ -33,8 +29,8 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': 'Some', _: 'hello world' }
-{ '$': 'None', _: null }
+{ '$': '#some', _: 'hello world' }
+{ '$': '#none', _: null }
 
 ============
 STDERR

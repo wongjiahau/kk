@@ -1,4 +1,3 @@
-let x: Int = {
-  let f = x => x.x()
+let x: Int =
+  let f = { \x -> x x };
   123
-}

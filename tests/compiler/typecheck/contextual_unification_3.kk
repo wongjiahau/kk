@@ -1,1 +1,1 @@
-let f = (x: Int): Null => 2
+let f = (x: Int): Null -> 2

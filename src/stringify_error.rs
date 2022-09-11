@@ -241,7 +241,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordLet => "used for defining variables, for example:\n\n\tlet x = 1",
         TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
         TokenType::KeywordImport => "only used for importing symbols from other files, for example:\n\n\timport \"./foo.kk\" { bar spam hello: hello2}",
-        TokenType::KeywordExport => "only used for exporting symbols, for example:\n\n\texport let foo = 1",
+        TokenType::KeywordPublic => "only used for declaring public symbols, for example:\n\n\tpublic let foo = 1",
+        TokenType::KeywordPrivate => "only used for declaring private symbols, for example:\n\n\tpublic let foo = 1",
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
         TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example:\n\n\t{ x: String }\n\nand constructing record value, for example: \n\n\t{ x: \"hello\" }",
 
@@ -254,8 +255,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Period => "used for calling a function, for example:\n\n\t1.add(2)",
         TokenType::DoublePeriod => "used for record wildcard, for example:\n\n\tlet f : |{x: Integer y: Integer} => Integer = |{..} => x.plus(y)",
         TokenType::Comma => "used for separation",
-        TokenType::Minus => "only used to represent negative numbers, for example:\n\n\t-123.4",
-        TokenType::ArrowRight | TokenType::Pipe => "only used for creating function, for example:\n\n\t| x => x.add(1)",
+        TokenType::ArrowRight  => "only used for creating function, for example:\n\n\t| x => x.add(1)",
+        TokenType::Pipe => "used in tagged union and or-pattern.",
         TokenType::Underscore => "used in pattern matching to match values that are not used afterwards",
         TokenType::Identifier => "used to represent the name of a variable",
         TokenType::InterpolatedString{..} | TokenType::String => "only used to represent string values",
@@ -263,12 +264,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Integer => "only used to represent integer values",
         TokenType::Character => "only used to represent character",
         TokenType::Comment => "only used for commenting",
-        TokenType::MultilineComment {..} => "only used for documentation",
-        TokenType::Backtick => "only used for quoting expressions, for example:\n\n\t`[123]`",
-        TokenType::JavascriptCode => "only used for declaring Javascript interop code.",
+        TokenType::MultilineComment  => "only used for documentation",
         TokenType::Bang => "used for annotating Promise type, for example: \n\n\t!Integer",
-        TokenType::Slash => "used for applicative let",
-        TokenType::TripleBacktick => "used for writing code snippet in documentation comments",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
         TokenType::Tag => "used as constructor of enum",
         TokenType::Operator => "used for defining symbolic functions",
@@ -277,6 +274,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordModule => "used for declaring/importing/aliasing modules",
         TokenType::Tilde => "used for declaring the start of a CPS Sugar",
         TokenType::KeywordExists => "used for declaring constraints",
+        TokenType::Backslash => "used for declaring lambda",
 
     }
 }
@@ -424,7 +422,11 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordLet => "let",
         TokenType::KeywordType => "type",
         TokenType::KeywordImport => "import",
-        TokenType::KeywordExport => "export",
+        TokenType::KeywordPublic => "public",
+        TokenType::KeywordPrivate => "private",
+        TokenType::KeywordEntry => "entry",
+        TokenType::KeywordModule => "module",
+        TokenType::KeywordExists => "exists",
         TokenType::Whitespace => " ",
         TokenType::LeftCurlyBracket => "{",
         TokenType::RightCurlyBracket => "}",
@@ -439,9 +441,8 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::MoreThan => ">",
         TokenType::Equals => "=",
         TokenType::Period => ".",
-        TokenType::DoublePeriod => "...",
+        TokenType::DoublePeriod => "..",
         TokenType::Comma => ",",
-        TokenType::Minus => "-",
         TokenType::ArrowRight => "->",
         TokenType::Pipe => "|",
         TokenType::Underscore => "_",
@@ -449,23 +450,17 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Character => "'c'",
         TokenType::Float => "123.0",
         TokenType::Integer => "123",
-        TokenType::Comment => "# this is a comment",
-        TokenType::MultilineComment { .. } => "### This is a documentation. ###",
-        TokenType::Backtick => "`",
-        TokenType::JavascriptCode => "@@@ // this is javascript @@@",
+        TokenType::Comment => "// this is a comment",
+        TokenType::MultilineComment { .. } => "/* This is multiline comment */", 
         TokenType::Bang => "!",
-        TokenType::Slash => "/",
         TokenType::String => "\"Hello \"",
         TokenType::InterpolatedString { .. } => "\"Hello #{my_name}\"",
-        TokenType::TripleBacktick => "```",
         TokenType::Other(_) => "unknown character",
         TokenType::Tag => "tag",
         TokenType::Operator => todo!(),
-        TokenType::KeywordEntry => "entry",
         TokenType::Semicolon => ";",
-        TokenType::KeywordModule => "module",
         TokenType::Tilde => "~",
-        TokenType::KeywordExists => "exists",
+        TokenType::Backslash => "\\",
     }
 }
 
@@ -620,7 +615,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 missing_patterns
                     .into_iter()
                     .map(stringify_expandable_pattern)
-                    .map(|result| format!("  case {}:", result))
+                    .map(|result| format!("  {}", result))
                     .collect::<Vec<String>>()
                     .join("\n")
             ),
@@ -912,7 +907,13 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::AmbiguousSymbol { matching_value_symbols } => StringifiedError { 
             summary: "Ambiguous Symbol".to_string(), 
-            body: "Put type annotation for disambiguation".to_string() 
+            body: format!(
+                "Matching types:\n\n{}\n\nPut type annotation for disambiguation.", 
+                matching_value_symbols
+                  .into_iter()
+                  .map(|(_, symbol)| stringify_type(symbol.type_value, 1))
+                  .collect::<Vec<String>>().join("\n\n")
+            )
         },
     }
 }
@@ -931,10 +932,10 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
             )
         }
         ExpandablePattern::Record { key_pattern_pairs } => format!(
-            "{{ {} }}",
+            "({})",
             key_pattern_pairs
                 .into_iter()
-                .map(|(key, pattern)| format!("{}: {}", key, stringify_expandable_pattern(pattern)))
+                .map(|(key, pattern)| format!("{} = {}", key, stringify_expandable_pattern(pattern)))
                 .collect::<Vec<String>>()
                 .join(", ")
         ),
@@ -970,8 +971,8 @@ pub fn indent_string(string: String, number_of_spaces: usize) -> String {
 pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
     match type_value {
         Type::Float => indent_string("Float".to_string(), indent_level * 2),
-        Type::Integer => indent_string("Integer".to_string(), indent_level * 2),
-        Type::Unit => indent_string("Null".to_string(), indent_level * 2),
+        Type::Integer => indent_string("Int".to_string(), indent_level * 2),
+        Type::Unit => indent_string("()".to_string(), indent_level * 2),
         Type::String => indent_string("String".to_string(), indent_level * 2),
         Type::Character => indent_string("Character".to_string(), indent_level * 2),
         Type::BuiltInOneArgumentType {
@@ -1023,12 +1024,12 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Record { mut key_type_pairs } => {
             key_type_pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
             let result = format!(
-                "{{\n{}\n}}",
+                "(\n{}\n)",
                 key_type_pairs
                     .into_iter()
                     .map(|(key, type_value)| {
                         format!(
-                            "{}:\n{},",
+                            "{} =\n{},",
                             indent_string(key, 2),
                             indent_string(stringify_type(type_value, 0), 4)
                         )
@@ -1040,9 +1041,9 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         }
         Type::Function(function_type) => {
             let result = format!(
-                "(\n{}\n) =>\n{}",
-                indent_string(stringify_type(*function_type.parameter_type, 0), 2),
-                indent_string(stringify_type(*function_type.return_type, 0), 2)
+                "{} -> {}",
+                stringify_type(*function_type.parameter_type, 0),
+                stringify_type(*function_type.return_type, 0)
             );
             indent_string(result, indent_level * 2)
         }

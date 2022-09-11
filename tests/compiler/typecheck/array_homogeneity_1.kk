@@ -1,3 +1,1 @@
-{ 
-  let x: [Int] = [1, null]
-}
+let x: [Int] = [1, ()]

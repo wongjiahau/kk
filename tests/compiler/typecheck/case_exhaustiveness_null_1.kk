@@ -1,5 +1,5 @@
 {
-  let bomb = (n) => 
+  let bomb = (n) -> 
     switch(n) {
       case null: true
       case null: false

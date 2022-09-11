@@ -1,4 +1,4 @@
-{
-  let f = {...} => null
-          // Error: missing type annotation
-}
+entry
+  let f = { \(..) -> 123 };
+           // ^^Error: missing type annotation
+  ()

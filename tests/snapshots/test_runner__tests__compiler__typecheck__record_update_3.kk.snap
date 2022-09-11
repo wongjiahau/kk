@@ -5,11 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let a = { x: 2 }
-let foo = (_: Integer): String => "Hello"
-{
-  let b = a.{ x.foo() } // expected Integer, got String
-}
+let foo (_: Int): String = "Hello"
+
+entry
+  let a = (x = 2);
+  let b = a.(x = a.x foo); // expected Int, got String
+  "hello" print
 
 ============
 EXIT CODE
@@ -25,13 +26,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_update_3.kk:4:15
+  ┌─ tests/compiler/typecheck/record_update_3.kk:5:18
   │
-4 │   let b = a.{ x.foo() } // expected Integer, got String
-  │               ^^^^^^^ Type mismatch
+5 │   let b = a.(x = a.x foo); // expected Int, got String
+  │                  ^^^^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Integer     | + String    |
+    | - Int         | + String    |
     +---------------+-------------+

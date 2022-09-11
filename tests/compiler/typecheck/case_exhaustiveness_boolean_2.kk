@@ -1,5 +1,7 @@
-let and = (x: Boolean, y: Boolean): Boolean =>
-  switch ({ x, y }) {
-    case { x: true, y: true }: true
-    case { x: false, y: true }: false
-  }
+type Boolean = #true | #false
+
+let (x : Boolean) and (y: Boolean) : Boolean =
+  {
+    \(x = #true, y = #true) -> #true
+    \(x = #false, y = #true) -> #false
+  } (x, y)

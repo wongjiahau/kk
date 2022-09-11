@@ -1,5 +1,5 @@
 
-enum Foo {
+type Foo {
   A({a: Foo, b: Foo}),
   B
 }

@@ -5,15 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Foo {
-  A({x: String, y: String}),
-  Bala
-}
+type Foo = #a(x: String, y: String) | #bala
 
-switch(Bala) {
-  case A({x, y}) | Bala: true
-        //    ^^^^ Error: missing binding `x`
-}
+entry
+  {
+    \#a (x, y)  | #bala -> #true
+            //    ^^^^^ Error: missing binding `x`
+  } (#bala)
 
 ============
 EXIT CODE
@@ -29,10 +27,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/or_pattern_missing_binding_1.kk:8:20
+  ┌─ tests/compiler/typecheck/or_pattern_missing_binding_1.kk:6:19
   │
-8 │   case A({x, y}) | Bala: true
-  │                    ^^^^ Missing bindings
+6 │     \#a (x, y)  | #bala -> #true
+  │                   ^^^^^ Missing bindings
   │
   = Every pattern in an OR pattern must have the same set of bindings, however this pattern is missing the following binding(s) which are found in preceding pattern(s):
 

@@ -1,5 +1,5 @@
 use crate::{
-    module::{ModuleUid, SymbolUid},
+    module::{Access, ModuleUid, SymbolUid},
     non_empty::NonEmpty,
     raw_ast::{InfinitePatternKind, Position, Token},
     typ::Type,
@@ -18,7 +18,7 @@ use crate::{
 pub enum InferredStatement {
     ImportStatement(InferredImportStatement),
     Let {
-        exported: bool,
+        access: Access,
         left: InferredDestructurePattern,
         right: InferredExpression,
     },
@@ -82,9 +82,6 @@ pub enum InferredExpression {
     },
     Array {
         elements: Vec<InferredExpression>,
-    },
-    Javascript {
-        code: String,
     },
     Block {
         statements: Vec<InferredStatement>,
@@ -215,7 +212,7 @@ impl InferredDestructurePatternKind {
                 .position
                 .join(right_square_bracket.position),
             InferredDestructurePatternKind::Tuple { patterns }
-            | InferredDestructurePatternKind::Or { patterns } => patterns.position(),
+            | InferredDestructurePatternKind::Or { patterns } => patterns.clone().position(),
         }
     }
 }

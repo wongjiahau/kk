@@ -1,4 +1,5 @@
 use crate::non_empty::NonEmpty;
+use crate::stringify_error::stringify_type;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
 use crate::{raw_ast::*, typ::*};
@@ -150,7 +151,18 @@ pub struct SymbolUid {
 #[derive(Debug, Clone)]
 pub struct SymbolMeta {
     pub name: Token,
-    pub exported: bool,
+    pub access: Access,
+}
+
+#[derive(Debug, Clone)]
+pub enum Access {
+    /// Can be imported anywhere (even via remote URL)
+    /// Used for auto semantic versioning
+    Public { keyword_public: Token },
+    /// Can only be used within one file
+    Private { keyword_private: Token },
+    /// Default, can be imported via relative path
+    Protected,
 }
 
 /// Represent the unique identifier for a module
@@ -253,7 +265,7 @@ impl Module {
             Symbol {
                 meta: SymbolMeta {
                     name: type_variable_name.clone(),
-                    exported: false,
+                    access: Access::Protected,
                 },
                 kind: SymbolKind::Type(TypeSymbol {
                     type_value: Type::ExplicitTypeVariable(ExplicitTypeVariable {
@@ -290,7 +302,7 @@ impl Module {
                 Symbol {
                     meta: SymbolMeta {
                         name: variable_name.clone(),
-                        exported: false,
+                        access: Access::Protected,
                     },
                     kind: SymbolKind::Value(ValueSymbol {
                         type_value: type_value.clone(),
@@ -512,7 +524,7 @@ impl Module {
         &mut self,
         variable_name: &Token,
         type_value: Option<Type>,
-        exported: bool,
+        access: Access,
         is_implicit_variable: bool,
     ) -> Result<(SymbolUid, Type), UnifyError> {
         let type_value = match type_value {
@@ -526,7 +538,7 @@ impl Module {
             Symbol {
                 meta: SymbolMeta {
                     name: variable_name.clone(),
-                    exported,
+                    access,
                 },
                 kind: SymbolKind::Value(ValueSymbol {
                     type_value: type_value.clone(),
@@ -652,15 +664,12 @@ impl Module {
         Ok(uid)
     }
 
-    pub fn get_all_exported_symbols(&self) -> Vec<SymbolEntry> {
+    pub fn get_all_protected_symbols(&self) -> Vec<SymbolEntry> {
         self.symbol_entries
             .iter()
-            .filter_map(|entry| {
-                if entry.symbol.meta.exported {
-                    Some(entry.clone())
-                } else {
-                    None
-                }
+            .filter_map(|entry| match entry.symbol.meta.access {
+                Access::Protected => Some(entry.clone()),
+                _ => None,
             })
             .collect()
     }
@@ -778,8 +787,8 @@ impl Module {
         expected_type: &Option<Type>,
         scope_name: usize,
     ) -> Result<GetValueSymbolResult, UnifyError> {
-        // 1. Search for normal value symbols
-        let matching_value_symbols = self
+        // Firstly, search for value symbols based on name
+        let value_symbols_with_matching_name = self
             .symbol_entries
             .iter()
             .filter_map(|entry| match &entry.symbol.kind {
@@ -787,20 +796,14 @@ impl Module {
                     if entry.scope_name == scope_name
                         && entry.symbol.meta.name.representation == symbol_name.representation =>
                 {
-                    match expected_type {
-                        None => Some((entry.uid.clone(), value_symbol.clone())),
-                        Some(expected_type)
-                            if overlap(&expected_type, &value_symbol.type_value, false) =>
-                        {
-                            Some((entry.uid.clone(), value_symbol.clone()))
-                        }
-                        _ => None,
-                    }
+                    Some((entry.uid.clone(), value_symbol.clone()))
                 }
                 _ => None,
             })
             .collect::<Vec<(SymbolUid, ValueSymbol)>>();
-        match matching_value_symbols.split_first() {
+
+        match value_symbols_with_matching_name.split_first() {
+            // If no symbols with matching name found, look in parent scope
             None => match self.scope.get_parent_scope_name(scope_name) {
                 None => Err(UnifyError {
                     position: symbol_name.position,
@@ -810,57 +813,50 @@ impl Module {
                 }),
                 Some(scope_name) => self.get_value_symbol(symbol_name, expected_type, scope_name),
             },
-            Some((head, tail)) => {
-                if tail.is_empty() {
-                    Ok(GetValueSymbolResult {
-                        symbol_uid: head.0.clone(),
-                        type_value: head.1.type_value.clone(),
-                    })
-                } else {
-                    match expected_type {
+
+            // If there's only one value symbol with matching name in this scope,
+            // then return the value
+            Some((head, [])) => Ok(GetValueSymbolResult {
+                symbol_uid: head.0.clone(),
+                type_value: head.1.type_value.clone(),
+            }),
+
+            // Otherwise, disambiguate based on `expected_type`
+            Some(_) => match expected_type {
+                None => Err(UnifyError {
+                    position: symbol_name.position,
+                    kind: UnifyErrorKind::AmbiguousSymbol {
+                        matching_value_symbols: value_symbols_with_matching_name,
+                    },
+                }),
+                Some(expected_type) => {
+                    let value_symbols_with_matching_type = value_symbols_with_matching_name
+                        .iter()
+                        .filter(|(_, value_symbol)| {
+                            overlap(&expected_type, &value_symbol.type_value, false)
+                        })
+                        .collect::<Vec<_>>();
+
+                    match value_symbols_with_matching_type.split_first() {
                         None => Err(UnifyError {
                             position: symbol_name.position,
-                            kind: UnifyErrorKind::AmbiguousSymbol {
-                                matching_value_symbols,
+                            kind: UnifyErrorKind::NoMatchingValueSymbol {
+                                possible_value_symbols: value_symbols_with_matching_name,
                             },
                         }),
-                        Some(expected_type) => {
-                            // find matching function signatures based on concrete type
-                            let matching_value_symbol =
-                                matching_value_symbols.iter().find(|(uid, value_symbol)| {
-                                    overlap(&expected_type, &value_symbol.type_value, true)
-                                });
-
-                            match matching_value_symbol {
-                                // If no matching function signature found, search in parent scope
-                                None => {
-                                    let parent_scope_name =
-                                        self.scope.get_parent_scope_name(scope_name);
-                                    match parent_scope_name {
-                                        None => Err(UnifyError {
-                                            position: symbol_name.position,
-                                            kind: UnifyErrorKind::NoMatchingValueSymbol {
-                                                possible_value_symbols: matching_value_symbols,
-                                            },
-                                        }),
-                                        Some(parent_scope_name) => self.get_value_symbol(
-                                            symbol_name,
-                                            &Some(expected_type.clone()),
-                                            parent_scope_name,
-                                        ),
-                                    }
-                                }
-
-                                // If found one matching function signature, return Ok
-                                Some((symbol_uid, symbol)) => Ok(GetValueSymbolResult {
-                                    symbol_uid: symbol_uid.clone(),
-                                    type_value: symbol.type_value.clone(),
-                                }),
-                            }
-                        }
+                        Some((head, [])) => Ok(GetValueSymbolResult {
+                            symbol_uid: head.0.clone(),
+                            type_value: head.1.type_value.clone(),
+                        }),
+                        Some(_) => Err(UnifyError {
+                            position: symbol_name.position,
+                            kind: UnifyErrorKind::AmbiguousSymbol {
+                                matching_value_symbols: value_symbols_with_matching_name,
+                            },
+                        }),
                     }
                 }
-            }
+            },
         }
     }
 
@@ -1132,7 +1128,7 @@ pub struct UsageReference {
 fn built_in_symbols() -> Vec<Symbol> {
     fn meta(name: String) -> SymbolMeta {
         SymbolMeta {
-            exported: false,
+            access: Access::Protected,
             name: Token {
                 position: Position::dummy(),
                 representation: name,

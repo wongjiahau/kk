@@ -1,4 +1,4 @@
-enum Food { Nut }
-enum Tool { Nut }
+type Food { Nut }
+type Tool { Nut }
 
 let a = Nut

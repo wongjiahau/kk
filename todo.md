@@ -1,6 +1,7 @@
 # Todo
 
 - [] migrate to use interpreter
+- [] default can be imported, add public/private identifier
 - [] add code coverage to check for untested branch
 - [] namespace
 - [x] constrained polymorphism

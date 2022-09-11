@@ -1,7 +1,7 @@
-enum Option<T> { Some(T), None }
+type Option<T> { Some(T), None }
 
 {
-  let isSomeSome = x =>
+  let isSomeSome = x ->
     switch x {
       case Some(Some(_)) : true
     }

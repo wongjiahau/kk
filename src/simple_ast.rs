@@ -168,7 +168,6 @@ impl From<inferred_ast::InferredExpression> for Expression {
                 updates,
             } => todo!(),
             inferred_ast::InferredExpression::Array { elements } => todo!(),
-            inferred_ast::InferredExpression::Javascript { code } => todo!(),
             inferred_ast::InferredExpression::Block {
                 statements,
                 return_value,

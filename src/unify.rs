@@ -1,6 +1,5 @@
 use crate::{
     compile::{CompileError, CompileErrorKind},
-    module,
     non_empty::NonEmpty,
     parse::Parser,
     tokenize::Tokenizer,
@@ -14,8 +13,8 @@ use crate::typ::*;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use relative_path::RelativePath;
-use std::fs;
 use std::iter;
+use std::{any::type_name, fs};
 use std::{collections::HashSet, path::Path};
 
 pub struct UnifyProgramResult {
@@ -149,7 +148,7 @@ pub fn unify_statements(
                 Symbol {
                     meta: SymbolMeta {
                         name: name.clone(),
-                        exported: let_statement.keyword_export.is_some(),
+                        access: let_statement.access.clone(),
                     },
                     kind: SymbolKind::Value(ValueSymbol { type_value }),
                 },
@@ -177,7 +176,7 @@ pub fn unify_statements(
                     &let_statement.expression,
                 )?;
                 Ok(InferredStatement::Let {
-                    exported: let_statement.keyword_export.is_some(),
+                    access: let_statement.access,
                     left: InferredDestructurePattern {
                         type_value: right.type_value,
                         kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
@@ -272,7 +271,6 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::CpsBang { .. }
         | Expression::Function(_) => None,
         Expression::FunctionCall(function_call) => Some(function_call.function.position()),
-        Expression::UnsafeJavascript { code } => Some(code.position),
         Expression::InterpolatedString { sections, .. } => {
             sections.find_map(|section| match section {
                 InterpolatedStringSection::Expression(expression) => {
@@ -562,11 +560,17 @@ pub fn infer_module_statement(
         }
     };
 
-    infer_module_destructure_pattern(module, module_statement.left, inferred_right)
+    infer_module_destructure_pattern(
+        module,
+        module_statement.access,
+        module_statement.left,
+        inferred_right,
+    )
 }
 
 pub fn infer_module_destructure_pattern(
     module: &mut Module,
+    access: Access,
     pattern: ModuleDestructurePattern,
     inferred_right: UnifyProgramResult,
 ) -> Result<InferImportStatementResult, CompileError> {
@@ -579,7 +583,7 @@ pub fn infer_module_destructure_pattern(
                     inferred_right
                         .entrypoint
                         .module
-                        .get_all_exported_symbols()
+                        .get_all_protected_symbols()
                         .into_iter()
                         .map(|entry| {
                             let name = entry.symbol.meta.name.clone();
@@ -615,25 +619,22 @@ pub fn infer_module_destructure_pattern(
                     } else {
                         Ok(matching_symbol_entries
                             .into_iter()
-                            .map(|entry| {
-                                if !entry.symbol.meta.exported {
-                                    Err(UnifyError {
-                                        position: pair.name.position,
-                                        kind: UnifyErrorKind::CannotImportPrivateSymbol,
-                                    }
-                                    .into_compile_error(module.meta.clone()))
-                                } else {
-                                    match &pair.pattern {
-                                        Some(ModuleDestructurePattern::Identifier(alias)) => {
-                                            Ok((entry, Some(alias.clone())))
-                                        }
-                                        Some(ModuleDestructurePattern::Record { .. }) => {
-                                            todo!("Destructure nested module")
-                                        }
-
-                                        None => Ok((entry, Some(pair.name.clone()))),
-                                    }
+                            .map(|entry| match entry.symbol.meta.access {
+                                Access::Private { keyword_private } => Err(UnifyError {
+                                    position: pair.name.position,
+                                    kind: UnifyErrorKind::CannotImportPrivateSymbol,
                                 }
+                                .into_compile_error(module.meta.clone())),
+                                _ => match &pair.pattern {
+                                    Some(ModuleDestructurePattern::Identifier(alias)) => {
+                                        Ok((entry, Some(alias.clone())))
+                                    }
+                                    Some(ModuleDestructurePattern::Record { .. }) => {
+                                        todo!("Destructure nested module")
+                                    }
+
+                                    None => Ok((entry, Some(pair.name.clone()))),
+                                },
                             })
                             .collect::<Result<Vec<(SymbolEntry, Option<Token>)>, CompileError>>()?)
                     }
@@ -654,7 +655,7 @@ pub fn infer_module_destructure_pattern(
                 Symbol {
                     meta: SymbolMeta {
                         name: alias_as.clone(),
-                        exported: false,
+                        access: access.clone(),
                     },
                     kind: entry.symbol.kind.clone(),
                 },
@@ -745,7 +746,7 @@ pub fn insert_enum_symbol(
         Symbol {
             meta: SymbolMeta {
                 name: enum_statement.name,
-                exported: enum_statement.keyword_export.is_some(),
+                access: enum_statement.access,
             },
             kind: SymbolKind::Type(TypeSymbol { type_value }),
         },
@@ -770,7 +771,7 @@ pub fn infer_enum_statement(
                 Ok(Symbol {
                     meta: SymbolMeta {
                         name: constructor.name.clone(),
-                        exported: enum_statement.keyword_export.is_some(),
+                        access: enum_statement.access.clone(),
                     },
                     kind: SymbolKind::EnumConstructor(EnumConstructorSymbol {
                         enum_uid: enum_uid.clone(),
@@ -809,7 +810,7 @@ pub fn infer_enum_statement(
 pub fn infer_type_alias_statement(
     module: &mut Module,
     TypeAliasStatement {
-        keyword_export,
+        access,
         left,
         right,
         type_variables_declaration,
@@ -827,10 +828,7 @@ pub fn infer_type_alias_statement(
     module.insert_symbol(
         None,
         Symbol {
-            meta: SymbolMeta {
-                name: left,
-                exported: keyword_export.is_some(),
-            },
+            meta: SymbolMeta { name: left, access },
             kind: SymbolKind::Type(TypeSymbol {
                 type_value: try_lift_as_type_scheme(
                     type_value,
@@ -867,16 +865,6 @@ pub fn try_lift_as_type_scheme(
                 tail: tail.to_vec(),
             },
         })),
-    }
-}
-
-/// @deprecated
-/// This function is left here: for reference purpose
-pub fn generalize_type(type_value: Type) -> TypeScheme {
-    let type_variables = get_free_type_variables_in_type(&type_value);
-    TypeScheme {
-        type_variables: panic!(), // type_variables.into_iter().collect(),
-        type_value,
     }
 }
 
@@ -975,9 +963,14 @@ impl Positionable for DestructurePattern {
                 .join(right_square_bracket.position),
             DestructurePattern::Tuple(tuple) => match &tuple.parentheses {
                 Some((left, right)) => left.position.join(right.position),
-                None => tuple.values.position(),
+                None => tuple.values.clone().position(),
             },
-            DestructurePattern::Or(patterns) => patterns.position(),
+            DestructurePattern::Or(patterns) => patterns.clone().position(),
+            DestructurePattern::Parenthesized {
+                left_parenthesis,
+                right_parenthesis,
+                ..
+            } => left_parenthesis.position.join(right_parenthesis.position),
         }
     }
 }
@@ -1063,7 +1056,6 @@ impl Positionable for Expression {
                 .parameter
                 .position()
                 .join(function.branches.last().body.position()),
-            Expression::UnsafeJavascript { code } => code.position,
             Expression::Parenthesized {
                 left_parenthesis,
                 right_parenthesis,
@@ -1088,8 +1080,11 @@ pub trait Positionable {
 }
 
 impl<T: Positionable> NonEmpty<T> {
-    pub fn position(&self) -> Position {
-        self.first().position().join(self.last().position())
+    pub fn position(self) -> Position {
+        let init = self.first().position();
+        self.into_vector()
+            .into_iter()
+            .fold(init, |result, current| result.join(current.position()))
     }
 }
 
@@ -2039,7 +2034,7 @@ fn infer_expression_type_(
                                     module.insert_value_symbol_with_type(
                                         &Token::dummy_identifier(type_constraint.name.clone()),
                                         Some(type_constraint.type_value.clone()),
-                                        false,
+                                        Access::Protected,
                                         true,
                                     )?,
                                 ))
@@ -2121,31 +2116,15 @@ fn infer_expression_type_(
             })
         }),
         Expression::FunctionCall(function_call) => {
-            // TODO: get the possible types of each symbols, and try to get a satisfying solution
-            // in the end.
-            //
-            // Should only have one and only one satisfying solution, otherwise is failure.
-
-            // If the function is a function call, then typecheck the function first,
-            // otherwise typecheck the argument first.
-            //
-            // This is so that we can typecheck function call similar to the following function:
-            //
-            //   xs map {| x -> x + 2 }
-            //
-            // Remember function call is curried, so the above expression is the same as:
-            //
-            //   map(xs)({| x -> x + 2 })
-            //
             let typechecked_function = match function_call.function.as_ref() {
                 // If the function is a function call, then we will typecheck the function first
                 // This is so that we can typecheck curried expression like:
                 //
-                //    xs map { x -> x + 1 }
+                //    xs map { \x -> x + 1 }
                 //
                 //  Which means:
                 //
-                //    (xs map) { x -> x + 1 }
+                //    (xs map) { \x -> x + 1 }
                 //
                 // If we type check the argument first, we will not be able to determine the type
                 // of `x`
@@ -2420,12 +2399,6 @@ fn infer_expression_type_(
                 },
             })
         }
-        Expression::UnsafeJavascript { code } => Ok(InferExpressionResult {
-            type_value: module.introduce_implicit_type_variable(None)?,
-            expression: InferredExpression::Javascript {
-                code: code.representation.clone(),
-            },
-        }),
         Expression::Parenthesized { value, .. } => {
             infer_expression_type(module, expected_type, value)
         }
@@ -2442,7 +2415,6 @@ fn infer_expression_type_(
                 module,
                 Some(typechecked_right.type_value.clone()),
                 left,
-                false,
             )?;
             let typechecked_body = infer_expression_type(module, expected_type.clone(), body)?;
 
@@ -2457,7 +2429,7 @@ fn infer_expression_type_(
             ) {
                 Ok(_) => {
                     let typechecked_statement = InferredStatement::Let {
-                        exported: false,
+                        access: Access::Protected,
                         left: typechecked_left,
                         right: typechecked_right.expression,
                     };
@@ -2532,6 +2504,7 @@ fn infer_expression_type_(
 }
 
 impl Expression {
+    /// Collect CPS bangs, and transformed those bangs into temporary variables
     fn collect_cps_bangs(self, module: &mut Module) -> (Vec<CollectCpsBangResult>, Expression) {
         match self {
             Expression::Unit { .. }
@@ -2595,7 +2568,18 @@ impl Expression {
             Expression::Function(lambda) => {
                 todo!()
             }
-            Expression::FunctionCall(function_call) => todo!(),
+            Expression::FunctionCall(function_call) => {
+                let (bangs1, function) = function_call.function.collect_cps_bangs(module);
+                let (bangs2, argument) = function_call.argument.collect_cps_bangs(module);
+                (
+                    bangs1.into_iter().chain(bangs2.into_iter()).collect(),
+                    Expression::FunctionCall(Box::new(FunctionCall {
+                        function: Box::new(function),
+                        argument: Box::new(argument),
+                        type_arguments: function_call.type_arguments,
+                    })),
+                )
+            }
             Expression::Record {
                 wildcard,
                 left_parenthesis: left_square_bracket,
@@ -2631,7 +2615,16 @@ impl Expression {
             Expression::RecordAccess {
                 expression,
                 property_name,
-            } => todo!(),
+            } => {
+                let (bangs, expression) = expression.collect_cps_bangs(module);
+                (
+                    bangs,
+                    Expression::RecordAccess {
+                        expression: Box::new(expression),
+                        property_name,
+                    },
+                )
+            }
             Expression::RecordUpdate {
                 expression,
                 left_parenthesis: left_curly_bracket,
@@ -2650,7 +2643,6 @@ impl Expression {
                 type_annotation,
                 body,
             } => todo!(),
-            Expression::UnsafeJavascript { code } => todo!(),
             Expression::CpsBang {
                 argument,
                 bang,
@@ -2741,6 +2733,7 @@ fn infer_let_statement(
         type_annotation,
         name,
         expression,
+        access,
         ..
     }: &LetStatement,
 ) -> Result<InferredStatement, UnifyError> {
@@ -2752,11 +2745,10 @@ fn infer_let_statement(
         module,
         Some(type_annotation_type),
         &DestructurePattern::Identifier(name.clone()),
-        false,
     )?;
 
     Ok(InferredStatement::Let {
-        exported: false,
+        access: access.clone(),
         left: typechecked_left,
         right: typechecked_right.expression,
     })
@@ -3210,7 +3202,6 @@ fn infer_function_branch(
                 .clone()
                 .map(|function_type| *function_type.parameter_type),
             &function_branch.parameter,
-            false,
         )?;
 
         let expected_return_type = expected_function_type
@@ -3439,11 +3430,9 @@ fn infer_destructure_pattern(
     module: &mut Module,
     expected_type: Option<Type>,
     destructure_pattern: &DestructurePattern,
-    exported: bool,
 ) -> Result<InferredDestructurePattern, UnifyError> {
     // Same story as infer_expression_type
-    let result =
-        infer_destructure_pattern_(module, expected_type.clone(), destructure_pattern, exported)?;
+    let result = infer_destructure_pattern_(module, expected_type.clone(), destructure_pattern)?;
 
     let type_value = try_unify_type(
         module,
@@ -3462,7 +3451,6 @@ fn infer_destructure_pattern_(
     module: &mut Module,
     expected_type: Option<Type>,
     destructure_pattern: &DestructurePattern,
-    exported: bool,
 ) -> Result<InferredDestructurePattern, UnifyError> {
     match destructure_pattern {
         DestructurePattern::Infinite { token, kind } => Ok(InferredDestructurePattern {
@@ -3491,8 +3479,12 @@ fn infer_destructure_pattern_(
             kind: InferredDestructurePatternKind::Underscore(token.clone()),
         }),
         DestructurePattern::Identifier(identifier) => {
-            let (uid, type_value) =
-                module.insert_value_symbol_with_type(identifier, expected_type, exported, false)?;
+            let (uid, type_value) = module.insert_value_symbol_with_type(
+                identifier,
+                expected_type,
+                Access::Protected,
+                false,
+            )?;
             Ok(InferredDestructurePattern {
                 type_value,
                 kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
@@ -3504,7 +3496,7 @@ fn infer_destructure_pattern_(
         DestructurePattern::Tuple(tuple) => {
             let typechecked_values = tuple.values.clone().fold_result(|destructure_pattern| {
                 // TODO: pass in expected_type
-                infer_destructure_pattern(module, None, &destructure_pattern, exported)
+                infer_destructure_pattern(module, None, &destructure_pattern)
             })?;
             Ok(InferredDestructurePattern {
                 type_value: Type::Tuple(Box::new(
@@ -3536,12 +3528,8 @@ fn infer_destructure_pattern_(
                     },
                 }),
                 (Some(expected_payload_type), Some(payload)) => {
-                    let typechecked_payload = infer_destructure_pattern(
-                        module,
-                        Some(expected_payload_type),
-                        &payload,
-                        exported,
-                    )?;
+                    let typechecked_payload =
+                        infer_destructure_pattern(module, Some(expected_payload_type), &payload)?;
                     Ok(InferredDestructurePattern {
                         type_value: result.expected_enum_type,
                         kind: InferredDestructurePatternKind::EnumConstructor {
@@ -3589,7 +3577,6 @@ fn infer_destructure_pattern_(
                 module,
                 Some(expected_element_type.clone()),
                 &spread.first_element,
-                exported,
             )?;
 
             let expected_array_type = Type::BuiltInOneArgumentType {
@@ -3600,7 +3587,6 @@ fn infer_destructure_pattern_(
                 module,
                 Some(expected_array_type.clone()),
                 &spread.rest_elements,
-                exported,
             )?;
 
             Ok(InferredDestructurePattern {
@@ -3693,7 +3679,6 @@ fn infer_destructure_pattern_(
                                 module,
                                 expected_type,
                                 destructure_pattern,
-                                exported,
                             )?;
 
                             Ok((actual_key, typechecked_destructure_pattern))
@@ -3702,7 +3687,7 @@ fn infer_destructure_pattern_(
                             let (uid, type_value) = module.insert_value_symbol_with_type(
                                 key,
                                 expected_type,
-                                exported,
+                                Access::Protected,
                                 false,
                             )?;
                             Ok((
@@ -3743,12 +3728,8 @@ fn infer_destructure_pattern_(
         }
         DestructurePattern::Or(patterns) => {
             // 1. Check that all the patterns has the same type
-            let first_pattern = infer_destructure_pattern(
-                module,
-                expected_type.clone(),
-                &patterns.first(),
-                exported,
-            )?;
+            let first_pattern =
+                infer_destructure_pattern(module, expected_type.clone(), &patterns.first())?;
 
             let tail_patterns = patterns
                 .tail()
@@ -3763,7 +3744,6 @@ fn infer_destructure_pattern_(
                             // Note the each trailing pattern should has the type of the first pattern
                             Some(first_pattern.type_value.clone()),
                             &pattern,
-                            exported,
                         )
                     })
                 })
@@ -3809,6 +3789,9 @@ fn infer_destructure_pattern_(
                     }),
                 },
             })
+        }
+        DestructurePattern::Parenthesized { pattern, .. } => {
+            infer_destructure_pattern(module, expected_type, pattern)
         }
     }
 }

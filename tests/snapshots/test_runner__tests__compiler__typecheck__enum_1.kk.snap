@@ -5,21 +5,17 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum List<T> {
-  Nil,
-  Cons({ current: T, next: List<T> })
-}
+type List<T> = #Nil | #Cons (current: T, next: List<T>)
 
-let xs: Integer = {
-  let x = Cons({
-    current: 1,
-    next: Cons({
-      current: true,
-      next: Nil
-    })
-  })
+let xs : Int =
+  let x = #Cons(
+    current = 1,
+    next = #Cons(
+      current = (),
+      next = Nil
+    )
+  );
   123
-}
 
 ============
 EXIT CODE
@@ -35,13 +31,13 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/enum_1.kk:10:16
-   │
-10 │       current: true,
-   │                ^^^^ Type mismatch
-   │
-   = +---------------+-------------+
-     | EXPECTED TYPE | ACTUAL TYPE |
-     +---------------+-------------+
-     | - Integer     | + Boolean   |
-     +---------------+-------------+
+  ┌─ tests/compiler/typecheck/enum_1.kk:7:17
+  │
+7 │       current = (),
+  │                 ^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - Int         | + ()        |
+    +---------------+-------------+

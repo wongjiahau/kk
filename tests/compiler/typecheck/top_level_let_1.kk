@@ -1,4 +1,4 @@
-let foo = (_: Null) => 123
+let foo = (_: Null) -> 123
 
 let x = {
   y: [

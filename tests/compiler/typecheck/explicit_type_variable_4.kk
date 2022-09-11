@@ -1,1 +1,1 @@
-let foo = <A, B>(a: A): B => a
+let<A, B> foo (a: A) : B = a

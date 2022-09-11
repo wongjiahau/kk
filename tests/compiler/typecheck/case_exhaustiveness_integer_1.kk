@@ -1,6 +1,7 @@
-let isZero = (n: Int): Boolean =>
-  switch (n) {
-    case 0: true
-    case 1: false
-    case _: false
+let isZero
+  : Int -> String
+  = {
+    \0 -> "true"
+    \1 -> "false"
+    \_ -> "false"
   }

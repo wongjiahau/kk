@@ -1,5 +1,6 @@
 use crate::{
     inferred_ast::*,
+    module::Access,
     non_empty::NonEmpty,
     raw_ast::InfinitePatternKind,
     unify::{InferredModule, UnifyProgramResult},
@@ -334,9 +335,11 @@ pub fn transpile_module(module: InferredModule) -> javascript::Statement {
         .statements
         .iter()
         .flat_map(|statement| match statement {
-            InferredStatement::Let { exported, left, .. } if *exported => {
-                get_destructure_pattern_bindings(left.kind.clone())
-            }
+            InferredStatement::Let {
+                access: Access::Protected | Access::Public { .. },
+                left,
+                ..
+            } => get_destructure_pattern_bindings(left.kind.clone()),
             _ => vec![],
         })
         .map(transpile_identifier)
@@ -606,9 +609,6 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                 }),
                 arguments: vec![transpile_expression(*expression)],
             }
-        }
-        InferredExpression::Javascript { code } => {
-            javascript::Expression::UnsafeJavascriptCode(code)
         }
         InferredExpression::Block {
             statements,

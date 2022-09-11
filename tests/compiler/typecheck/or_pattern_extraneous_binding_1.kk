@@ -1,5 +1,5 @@
 
-enum Foo {
+type Foo {
   A({x: String, y: String}),
   B({x: String, y: String, z: String})
 }

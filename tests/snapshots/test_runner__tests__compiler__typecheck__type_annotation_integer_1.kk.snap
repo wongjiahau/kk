@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let a: Integer = 1
-let b: Integer = 1.0
+let a: Int = 1
+let b: Int = 1.0
 
 ============
 EXIT CODE
@@ -22,13 +22,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/type_annotation_integer_1.kk:2:18
+  ┌─ tests/compiler/typecheck/type_annotation_integer_1.kk:2:14
   │
-2 │ let b: Integer = 1.0
-  │                  ^^^ Type mismatch
+2 │ let b: Int = 1.0
+  │              ^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Integer     | + Float     |
+    | - Int         | + Float     |
     +---------------+-------------+

@@ -1,4 +1,4 @@
-let identity = <A>(a: A): A => a
+let identity = <A>(a: A): A -> a
 
 {
   let x = "hello".identity()

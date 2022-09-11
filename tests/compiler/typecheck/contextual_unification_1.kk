@@ -1,5 +1,3 @@
-{
-  let f 
-    : (x: {foo: Float}) => Float 
-    = o => o.bar
-}
+entry
+  let f : (foo: Float) -> Float = { \o -> o.bar };
+  ()

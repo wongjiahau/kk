@@ -5,14 +5,15 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Option<T> { Some(T), None }
-let foo = (o: Option<Integer>): Option<String> =>
-  switch o {
-    case Some(1): Some("hi")
-    case Some(_): Some("lol")
-    case Some(_): None // This case is unreachable
-    case None: None
-  }
+type Option<T> = #some(T) | #none
+
+let foo (o: Option<Int>): Option<String> =
+  {
+    \#some(1) -> #some("hi")
+    \#some(_) -> #some("lol")
+    \#some(_) -> #none // This case is unreachable
+    \#none    -> #none
+  } (o)
 
 ============
 EXIT CODE
@@ -28,9 +29,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_enum_1.kk:6:10
+  ┌─ tests/compiler/typecheck/unreachable_case_enum_1.kk:7:6
   │
-6 │     case Some(_): None // This case is unreachable
-  │          ^^^^^^^ Unreachable case
+7 │     \#some(_) -> #none // This case is unreachable
+  │      ^^^^^^^ Unreachable case
   │
   = This case is unreachable as it is already handled by previous cases.

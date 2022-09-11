@@ -5,16 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Foo {
-  A(Foo),
-  B
-}
+type Foo = #A(Foo) | #B
 
-let spam = (foo: Foo): String =>
-  switch foo {
-    case A(x) | A(A(x) | A(A(x))): "test"
-    case _: "Nope"
-
+let spam
+  : Foo -> String
+  = {
+    \#A(x) | #A(#A(x) | #A(#A(x))) -> "test"
+    \ _ -> "Nope"
   }
 
 ============
@@ -31,12 +28,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_4.kk:8:17
+  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_4.kk:6:14
   │
-8 │     case A(x) | A(A(x) | A(A(x))): "test"
-  │                 ^^^^^^^^^^^^^^^^^ Partially unreachable case
+6 │     \#A(x) | #A(#A(x) | #A(#A(x))) -> "test"
+  │              ^^^^^^^ Partially unreachable case
   │
   = This case is partially unreachable because it contains a redundant pattern that is already handled by previous cases.
     Namely:
 
-        A(A(x))
+        #A(#A(x))

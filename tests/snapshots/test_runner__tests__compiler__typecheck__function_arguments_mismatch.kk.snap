@@ -5,9 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-{
-  let f : (n: Integer) => Integer = (x, y) => x
-}
+let f : Int -> Int = { \x -> { \y -> x } }
 
 ============
 EXIT CODE
@@ -23,9 +21,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:2:37
+  ┌─ tests/compiler/typecheck/function_arguments_mismatch.kk:1:33
   │
-2 │   let f : (n: Integer) => Integer = (x, y) => x
-  │                                     ^^^^^^ Arguments length mismatch
+1 │ let f : Int -> Int = { \x -> { \y -> x } }
+  │                                 ^^^^^^ Type mismatch
   │
-  = Expected 1 argument only, but 2 arguments are provided.
+  = +---------------+-----------------+
+    | EXPECTED TYPE |   ACTUAL TYPE   |
+    +---------------+-----------------+
+    | - Int         | + @TVAR0 -> Int |
+    +---------------+-----------------+

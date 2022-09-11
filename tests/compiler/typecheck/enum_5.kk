@@ -1,3 +1,3 @@
-enum Foo { Bar }
+type Foo = #Bar
 
-let a: Foo = Bar("hi")
+let a: Foo = #Bar "hi"

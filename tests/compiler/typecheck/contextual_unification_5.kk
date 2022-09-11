@@ -1,5 +1,6 @@
-{
+entry {
   let f 
-    : (o: { x: { y: Int } }) => Int
-    = { x: { z } } => 2
+    : (x: (y: Int)) -> Int
+    = { \(x = (z,)) -> 2 };
+  ()
 }

@@ -1,15 +1,11 @@
-enum List<T> {
-  Nil,
-  Cons({ current: T, next: List<T> })
-}
+type List<T> = #Nil | #Cons (current: T, next: List<T>)
 
-let xs: Int = {
-  let x = Cons({
-    current: 1,
-    next: Cons({
-      current: true,
-      next: Nil
-    })
-  })
+let xs : Int =
+  let x = #Cons(
+    current = 1,
+    next = #Cons(
+      current = (),
+      next = Nil
+    )
+  );
   123
-}

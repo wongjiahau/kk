@@ -1,10 +1,10 @@
-enum List<T>
+type List<T>
   = #nil
-  | #cons { current: T, next: List<T> }
+  | #cons (current: T, next: List<T>)
 
-let bomb(xs: List<T>) (f: T -> U): Boolean =
+let<T, U> bomb(xs: List<T>) (f: T -> U): Int =
   {
-  | #nil -> true
-  | #cons { .current = _, .next = #nil } -> true
-  } xs
+    \#nil -> 1
+    \#cons (current = _, next = #nil) -> 0
+  } (xs)
 

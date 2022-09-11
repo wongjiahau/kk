@@ -4,6 +4,6 @@ type People = {
   lastName: String
 }
 
-let s = (firstName: String, lastName: String): People => {...}
+let s = (firstName: String, lastName: String): People -> {...}
 
 "Adam".s("James").print()

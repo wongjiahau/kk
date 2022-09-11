@@ -7,15 +7,15 @@ INPUT
 ============
 // base file for testing import
 // should have no error
-export enum Color {Red, Green}
-export type People = {name: String}
+type Color = #Red | #Green
+type People = (name: String)
 
-export let bomb = (_: String): String  => "Hello"
+let bomb (_: String): String  = "Hello"
 
-export let bomb = (_: Boolean): String => "World"
+let bomb (): String = "World"
 
-export let foo = 123
-let spam = 123
+let foo : Int = 123
+private let spam : Int = 123
 
 ============
 EXIT CODE

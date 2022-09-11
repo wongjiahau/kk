@@ -1,4 +1,4 @@
-let foo = (x: String): [String] => [x]
+let foo = (x: String): [String] -> [x]
 
 {
   let a = { x: 2, y: {z: 3} }

@@ -1,4 +1,4 @@
-// Void enum (i.e. no constructor)
-enum Void {
+// Void type (i.e. no constructor)
+type Void {
 
 }

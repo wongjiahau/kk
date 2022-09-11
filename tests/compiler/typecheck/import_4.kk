@@ -1,2 +1,2 @@
 // error: cannot import private symbol
-import {spam} from "./import_1.kk"
+module (spam) = import "./import_1.kk"

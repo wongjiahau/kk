@@ -5,17 +5,17 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let identity = <A>(a: A): A => a
+let<A> identity (a: A): A = a
 
-let constant = <A>(_: A): Integer => 2
+let<A> constant (_: A) : Int = 2
 
-let map = <A, B>(a: A, f: (a: A) => B): B => a.f()
+let<A, B> map (a: A) (f: A -> B) : B = a f
 
-{
-  let x: String = "hello".map(identity)
-  let y: String = "hello".map((_) => "yo")
-  let z: String = "hello".map(constant)
-}
+entry
+  let x: String = "hello" map(identity);
+  let y: String = "hello" map { \_ -> "yo" };
+  let z: String = "hello" map (constant);
+  ()
 
 ============
 EXIT CODE
@@ -33,11 +33,11 @@ STDERR
 error:
    ┌─ tests/compiler/typecheck/generic_function_1.kk:10:19
    │
-10 │   let z: String = "hello".map(constant)
-   │                   ^^^^^^^^^^^^^^^^^^^^^ Type mismatch
+10 │   let z: String = "hello" map (constant);
+   │                   ^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |
      +---------------+-------------+
-     | - String      | + Integer   |
+     | - String      | + Int       |
      +---------------+-------------+

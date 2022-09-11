@@ -5,15 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo = (x: Integer, y: Integer): Integer => 123
+let (x : Int) foo (y : Int) : Int = 123
 
-9.foo(8).print()
+let (x : Float) foo (y : Float) : Float = 789.0
 
-let foo = (x: Float, y: Float): Float => 789.0
-
-9.0.foo(8.0).print()
-
-1.0.foo(2) // compile error
+entry
+  9 foo 8 print;
+  9.0 foo 8.0 print;
+  1.0 foo 2 print // compile error
 
 ============
 EXIT CODE
@@ -29,13 +28,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/single_dispatch_6.kk:9:9
+  ┌─ tests/compiler/typecheck/single_dispatch_6.kk:8:11
   │
-9 │ 1.0.foo(2) // compile error
-  │         ^ Type mismatch
+8 │   1.0 foo 2 print // compile error
+  │           ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Float       | + Integer   |
+    | - Float       | + Int       |
     +---------------+-------------+

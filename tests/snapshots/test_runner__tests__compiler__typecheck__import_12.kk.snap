@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-export let foo = 2
+let foo : Int = 2
 
 ============
 EXIT CODE

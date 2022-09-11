@@ -1,5 +1,5 @@
 {
-  let f = {x, y: {z}} => {x, z}
+  let f = {x, y: {z}} -> {x, z}
   //       ^ Initially we are not sure what is the type of x, so we assign it an implicit type variable, say T1
 
 

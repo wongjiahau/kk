@@ -5,12 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo: {
-  x: Integer,
-  y: Integer
-} = {
-  x: 1
-}
+let foo: (
+  x: Int,
+  y: Int
+) = (
+  x = 1
+)
 
 ============
 EXIT CODE
@@ -28,10 +28,10 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/record_type_5.kk:4:5
   │
-4 │   } = {
+4 │   ) = (
   │ ╭─────^
-5 │ │   x: 1
-6 │ │ }
+5 │ │   x = 1
+6 │ │ )
   │ ╰─^ Missing properties
   │
   = The missing properties are:

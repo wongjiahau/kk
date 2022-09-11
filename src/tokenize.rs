@@ -66,7 +66,6 @@ impl TokenizeError {
 pub struct Tokenizer {
     characters_iterator: Peekable<IntoIter<Character>>,
     peeked_tokens: Vec<Token>,
-    checkpoint: Option<TokenizerCheckpoint>,
 }
 
 impl Tokenizer {
@@ -102,7 +101,6 @@ impl Tokenizer {
         Tokenizer {
             characters_iterator: characters.peekable(),
             peeked_tokens: vec![],
-            checkpoint: None,
         }
     }
 
@@ -132,7 +130,7 @@ impl Tokenizer {
             return Ok(Some(token));
         }
 
-        let token = if let Some(character) = self.characters_iterator.next() {
+        if let Some(character) = self.characters_iterator.next() {
             match character.value {
                 // Comments
                 '/' => match self.characters_iterator.next() {
@@ -176,9 +174,7 @@ impl Tokenizer {
                         };
                         Ok(Some(Token {
                             position: make_position(character, comment.last()),
-                            token_type: TokenType::MultilineComment {
-                                characters: comment.clone(),
-                            },
+                            token_type: TokenType::MultilineComment,
                             representation: stringify(comment),
                         }))
                     }
@@ -523,6 +519,11 @@ impl Tokenizer {
                     representation: "~".to_string(),
                     position: make_position(character, None),
                 })),
+                '\\' => Ok(Some(Token {
+                    token_type: TokenType::Backslash,
+                    representation: "\\".to_string(),
+                    position: make_position(character, None),
+                })),
                 // Symbolic identifer
                 other if is_symbol(other) => {
                     let characters = self
@@ -562,44 +563,8 @@ impl Tokenizer {
             }
         } else {
             Ok(None)
-        }?;
-        match token {
-            None => Ok(None),
-            Some(token) => {
-                match &mut self.checkpoint {
-                    None => {}
-                    Some(checkpoint) => checkpoint.saved_tokens.push(token.clone()),
-                };
-                Ok(Some(token))
-            }
         }
     }
-
-    pub fn create_checkpoint(&mut self) {
-        self.checkpoint = Some(TokenizerCheckpoint {
-            saved_tokens: vec![],
-        })
-    }
-
-    pub fn delete_checkpoint(&mut self) {
-        self.checkpoint = None;
-    }
-
-    pub fn restore_checkpoint(&mut self) {
-        match &mut self.checkpoint {
-            None => panic!("Calling restore_checkpoint before create_checkpoint is called"),
-            Some(checkpoint) => {
-                let mut tokens = checkpoint.saved_tokens.clone();
-                tokens.reverse();
-                self.peeked_tokens = tokens;
-                self.checkpoint = None;
-            }
-        }
-    }
-}
-
-pub struct TokenizerCheckpoint {
-    saved_tokens: Vec<Token>,
 }
 
 fn is_symbol(c: char) -> bool {
@@ -630,21 +595,15 @@ pub fn stringify(characters: Vec<Character>) -> String {
 }
 
 pub fn get_token_type(s: String) -> TokenType {
-    if s.eq("entry") {
-        TokenType::KeywordEntry
-    } else if s.eq("let") {
-        TokenType::KeywordLet
-    } else if s.eq("type") {
-        TokenType::KeywordType
-    } else if s.eq("module") {
-        TokenType::KeywordModule
-    } else if s.eq("import") {
-        TokenType::KeywordImport
-    } else if s.eq("export") {
-        TokenType::KeywordExport
-    } else if s.eq("exists") {
-        TokenType::KeywordExists
-    } else {
-        TokenType::Identifier
+    match s.as_str() {
+        "entry" => TokenType::KeywordEntry,
+        "let" => TokenType::KeywordLet,
+        "type" => TokenType::KeywordType,
+        "module" => TokenType::KeywordModule,
+        "import" => TokenType::KeywordImport,
+        "public" => TokenType::KeywordPublic,
+        "private" => TokenType::KeywordPrivate,
+        "exists" => TokenType::KeywordExists,
+        _ => TokenType::Identifier,
     }
 }

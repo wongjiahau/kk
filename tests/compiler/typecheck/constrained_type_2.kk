@@ -1,5 +1,5 @@
 type Boolean = #true | #false
 let (a : String) `not equals` (b : String) : Boolean 
-  | [ equals : T -> T -> Boolean ]
- //            ^ Error: Unknown type symbol
+  exists (equals : T -> T -> Boolean)
+ //                ^ Error: Unknown type symbol
   = #true

@@ -1,8 +1,8 @@
-let foo = (_: String): String => "Hello"
+let foo (_: String): String = "Hello"
 
-let foo = (_: Boolean): String => "World"
+let foo (): String = "World"
 
-let main = (null: Null): Int => {
-  let f = x => x.foo()
+let main (): Int = {
+  let f = { \x -> x foo };
   123
 }

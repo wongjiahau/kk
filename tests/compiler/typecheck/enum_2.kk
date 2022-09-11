@@ -1,4 +1,4 @@
-enum List<Element> {
+type List<Element> {
   Nil,
   Cons({
     current: Element,
@@ -13,5 +13,5 @@ enum List<Element> {
       current: true,
       next: Nil
     })
-  }) => 0
+  }) -> 0
 }

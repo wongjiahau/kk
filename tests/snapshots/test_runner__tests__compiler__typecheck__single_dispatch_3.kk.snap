@@ -5,13 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo: Integer = 2
-let foo = (_: String): String => "Hello"
+let foo: Int = 2
+let foo (_: String): String = "Hello"
 
 ============
 EXIT CODE
 ============
-1
+0
 
 ============
 STDOUT
@@ -21,10 +21,3 @@ STDOUT
 ============
 STDERR
 ============
-error:
-  ┌─ tests/compiler/typecheck/single_dispatch_3.kk:2:5
-  │
-2 │ let foo = (_: String): String => "Hello"
-  │     ^^^ Duplicated name
-  │
-  = This variable `foo` is already declared before in this module.

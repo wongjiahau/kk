@@ -5,12 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let foo = (_: String): String => "Hello"
+let foo (_: String): String = "Hello"
 
-let foo = (_: Boolean): String => "World"
+let foo (): String = "World"
 
-let main = (null: Null): Integer => {
-  let f = x => x.foo()
+let main (): Int = {
+  let f = { \x -> x foo };
   123
 }
 
@@ -28,14 +28,15 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/single_dispatch_2.kk:6:18
+  ┌─ tests/compiler/typecheck/single_dispatch_2.kk:6:21
   │
-6 │   let f = x => x.foo()
-  │                  ^^^ Ambiguous Reference
+6 │   let f = { \x -> x foo };
+  │                     ^^^ Ambiguous Symbol
   │
-  = This function is overloaded with multiple signatures, but the first argument provided has unknown type.
-    To disambiguate, annotate the type of the first argument of this function call with any of the following types:
+  = Matching types:
 
-      String
+      String -> String
 
-      Boolean
+      () -> String
+
+    Put type annotation for disambiguation.
