@@ -1,8 +1,10 @@
-/**
- * This function takes anything string and output 123.
- * For example:
- * ```
- * null.foo().print // Compile error: expected `String` but got `Null`
- * ```
-*/
-let foo = (s: String): Int -> 123
+let foo
+  "
+  This function takes any string and output 123.
+  For example:
+  ```javascript
+  () foo print
+  ```
+  "
+
+  (s: String): Int = 123

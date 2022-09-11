@@ -1,3 +1,6 @@
+use std::borrow::Borrow;
+use std::ops::Range;
+
 use crate::module::Access;
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
 use crate::{raw_ast::*, tokenize::TokenizeError};
@@ -1497,19 +1500,53 @@ impl<'a> Parser<'a> {
     }
 
     fn try_eat_doc_string(&mut self) -> Result<Option<DocString>, ParseError> {
-        match self.peek_next_meaningful_token()? {
-            None => Ok(None),
+        let doc_string = match self.peek_next_meaningful_token()? {
+            None => None,
             Some(token) => match token.token_type {
                 TokenType::InterpolatedString(interpolated_string) => {
                     self.next_meaningful_token()?;
-                    Ok(Some(DocString::InterpolatedString(interpolated_string)))
+                    Some(DocString::InterpolatedString(interpolated_string))
                 }
                 TokenType::String => {
                     self.next_meaningful_token()?;
-                    Ok(Some(DocString::String(token)))
+                    Some(DocString::String(token))
                 }
-                _ => Ok(None),
+                _ => None,
             },
+        };
+        match doc_string {
+            Some(doc_string) => match doc_string {
+                DocString::InterpolatedString(s) => todo!(),
+                DocString::String(s) => {
+                    let mut parsing_code_block = false;
+
+                    let codes = pulldown_cmark::Parser::new(s.representation.as_str())
+                        .into_offset_iter()
+                        .filter_map(|(event, range)| match event {
+                            pulldown_cmark::Event::Text(text) => {
+                                if parsing_code_block {
+                                    Some((text.to_string(), range))
+                                } else {
+                                    None
+                                }
+                            }
+                            pulldown_cmark::Event::Code(code) => Some((code.to_string(), range)),
+                            pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(code)) => {
+                                parsing_code_block = true;
+                                None
+                            }
+                            pulldown_cmark::Event::End(pulldown_cmark::Tag::CodeBlock(code)) => {
+                                parsing_code_block = false;
+                                None
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+                    println!("codes= {:#?}", codes);
+                    Ok(Some(DocString::String(s)))
+                }
+            },
+            None => Ok(None),
         }
     }
 }
