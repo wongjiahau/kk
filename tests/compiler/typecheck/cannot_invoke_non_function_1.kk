@@ -1,4 +1,4 @@
-{
-  let x = 2
-  let f = "hi".x()
-}
+entry
+  let x = 2;
+  let f = "hi" x;
+  ()

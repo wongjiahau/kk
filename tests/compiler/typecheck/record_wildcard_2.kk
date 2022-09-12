@@ -1,9 +1,10 @@
 // No error
-type People = {
+type People = (
   firstName: String,
   lastName: String
-}
+)
 
-let s = (firstName: String, lastName: String): People -> {...}
+let s (firstName: String) (lastName: String): People = (..)
 
-"Adam".s("James").print()
+entry
+  "Adam" s "James" print

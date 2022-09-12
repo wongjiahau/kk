@@ -109,7 +109,7 @@ pub struct TypeAliasStatement {
 #[derive(Debug, Clone)]
 pub struct EnumStatement {
     pub access: Access,
-    pub keyword_enum: Token,
+    pub keyword_type: Token,
     pub name: Token,
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
     pub constructors: Vec<EnumConstructorDefinition>,

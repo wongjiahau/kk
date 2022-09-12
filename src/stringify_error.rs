@@ -1091,11 +1091,11 @@ impl CheckablePatternKind {
             CheckablePatternKind::Record {
                 key_pattern_pairs, ..
             } => format!(
-                "{{{}}}",
+                "({})",
                 key_pattern_pairs
                     .iter()
                     .map(|(property_name, pattern)| format!(
-                        "{}: {}",
+                        "{} = {}",
                         property_name.0.representation,
                         pattern.kind.to_string()
                     ))

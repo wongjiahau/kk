@@ -6,9 +6,11 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 // shorthand update
-let a = { x: 2, y: {z: 3} }
-let x = "hi"
-let b = a.{ x }
+entry
+  let a = (x = 2, y = (z = 3));
+  let x = "hi";
+  let b = a.( x );
+  ()
 
 ============
 EXIT CODE
@@ -24,13 +26,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/record_update_5.kk:4:13
+  ┌─ tests/compiler/typecheck/record_update_5.kk:5:15
   │
-4 │ let b = a.{ x }
-  │             ^ Type mismatch
+5 │   let b = a.( x );
+  │               ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Integer     | + String    |
+    | - Int         | + String    |
     +---------------+-------------+

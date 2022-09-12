@@ -1,6 +1,6 @@
-let identity = <A>(a: A): A -> a
+let <A> identity (a: A): A = a
 
-{
-  let x = "hello".identity()
-  let y: Int = x
-}
+entry
+  let x = "hello" identity;
+  let y: Int = x;
+  ()

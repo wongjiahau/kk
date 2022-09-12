@@ -5,16 +5,13 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Nat {
-  Zero,
-  Succ(Nat)
-}
+type Nat = #zero | #succ(Nat)
 
-let foo = (n: Nat): Boolean =>
-  switch (n) {
-    case Zero | Zero: true
-            //  ^^^^ Error: unreachable case
-  }
+let foo (n : Nat) : Int =
+  {
+    \#zero | #zero -> 1
+          // ^^^^^ Error: unreachable case
+  } (n)
 
 ============
 EXIT CODE
@@ -30,12 +27,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_3.kk:8:17
+  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_3.kk:5:14
   │
-8 │     case Zero | Zero: true
-  │                 ^^^^ Partially unreachable case
+5 │     \#zero | #zero -> 1
+  │              ^^^^^ Partially unreachable case
   │
   = This case is partially unreachable because it contains a redundant pattern that is already handled by previous cases.
     Namely:
 
-        Zero
+        #zero

@@ -1,10 +1,7 @@
-type Nat {
-  Zero,
-  Succ(Nat)
-}
+type Nat = #zero | #succ(Nat)
 
-let foo = (n: Nat): Boolean -> 
-  switch (n) {
-    case Zero | Zero: true
-            //  ^^^^ Error: unreachable case
-  }
+let foo (n : Nat) : Int =
+  {
+    \#zero | #zero -> 1
+          // ^^^^^ Error: unreachable case
+  } (n)

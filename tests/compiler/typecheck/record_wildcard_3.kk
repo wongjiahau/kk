@@ -1,1 +1,3 @@
-let x = {...} // Error: missing type annotation
+entry
+  let x = (..); // Error: missing type annotation
+  ()

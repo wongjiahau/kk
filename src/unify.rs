@@ -1132,7 +1132,7 @@ impl Positionable for Statement {
                 .keyword_type
                 .position
                 .join(type_statement.right.position()),
-            Statement::Enum(enum_statement) => enum_statement.keyword_enum.position.join_maybe(
+            Statement::Enum(enum_statement) => enum_statement.keyword_type.position.join_maybe(
                 enum_statement
                     .constructors
                     .last()

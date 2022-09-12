@@ -1,2 +1,2 @@
 // circular import
-import { spam } from "./import_7.kk"
+module (spam) = import "./import_7.kk"

@@ -5,12 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let identity = <A>(a: A): A => a
+let <A> identity (a: A): A = a
 
-{
-  let x = "hello".identity()
-  let y: Integer = x
-}
+entry
+  let x = "hello" identity;
+  let y: Int = x;
+  ()
 
 ============
 EXIT CODE
@@ -26,13 +26,13 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/generic_function_2.kk:5:20
+  ┌─ tests/compiler/typecheck/generic_function_2.kk:5:16
   │
-5 │   let y: Integer = x
-  │                    ^ Type mismatch
+5 │   let y: Int = x;
+  │                ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |
     +---------------+-------------+
-    | - Integer     | + String    |
+    | - Int         | + String    |
     +---------------+-------------+

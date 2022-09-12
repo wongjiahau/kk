@@ -1,13 +1,8 @@
-type List<T> {
-  Nil,
-  Cons({head: T, tail: List<T>})
-}
+type List<T> = #nil | #cons(head: T, tail: List<T>)
 
-let map = <T, U>(xs: List<T>, f: (t: T) -> U): List<U> ->
-  switch xs { 
-    case Nil: 
-      Nil
-    case Cons({head, tail}): 
-      Cons({head: head.f(), tail: tail.map(t -> {t: t.f()})})
-                              //  ^^^^^^^^^^^^^^^^^^^^^^^^^ Error: expected List<U>, but got List<{t: U}>
-  }
+let <T, U> map (xs: List<T>) (f: T -> U) : List<U> =
+  {
+    \#nil -> #nil
+    \#cons(head, tail) -> #cons(head = head f, tail = tail map { \t -> (t = t f)})
+                                                  //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Error: expected List<U>, but got List<{t: U}>
+  } (xs)

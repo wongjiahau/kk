@@ -345,21 +345,21 @@ impl<'a> Parser<'a> {
     ) -> Result<Statement, ParseError> {
         let context = Some(ParseContext::StatementType);
         let name = self.eat_token(TokenType::Identifier, context)?;
-        let type_variables = self.try_parse_type_variables_declaration()?;
+        let type_variables_declaration = self.try_parse_type_variables_declaration()?;
         self.eat_token(TokenType::Equals, context)?;
         if let Some(Token {
             token_type: TokenType::Tag,
             ..
         }) = self.peek_next_meaningful_token()?
         {
-            self.parse_enum_statement(access, keyword_type, name, type_variables)
+            self.parse_enum_statement(access, keyword_type, name, type_variables_declaration)
         } else {
             let right = self.parse_type_annotation(context)?;
             Ok(Statement::Type(TypeAliasStatement {
                 access,
                 keyword_type,
                 left: name,
-                type_variables_declaration: type_variables,
+                type_variables_declaration,
                 right,
             }))
         }
@@ -383,7 +383,7 @@ impl<'a> Parser<'a> {
         };
         Ok(Statement::Enum(EnumStatement {
             access,
-            keyword_enum: keyword_type,
+            keyword_type,
             name,
             type_variables_declaration: type_variables,
             constructors,
@@ -741,11 +741,6 @@ impl<'a> Parser<'a> {
             self.eat_token(TokenType::Colon, context)?;
             let type_annotation = self.parse_type_annotation(context)?;
             key_type_annotation_pairs.push((key, type_annotation));
-            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
-                break right_parenthesis;
-            } else {
-                self.eat_token(TokenType::Comma, context)?;
-            }
         };
         if key_type_annotation_pairs.is_empty() {
             Ok(TypeAnnotation::Unit {

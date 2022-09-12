@@ -1,7 +1,9 @@
-let foo = (s: String): Int ->
-  switch s { 
-    case "hi": 0
-    case "hey": 1
-    case "hey": 1
-    case _: 2
+let foo 
+  : String -> Int
+  = {
+    \"hi" -> 0
+    \"hey" -> 1
+    \"hey" -> 1
+    \_ -> 2
+
   }

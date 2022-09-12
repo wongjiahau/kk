@@ -1,13 +1,10 @@
-type Foo {
-  A,
-  B
-}
+type Foo = #a | #b
 
-let foo = (x: Foo, y: Foo): Boolean -> 
-  switch {x, y} {
-    case {x: A | B, y: A}: true
-    case {x: A | B, y: A | B}: true
-      // ^^^^^^^^^^^^^^^^^^^^ 
-      // Error: this pattern contains a an unreachable subpattern, namely:
-      //    {x: A, y: A}
-  }
+let foo (x: Foo) (y: Foo): Int =
+  {
+    \(x = #a | #b, y = #a) -> 1
+    \(x = #a | #b, y = #a | #b) -> 1
+  //  ^^^^^^^^^^^^^^^^^^^^^^^^
+  // Error: this pattern contains a an unreachable subpattern, namely:
+  //    {x: A, y: A}
+  } (x, y)

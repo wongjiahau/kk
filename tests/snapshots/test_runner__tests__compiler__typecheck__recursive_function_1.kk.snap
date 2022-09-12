@@ -5,19 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum List<T> {
-  Nil,
-  Cons({head: T, tail: List<T>})
-}
+type List<T> = #nil | #cons(head: T, tail: List<T>)
 
-let map = <T, U>(xs: List<T>, f: (t: T) => U): List<U> =>
-  switch xs {
-    case Nil:
-      Nil
-    case Cons({head, tail}):
-      Cons({head: head.f(), tail: tail.map(t => {t: t.f()})})
-                              //  ^^^^^^^^^^^^^^^^^^^^^^^^^ Error: expected List<U>, but got List<{t: U}>
-  }
+let <T, U> map (xs: List<T>) (f: T -> U) : List<U> =
+  {
+    \#nil -> #nil
+    \#cons(head, tail) -> #cons(head = head f, tail = tail map { \t -> (t = t f)})
+                                                  //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Error: expected List<U>, but got List<{t: U}>
+  } (xs)
 
 ============
 EXIT CODE
@@ -33,18 +28,18 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/recursive_function_1.kk:11:35
-   │
-11 │       Cons({head: head.f(), tail: tail.map(t => {t: t.f()})})
-   │                                   ^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
-   │
-   = +---------------+-------------+
-     | EXPECTED TYPE | ACTUAL TYPE |
-     +---------------+-------------+
-     |   List<       |   List<     |
-     | -   U         | +   {       |
-     |   >           | +     t:    |
-     |               | +       U,  |
-     |               | +   }       |
-     |               |   >         |
-     +---------------+-------------+
+  ┌─ tests/compiler/typecheck/recursive_function_1.kk:6:55
+  │
+6 │     \#cons(head, tail) -> #cons(head = head f, tail = tail map { \t -> (t = t f)})
+  │                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    |   List<       |   List<     |
+    | -   U         | +   (       |
+    |   >           | +     t =   |
+    |               | +       U,  |
+    |               | +   )       |
+    |               |   >         |
+    +---------------+-------------+

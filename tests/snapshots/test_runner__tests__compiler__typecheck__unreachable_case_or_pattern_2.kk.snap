@@ -5,19 +5,16 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-enum Foo {
-  A,
-  B
-}
+type Foo = #a | #b
 
-let foo = (x: Foo, y: Foo): Boolean =>
-  switch {x, y} {
-    case {x: A | B, y: A}: true
-    case {x: A | B, y: A | B}: true
-      // ^^^^^^^^^^^^^^^^^^^^
-      // Error: this pattern contains a an unreachable subpattern, namely:
-      //    {x: A, y: A}
-  }
+let foo (x: Foo) (y: Foo): Int =
+  {
+    \(x = #a | #b, y = #a) -> 1
+    \(x = #a | #b, y = #a | #b) -> 1
+  //  ^^^^^^^^^^^^^^^^^^^^^^^^
+  // Error: this pattern contains a an unreachable subpattern, namely:
+  //    {x: A, y: A}
+  } (x, y)
 
 ============
 EXIT CODE
@@ -33,12 +30,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_2.kk:9:10
+  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_2.kk:6:6
   │
-9 │     case {x: A | B, y: A | B}: true
-  │          ^^^^^^^^^^^^^^^^^^^^ Partially unreachable case
+6 │     \(x = #a | #b, y = #a | #b) -> 1
+  │      ^^^^^^^^^^^^^^^^^^^^^^^^^^ Partially unreachable case
   │
   = This case is partially unreachable because it contains a redundant pattern that is already handled by previous cases.
     Namely:
 
-        {x: A, y: A}
+        (x = #a, y = #a)
