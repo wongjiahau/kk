@@ -5,21 +5,20 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// Test double code snippet in documentation
-/**
- *
- *
- * This function takes anything string and output 123.
- * For example:
- * ```
- * "Hey".foo().print()
- * ```
- * Second example:
- * ```
- * null.foo().print() // Compile error: expected `String` but got `Null`
- * ```
- */
-let foo = (s: String): Integer => 123
+let foo (s : String) : Int
+  """
+  This function takes anything string and output 123.
+  For example:
+  ```
+  "Hey" foo print
+  ```
+
+  Second example:
+  ```
+  123 foo print // Compile error: expected `String` but got `Int`
+  ```
+  """
+  = 123
 
 ============
 EXIT CODE
@@ -35,13 +34,13 @@ STDOUT
 STDERR
 ============
 error:
-   ┌─ tests/compiler/typecheck/documentation_code_snippet_2.kk:12:4
+   ┌─ tests/compiler/typecheck/documentation_code_snippet_2.kk:11:3
    │
-12 │  * null.foo().print() // Compile error: expected `String` but got `Null`
-   │    ^^^^ Type mismatch
+11 │   123 foo print // Compile error: expected `String` but got `Int`
+   │   ^^^ Type mismatch
    │
    = +---------------+-------------+
      | EXPECTED TYPE | ACTUAL TYPE |
      +---------------+-------------+
-     | - String      | + Null      |
+     | - String      | + Int       |
      +---------------+-------------+

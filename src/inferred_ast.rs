@@ -1,7 +1,7 @@
 use crate::{
     module::{Access, ModuleUid, SymbolUid},
     non_empty::NonEmpty,
-    raw_ast::{InfinitePatternKind, Position, Token},
+    raw_ast::{InfinitePatternKind, Position, StringLiteral, Token},
     typ::Type,
     unify::InferExpressionResult,
 };
@@ -52,9 +52,7 @@ pub enum InferredExpression {
     Integer {
         representation: String,
     },
-    String {
-        representation: Token,
-    },
+    String(StringLiteral),
     InterpolatedString {
         sections: Vec<InferredInterpolatedStringSection>,
     },

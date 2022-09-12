@@ -214,14 +214,14 @@ impl<'a> Parser<'a> {
 
         let name = self.eat_token(TokenType::Identifier, context)?;
 
-        let doc_string = self.try_eat_doc_string()?;
-
         parameters.extend(self.try_parse_parameters()?);
 
         self.eat_token(TokenType::Colon, context)?;
         let type_annotation = self.parse_type_annotation(context)?;
 
         let type_constraints = self.try_parse_type_constraints()?;
+
+        let doc_string = self.try_eat_string_literal()?;
 
         self.eat_token(TokenType::Equals, context)?;
         let expression = self.parse_low_precedence_expression()?;
@@ -416,11 +416,15 @@ impl<'a> Parser<'a> {
             None => Err(Parser::unexpected_eof(context)),
             Some(token) => match token.token_type {
                 TokenType::KeywordImport => {
-                    let url = self.eat_token(TokenType::String, context)?;
-                    Ok(ModuleValue::Import {
-                        keyword_import: token,
-                        url,
-                    })
+                    let url = self.try_eat_string_literal()?;
+                    if let Some(url) = url {
+                        Ok(ModuleValue::Import {
+                            keyword_import: token,
+                            url,
+                        })
+                    } else {
+                        panic!("parse error")
+                    }
                 }
                 _ => Err(Parser::invalid_token(token, context)),
             },
@@ -904,15 +908,15 @@ impl<'a> Parser<'a> {
         let context = Some(ParseContext::Expression);
         let expression = if let Some(token) = self.next_meaningful_token()? {
             match token.token_type {
-                TokenType::String => Ok(Expression::String(token.clone())),
+                TokenType::String(string_literal) => Ok(Expression::String(string_literal)),
                 TokenType::InterpolatedString(InterpolatedString {
-                    start_quote,
+                    start_quotes,
                     sections,
-                    end_quote,
+                    end_quotes,
                 }) => Ok(Expression::InterpolatedString {
-                    start_quote,
+                    start_quotes,
                     sections,
-                    end_quote,
+                    end_quotes,
                 }),
                 TokenType::Character => Ok(Expression::Character(token.clone())),
                 TokenType::LeftSquareBracket => self.parse_array(token.clone()),
@@ -1160,7 +1164,7 @@ impl<'a> Parser<'a> {
                     token,
                     kind: InfinitePatternKind::Integer,
                 }),
-                TokenType::String => Ok(DestructurePattern::Infinite {
+                TokenType::String { .. } => Ok(DestructurePattern::Infinite {
                     token,
                     kind: InfinitePatternKind::String,
                 }),
@@ -1499,55 +1503,17 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn try_eat_doc_string(&mut self) -> Result<Option<DocString>, ParseError> {
-        let doc_string = match self.peek_next_meaningful_token()? {
+    fn try_eat_string_literal(&mut self) -> Result<Option<StringLiteral>, ParseError> {
+        Ok(match self.peek_next_meaningful_token()? {
             None => None,
             Some(token) => match token.token_type {
-                TokenType::InterpolatedString(interpolated_string) => {
+                TokenType::String(string_literal) => {
                     self.next_meaningful_token()?;
-                    Some(DocString::InterpolatedString(interpolated_string))
-                }
-                TokenType::String => {
-                    self.next_meaningful_token()?;
-                    Some(DocString::String(token))
+                    Some(string_literal)
                 }
                 _ => None,
             },
-        };
-        match doc_string {
-            Some(doc_string) => match doc_string {
-                DocString::InterpolatedString(s) => todo!(),
-                DocString::String(s) => {
-                    let mut parsing_code_block = false;
-
-                    let codes = pulldown_cmark::Parser::new(s.representation.as_str())
-                        .into_offset_iter()
-                        .filter_map(|(event, range)| match event {
-                            pulldown_cmark::Event::Text(text) => {
-                                if parsing_code_block {
-                                    Some((text.to_string(), range))
-                                } else {
-                                    None
-                                }
-                            }
-                            pulldown_cmark::Event::Code(code) => Some((code.to_string(), range)),
-                            pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(code)) => {
-                                parsing_code_block = true;
-                                None
-                            }
-                            pulldown_cmark::Event::End(pulldown_cmark::Tag::CodeBlock(code)) => {
-                                parsing_code_block = false;
-                                None
-                            }
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>();
-                    println!("codes= {:#?}", codes);
-                    Ok(Some(DocString::String(s)))
-                }
-            },
-            None => Ok(None),
-        }
+        })
     }
 }
 
@@ -1562,4 +1528,40 @@ fn is_token_meaningless(token: &Token) -> bool {
 /// Refer https://stackoverflow.com/a/32554326/6587634
 fn variant_eq(a: &TokenType, b: &TokenType) -> bool {
     std::mem::discriminant(a) == std::mem::discriminant(b)
+}
+
+impl StringLiteral {
+    pub fn extract_codes(&self) -> Result<Vec<Expression>, ParseError> {
+        let mut parsing_code_block = false;
+
+        pulldown_cmark::Parser::new(self.content.as_str())
+            .into_offset_iter()
+            .filter_map(|(event, range)| match event {
+                pulldown_cmark::Event::Text(text) => {
+                    if parsing_code_block {
+                        Some((text.to_string(), range))
+                    } else {
+                        None
+                    }
+                }
+                pulldown_cmark::Event::Code(code) => Some((code.to_string(), range)),
+                pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(code)) => {
+                    parsing_code_block = true;
+                    None
+                }
+                pulldown_cmark::Event::End(pulldown_cmark::Tag::CodeBlock(code)) => {
+                    parsing_code_block = false;
+                    None
+                }
+                _ => None,
+            })
+            .map(|(raw_code, range)| {
+                Parser::new(&mut Tokenizer::with_offset(
+                    raw_code,
+                    self.start_quotes.last().index + range.start + 1,
+                ))
+                .parse_low_precedence_expression()
+            })
+            .collect::<Result<Vec<_>, _>>()
+    }
 }

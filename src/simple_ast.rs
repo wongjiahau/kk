@@ -146,9 +146,6 @@ impl From<inferred_ast::InferredExpression> for Expression {
             inferred_ast::InferredExpression::Integer { representation } => {
                 Expression::Number(Number::Int64(representation.parse().unwrap()))
             }
-            inferred_ast::InferredExpression::String { representation } => {
-                Expression::String(representation)
-            }
             inferred_ast::InferredExpression::InterpolatedString { sections } => todo!(),
             inferred_ast::InferredExpression::Character { representation } => todo!(),
             inferred_ast::InferredExpression::Variable(_) => todo!(),
@@ -173,6 +170,7 @@ impl From<inferred_ast::InferredExpression> for Expression {
                 return_value,
             } => todo!(),
             inferred_ast::InferredExpression::Unit => todo!(),
+            inferred_ast::InferredExpression::String(_) => todo!(),
         }
     }
 }

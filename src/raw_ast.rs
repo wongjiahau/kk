@@ -45,7 +45,10 @@ pub struct ModuleDestructurePatternPair {
 
 #[derive(Debug, Clone)]
 pub enum ModuleValue {
-    Import { keyword_import: Token, url: Token },
+    Import {
+        keyword_import: Token,
+        url: StringLiteral,
+    },
     Name(Token),
 }
 
@@ -83,15 +86,9 @@ pub struct LetStatement {
     pub access: Access,
     pub keyword_let: Token,
     pub name: Token,
-    pub doc_string: Option<DocString>,
+    pub doc_string: Option<StringLiteral>,
     pub type_annotation: TypeAnnotation,
     pub expression: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub enum DocString {
-    InterpolatedString(InterpolatedString),
-    String(Token),
 }
 
 #[derive(Debug, Clone)]
@@ -310,11 +307,11 @@ pub enum Expression {
     },
     Float(Token),
     Integer(Token),
-    String(Token),
+    String(StringLiteral),
     InterpolatedString {
-        start_quote: Box<Character>,
+        start_quotes: NonEmpty<Character>,
         sections: NonEmpty<InterpolatedStringSection>,
-        end_quote: Box<Character>,
+        end_quotes: NonEmpty<Character>,
     },
     Character(Token),
     Identifier(Token),
@@ -625,7 +622,7 @@ pub enum TokenType {
     Operator,
     /// Used for construction of tagged union
     Tag,
-    String,
+    String(StringLiteral),
     InterpolatedString(InterpolatedString),
     Character,
     Integer,
@@ -642,10 +639,17 @@ pub enum TokenType {
 }
 
 #[derive(Debug, Clone)]
+pub struct StringLiteral {
+    pub start_quotes: NonEmpty<Character>,
+    pub content: String,
+    pub end_quotes: NonEmpty<Character>,
+}
+
+#[derive(Debug, Clone)]
 pub struct InterpolatedString {
-    pub start_quote: Box<Character>,
+    pub start_quotes: NonEmpty<Character>,
     pub sections: NonEmpty<InterpolatedStringSection>,
-    pub end_quote: Box<Character>,
+    pub end_quotes: NonEmpty<Character>,
 }
 
 #[derive(Debug, Clone)]
@@ -687,8 +691,17 @@ impl ModuleValue {
             ModuleValue::Import {
                 keyword_import,
                 url,
-            } => keyword_import.position.join(url.position),
+            } => keyword_import.position.join(url.position()),
             ModuleValue::Name(token) => token.position,
         }
+    }
+}
+
+impl StringLiteral {
+    pub fn position(&self) -> Position {
+        self.start_quotes
+            .first()
+            .position()
+            .join(self.end_quotes.last().position())
     }
 }

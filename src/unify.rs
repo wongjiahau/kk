@@ -42,12 +42,21 @@ pub fn unify_statements(
     is_entry_point: bool,
 ) -> Result<UnifyProgramResult, CompileError> {
     // 1. Partition statements based on their types
-    let (module_statments, type_statements, enum_statements, let_statements, top_level_expressions) = {
+    let (
+        module_statments,
+        type_statements,
+        enum_statements,
+        let_statements,
+        top_level_expressions,
+        doc_string_codes,
+    ) = {
         let mut module_statements = Vec::new();
         let mut type_statements = Vec::new();
         let mut enum_statements = Vec::new();
         let mut let_statements = Vec::new();
         let mut top_level_expressions = Vec::new();
+        let mut doc_string_codes = Vec::new();
+
         for statement in statements {
             match statement {
                 Statement::Type(type_statement) => {
@@ -57,6 +66,17 @@ pub fn unify_statements(
                     enum_statements.push(enum_statement);
                 }
                 Statement::Let(let_statement) => {
+                    match &let_statement.doc_string {
+                        Some(doc_string) => {
+                            doc_string_codes.extend(doc_string.extract_codes().map_err(
+                                |parse_error| CompileError {
+                                    kind: CompileErrorKind::ParseError(Box::new(parse_error)),
+                                    module_meta: module_meta.clone(),
+                                },
+                            )?)
+                        }
+                        None => {}
+                    }
                     let_statements.push(let_statement);
                 }
                 Statement::Entry(entry_statement) => {
@@ -73,6 +93,7 @@ pub fn unify_statements(
             enum_statements,
             let_statements,
             top_level_expressions,
+            doc_string_codes,
         )
     };
 
@@ -191,7 +212,7 @@ pub fn unify_statements(
         .collect::<Result<Vec<InferredStatement>, UnifyError>>()
         .map_err(|e| e.into_compile_error(module.meta.clone()))?;
 
-    // 6. Lastly we will infer expression statements
+    // 6. Then we will infer expression statements
     let typechecked_top_level_expressions_statements = top_level_expressions
         .into_iter()
         .map(|expression| {
@@ -199,6 +220,13 @@ pub fn unify_statements(
             Ok(InferredStatement::Expression(expression.expression))
         })
         .collect::<Result<Vec<InferredStatement>, UnifyError>>()
+        .map_err(|error| error.into_compile_error(module.meta.clone()))?;
+
+    // 7. Lastly, we typecheck the docstring codes
+    doc_string_codes
+        .into_iter()
+        .map(|expression| infer_expression_type(&mut module, None, &expression))
+        .collect::<Result<Vec<_>, UnifyError>>()
         .map_err(|error| error.into_compile_error(module.meta.clone()))?;
     Ok(UnifyProgramResult {
         entrypoint: InferredModule {
@@ -475,7 +503,7 @@ pub fn infer_module_statement(
             keyword_import,
             url,
         } => {
-            let import_path = url.representation.trim_matches('"');
+            let import_path = url.content.trim_matches('"');
             let path = RelativePath::new(&importer_path)
                 .parent()
                 .expect("Should always have parent")
@@ -489,7 +517,7 @@ pub fn infer_module_statement(
                 .any(|relation| path_string == relation.importer_path)
             {
                 return Err(UnifyError {
-                    position: url.position,
+                    position: url.position(),
                     kind: UnifyErrorKind::CyclicDependency {
                         import_relations: {
                             let mut relations = module.meta.import_relations.clone();
@@ -547,7 +575,7 @@ pub fn infer_module_statement(
                         }
                         Err(error) => {
                             return Err(UnifyError {
-                                position: url.position,
+                                position: url.position(),
                                 kind: UnifyErrorKind::ErrorneousImportPath {
                                     extra_information: format!("{}", error),
                                 },
@@ -1006,8 +1034,7 @@ impl Positionable for Expression {
             } => left_square_bracket
                 .position
                 .join(right_square_bracket.position),
-            Expression::String(token)
-            | Expression::Character(token)
+            Expression::Character(token)
             | Expression::Float(token)
             | Expression::Integer(token)
             | Expression::Identifier(token) => token.position,
@@ -1016,11 +1043,16 @@ impl Positionable for Expression {
                 left_parenthesis,
                 right_parenthesis,
             } => left_parenthesis.position.join(right_parenthesis.position),
+
+            Expression::String(string_literal) => string_literal.position(),
             Expression::InterpolatedString {
-                start_quote,
-                end_quote,
+                start_quotes,
+                end_quotes,
                 ..
-            } => start_quote.position().join(end_quote.position()),
+            } => start_quotes
+                .first()
+                .position()
+                .join(end_quotes.last().position()),
             Expression::EnumConstructor { name, payload, .. } => match payload {
                 None => name.position,
                 Some(payload) => name.position.join(payload.position()),
@@ -1757,11 +1789,9 @@ fn infer_expression_type_(
             expression: InferredExpression::Unit,
             type_value: Type::Unit,
         }),
-        Expression::String(token) => Ok(InferExpressionResult {
+        Expression::String(string_literal) => Ok(InferExpressionResult {
             type_value: Type::String,
-            expression: InferredExpression::String {
-                representation: token.clone(),
-            },
+            expression: InferredExpression::String(string_literal.clone()),
         }),
         Expression::InterpolatedString { sections, .. } => {
             let typechecked_sections = sections
@@ -2542,10 +2572,43 @@ impl Expression {
                 )
             }
             Expression::InterpolatedString {
-                start_quote,
+                start_quotes: start_quote,
                 sections,
-                end_quote,
-            } => todo!(),
+                end_quotes: end_quote,
+            } => {
+                let NonEmpty { head, tail } = sections.map(|section| match section {
+                    InterpolatedStringSection::String(string) => {
+                        (vec![], InterpolatedStringSection::String(string))
+                    }
+                    InterpolatedStringSection::Expression(expression) => {
+                        let (bangs, expression) = expression.collect_cps_bangs(module);
+                        (
+                            bangs,
+                            InterpolatedStringSection::Expression(Box::new(expression)),
+                        )
+                    }
+                });
+                let (bangs, sections): (
+                    Vec<Vec<CollectCpsBangResult>>,
+                    Vec<InterpolatedStringSection>,
+                ) = tail.into_iter().unzip();
+                let bangs = head
+                    .0
+                    .into_iter()
+                    .chain(bangs.into_iter().flatten())
+                    .collect();
+                (
+                    bangs,
+                    Expression::InterpolatedString {
+                        start_quotes: start_quote,
+                        sections: NonEmpty {
+                            head: head.1,
+                            tail: sections,
+                        },
+                        end_quotes: end_quote,
+                    },
+                )
+            }
             Expression::EnumConstructor { name, payload } => match payload {
                 Some(payload) => {
                     let (bangs, payload) = payload.collect_cps_bangs(module);

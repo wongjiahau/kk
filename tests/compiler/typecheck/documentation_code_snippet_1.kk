@@ -6,5 +6,4 @@ let foo
   () foo print
   ```
   "
-
   (s: String): Int = 123

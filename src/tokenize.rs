@@ -70,6 +70,10 @@ pub struct Tokenizer {
 
 impl Tokenizer {
     pub fn new(input: String) -> Tokenizer {
+        Tokenizer::with_offset(input, 0)
+    }
+
+    pub fn with_offset(input: String, offset: usize) -> Tokenizer {
         let characters: Vec<Character> = input
             .split('\n')
             .enumerate()
@@ -85,7 +89,7 @@ impl Tokenizer {
             .enumerate()
             .map(
                 |(index, (character, line_number, column_number))| Character {
-                    index,
+                    index: index + offset,
                     value: character,
                     line_number,
                     column_number,
@@ -240,29 +244,83 @@ impl Tokenizer {
                 }
                 // String
                 '"' => {
-                    let start_quote = character;
+                    let start_quotes = NonEmpty {
+                        head: character,
+                        tail: self
+                            .characters_iterator
+                            .by_ref()
+                            .peeking_take_while(|character| character.value == '"')
+                            .collect::<Vec<Character>>(),
+                    };
+
+                    match &start_quotes.tail.split_first() {
+                        Some((end_quote, [])) => {
+                            // Then this is an empty string
+                            return Ok(Some(Token {
+                                token_type: TokenType::String(StringLiteral {
+                                    start_quotes: start_quotes.clone(),
+                                    content: "".to_string(),
+                                    end_quotes: NonEmpty {
+                                        head: end_quote.clone().clone(),
+                                        tail: vec![],
+                                    },
+                                }),
+                                representation: "".to_string(),
+                                position: make_position(start_quotes.head, Some(&end_quote)),
+                            }));
+                        }
+                        _ => {}
+                    }
+
+                    let allow_escape = start_quotes.len() > 1;
+
                     enum StartOf {
                         Nothing,
                         Escape,
                         StringInterpolation,
                     }
                     let mut interpolated_string_sections: Vec<InterpolatedStringSection> = vec![];
-                    let (end_quote, characters) = {
+                    let (end_quotes, characters): (NonEmpty<Character>, Vec<Character>) = {
                         let mut characters: Vec<Character> = vec![];
                         let mut start_of = StartOf::Nothing;
                         let end_quote = loop {
                             if let Some(character) = self.characters_iterator.next() {
-                                let (character, next_start_of) = match &character.value {
+                                let (next_characters, next_start_of) = match &character.value {
                                     '\\' => (
-                                        Some(character),
-                                        match start_of {
-                                            StartOf::Escape => StartOf::Nothing,
-                                            _ => StartOf::Escape,
+                                        Some(vec![character]),
+                                        if allow_escape {
+                                            match start_of {
+                                                StartOf::Escape => StartOf::Nothing,
+                                                _ => StartOf::Escape,
+                                            }
+                                        } else {
+                                            StartOf::Nothing
                                         },
                                     ),
                                     '"' => match start_of {
-                                        StartOf::Escape => (Some(character), StartOf::Nothing),
-                                        _ => break Ok(character),
+                                        StartOf::Escape => {
+                                            (Some(vec![character]), StartOf::Nothing)
+                                        }
+                                        _ => {
+                                            let potential_end_quotes = NonEmpty {
+                                                head: character,
+                                                tail: self
+                                                    .characters_iterator
+                                                    .by_ref()
+                                                    .peeking_take_while(|character| {
+                                                        character.value == '"'
+                                                    })
+                                                    .collect::<Vec<Character>>(),
+                                            };
+                                            if potential_end_quotes.len() == start_quotes.len() {
+                                                break Ok(potential_end_quotes);
+                                            } else {
+                                                (
+                                                    Some(potential_end_quotes.into_vector()),
+                                                    StartOf::Nothing,
+                                                )
+                                            }
+                                        }
                                     },
                                     '$' => (None, StartOf::StringInterpolation),
                                     '{' => {
@@ -282,19 +340,22 @@ impl Tokenizer {
                                             parser.eat_token(TokenType::RightCurlyBracket, None)?;
                                             (None, StartOf::Nothing)
                                         } else {
-                                            (Some(character), StartOf::Nothing)
+                                            (Some(vec![character]), StartOf::Nothing)
                                         }
                                     }
-                                    _ => (Some(character), StartOf::Nothing),
+                                    _ => (Some(vec![character]), StartOf::Nothing),
                                 };
 
-                                if let Some(character) = character {
-                                    characters.push(character.clone());
+                                if let Some(next_characters) = next_characters {
+                                    characters.extend(next_characters.clone());
                                 }
                                 start_of = next_start_of;
                             } else {
                                 break Err(TokenizeError::UnterminatedStringLiteral {
-                                    position: make_position(start_quote.clone(), characters.last()),
+                                    position: make_position(
+                                        start_quotes.head.clone(),
+                                        characters.last(),
+                                    ),
                                 }
                                 .into_parse_error());
                             }
@@ -313,21 +374,33 @@ impl Tokenizer {
                             };
                             Ok(Some(Token {
                                 token_type: TokenType::InterpolatedString(InterpolatedString {
-                                    start_quote: Box::new(start_quote.clone()),
+                                    start_quotes: start_quotes.clone(),
                                     sections: NonEmpty {
                                         head: head.clone(),
                                         tail: interpolated_string_sections,
                                     },
-                                    end_quote: Box::new(end_quote.clone()),
+                                    end_quotes: end_quotes.clone(),
                                 }),
                                 representation: "".to_string(),
-                                position: make_position(start_quote, Some(&end_quote)),
+                                position: make_position(
+                                    start_quotes.head,
+                                    Some(&end_quotes.last()),
+                                ),
                             }))
                         }
+
+                        // If there's no interpolated sections, then it's a simple string
                         None => Ok(Some(Token {
-                            token_type: TokenType::String,
+                            token_type: TokenType::String(StringLiteral {
+                                start_quotes: start_quotes.clone(),
+                                content: stringify(characters.clone()),
+                                end_quotes: end_quotes.clone(),
+                            }),
                             representation: stringify(characters),
-                            position: make_position(start_quote, Some(&end_quote)),
+                            position: make_position(
+                                start_quotes.head.clone(),
+                                Some(&end_quotes.last()),
+                            ),
                         })),
                     }
                 }

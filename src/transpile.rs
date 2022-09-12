@@ -473,8 +473,8 @@ fn transpile_identifier(identifier: Identifier) -> javascript::Identifier {
 
 pub fn transpile_expression(expression: InferredExpression) -> javascript::Expression {
     match expression {
-        InferredExpression::String { representation } => {
-            javascript::Expression::String(representation.representation)
+        InferredExpression::String(string_literal) => {
+            javascript::Expression::String(string_literal.content)
         }
         InferredExpression::Character { representation } => {
             javascript::Expression::String(representation)
