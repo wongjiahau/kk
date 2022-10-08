@@ -1,5 +1,5 @@
 mod inferred_ast;
-pub mod raw_ast;
+mod raw_ast;
 mod simple_ast;
 
 mod module;
@@ -16,6 +16,8 @@ mod tokenize;
 mod stringify_error;
 
 mod cli;
+mod partially_qualified_ast;
+mod qualified_ast;
 mod solved_ast;
 mod typ;
 use cli::*;

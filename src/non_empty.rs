@@ -98,4 +98,8 @@ impl<T> NonEmpty<T> {
     pub fn into_vector(self) -> Vec<T> {
         iter::once(self.head).chain(self.tail).collect()
     }
+
+    pub fn push(&mut self, value: T) {
+        self.tail.push(value)
+    }
 }

@@ -329,7 +329,7 @@ pub fn transpile_program(unify_project_result: UnifyProgramResult) -> String {
 }
 
 pub fn transpile_module(module: InferredModule) -> javascript::Statement {
-    let module_uid = module.module.meta.uid.string_value();
+    let module_uid = module.module.meta.name.to_string();
     let statements = transpile_statements(module.statements.clone());
     let exported_symbols = module
         .statements

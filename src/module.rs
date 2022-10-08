@@ -1,6 +1,7 @@
 use crate::non_empty::NonEmpty;
 use crate::stringify_error::stringify_type;
-use crate::unify::unify_type;
+use crate::tokenize::{Position, Token};
+use crate::unify::{unify_type, ImportedInferredModules, ResolvedName};
 use crate::unify::{UnifyError, UnifyErrorKind};
 use crate::{raw_ast::*, typ::*};
 use std::cell::Cell;
@@ -8,21 +9,18 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct ImportRelation {
-    pub importer_path: String,
-    pub importee_path: String,
+    pub importer_name: ResolvedName,
+    pub importee_name: ResolvedName,
 }
 
 /// Represents the meta data of this module.
 #[derive(Debug, Clone)]
 pub struct ModuleMeta {
     /// A unique identifier that can be used to uniquely identify this module.
-    pub uid: ModuleUid,
+    pub name: ResolvedName,
 
     /// Represents the literal code of this module.
-    pub code: String,
-
-    /// This is used for checking circular references
-    pub import_relations: Vec<ImportRelation>,
+    pub source_code: String,
 }
 
 pub type Substitution = HashMap<String, SubstitutionItem>;
@@ -32,8 +30,17 @@ pub struct GetValueSymbolResult {
     pub type_value: Type,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopeName(usize);
+
+impl ScopeName {
+    pub fn topmost() -> ScopeName {
+        ScopeName(0)
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct Scope {
+pub struct ScopeManager {
     /// Used for generating the next scope name
     next_scope_name: usize,
 
@@ -49,13 +56,13 @@ pub struct Scope {
 
 #[derive(Debug, Clone)]
 pub struct ScopePair {
-    child: usize,
-    parent: usize,
+    child: ScopeName,
+    parent: ScopeName,
 }
 
-impl Scope {
-    pub fn new() -> Scope {
-        Scope {
+impl ScopeManager {
+    pub fn new() -> ScopeManager {
+        ScopeManager {
             next_scope_name: 0,
             current_scope_name: 0,
             scope_graph: Vec::new(),
@@ -80,11 +87,11 @@ impl Scope {
         }
     }
 
-    pub fn get_current_scope_name(&self) -> usize {
-        self.current_scope_name
+    pub fn get_current_scope_name(&self) -> ScopeName {
+        ScopeName(self.current_scope_name)
     }
 
-    pub fn get_children_scope_names(&self, parent_scope_name: usize) -> Vec<usize> {
+    pub fn get_children_scope_names(&self, parent_scope_name: usize) -> Vec<ScopeName> {
         self.scope_graph
             .iter()
             .filter_map(|ScopePair { child, parent }| {
@@ -94,10 +101,10 @@ impl Scope {
                     None
                 }
             })
-            .collect::<Vec<usize>>()
+            .collect::<Vec<ScopeName>>()
     }
 
-    pub fn get_parent_scope_name(&self, child_scope_name: usize) -> Option<usize> {
+    pub fn get_parent_scope_name(&self, child_scope_name: ScopeName) -> Option<ScopeName> {
         match self
             .scope_graph
             .iter()
@@ -108,7 +115,7 @@ impl Scope {
                     None
                 }
             })
-            .collect::<Vec<usize>>()
+            .collect::<Vec<ScopeName>>()
             .first()
         {
             Some(parent_scope_name) => Some(*parent_scope_name),
@@ -144,13 +151,13 @@ pub struct SymbolUid {
     pub index: usize,
 
     /// This is needed for uniquely identify enum type across different modules
-    pub module_uid: ModuleUid,
+    pub module_name: ResolvedName,
 }
 
 /// This represents the meta data of a symbol
 #[derive(Debug, Clone)]
 pub struct SymbolMeta {
-    pub name: Token,
+    pub name: ResolvedName,
     pub access: Access,
 }
 
@@ -191,7 +198,7 @@ pub struct Module {
     current_uid: Cell<usize>,
 
     /// This represents the current scope. Needed for implementing variable shadowing.
-    scope: Scope,
+    scope: ScopeManager,
 
     /// List of symbols in this module
     symbol_entries: Vec<SymbolEntry>,
@@ -202,6 +209,9 @@ pub struct Module {
 
     /// Represents the metadata of this module
     pub meta: ModuleMeta,
+
+    /// TODO: store as reference to avoid unnecessary cloning
+    pub imported_modules: ImportedInferredModules,
 }
 
 #[derive(Debug, Clone)]
@@ -212,14 +222,15 @@ enum SubstitutionItem {
 }
 
 impl Module {
-    pub fn new(module_meta: ModuleMeta) -> Module {
+    pub fn new(module_meta: ModuleMeta, imported_modules: ImportedInferredModules) -> Module {
         let mut result = Module {
             symbol_entries: Vec::new(),
             type_variable_substitutions: (HashMap::new()),
             type_variable_index: Cell::new(0),
-            scope: Scope::new(),
+            scope: ScopeManager::new(),
             current_uid: Cell::new(0),
             meta: module_meta,
+            imported_modules,
         };
 
         let built_in_symbols = built_in_symbols();
@@ -236,11 +247,11 @@ impl Module {
         result
     }
 
-    pub fn uid(&self) -> ModuleUid {
-        self.meta.uid.clone()
+    pub fn name(&self) -> ResolvedName {
+        self.meta.name.clone()
     }
 
-    pub fn current_scope_name(&self) -> usize {
+    pub fn current_scope_name(&self) -> ScopeName {
         self.scope.get_current_scope_name()
     }
 
@@ -283,7 +294,7 @@ impl Module {
         self.current_uid.set(result + 1);
         SymbolUid {
             index: result,
-            module_uid: self.uid(),
+            module_name: self.meta.name.clone(),
         }
     }
 
@@ -572,14 +583,14 @@ impl Module {
                         && entry.symbol.meta.name.representation == name
                         && matches!(entry.symbol.kind, SymbolKind::Type { .. })
                 }) {
-                    return Err(UnifyError {
-                        position: new_symbol.meta.name.position,
-                        kind: UnifyErrorKind::DuplicatedIdentifier {
+                    return Err(self.unify_error(
+                        &new_symbol.meta.name.position,
+                        UnifyErrorKind::DuplicatedIdentifier {
                             name: conflicting_entry.symbol.meta.name.representation.clone(),
                             first_declared_at: conflicting_entry.symbol.meta.name.position,
                             then_declared_at: new_symbol.meta.name.position,
                         },
-                    });
+                    ));
                 }
             }
             SymbolKind::EnumConstructor(new_enum_constructor_symbol) => {
@@ -599,14 +610,14 @@ impl Module {
                             _ => false,
                         })
                 {
-                    return Err(UnifyError {
-                        position: new_symbol.meta.name.position,
-                        kind: UnifyErrorKind::DuplicatedIdentifier {
+                    return Err(self.unify_error(
+                        &new_symbol.meta.name.position,
+                        UnifyErrorKind::DuplicatedIdentifier {
                             name: conflicting_entry.symbol.meta.name.representation.clone(),
                             first_declared_at: conflicting_entry.symbol.meta.name.position,
                             then_declared_at: new_symbol.meta.name.position,
                         },
-                    });
+                    ));
                 }
             }
             SymbolKind::Value(new_value_symbol) => {
@@ -616,14 +627,14 @@ impl Module {
                         if entry.scope_name == scope_name
                             && entry.symbol.meta.name.representation == name
                         {
-                            let error = Err(UnifyError {
-                                position: new_symbol.meta.name.position,
-                                kind: UnifyErrorKind::DuplicatedIdentifier {
+                            let error = Err(self.unify_error(
+                                &new_symbol.meta.name.position,
+                                UnifyErrorKind::DuplicatedIdentifier {
                                     name: entry.symbol.meta.name.representation.clone(),
                                     first_declared_at: entry.symbol.meta.name.position,
                                     then_declared_at: new_symbol.meta.name.position,
                                 },
-                            });
+                            ));
                             match &entry.symbol.kind {
                                 SymbolKind::EnumConstructor(constructor)
                                     if constructor.constructor_name
@@ -637,10 +648,10 @@ impl Module {
                                         &new_value_symbol.type_value,
                                         true,
                                     ) {
-                                        Err(UnifyError {
-                                            position: new_symbol.meta.name.position,
-                                            kind: UnifyErrorKind::CannotBeOverloaded,
-                                        })
+                                        Err(self.unify_error(
+                                            &new_symbol.meta.name.position,
+                                            UnifyErrorKind::CannotBeOverloaded,
+                                        ))
                                     } else {
                                         Ok(())
                                     }
@@ -674,7 +685,7 @@ impl Module {
             .collect()
     }
 
-    pub fn get_all_matching_symbols(&self, symbol_name: &Token) -> Vec<SymbolEntry> {
+    pub fn get_all_matching_symbols(&self, symbol_name: &RawIdentifier) -> Vec<SymbolEntry> {
         self.symbol_entries
             .iter()
             .flat_map(|entry| {
@@ -805,12 +816,12 @@ impl Module {
         match value_symbols_with_matching_name.split_first() {
             // If no symbols with matching name found, look in parent scope
             None => match self.scope.get_parent_scope_name(scope_name) {
-                None => Err(UnifyError {
-                    position: symbol_name.position,
-                    kind: UnifyErrorKind::UnknownValueSymbol {
+                None => Err(self.unify_error(
+                    &symbol_name.position,
+                    UnifyErrorKind::UnknownValueSymbol {
                         symbol_name: symbol_name.representation.clone(),
                     },
-                }),
+                )),
                 Some(scope_name) => self.get_value_symbol(symbol_name, expected_type, scope_name),
             },
 
@@ -823,12 +834,12 @@ impl Module {
 
             // Otherwise, disambiguate based on `expected_type`
             Some(_) => match expected_type {
-                None => Err(UnifyError {
-                    position: symbol_name.position,
-                    kind: UnifyErrorKind::AmbiguousSymbol {
+                None => Err(self.unify_error(
+                    &symbol_name.position,
+                    UnifyErrorKind::AmbiguousSymbol {
                         matching_value_symbols: value_symbols_with_matching_name,
                     },
-                }),
+                )),
                 Some(expected_type) => {
                     let value_symbols_with_matching_type = value_symbols_with_matching_name
                         .iter()
@@ -838,22 +849,22 @@ impl Module {
                         .collect::<Vec<_>>();
 
                     match value_symbols_with_matching_type.split_first() {
-                        None => Err(UnifyError {
-                            position: symbol_name.position,
-                            kind: UnifyErrorKind::NoMatchingValueSymbol {
+                        None => Err(self.unify_error(
+                            &symbol_name.position,
+                            UnifyErrorKind::NoMatchingValueSymbol {
                                 possible_value_symbols: value_symbols_with_matching_name,
                             },
-                        }),
+                        )),
                         Some((head, [])) => Ok(GetValueSymbolResult {
                             symbol_uid: head.0.clone(),
                             type_value: head.1.type_value.clone(),
                         }),
-                        Some(_) => Err(UnifyError {
-                            position: symbol_name.position,
-                            kind: UnifyErrorKind::AmbiguousSymbol {
+                        Some(_) => Err(self.unify_error(
+                            &symbol_name.position,
+                            UnifyErrorKind::AmbiguousSymbol {
                                 matching_value_symbols: value_symbols_with_matching_name,
                             },
-                        }),
+                        )),
                     }
                 }
             },
@@ -878,7 +889,7 @@ impl Module {
     pub fn get_constructor_symbol(
         &self,
         expected_enum_uid: Option<SymbolUid>,
-        constructor_name: &Token,
+        constructor_name: &ResolvedName,
     ) -> Result<EnumConstructorSymbol, UnifyError> {
         let matching_constructors = self
             .symbol_entries
@@ -894,19 +905,19 @@ impl Module {
             .collect::<Vec<EnumConstructorSymbol>>();
 
         match matching_constructors.split_first() {
-            None => Err(UnifyError {
-                position: constructor_name.position,
-                kind: UnifyErrorKind::UnknownEnumConstructor,
-            }),
+            None => Err(self.unify_error(
+                &constructor_name.position,
+                UnifyErrorKind::UnknownEnumConstructor,
+            )),
             Some((constructor, tail)) => {
                 if tail.is_empty() {
                     Ok(EnumConstructorSymbol::clone(constructor))
                 } else {
                     // If more than one matching constructors found
                     // Need to disambiguate using expected_enum_name
-                    let error = Err(UnifyError {
-                        position: constructor_name.position,
-                        kind: UnifyErrorKind::AmbiguousConstructorUsage {
+                    let error = Err(self.unify_error(
+                        &constructor_name.position,
+                        UnifyErrorKind::AmbiguousConstructorUsage {
                             constructor_name: constructor_name.representation.clone(),
                             possible_enum_names: NonEmpty {
                                 head: constructor.enum_name.clone(),
@@ -916,7 +927,7 @@ impl Module {
                                     .collect(),
                             },
                         },
-                    });
+                    ));
                     match expected_enum_uid {
                         None => error,
                         Some(expected_enum_uid) => match matching_constructors
@@ -929,6 +940,15 @@ impl Module {
                     }
                 }
             }
+        }
+    }
+
+    pub fn unify_error(&self, position: &Position, kind: UnifyErrorKind) -> UnifyError {
+        UnifyError {
+            position: position.clone(),
+            filename: self.meta.name.file_path.clone(),
+            source_code: self.meta.source_code.clone(),
+            kind,
         }
     }
 }
@@ -1183,4 +1203,13 @@ fn built_in_symbols() -> Vec<Symbol> {
             }),
         },
     ]
+}
+impl Access {
+    pub fn is_private(&self) -> bool {
+        match self {
+            Access::Public { keyword_public } => false,
+            Access::Private { keyword_private } => true,
+            Access::Protected => false,
+        }
+    }
 }

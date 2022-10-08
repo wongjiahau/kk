@@ -1,6 +1,6 @@
 use crate::{compile::CompileError, raw_ast::*, typ::*};
 use crate::{
-    compile::CompileErrorKind,
+    compile::CompileError,
     parse::{ParseContext, ParseError, ParseErrorKind},
 };
 use crate::tokenize::TokenizeError;
@@ -466,8 +466,8 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
 
 pub fn print_compile_error(CompileError { kind, module_meta }: CompileError) {
     match kind {
-        CompileErrorKind::ParseError(parse_error) => print_parse_error(module_meta, *parse_error),
-        CompileErrorKind::UnifyError(unify_error) => print_unify_error(module_meta, *unify_error),
+        CompileError::ParseError(parse_error) => print_parse_error(module_meta, *parse_error),
+        CompileError::UnifyError(unify_error) => print_unify_error(module_meta, *unify_error),
     }
 }
 

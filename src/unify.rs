@@ -1,5 +1,5 @@
 use crate::{
-    compile::{CompileError, CompileErrorKind},
+    compile::{CompileError, CompileError},
     non_empty::NonEmpty,
     parse::Parser,
     tokenize::Tokenizer,
@@ -70,7 +70,7 @@ pub fn unify_statements(
                         Some(doc_string) => {
                             doc_string_codes.extend(doc_string.extract_codes().map_err(
                                 |parse_error| CompileError {
-                                    kind: CompileErrorKind::ParseError(Box::new(parse_error)),
+                                    kind: CompileError::ParseError(Box::new(parse_error)),
                                     module_meta: module_meta.clone(),
                                 },
                             )?)
@@ -347,7 +347,7 @@ impl UnifyError {
     pub fn into_compile_error(self, module_meta: ModuleMeta) -> CompileError {
         CompileError {
             module_meta,
-            kind: CompileErrorKind::UnifyError(Box::new(self)),
+            kind: CompileError::UnifyError(Box::new(self)),
         }
     }
 }
@@ -566,7 +566,7 @@ pub fn infer_module_statement(
                                 Ok(statements) => Ok(statements),
                                 Err(parse_error) => Err(CompileError {
                                     module_meta: module_meta.clone(),
-                                    kind: CompileErrorKind::ParseError(Box::new(parse_error)),
+                                    kind: CompileError::ParseError(Box::new(parse_error)),
                                 }),
                             }?;
 

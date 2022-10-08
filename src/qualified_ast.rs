@@ -1,12 +1,15 @@
+//! This file is the exact duplicate of raw_ast.rs, except that RawName is replaced with
+//! FullyQualifiedName
+//!
+//! If only Rust supports parameterized module, I won't have to duplicate the follwing code
 use std::path::PathBuf;
 
+use itertools::Itertools;
+
 use crate::{
-    compile::{
-        ImportedQualifiedModules, ModuleSymbol, ModuleSymbolKind, NameResolutionError, NameResolver,
-    },
-    module::{Access, ScopeName},
+    module::Access,
     non_empty::NonEmpty,
-    qualified_ast::{self, ResolvedName, ResolvedName},
+    raw_ast::RawName,
     tokenize::{Character, Position, RawIdentifier, StringLiteral, Token},
     unify::Positionable,
 };
@@ -16,13 +19,12 @@ pub enum Statement {
     Let(LetStatement),
 
     /// This represent type alias definition.
-    TypeAlias(TypeAliasStatement),
+    Type(TypeAliasStatement),
 
     /// This represents named sum types (a.k.a tagged union).
     Enum(EnumStatement),
 
-    ModuleAlias(ModuleAliasStatement),
-    ModuleDefinition(ModuleDefinitionStatement),
+    LetAlias(LetAliasStatement),
 
     /// This represents the entry points of a module.
     /// Will be ignored for imported modules.
@@ -30,16 +32,10 @@ pub enum Statement {
 }
 
 #[derive(Debug, Clone)]
-pub struct ModuleAliasStatement {
+pub struct LetAliasStatement {
     pub keyword_module: Token,
-    pub left: ModuleDestructurePattern,
-    pub right: RawName,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModuleDefinitionStatement {
-    pub name: RawIdentifier,
-    pub statements: Vec<Statement>,
+    pub left: ResolvedName,
+    pub right: ResolvedName,
 }
 
 #[derive(Debug, Clone)]
@@ -76,7 +72,7 @@ pub struct TypeVariablesDeclaration {
 pub struct LetStatement {
     pub access: Access,
     pub keyword_let: Token,
-    pub name: RawIdentifier,
+    pub name: ResolvedName,
     pub doc_string: Option<StringLiteral>,
     pub type_annotation: TypeAnnotation,
     pub expression: Expression,
@@ -92,7 +88,7 @@ pub struct Parameter {
 pub struct TypeAliasStatement {
     pub access: Access,
     pub keyword_type: Token,
-    pub name: RawIdentifier,
+    pub left: Token,
     pub right: TypeAnnotation,
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
 }
@@ -101,7 +97,7 @@ pub struct TypeAliasStatement {
 pub struct EnumStatement {
     pub access: Access,
     pub keyword_type: Token,
-    pub name: RawIdentifier,
+    pub name: Token,
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
     pub constructors: Vec<EnumConstructorDefinition>,
 }
@@ -155,7 +151,7 @@ pub enum TypeAnnotation {
         closing_backtick: Token,
     },
     Named {
-        name: RawName,
+        name: ResolvedName,
         type_arguments: Option<TypeArguments>,
     },
     Record {
@@ -259,27 +255,13 @@ pub struct DestructuredRecordKeyValue {
     pub as_value: Option<DestructurePattern>,
 }
 
-#[derive(Debug, Clone)]
-pub struct RawName {
-    pub qualifier: Option<RawModuleName>,
-    pub name: RawIdentifier,
-}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolUid(pub usize);
 
-#[derive(Debug, Clone)]
-pub struct RawModuleName {
-    pub root: RawModuleNameRoot,
-    /// For example:
-    ///
-    /// "./hello.kk" has empty segment
-    ///
-    /// "./hello.kk"::a::b has two segments, which is "a" and "b"
-    pub segments: Vec<RawIdentifier>,
-}
-
-#[derive(Debug, Clone)]
-pub enum RawModuleNameRoot {
-    Filepath(StringLiteral),
-    Identifier(RawIdentifier),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedName {
+    pub uid: SymbolUid,
+    pub position: Position,
 }
 
 #[derive(Debug, Clone)]
@@ -306,9 +288,13 @@ pub enum Expression {
         end_quotes: NonEmpty<Character>,
     },
     Character(Token),
-    Identifier(RawName),
+    Identifier {
+        name: RawName,
+        /// This is non-empty instead of a single value because this language supports overloading.
+        referring_to: NonEmpty<ResolvedName>,
+    },
     EnumConstructor {
-        name: RawIdentifier,
+        name: ResolvedName,
         payload: Option<Box<Expression>>,
     },
 
@@ -344,6 +330,7 @@ pub enum Expression {
         type_annotation: Option<TypeAnnotation>,
         body: Box<Expression>,
     },
+    ModuleAccess(ModuleAccess),
     /// CPS = Continuation Passing Style
     CpsClosure {
         tilde: Token,
@@ -357,9 +344,32 @@ pub enum Expression {
 }
 
 #[derive(Debug, Clone)]
+pub struct ModuleAccess {
+    pub module_name: RawModuleName,
+    pub child: ModuleAccessChild,
+}
+
+#[derive(Debug, Clone)]
+pub struct RawModuleName {
+    pub root: ModuleNameRoot,
+    /// For example:
+    ///
+    /// "./hello.kk" has empty segment
+    ///
+    /// "./hello.kk"::a::b has two segments, which is "a" and "b"
+    pub segments: Vec<RawIdentifier>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ModuleAccessChild {
     identifier: Token,
     next: Box<Option<ModuleAccessChild>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ModuleNameRoot {
+    Filepath(StringLiteral),
+    Identifier(RawIdentifier),
 }
 
 #[derive(Debug, Clone)]
@@ -501,10 +511,30 @@ pub enum InterpolatedStringSection {
     Expression(Box<Expression>),
 }
 
-impl RawName {
-    pub fn append_segment(self, name: RawIdentifier) -> Self {
-        RawName {
-            qualifier: self.qualifier,
+impl ModuleDestructurePattern {
+    fn desugar(self, raw_module_name: RawModuleName) -> Vec<(RawIdentifier, RawModuleName)> {
+        match self {
+            ModuleDestructurePattern::Identifier(name) => vec![(name, raw_module_name)],
+            ModuleDestructurePattern::Record { spread, pairs, .. } => match spread {
+                Some(_) => todo!("dont know how to handle yet"),
+                None => pairs
+                    .into_iter()
+                    .flat_map(|pair| {
+                        let updated_raw_module_name = raw_module_name.append_segment(pair.name);
+                        match pair.pattern {
+                            None => vec![(pair.name, updated_raw_module_name)],
+                            Some(pattern) => pattern.desugar(updated_raw_module_name),
+                        }
+                    })
+                    .collect(),
+            },
+        }
+    }
+}
+impl RawModuleName {
+    fn append_segment(self, name: RawIdentifier) -> Self {
+        RawModuleName {
+            root: self.root,
             segments: self
                 .segments
                 .into_iter()
@@ -512,12 +542,48 @@ impl RawName {
                 .collect(),
         }
     }
-}
-impl RawModuleNameRoot {
+
     pub fn position(&self) -> Position {
-        match self {
-            RawModuleNameRoot::Filepath(filepath) => filepath.position(),
-            RawModuleNameRoot::Identifier(identifier) => identifier.position.clone(),
+        if let Some(last_segment) = self.segments.last() {
+            self.root.position().join(last_segment.position)
+        } else {
+            self.root.position()
         }
+    }
+}
+impl ModuleNameRoot {
+    fn position(&self) -> Position {
+        match self {
+            ModuleNameRoot::Filepath(filepath) => filepath.position(),
+            ModuleNameRoot::Identifier(identifier) => identifier.position.clone(),
+        }
+    }
+}
+impl ResolvedName {
+    pub fn append_segment(&self, segment: RawIdentifier) -> ResolvedName {
+        self.append_segments(vec![segment])
+    }
+    pub fn append_segments(&self, segments: Vec<RawIdentifier>) -> ResolvedName {
+        ResolvedName {
+            file_path: self.file_path,
+            segments: self
+                .segments
+                .into_iter()
+                .chain(segments.into_iter().map(|segment| segment.representation))
+                .collect(),
+            position: self
+                .position
+                .join_maybe(segments.last().map(|segment| segment.position)),
+        }
+    }
+}
+impl SymbolUid {
+    pub fn next(&mut self) -> SymbolUid {
+        self.0 += 1;
+        self.clone()
+    }
+
+    pub fn new() -> SymbolUid {
+        SymbolUid(0)
     }
 }

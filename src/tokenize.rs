@@ -680,3 +680,98 @@ pub fn get_token_type(s: String) -> TokenType {
         _ => TokenType::Identifier,
     }
 }
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Hash)]
+pub struct Position {
+    /// First line is zero.
+    pub line_start: usize,
+    pub line_end: usize,
+
+    /// First column is zero.
+    pub column_start: usize,
+    pub column_end: usize,
+
+    /// First character is zero.
+    pub character_index_start: usize,
+    pub character_index_end: usize,
+}
+
+impl Position {
+    pub fn dummy() -> Position {
+        Position {
+            line_start: 0,
+            line_end: 0,
+            column_start: 0,
+            column_end: 0,
+            character_index_start: 0,
+            character_index_end: 0,
+        }
+    }
+    pub fn join(self, other: Position) -> Position {
+        let start_position = self.min(other);
+        let end_position = self.max(other);
+        Position {
+            line_start: start_position.line_start,
+            column_start: start_position.column_start,
+            line_end: end_position.line_end,
+            column_end: end_position.column_end,
+            character_index_start: start_position.character_index_start,
+            character_index_end: end_position.character_index_end,
+        }
+    }
+    pub fn join_maybe(self, other: Option<Position>) -> Position {
+        match other {
+            Some(other) => self.join(other),
+            None => self,
+        }
+    }
+}
+
+impl StringLiteral {
+    pub fn position(&self) -> Position {
+        self.start_quotes
+            .first()
+            .position()
+            .join(self.end_quotes.last().position())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StringLiteral {
+    pub start_quotes: NonEmpty<Character>,
+    pub content: String,
+    pub end_quotes: NonEmpty<Character>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RawIdentifier {
+    pub position: Position,
+    pub representation: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Token {
+    pub token_type: TokenType,
+    pub position: Position,
+    pub representation: String,
+}
+
+impl Token {
+    pub fn dummy() -> Token {
+        Token::dummy_identifier("".to_string())
+    }
+    pub fn dummy_identifier(representation: String) -> Token {
+        Token {
+            token_type: TokenType::Identifier,
+            position: Position {
+                line_start: 0,
+                line_end: 0,
+                character_index_start: 0,
+                character_index_end: 0,
+                column_start: 0,
+                column_end: 0,
+            },
+            representation,
+        }
+    }
+}

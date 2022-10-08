@@ -25,19 +25,11 @@ pub fn cli() {
     let opts: Opts = Opts::parse();
 
     match opts.subcmd {
-        SubCommand::Run(run) => {
-            match fs::read_to_string(&run.filename) {
-                Err(_) => {
-                    eprintln!("Unable to find file '{}'", run.filename);
-                }
-                Ok(code) => compile(ModuleMeta {
-                    uid: ModuleUid::Local {
-                        relative_path: run.filename,
-                    },
-                    code,
-                    import_relations: vec![], // empty, because this is the root
-                }),
+        SubCommand::Run(run) => match fs::read_to_string(&run.filename) {
+            Err(_) => {
+                eprintln!("Unable to find file '{}'", run.filename);
             }
-        }
+            Ok(code) => compile(run.filename),
+        },
     }
 }
