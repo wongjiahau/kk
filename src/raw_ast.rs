@@ -6,7 +6,7 @@ use crate::{
     },
     module::{Access, ScopeName},
     non_empty::NonEmpty,
-    qualified_ast::{self, ResolvedName, ResolvedName},
+    qualified_ast::{self, ResolvedName},
     tokenize::{Character, Position, RawIdentifier, StringLiteral, Token},
     unify::Positionable,
 };

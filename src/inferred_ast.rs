@@ -16,7 +16,6 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum InferredStatement {
-    ImportStatement(InferredImportStatement),
     Let {
         access: Access,
         left: InferredDestructurePattern,
@@ -25,16 +24,6 @@ pub enum InferredStatement {
     Expression(InferredExpression),
 }
 
-#[derive(Debug, Clone)]
-pub struct InferredImportStatement {
-    pub module_uid: ModuleUid,
-
-    /// The name of the symbol being imported
-    pub imported_name: Identifier,
-
-    /// The name of the symbol being imported as
-    pub imported_as: Identifier,
-}
 /// Identifier is also known as variable
 #[derive(Debug, Clone)]
 pub struct Identifier {

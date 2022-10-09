@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::ops::Range;
 
 use crate::module::Access;
+use crate::tokenize::{Position, StringLiteral, Token};
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
 use crate::{raw_ast::*, tokenize::TokenizeError};
 

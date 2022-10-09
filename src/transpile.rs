@@ -295,34 +295,16 @@ const KK_MODULE: &str = "KK_MODULE";
 const ENUM_TAG_NAME: &str = "$";
 const ENUM_PAYLOAD_NAME: &str = "_";
 
-pub fn transpile_program(unify_project_result: UnifyProgramResult) -> String {
+pub fn transpile_program(statements: Vec<InferredStatement>) -> String {
     // TODO: move this to a file
     let built_in_library =
         javascript::Statement::Expression(javascript::Expression::UnsafeJavascriptCode(
             " const print_0 = (x) => console.log(x); ".to_string(),
         ));
 
-    let global_module_dictionary_declaration = javascript::Statement::Assignment {
-        is_declaration: true,
-        assignment: javascript::Assignment {
-            left: javascript::AssignmentLeft::Variable(javascript::Identifier(
-                KK_MODULE.to_string(),
-            )),
-            right: javascript::Expression::Object(vec![]),
-        },
-    };
-    let imported_modules = unify_project_result
-        .imported_modules
+    let statements = vec![built_in_library]
         .into_iter()
-        .map(|(_, module)| transpile_module(module))
-        .collect::<Vec<javascript::Statement>>();
-
-    let entry_module = transpile_module(unify_project_result.entrypoint);
-
-    let statements = vec![built_in_library, global_module_dictionary_declaration]
-        .into_iter()
-        .chain(imported_modules)
-        .chain(vec![entry_module])
+        .chain(statements.into_iter())
         .collect::<Vec<javascript::Statement>>();
 
     javascript::print_statements(statements)

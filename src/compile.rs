@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process;
+use std::process::Command;
 
 use crate::module::Access;
 use crate::module::ScopeManager;
@@ -24,6 +25,8 @@ use crate::tokenize::RawIdentifier;
 use crate::tokenize::Token;
 use crate::tokenize::Tokenizer;
 use crate::transpile::transpile_program;
+use crate::transpile::transpile_statements;
+use crate::unify::unify_qualified_module;
 use crate::unify::unify_statements;
 use crate::unify::UnifyError;
 use crate::unify::UnifyProgramResult;
@@ -72,60 +75,68 @@ pub fn compile_helper(filename: String) -> Result<(), CompileError> {
     let mut qualified_modules = vec![];
     let qualified_modules = loop {
         if let Some(partially_qualified_module) = name_resolver.partially_qualified_modules.pop() {
-            qualified_modules.push(
-                partially_qualified_module
-                    .to_qualified(&mut name_resolver)
-                    .map_err(|error| CompileError::NameResolutionError {
-                        filename: partially_qualified_module.filename,
-                        error,
-                    })?,
-            );
+            qualified_modules.push(partially_qualified_module.to_qualified(&mut name_resolver)?);
         } else {
             break qualified_modules;
         }
     };
 
-    // TODO: unify qualified modules
-    match result {
-        Err(compile_error) => print_compile_error(compile_error),
-        Ok(mut typechecked_modules) => {
-            // result.interpret(result..into());
-            use std::process::Command;
+    let inferred_statements = qualified_modules
+        .into_iter()
+        .enumerate()
+        .map(|(index, qualified_module)| {
+            let statements = unify_qualified_module(qualified_module)?;
 
-            let (init_modules, last_module) = {
-                let last_module = typechecked_modules
-                    // Note that `split_off` will mutate the given IndexMap
-                    .split_off(typechecked_modules.len() - 1)
-                    .first()
-                    .expect("typechecked_modules should have at least one element");
-                (typechecked_modules, *last_module.1)
-            };
+            if index == 0 {
+                // Then this is the entry point module, so the top level expressions can be
+                // retained
+                Ok(statements)
+            }
+            // Otherwise, remove the top level expressions
+            else {
+                use crate::inferred_ast::InferredStatement::*;
+                Ok(statements
+                    .into_iter()
+                    .filter_map(|statement| match statement {
+                        ImportStatement(statement) => Some(statement),
+                        Let {
+                            access,
+                            left,
+                            right,
+                        } => Some(Let {
+                            access,
+                            left,
+                            right,
+                        }),
+                        Expression(_) => None,
+                    }))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
 
-            let javascript = transpile_program(UnifyProgramResult {
-                // The last inferred module should be the entry point, if the topological sort is correct
-                entrypoint: last_module,
-                imported_modules: init_modules,
-            });
-            // println!("{}", javascript);
-            let output = Command::new("node")
-                .arg("-e")
-                .arg(javascript)
-                .output()
-                .expect("Failed to run NodeJS binary");
+    let javascript = transpile_program(inferred_statements);
 
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            if !stdout.is_empty() {
-                println!("{}", stdout.trim())
-            }
-            if !stderr.is_empty() {
-                eprintln!("{}", stderr.trim())
-            }
-            if let Some(code) = output.status.code() {
-                process::exit(code)
-            }
-        }
-    };
+    // println!("{}", javascript);
+    let output = Command::new("node")
+        .arg("-e")
+        .arg(javascript)
+        .output()
+        .expect("Failed to run NodeJS binary");
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !stdout.is_empty() {
+        println!("{}", stdout.trim())
+    }
+    if !stderr.is_empty() {
+        eprintln!("{}", stderr.trim())
+    }
+    if let Some(code) = output.status.code() {
+        process::exit(code)
+    }
     Ok(())
 }
 
@@ -135,7 +146,7 @@ pub fn get_top_level_symbols(
     name_resolver: &mut NameResolver,
     filename: String,
     position: Option<Position>,
-) -> Result<ModuleName, CompileError> {
+) -> Result<Rib, CompileError> {
     match std::fs::canonicalize(PathBuf::from(filename)) {
         Err(error) => Err(CompileError::InvalidFilename {
             filename,
@@ -148,7 +159,7 @@ pub fn get_top_level_symbols(
             match name_resolver.top_level_ribs.get(&canonicalized_path) {
                 Some(rib) => {
                     // Do nothing if this file is parsed before
-                    Ok(rib.name)
+                    Ok(rib.clone())
                 }
                 None => match std::fs::read_to_string(filename) {
                     Err(error) => Err(CompileError::InvalidFilename {
@@ -194,7 +205,14 @@ pub fn get_top_level_symbols(
                                         filename: canonicalized_path,
                                     })?,
                             });
-                        Ok(module_name)
+                        let rib =
+                            name_resolver
+                                .get_top_level_rib(&module_name)
+                                .map_err(|error| CompileError::NameResolutionError {
+                                    error,
+                                    filename: canonicalized_path,
+                                })?;
+                        Ok(rib.clone())
                     }
                 },
             }
@@ -207,28 +225,30 @@ struct PartiallyQualifiedModule {
     statements: Vec<partially_qualified_ast::Statement>,
 }
 
-struct QualifiedModule {
+pub struct QualifiedModule {
     /// This is required for diagnostics of type checking
-    filename: CanonicalizedPath,
-    statements: Vec<qualified_ast::Statement>,
+    pub filename: CanonicalizedPath,
+    pub statements: Vec<qualified_ast::Statement>,
 }
 
 impl PartiallyQualifiedModule {
     fn to_qualified(
         self,
         name_resolver: &mut NameResolver,
-    ) -> Result<QualifiedModule, NameResolutionError> {
+    ) -> Result<QualifiedModule, CompileError> {
         let module_name = ModuleName {
             filename: self.filename,
             segments: vec![],
         };
-        Ok(QualifiedModule {
-            filename: self.filename,
-            statements: self
-                .statements
+        let statements = name_resolver.run_in_new_rib(|name_resolver: &mut NameResolver| {
+            self.statements
                 .into_iter()
                 .map(|statement| statement.to_qualified(name_resolver, &module_name))
-                .collect::<Result<Vec<_>, NameResolutionError>>()?,
+                .collect::<Result<Vec<_>, CompileError>>()
+        })?;
+        Ok(QualifiedModule {
+            filename: self.filename,
+            statements,
         })
     }
 }
@@ -236,7 +256,7 @@ impl PartiallyQualifiedModule {
 #[derive(Clone)]
 struct ModuleName {
     filename: CanonicalizedPath,
-    segments: Vec<SymbolName>,
+    segments: Vec<RawIdentifier>,
 }
 
 impl raw_ast::Statement {
@@ -250,7 +270,8 @@ impl raw_ast::Statement {
                 partially_qualified_ast::LetStatement {
                     access: let_statement.access,
                     keyword_let: let_statement.keyword_let,
-                    name: name_resolver.insert_value_symbol(module_name, let_statement.name)?,
+                    name: name_resolver
+                        .insert_top_level_value_symbol(module_name, let_statement.name)?,
                     doc_string: let_statement.doc_string,
                     type_annotation: let_statement.type_annotation,
                     expression: let_statement.expression,
@@ -262,7 +283,8 @@ impl raw_ast::Statement {
                     partially_qualified_ast::TypeAliasStatement {
                         access: type_statement.access,
                         keyword_type: type_statement.keyword_type,
-                        name: name_resolver.insert_type_symbol(module_name, type_statement.name)?,
+                        name: name_resolver
+                            .insert_top_level_type_symbol(module_name, type_statement.name)?,
                         right: type_statement.right,
                         type_variables_declaration: type_statement.type_variables_declaration,
                     },
@@ -272,7 +294,8 @@ impl raw_ast::Statement {
                 partially_qualified_ast::Statement::Enum(partially_qualified_ast::EnumStatement {
                     access: enum_statement.access,
                     keyword_type: enum_statement.keyword_type,
-                    name: name_resolver.insert_type_symbol(module_name, enum_statement.name)?,
+                    name: name_resolver
+                        .insert_top_level_type_symbol(module_name, enum_statement.name)?,
                     type_variables_declaration: enum_statement.type_variables_declaration,
                     constructors: enum_statement.constructors,
                 }),
@@ -280,15 +303,14 @@ impl raw_ast::Statement {
             raw_ast::Statement::ModuleDefinition(module_definition_statement) => {
                 Ok(partially_qualified_ast::Statement::ModuleDefinition(
                     partially_qualified_ast::ModuleDefinitionStatement {
-                        name: name_resolver.insert_module_symbol(
+                        name: name_resolver.insert_top_level_module_symbol(
                             module_name,
                             &module_definition_statement.name,
                             Rib::new(),
                         )?,
                         statements: {
-                            let module_name = module_name.append_segment(SymbolName(
-                                module_definition_statement.name.representation,
-                            ));
+                            let module_name =
+                                module_name.append_segment(module_definition_statement.name);
                             module_definition_statement
                                 .statements
                                 .into_iter()
@@ -315,15 +337,16 @@ pub enum NameResolutionError {
         defined_before_at: Position,
         definted_now_at: Position,
     },
-    SymbolNotFound {
+    ModuleSymbolNotFound {
         name: RawIdentifier,
     },
-    NotAValueSymbol(Symbol),
-    NotAModuleSymbol(Symbol),
+    ValueSymbolNotFound {
+        name: RawIdentifier,
+    },
 }
 
 #[derive(PartialEq, Eq, Hash, Clone)]
-struct CanonicalizedPath(PathBuf);
+pub struct CanonicalizedPath(PathBuf);
 
 pub struct NameResolver {
     top_level_ribs: HashMap<CanonicalizedPath, Rib>,
@@ -334,31 +357,30 @@ pub struct NameResolver {
     partially_qualified_modules: Vec<PartiallyQualifiedModule>,
 }
 
-#[derive(PartialEq, Eq, Hash, Clone)]
-struct SymbolName(String);
-
 /// Rib contains the symbols of a given scope, it's actually similar to Environment.
 ///
 /// Reference: https://rustc-dev-guide.rust-lang.org/name-resolution.html#scopes-and-ribs
 #[derive(Clone)]
 pub struct Rib {
-    symbols: HashMap<SymbolName, Symbol>,
+    value_symbols: Vec<ValueSymbol>,
+    type_symbols: Vec<TypeSymbol>,
+    module_symbols: Vec<ModuleSymbol>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ValueSymbol {
+    name: ResolvedName,
 }
 
 #[derive(Clone)]
-enum Symbol {
-    /// Value name can be overloaded, therefore vector is used
-    Value(NonEmpty<ResolvedName>),
-    Type(ResolvedName),
-    Module {
-        name: ResolvedName,
-        module: Rib,
-    },
+struct TypeSymbol {
+    name: ResolvedName,
 }
 
-struct Prefix {
-    path: CanonicalizedPath,
-    segments: Vec<SymbolName>,
+#[derive(Clone)]
+struct ModuleSymbol {
+    name: ResolvedName,
+    rib: Rib,
 }
 
 impl NameResolver {
@@ -371,148 +393,124 @@ impl NameResolver {
         }
     }
 
-    pub fn insert_value_symbol(
+    pub fn insert_top_level_value_symbol(
         &mut self,
         path_name: &ModuleName,
         name: RawIdentifier,
     ) -> Result<ResolvedName, NameResolutionError> {
-        let rib = self.get_top_level_rib(path_name);
-        let symbol_name = SymbolName(name.representation);
+        let rib = self.get_top_level_rib(path_name)?;
         let uid = self.current_uid.next();
         let resolved_name = ResolvedName {
             uid,
             position: name.position,
+            representation: name.representation,
         };
-        let symbol = Symbol::Value(NonEmpty {
-            head: resolved_name,
-            tail: vec![],
-        });
-        match rib.get(&symbol_name) {
-            Some(symbol) => match symbol {
-                Symbol::Value(symbols) => {
-                    symbols.push(resolved_name);
-                    Ok(resolved_name)
-                }
-                Symbol::Type(_) | Symbol::Module { .. } => {
-                    Err(NameResolutionError::DuplicatedName {
-                        defined_before_at: symbol.position(),
-                        definted_now_at: name.position,
-                    })
-                }
-            },
-            None => {
-                rib.symbols.insert(symbol_name, symbol);
-                Ok(resolved_name)
-            }
-        }
+        let symbol = ValueSymbol {
+            name: resolved_name.clone(),
+        };
+        // No name duplication check is required, because value symbols can be overloaded
+        rib.insert_value_symbol(symbol);
+        Ok(resolved_name)
     }
 
-    fn get_top_level_rib(&self, path_name: &ModuleName) -> &Rib {
-        let mut current = self.top_level_ribs.get(&path_name.filename).unwrap();
-        for segment in path_name.segments {
-            current = match current.get(&segment).unwrap() {
-                Symbol::Module { module, .. } => module,
-                _ => unreachable!(),
-            }
-        }
-        &current
-    }
-
-    pub fn insert_type_symbol(
-        &self,
-        path_name: &ModuleName,
-        name: RawIdentifier,
-    ) -> Result<ResolvedName, NameResolutionError> {
-        let symbol_name = SymbolName(name.representation);
-        let rib = self.get_top_level_rib(path_name);
-        match rib.get(&symbol_name) {
-            Some(other) => Err(NameResolutionError::DuplicatedName {
-                defined_before_at: other.position(),
-                definted_now_at: name.position,
-            }),
-            None => {
-                let resolved_name = ResolvedName {
-                    uid: self.current_uid.next(),
-                    position: name.position,
-                };
-                rib.insert_symbol(symbol_name, Symbol::Type(resolved_name));
-
-                Ok(resolved_name)
-            }
-        }
-    }
-
-    fn insert_module_symbol(
+    /// Top level rib is either a file, or a module nested within a file
+    fn get_top_level_rib(
         &mut self,
         path_name: &ModuleName,
+    ) -> Result<&mut Rib, NameResolutionError> {
+        let mut current = self.top_level_ribs.get(&path_name.filename).unwrap();
+        for segment in path_name.segments {
+            current = &current.lookup_module_symbol(&segment)?;
+        }
+        Ok(&mut current)
+    }
+
+    pub fn insert_top_level_type_symbol(
+        &self,
+        module_name: &ModuleName,
+        name: RawIdentifier,
+    ) -> Result<ResolvedName, NameResolutionError> {
+        let rib = self.get_top_level_rib(module_name)?;
+        let name = ResolvedName {
+            uid: self.current_uid.next(),
+            representation: name.representation,
+            position: name.position,
+        };
+        let symbol = TypeSymbol { name };
+        rib.insert_type_symbol(symbol)?;
+        Ok(name)
+    }
+
+    fn insert_top_level_module_symbol(
+        &mut self,
+        module_symbol: &ModuleName,
         name: &RawIdentifier,
         module: Rib,
     ) -> Result<ResolvedName, NameResolutionError> {
-        let symbol_name = SymbolName(name.representation);
-        let rib = self.get_top_level_rib(path_name);
-        match rib.get(&symbol_name) {
-            Some(symbol) => Err(NameResolutionError::DuplicatedName {
-                defined_before_at: symbol.position(),
-                definted_now_at: name.position.clone(),
-            }),
-            None => {
-                let name = ResolvedName {
-                    uid: self.current_uid.next(),
-                    position: name.position,
-                };
-                rib.insert_symbol(symbol_name, Symbol::Module { name, module });
-                Ok(name)
-            }
-        }
+        let rib = self.get_top_level_rib(module_symbol)?;
+        let name = ResolvedName {
+            uid: self.current_uid.next(),
+            position: name.position,
+            representation: name.representation,
+        };
+        let symbol = ModuleSymbol { name, rib: module };
+        rib.insert_module_symbol(symbol)?;
+        Ok(name)
     }
 
-    fn lookup_symbol(
+    fn lookup_symbol<T, F: Fn(&Rib) -> Result<T, NameResolutionError>>(
         &self,
         module_name: &ModuleName,
-        symbol: &RawIdentifier,
-    ) -> Result<&Symbol, NameResolutionError> {
+        name: &RawIdentifier,
+        f: F,
+    ) -> Result<T, NameResolutionError> {
         // Lookup from ribs first
         // We have to reverse the iterator because we have to look from the start of the stack
         // first
         for rib in self.ribs.iter().rev() {
-            match rib.lookup_symbol(symbol) {
-                Some(symbol) => return Ok(symbol),
-                None => {}
+            match f(rib) {
+                Ok(symbol) => return Ok(symbol),
+                Err(_) => {
+                    // Ignore the error and keep searching on parent rib
+                }
             }
         }
 
         // If the ribs does not contains symbols with the given `name`
         // Look up from the top level rib with the name of `current_module_name`
-        match self.get_top_level_rib(module_name).lookup_symbol(symbol) {
-            Some(names) => Ok(names),
-            None => Err(NameResolutionError::SymbolNotFound {
-                name: symbol.clone(),
-            }),
-        }
+        f(self.get_top_level_rib(module_name)?)
     }
 
     fn lookup_value_symbol(
         &self,
         module_name: &ModuleName,
         name: &RawIdentifier,
-    ) -> Result<NonEmpty<ResolvedName>, NameResolutionError> {
-        let symbol = self.lookup_symbol(module_name, name)?;
-        match symbol {
-            Symbol::Value(names) => Ok(names.clone()),
-            _ => Err(NameResolutionError::NotAValueSymbol(symbol.clone())),
-        }
+    ) -> Result<NonEmpty<ValueSymbol>, NameResolutionError> {
+        self.lookup_symbol(module_name, name, |rib| rib.lookup_value_symbol(&name))
     }
 
     fn lookup_module_symbol(
         &self,
         current_module_name: &ModuleName,
         name: &RawIdentifier,
-    ) -> Result<ModuleName, NameResolutionError> {
-        let symbol = self.lookup_symbol(current_module_name, name)?;
-        match symbol {
-            Symbol::Module { .. } => Ok(current_module_name.append_segment(name.to_symbol_name())),
-            _ => Err(NameResolutionError::NotAModuleSymbol(symbol.clone())),
-        }
+    ) -> Result<Rib, NameResolutionError> {
+        self.lookup_symbol(current_module_name, name, |rib| {
+            rib.lookup_module_symbol(&name)
+        })
+    }
+
+    fn run_in_new_rib<T, F: FnMut(&mut NameResolver) -> T>(&mut self, f: F) -> T {
+        self.ribs.push(Rib::new());
+        let result = f(self);
+        self.ribs.pop();
+        result
+    }
+
+    fn insert_local_value_symbol(&self, symbol: ValueSymbol) {
+        self.ribs
+            .last()
+            .expect("Rib should be created before inserting value")
+            .insert_value_symbol(symbol)
     }
 }
 
@@ -527,41 +525,36 @@ impl raw_ast::ModuleAliasStatement {
         self.left.desugar(self.right)
     }
 
-    pub fn to_qualified(
+    pub fn gather_imported_symbols(
         &self,
         name_resolver: &mut NameResolver,
-        current_module_name: &ResolvedName,
-    ) -> Result<Vec<qualified_ast::LetAliasStatement>, CompileError> {
-        self.desugar()
-            .into_iter()
-            .map(|statement| match statement.left {
+        current_module_name: &ModuleName,
+    ) -> Result<(), CompileError> {
+        for statement in self.desugar() {
+            match statement.left {
                 DesugaredModuleAliasStatementLeft::Name(name) => {
-                    let result = qualified_ast::LetAliasStatement {
-                        keyword_module: self.keyword_module,
-                        left: name.to_qualified(current_module_name),
-                        right: statement
-                            .right
-                            .to_value_symbols(name_resolver, current_module_name)?,
-                    };
-
-                    // Insert this module alias to the name resolver
-                    name_resolver
-                        .insert_value_symbol(ModuleSymbol {
-                            access: Access::Protected,
-                            name: result.left.clone(),
-                            scope: name_resolver.scope_manager.get_current_scope_name(),
-                            kind: ModuleSymbolKind::ModuleAlias {
-                                referring_to: result.right,
+                    for symbol in statement
+                        .right
+                        .to_value_symbols(name_resolver, current_module_name)?
+                        .into_vector()
+                    {
+                        name_resolver.insert_local_value_symbol(ValueSymbol {
+                            name: ResolvedName {
+                                uid: symbol.name.uid, // <-- Important: use the UID of the imported symbol
+                                position: name.position,
+                                representation: name.representation,
                             },
-                        })
-                        .map_err(|err| CompileError::NameResolutionError(Box::new(err)))?;
-                    Ok(result)
+                        });
+                    }
+                    // TODO: insert type symbols
+                    // TODO: insert module symbols
                 }
                 DesugaredModuleAliasStatementLeft::TakeAllButExcludeSome { excluded_names } => {
                     todo!()
                 }
-            })
-            .collect::<Result<Vec<_>, _>>()
+            }
+        }
+        Ok(())
     }
 }
 
@@ -621,10 +614,10 @@ impl RawName {
         self,
         name_resolver: &mut NameResolver,
         current_module_name: &ModuleName,
-    ) -> Result<NonEmpty<ResolvedName>, CompileError> {
-        let module_name = match self.qualifier {
+    ) -> Result<NonEmpty<ValueSymbol>, CompileError> {
+        match self.qualifier {
             Some(qualifier) => {
-                let module_name_root = match qualifier.root {
+                let root_rib = match qualifier.root {
                     RawModuleNameRoot::Filepath(filename) => get_top_level_symbols(
                         name_resolver,
                         filename.content,
@@ -639,25 +632,29 @@ impl RawName {
                 }?;
 
                 // Resolve each segment
-                let mut module_name = module_name_root;
+                let mut rib = root_rib;
                 for segment in qualifier.segments {
-                    module_name = name_resolver
-                        .lookup_module_symbol(&module_name, &segment)
-                        .map_err(|error| CompileError::NameResolutionError {
-                            filename: module_name_root.filename,
+                    rib = rib.lookup_module_symbol(&segment).map_err(|error| {
+                        CompileError::NameResolutionError {
+                            filename: current_module_name.filename,
                             error,
-                        })?;
+                        }
+                    })?;
                 }
-                &module_name
+                rib.lookup_value_symbol(&self.name).map_err(|error| {
+                    CompileError::NameResolutionError {
+                        filename: current_module_name.filename,
+                        error,
+                    }
+                })
             }
-            None => current_module_name,
-        };
-        name_resolver
-            .lookup_value_symbol(module_name, &self.name)
-            .map_err(|error| CompileError::NameResolutionError {
-                filename: current_module_name.filename,
-                error,
-            })
+            None => name_resolver
+                .lookup_value_symbol(current_module_name, &self.name)
+                .map_err(|error| CompileError::NameResolutionError {
+                    filename: current_module_name.filename,
+                    error,
+                }),
+        }
     }
 
     pub fn position(&self) -> Position {
@@ -667,33 +664,89 @@ impl RawName {
 impl Rib {
     pub fn new() -> Rib {
         Rib {
-            symbols: HashMap::new(),
+            value_symbols: vec![],
+            type_symbols: vec![],
+            module_symbols: vec![],
         }
     }
 
-    fn insert_symbol(&mut self, name: SymbolName, symbol: Symbol) {
-        self.symbols.insert(name, symbol);
+    fn insert_value_symbol(&mut self, symbol: ValueSymbol) {
+        self.value_symbols.push(symbol)
     }
 
-    fn get(&self, name: &SymbolName) -> Option<&Symbol> {
-        self.symbols.get(name)
+    fn insert_type_symbol(&mut self, symbol: TypeSymbol) -> Result<(), NameResolutionError> {
+        match self
+            .type_symbols
+            .iter()
+            .find(|symbol| symbol.name.representation.eq(&symbol.name.representation))
+        {
+            Some(existing_symbol) => Err(NameResolutionError::DuplicatedName {
+                defined_before_at: existing_symbol.name.position,
+                definted_now_at: symbol.name.position,
+            }),
+            None => {
+                self.type_symbols.push(symbol);
+                Ok(())
+            }
+        }
     }
 
-    fn lookup_symbol(&self, name: &RawIdentifier) -> Option<&Symbol> {
-        self.symbols.get(&SymbolName(name.representation))
+    fn insert_module_symbol(&self, symbol: ModuleSymbol) -> Result<(), NameResolutionError> {
+        match self
+            .module_symbols
+            .iter()
+            .find(|symbol| symbol.name.representation.eq(&symbol.name.representation))
+        {
+            Some(existing_symbol) => Err(NameResolutionError::DuplicatedName {
+                defined_before_at: existing_symbol.name.position,
+                definted_now_at: symbol.name.position,
+            }),
+            None => {
+                self.module_symbols.push(symbol);
+                Ok(())
+            }
+        }
     }
-}
-impl Symbol {
-    fn position(&self) -> Position {
-        match self {
-            Symbol::Value(symbols) => symbols.first().defined_at.clone(),
-            Symbol::Type(symbol) => symbol.defined_at.clone(),
-            Symbol::Module { defined_at, .. } => defined_at.clone(),
+
+    fn lookup_module_symbol(&self, name: &RawIdentifier) -> Result<Rib, NameResolutionError> {
+        match self
+            .module_symbols
+            .iter()
+            .find(|symbol| symbol.name.representation.eq(&name.representation))
+        {
+            Some(symbol) => Ok(symbol.rib),
+            None => Err(NameResolutionError::ModuleSymbolNotFound { name: name.clone() }),
+        }
+    }
+
+    fn lookup_value_symbol(
+        &self,
+        name: &RawIdentifier,
+    ) -> Result<NonEmpty<ValueSymbol>, NameResolutionError> {
+        match self
+            .value_symbols
+            .iter()
+            .filter_map(|symbol| {
+                if symbol.name.representation.eq(&name.representation) {
+                    Some(symbol.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .split_first()
+        {
+            Some((head, tail)) => Ok(NonEmpty {
+                head: *head,
+                tail: tail.to_vec(),
+            }),
+            None => Err(NameResolutionError::ValueSymbolNotFound { name: name.clone() }),
         }
     }
 }
+
 impl ModuleName {
-    pub fn append_segment(&self, name: SymbolName) -> ModuleName {
+    pub fn append_segment(&self, name: RawIdentifier) -> ModuleName {
         ModuleName {
             filename: self.filename.clone(),
             segments: self
@@ -704,7 +757,7 @@ impl ModuleName {
         }
     }
 
-    pub fn append_segments(&self, names: Vec<SymbolName>) -> ModuleName {
+    pub fn append_segments(&self, names: Vec<RawIdentifier>) -> ModuleName {
         ModuleName {
             filename: self.filename.clone(),
             segments: self.segments.into_iter().chain(names.into_iter()).collect(),
@@ -715,11 +768,14 @@ impl ModuleName {
 impl raw_ast::EntryStatement {
     fn to_qualified(
         self,
+        current_module_name: &ModuleName,
         name_resolver: &mut NameResolver,
-    ) -> Result<qualified_ast::EntryStatement, NameResolutionError> {
+    ) -> Result<qualified_ast::EntryStatement, CompileError> {
         Ok(qualified_ast::EntryStatement {
             keyword_entry: self.keyword_entry,
-            expression: self.expression.to_qualified(name_resolver)?,
+            expression: self
+                .expression
+                .to_qualified(current_module_name, name_resolver)?,
         })
     }
 }
@@ -733,9 +789,13 @@ impl raw_ast::Expression {
         match self {
             Expression::Identifier(name) => Ok(qualified_ast::Expression::Identifier {
                 name: name.clone(),
-                referring_to: name.to_value_symbols(name_resolver, current_module_name)?,
+                referring_to: name
+                    .to_value_symbols(name_resolver, current_module_name)?
+                    .clone(),
             }),
-            Expression::Statements { current, next } => todo!(),
+            Expression::Statements { current, next } => {
+                todo!()
+            }
             Expression::Unit {
                 left_parenthesis,
                 right_parenthesis,
@@ -796,13 +856,8 @@ impl raw_ast::Expression {
 }
 
 impl raw_ast::TypeAnnotation {
-    fn to_qualified(self) -> Result<qualified_ast::TypeAnnotation, NameResolutionError> {
+    fn to_qualified(self) -> Result<qualified_ast::TypeAnnotation, CompileError> {
         todo!()
-    }
-}
-impl RawIdentifier {
-    pub fn to_qualified(self, current_module_name: &ResolvedName) -> qualified_ast::ResolvedName {
-        current_module_name.append_segment(self)
     }
 }
 
@@ -811,7 +866,7 @@ impl partially_qualified_ast::Statement {
         &self,
         name_resolver: &mut NameResolver,
         current_module_name: &ModuleName,
-    ) -> Result<qualified_ast::Statement, NameResolutionError> {
+    ) -> Result<qualified_ast::Statement, CompileError> {
         use partially_qualified_ast::*;
         match self {
             Statement::Let(let_statement) => {
@@ -821,7 +876,7 @@ impl partially_qualified_ast::Statement {
             Statement::Enum(_) => todo!(),
             Statement::ModuleAlias(_) => todo!(),
             Statement::ModuleDefinition(_) => todo!(),
-            Statement::Entry(entry) => Ok(qualified_ast::Statement::Entry(entry.to_qualified()?)),
+            Statement::Entry(entry) => todo!(),
         }
     }
 }
@@ -842,11 +897,5 @@ impl partially_qualified_ast::LetStatement {
                 .expression
                 .to_qualified(current_module_name, name_resolver)?,
         }))
-    }
-}
-
-impl RawIdentifier {
-    pub fn to_symbol_name(&self) -> SymbolName {
-        SymbolName(self.representation.clone())
     }
 }

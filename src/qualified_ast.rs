@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use itertools::Itertools;
 
 use crate::{
+    compile::ValueSymbol,
     module::Access,
     non_empty::NonEmpty,
     raw_ast::RawName,
@@ -24,18 +25,9 @@ pub enum Statement {
     /// This represents named sum types (a.k.a tagged union).
     Enum(EnumStatement),
 
-    LetAlias(LetAliasStatement),
-
     /// This represents the entry points of a module.
     /// Will be ignored for imported modules.
     Entry(EntryStatement),
-}
-
-#[derive(Debug, Clone)]
-pub struct LetAliasStatement {
-    pub keyword_module: Token,
-    pub left: ResolvedName,
-    pub right: ResolvedName,
 }
 
 #[derive(Debug, Clone)]
@@ -200,7 +192,7 @@ pub enum DestructurePattern {
         right_parenthesis: Token,
     },
     Underscore(Token),
-    Identifier(Token),
+    Identifier(ResolvedName),
     EnumConstructor {
         name: Token,
         payload: Option<Box<DestructurePattern>>,
@@ -262,6 +254,7 @@ pub struct SymbolUid(pub usize);
 pub struct ResolvedName {
     pub uid: SymbolUid,
     pub position: Position,
+    pub representation: String,
 }
 
 #[derive(Debug, Clone)]
@@ -291,7 +284,7 @@ pub enum Expression {
     Identifier {
         name: RawName,
         /// This is non-empty instead of a single value because this language supports overloading.
-        referring_to: NonEmpty<ResolvedName>,
+        referring_to: NonEmpty<ValueSymbol>,
     },
     EnumConstructor {
         name: ResolvedName,
@@ -330,7 +323,6 @@ pub enum Expression {
         type_annotation: Option<TypeAnnotation>,
         body: Box<Expression>,
     },
-    ModuleAccess(ModuleAccess),
     /// CPS = Continuation Passing Style
     CpsClosure {
         tilde: Token,
@@ -344,12 +336,6 @@ pub enum Expression {
 }
 
 #[derive(Debug, Clone)]
-pub struct ModuleAccess {
-    pub module_name: RawModuleName,
-    pub child: ModuleAccessChild,
-}
-
-#[derive(Debug, Clone)]
 pub struct RawModuleName {
     pub root: ModuleNameRoot,
     /// For example:
@@ -358,12 +344,6 @@ pub struct RawModuleName {
     ///
     /// "./hello.kk"::a::b has two segments, which is "a" and "b"
     pub segments: Vec<RawIdentifier>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModuleAccessChild {
-    identifier: Token,
-    next: Box<Option<ModuleAccessChild>>,
 }
 
 #[derive(Debug, Clone)]
@@ -556,24 +536,6 @@ impl ModuleNameRoot {
         match self {
             ModuleNameRoot::Filepath(filepath) => filepath.position(),
             ModuleNameRoot::Identifier(identifier) => identifier.position.clone(),
-        }
-    }
-}
-impl ResolvedName {
-    pub fn append_segment(&self, segment: RawIdentifier) -> ResolvedName {
-        self.append_segments(vec![segment])
-    }
-    pub fn append_segments(&self, segments: Vec<RawIdentifier>) -> ResolvedName {
-        ResolvedName {
-            file_path: self.file_path,
-            segments: self
-                .segments
-                .into_iter()
-                .chain(segments.into_iter().map(|segment| segment.representation))
-                .collect(),
-            position: self
-                .position
-                .join_maybe(segments.last().map(|segment| segment.position)),
         }
     }
 }
