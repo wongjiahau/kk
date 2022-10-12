@@ -1,5 +1,5 @@
 // This module stores the representation of Type
-use crate::{module::SymbolUid, non_empty::NonEmpty, raw_ast::Token};
+use crate::{module::SymbolUid, non_empty::NonEmpty, qualified_ast::ResolvedName, raw_ast::Token};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
@@ -61,7 +61,7 @@ pub struct FunctionType {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeConstraint {
-    pub name: String,
+    pub name: ResolvedName,
     pub type_value: Type,
 }
 

@@ -1,7 +1,9 @@
 use crate::{
     module::{Access, ModuleUid, SymbolUid},
     non_empty::NonEmpty,
+    qualified_ast::ResolvedName,
     raw_ast::{InfinitePatternKind, Position, StringLiteral, Token},
+    tokenize::RawIdentifier,
     typ::Type,
     unify::InferExpressionResult,
 };
@@ -135,7 +137,7 @@ pub enum InferredDestructurePatternKind {
         right_parenthesis: Token,
     },
     Underscore(Token),
-    Identifier(Box<Identifier>),
+    Identifier(ResolvedName),
     EnumConstructor {
         constructor_name: Token,
         payload: Option<Box<InferredDestructurePattern>>,

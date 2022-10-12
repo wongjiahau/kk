@@ -775,3 +775,60 @@ impl Token {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub enum TokenType {
+    KeywordEntry,
+    KeywordLet,
+    KeywordType,
+    KeywordModule,
+    KeywordImport,
+    KeywordPublic,
+    KeywordPrivate,
+    KeywordExists,
+    Whitespace,
+    LeftCurlyBracket,
+    RightCurlyBracket,
+    LeftParenthesis,
+    RightParenthesis,
+    LeftSquareBracket,
+    RightSquareBracket,
+    Backslash,
+    Newline,
+    /// Also known as Exclamation Mark (!)
+    Bang,
+    Tilde,
+    Colon,
+
+    /// Also known as Left Angular Bracket (<)
+    LessThan,
+
+    /// Also known as Right Angular Bracket (>)
+    MoreThan,
+    Equals,
+    Period,
+    DoublePeriod,
+    Comma,
+    Semicolon,
+    ArrowRight,
+    Pipe,
+    Underscore,
+    Identifier,
+    Operator,
+    /// Used for construction of tagged union
+    Tag,
+    String(StringLiteral),
+    InterpolatedString(InterpolatedString),
+    Character,
+    Integer,
+    Float,
+    DoubleColon,
+
+    /// Comments starts with double slash
+    Comment,
+
+    /// Multiline comment starts with (/*) and ends with (*/)
+    MultilineComment,
+
+    Other(char),
+}

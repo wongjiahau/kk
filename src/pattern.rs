@@ -506,7 +506,7 @@ pub fn match_pattern(
     match (actual_pattern, expected_pattern) {
         (CheckablePatternKind::Underscore(_), _) => MatchPatternResult::Matched,
         (CheckablePatternKind::Identifier(identifier), _) => {
-            // check if identifier matches any enum constructor
+            // check if the identifier matches any enum constructor
             if module.matches_some_enum_constructor(&identifier.token.representation) {
                 match_pattern(
                     module,

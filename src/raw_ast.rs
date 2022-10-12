@@ -1,10 +1,7 @@
 use std::path::PathBuf;
 
 use crate::{
-    compile::{
-        ImportedQualifiedModules, ModuleSymbol, ModuleSymbolKind, NameResolutionError, NameResolver,
-    },
-    module::{Access, ScopeName},
+    module::Access,
     non_empty::NonEmpty,
     qualified_ast::{self, ResolvedName},
     tokenize::{Character, Position, RawIdentifier, StringLiteral, Token},
@@ -308,7 +305,7 @@ pub enum Expression {
     Character(Token),
     Identifier(RawName),
     EnumConstructor {
-        name: RawIdentifier,
+        name: RawName,
         payload: Option<Box<Expression>>,
     },
 
@@ -432,63 +429,6 @@ pub struct FunctionBranch {
 }
 
 #[derive(Debug, Clone)]
-pub enum TokenType {
-    KeywordEntry,
-    KeywordLet,
-    KeywordType,
-    KeywordModule,
-    KeywordImport,
-    KeywordPublic,
-    KeywordPrivate,
-    KeywordExists,
-    Whitespace,
-    LeftCurlyBracket,
-    RightCurlyBracket,
-    LeftParenthesis,
-    RightParenthesis,
-    LeftSquareBracket,
-    RightSquareBracket,
-    Backslash,
-    Newline,
-    /// Also known as Exclamation Mark (!)
-    Bang,
-    Tilde,
-    Colon,
-
-    /// Also known as Left Angular Bracket (<)
-    LessThan,
-
-    /// Also known as Right Angular Bracket (>)
-    MoreThan,
-    Equals,
-    Period,
-    DoublePeriod,
-    Comma,
-    Semicolon,
-    ArrowRight,
-    Pipe,
-    Underscore,
-    Identifier,
-    Operator,
-    /// Used for construction of tagged union
-    Tag,
-    String(StringLiteral),
-    InterpolatedString(InterpolatedString),
-    Character,
-    Integer,
-    Float,
-    DoubleColon,
-
-    /// Comments starts with double slash
-    Comment,
-
-    /// Multiline comment starts with (/*) and ends with (*/)
-    MultilineComment,
-
-    Other(char),
-}
-
-#[derive(Debug, Clone)]
 pub struct InterpolatedString {
     pub start_quotes: NonEmpty<Character>,
     pub sections: NonEmpty<InterpolatedStringSection>,
@@ -504,6 +444,7 @@ pub enum InterpolatedStringSection {
 impl RawName {
     pub fn append_segment(self, name: RawIdentifier) -> Self {
         RawName {
+            name,
             qualifier: self.qualifier,
             segments: self
                 .segments

@@ -102,4 +102,15 @@ impl<T> NonEmpty<T> {
     pub fn push(&mut self, value: T) {
         self.tail.push(value)
     }
+
+    pub(crate) fn map_result<B, E, F: Fn(T) -> Result<B, E>>(self, f: F) -> Result<NonEmpty<B>, E> {
+        Ok(NonEmpty {
+            head: f(self.head)?,
+            tail: self
+                .tail
+                .into_iter()
+                .map(f)
+                .collect::<Result<Vec<_>, _>>()?,
+        })
+    }
 }

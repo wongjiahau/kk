@@ -7,11 +7,11 @@ use std::path::PathBuf;
 use itertools::Itertools;
 
 use crate::{
-    compile::ValueSymbol,
+    compile::{NameResolver, ValueSymbol},
     module::Access,
     non_empty::NonEmpty,
-    raw_ast::RawName,
-    tokenize::{Character, Position, RawIdentifier, StringLiteral, Token},
+    raw_ast::{self, RawName},
+    tokenize::{Character, Position, RawIdentifier, StringLiteral, Token, TokenType},
     unify::Positionable,
 };
 
@@ -56,7 +56,7 @@ pub struct EntryStatement {
 #[derive(Debug, Clone)]
 pub struct TypeVariablesDeclaration {
     pub left_angular_bracket: Token,
-    pub type_variables: NonEmpty<Token>,
+    pub type_variables: NonEmpty<ResolvedName>,
     pub right_angular_bracket: Token,
 }
 
@@ -66,6 +66,7 @@ pub struct LetStatement {
     pub keyword_let: Token,
     pub name: ResolvedName,
     pub doc_string: Option<StringLiteral>,
+    pub doc_string_expressions: Vec<Expression>,
     pub type_annotation: TypeAnnotation,
     pub expression: Expression,
 }
@@ -80,8 +81,8 @@ pub struct Parameter {
 pub struct TypeAliasStatement {
     pub access: Access,
     pub keyword_type: Token,
-    pub left: Token,
-    pub right: TypeAnnotation,
+    pub name: ResolvedName,
+    pub type_annotation: TypeAnnotation,
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
 }
 
@@ -89,7 +90,7 @@ pub struct TypeAliasStatement {
 pub struct EnumStatement {
     pub access: Access,
     pub keyword_type: Token,
-    pub name: Token,
+    pub name: ResolvedName,
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
     pub constructors: Vec<EnumConstructorDefinition>,
 }
@@ -194,7 +195,7 @@ pub enum DestructurePattern {
     Underscore(Token),
     Identifier(ResolvedName),
     EnumConstructor {
-        name: Token,
+        name: ResolvedName,
         payload: Option<Box<DestructurePattern>>,
     },
     Record {
@@ -244,7 +245,7 @@ pub struct DestructurePatternArraySpread {
 #[derive(Debug, Clone)]
 pub struct DestructuredRecordKeyValue {
     pub key: Token,
-    pub as_value: Option<DestructurePattern>,
+    pub as_value: DestructurePattern,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -255,7 +256,21 @@ pub struct ResolvedName {
     pub uid: SymbolUid,
     pub position: Position,
     pub representation: String,
+
+    /// Required for name resolution that requires type information.
+    /// For example, invoking a function with constraints.
+    pub scope: Scope,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scope {
+    pub name: ScopeName,
+    /// The `parent_scope` of top-level symbols is `None`
+    pub parent: Option<ScopeName>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopeName(usize);
 
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -284,10 +299,12 @@ pub enum Expression {
     Identifier {
         name: RawName,
         /// This is non-empty instead of a single value because this language supports overloading.
-        referring_to: NonEmpty<ValueSymbol>,
+        referring_to: NonEmpty<SymbolUid>,
     },
     EnumConstructor {
-        name: ResolvedName,
+        name: RawName,
+        /// This is non-empty instead of a single value because this language supports overloading.
+        referring_to: NonEmpty<SymbolUid>,
         payload: Option<Box<Expression>>,
     },
 
@@ -297,7 +314,7 @@ pub enum Expression {
     FunctionCall(Box<FunctionCall>),
     Record {
         left_parenthesis: Token,
-        wildcard: Option<Token>,
+        wildcard: Option<RecordWildcard>,
         key_value_pairs: Vec<RecordKeyValue>,
         right_parenthesis: Token,
     },
@@ -323,16 +340,12 @@ pub enum Expression {
         type_annotation: Option<TypeAnnotation>,
         body: Box<Expression>,
     },
-    /// CPS = Continuation Passing Style
-    CpsClosure {
-        tilde: Token,
-        expression: Box<Expression>,
-    },
-    CpsBang {
-        argument: Box<Expression>,
-        bang: Token,
-        function: Box<Expression>,
-    },
+}
+
+#[derive(Debug, Clone)]
+pub struct RecordWildcard {
+    pub token: Token,
+    pub scope_name: ScopeName,
 }
 
 #[derive(Debug, Clone)]
@@ -378,7 +391,6 @@ pub struct RecordKeyValue {
 pub struct FunctionCall {
     pub function: Box<Expression>,
     pub argument: Box<Expression>,
-    pub type_arguments: Option<TypeArguments>,
 }
 
 #[derive(Debug, Clone)]
@@ -419,63 +431,6 @@ pub struct FunctionParameter {
 pub struct FunctionBranch {
     pub parameter: Box<DestructurePattern>,
     pub body: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub enum TokenType {
-    KeywordEntry,
-    KeywordLet,
-    KeywordType,
-    KeywordModule,
-    KeywordImport,
-    KeywordPublic,
-    KeywordPrivate,
-    KeywordExists,
-    Whitespace,
-    LeftCurlyBracket,
-    RightCurlyBracket,
-    LeftParenthesis,
-    RightParenthesis,
-    LeftSquareBracket,
-    RightSquareBracket,
-    Backslash,
-    Newline,
-    /// Also known as Exclamation Mark (!)
-    Bang,
-    Tilde,
-    Colon,
-
-    /// Also known as Left Angular Bracket (<)
-    LessThan,
-
-    /// Also known as Right Angular Bracket (>)
-    MoreThan,
-    Equals,
-    Period,
-    DoublePeriod,
-    Comma,
-    Semicolon,
-    ArrowRight,
-    Pipe,
-    Underscore,
-    Identifier,
-    Operator,
-    /// Used for construction of tagged union
-    Tag,
-    String(StringLiteral),
-    InterpolatedString(InterpolatedString),
-    Character,
-    Integer,
-    Float,
-    DoubleColon,
-
-    /// Comments starts with double slash
-    Comment,
-
-    /// Multiline comment starts with (/*) and ends with (*/)
-    MultilineComment,
-
-    Other(char),
 }
 
 #[derive(Debug, Clone)]
@@ -547,5 +502,32 @@ impl SymbolUid {
 
     pub fn new() -> SymbolUid {
         SymbolUid(0)
+    }
+}
+impl EnumStatement {
+    pub fn type_variables(&self) -> Vec<ResolvedName> {
+        match self.type_variables_declaration {
+            Some(type_variables_declaration) => {
+                type_variables_declaration.type_variables.into_vector()
+            }
+            None => vec![],
+        }
+    }
+}
+impl ScopeName {
+    pub fn new() -> ScopeName {
+        ScopeName(0)
+    }
+    pub fn next(&mut self) -> ScopeName {
+        self.0 += 1;
+        ScopeName(self.0)
+    }
+}
+impl Scope {
+    pub(crate) fn dummy() -> Scope {
+        Scope {
+            name: ScopeName(0),
+            parent: None,
+        }
     }
 }

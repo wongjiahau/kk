@@ -3,9 +3,6 @@ use std::path::PathBuf;
 use std::process;
 use std::process::Command;
 
-use crate::module::Access;
-use crate::module::ScopeManager;
-use crate::module::ScopeName;
 use crate::non_empty::NonEmpty;
 use crate::parse::ParseError;
 use crate::parse::Parser;
@@ -13,23 +10,22 @@ use crate::parse::Parser;
 use crate::partially_qualified_ast;
 use crate::qualified_ast;
 use crate::qualified_ast::ResolvedName;
+use crate::qualified_ast::Scope;
+use crate::qualified_ast::ScopeName;
 use crate::qualified_ast::SymbolUid;
 use crate::raw_ast;
 use crate::raw_ast::RawModuleNameRoot;
 use crate::raw_ast::RawName;
 use crate::stringify_error::print_compile_error;
 
-use crate::stringify_error::print_parse_error;
 use crate::tokenize::Position;
 use crate::tokenize::RawIdentifier;
 use crate::tokenize::Token;
+use crate::tokenize::TokenType;
 use crate::tokenize::Tokenizer;
 use crate::transpile::transpile_program;
-use crate::transpile::transpile_statements;
 use crate::unify::unify_qualified_module;
-use crate::unify::unify_statements;
 use crate::unify::UnifyError;
-use crate::unify::UnifyProgramResult;
 
 pub enum CompileError {
     ParseError {
@@ -98,7 +94,6 @@ pub fn compile_helper(filename: String) -> Result<(), CompileError> {
                 Ok(statements
                     .into_iter()
                     .filter_map(|statement| match statement {
-                        ImportStatement(statement) => Some(statement),
                         Let {
                             access,
                             left,
@@ -109,7 +104,8 @@ pub fn compile_helper(filename: String) -> Result<(), CompileError> {
                             right,
                         }),
                         Expression(_) => None,
-                    }))
+                    })
+                    .collect())
             }
         })
         .collect::<Result<Vec<_>, _>>()?
@@ -176,9 +172,13 @@ pub fn get_top_level_symbols(
                         };
 
                         // Create a new rib for this file
-                        name_resolver
-                            .top_level_ribs
-                            .insert(canonicalized_path, Rib::new());
+                        name_resolver.top_level_ribs.insert(
+                            canonicalized_path,
+                            Rib::new(Scope {
+                                name: name_resolver.current_scope_name.next(),
+                                parent: None,
+                            }),
+                        );
 
                         // Add top level symbols to the newly created rib
                         name_resolver
@@ -306,7 +306,10 @@ impl raw_ast::Statement {
                         name: name_resolver.insert_top_level_module_symbol(
                             module_name,
                             &module_definition_statement.name,
-                            Rib::new(),
+                            Rib::new(Scope {
+                                name: name_resolver.current_scope_name.next(),
+                                parent: None,
+                            }),
                         )?,
                         statements: {
                             let module_name =
@@ -350,7 +353,8 @@ pub struct CanonicalizedPath(PathBuf);
 
 pub struct NameResolver {
     top_level_ribs: HashMap<CanonicalizedPath, Rib>,
-    current_uid: SymbolUid,
+    current_symbol_uid: SymbolUid,
+    current_scope_name: ScopeName,
     /// Stack of ribs, used for scoping
     ribs: Vec<Rib>,
 
@@ -365,6 +369,7 @@ pub struct Rib {
     value_symbols: Vec<ValueSymbol>,
     type_symbols: Vec<TypeSymbol>,
     module_symbols: Vec<ModuleSymbol>,
+    scope: Scope,
 }
 
 #[derive(Debug, Clone)]
@@ -386,7 +391,8 @@ struct ModuleSymbol {
 impl NameResolver {
     pub fn new() -> Self {
         NameResolver {
-            current_uid: SymbolUid::new(),
+            current_symbol_uid: SymbolUid::new(),
+            current_scope_name: ScopeName::new(),
             partially_qualified_modules: Vec::new(),
             top_level_ribs: HashMap::new(),
             ribs: Vec::new(),
@@ -399,11 +405,12 @@ impl NameResolver {
         name: RawIdentifier,
     ) -> Result<ResolvedName, NameResolutionError> {
         let rib = self.get_top_level_rib(path_name)?;
-        let uid = self.current_uid.next();
+        let uid = self.current_symbol_uid.next();
         let resolved_name = ResolvedName {
             uid,
             position: name.position,
             representation: name.representation,
+            scope: rib.scope.clone(),
         };
         let symbol = ValueSymbol {
             name: resolved_name.clone(),
@@ -432,9 +439,10 @@ impl NameResolver {
     ) -> Result<ResolvedName, NameResolutionError> {
         let rib = self.get_top_level_rib(module_name)?;
         let name = ResolvedName {
-            uid: self.current_uid.next(),
+            uid: self.current_symbol_uid.next(),
             representation: name.representation,
             position: name.position,
+            scope: rib.scope.clone(),
         };
         let symbol = TypeSymbol { name };
         rib.insert_type_symbol(symbol)?;
@@ -449,9 +457,10 @@ impl NameResolver {
     ) -> Result<ResolvedName, NameResolutionError> {
         let rib = self.get_top_level_rib(module_symbol)?;
         let name = ResolvedName {
-            uid: self.current_uid.next(),
+            uid: self.current_symbol_uid.next(),
             position: name.position,
             representation: name.representation,
+            scope: rib.scope.clone(),
         };
         let symbol = ModuleSymbol { name, rib: module };
         rib.insert_module_symbol(symbol)?;
@@ -500,17 +509,32 @@ impl NameResolver {
     }
 
     fn run_in_new_rib<T, F: FnMut(&mut NameResolver) -> T>(&mut self, f: F) -> T {
-        self.ribs.push(Rib::new());
+        let parent = self.ribs.last();
+        self.ribs.push(Rib::new(Scope {
+            name: self.current_scope_name.next(),
+            parent: parent.map(|parent| parent.scope.name),
+        }));
         let result = f(self);
-        self.ribs.pop();
+        let rib = self.ribs.pop().unwrap();
+        // TODO: check for unused names on the popped rib
         result
     }
 
-    fn insert_local_value_symbol(&self, symbol: ValueSymbol) {
-        self.ribs
+    fn insert_local_value_symbol(&self, uid: SymbolUid, name: RawIdentifier) {
+        let current_rib = self
+            .ribs
             .last()
-            .expect("Rib should be created before inserting value")
-            .insert_value_symbol(symbol)
+            .expect("Rib should be created before inserting value");
+
+        let symbol = ValueSymbol {
+            name: ResolvedName {
+                uid, // <-- Important: use the UID of the imported symbol
+                position: name.position,
+                representation: name.representation,
+                scope: current_rib.scope.clone(),
+            },
+        };
+        current_rib.insert_value_symbol(symbol)
     }
 }
 
@@ -535,16 +559,10 @@ impl raw_ast::ModuleAliasStatement {
                 DesugaredModuleAliasStatementLeft::Name(name) => {
                     for symbol in statement
                         .right
-                        .to_value_symbols(name_resolver, current_module_name)?
+                        .to_value_symbols(current_module_name, name_resolver)?
                         .into_vector()
                     {
-                        name_resolver.insert_local_value_symbol(ValueSymbol {
-                            name: ResolvedName {
-                                uid: symbol.name.uid, // <-- Important: use the UID of the imported symbol
-                                position: name.position,
-                                representation: name.representation,
-                            },
-                        });
+                        name_resolver.insert_local_value_symbol(symbol.name.uid, name);
                     }
                     // TODO: insert type symbols
                     // TODO: insert module symbols
@@ -612,8 +630,8 @@ impl raw_ast::ModuleDestructurePattern {
 impl RawName {
     pub fn to_value_symbols(
         self,
-        name_resolver: &mut NameResolver,
         current_module_name: &ModuleName,
+        name_resolver: &mut NameResolver,
     ) -> Result<NonEmpty<ValueSymbol>, CompileError> {
         match self.qualifier {
             Some(qualifier) => {
@@ -662,11 +680,12 @@ impl RawName {
     }
 }
 impl Rib {
-    pub fn new() -> Rib {
+    pub fn new(scope: Scope) -> Rib {
         Rib {
             value_symbols: vec![],
             type_symbols: vec![],
             module_symbols: vec![],
+            scope,
         }
     }
 
@@ -790,8 +809,8 @@ impl raw_ast::Expression {
             Expression::Identifier(name) => Ok(qualified_ast::Expression::Identifier {
                 name: name.clone(),
                 referring_to: name
-                    .to_value_symbols(name_resolver, current_module_name)?
-                    .clone(),
+                    .to_value_symbols(current_module_name, name_resolver)?
+                    .map(|symbol| symbol.name.uid),
             }),
             Expression::Statements { current, next } => {
                 todo!()
@@ -845,7 +864,41 @@ impl raw_ast::Expression {
                 type_annotation,
                 body,
             } => todo!(),
-            Expression::CpsClosure { tilde, expression } => todo!(),
+            Expression::CpsClosure { tilde, expression } => {
+                let (bangs, expression) = expression
+                    .clone()
+                    .collect_cps_bangs(current_module_name, name_resolver)?;
+
+                let expression = bangs.into_iter().fold(expression, |expression, bang| {
+                    qualified_ast::Expression::FunctionCall(Box::new(qualified_ast::FunctionCall {
+                        function: Box::new(qualified_ast::Expression::FunctionCall(Box::new(
+                            qualified_ast::FunctionCall {
+                                function: Box::new(bang.function),
+                                argument: Box::new(bang.argument),
+                            },
+                        ))),
+                        argument: Box::new(qualified_ast::Expression::Function(Box::new(
+                            qualified_ast::Function {
+                                left_curly_bracket: Token::dummy(),
+                                branches: NonEmpty {
+                                    head: qualified_ast::FunctionBranch {
+                                        parameter: Box::new(
+                                            qualified_ast::DestructurePattern::Identifier(
+                                                bang.temporary_variable,
+                                            ),
+                                        ),
+                                        body: Box::new(expression),
+                                    },
+                                    tail: vec![],
+                                },
+                                right_curly_bracket: Token::dummy(),
+                            },
+                        ))),
+                    }))
+                });
+                todo!()
+                // TODO: continue from here
+            }
             Expression::CpsBang {
                 argument,
                 bang,
@@ -892,10 +945,276 @@ impl partially_qualified_ast::LetStatement {
             keyword_let: self.keyword_let,
             name: self.name,
             doc_string: self.doc_string,
+            doc_string_expressions: match self.doc_string {
+                None => vec![],
+                Some(doc_string) => doc_string
+                    .extract_codes()
+                    .map_err(|error| CompileError::ParseError {
+                        filename: current_module_name.filename,
+                        error,
+                    })?
+                    .into_iter()
+                    .map(|expression| expression.to_qualified(current_module_name, name_resolver))
+                    .collect::<Result<Vec<_>, CompileError>>()?,
+            },
             type_annotation: self.type_annotation.to_qualified()?,
             expression: self
                 .expression
                 .to_qualified(current_module_name, name_resolver)?,
         }))
     }
+}
+
+impl raw_ast::Expression {
+    /// Collect CPS bangs, and transformed those bangs into temporary variables
+    pub fn collect_cps_bangs(
+        self,
+        current_module_name: &ModuleName,
+        name_resolver: &mut NameResolver,
+    ) -> Result<(Vec<CollectCpsBangResult>, qualified_ast::Expression), CompileError> {
+        match self {
+            raw_ast::Expression::Unit { .. }
+            | raw_ast::Expression::Float(_)
+            | raw_ast::Expression::Integer(_)
+            | raw_ast::Expression::String(_)
+            | raw_ast::Expression::Character(_)
+            | raw_ast::Expression::Identifier { .. }
+            | raw_ast::Expression::CpsClosure { .. } => Ok((
+                vec![],
+                self.to_qualified(current_module_name, name_resolver)?,
+            )),
+
+            raw_ast::Expression::Statements { current, next } => {
+                let (bangs1, current) =
+                    current.collect_cps_bangs(current_module_name, name_resolver)?;
+                let (bangs2, next) = next.collect_cps_bangs(current_module_name, name_resolver)?;
+                Ok((
+                    bangs1.into_iter().chain(bangs2.into_iter()).collect(),
+                    qualified_ast::Expression::Statements {
+                        current: Box::new(current),
+                        next: Box::new(next),
+                    },
+                ))
+            }
+            raw_ast::Expression::Parenthesized {
+                left_parenthesis,
+                right_parenthesis,
+                value,
+            } => {
+                let (bangs, value) = value.collect_cps_bangs(current_module_name, name_resolver)?;
+                Ok((
+                    bangs,
+                    qualified_ast::Expression::Parenthesized {
+                        left_parenthesis,
+                        right_parenthesis,
+                        value: Box::new(value),
+                    },
+                ))
+            }
+            raw_ast::Expression::InterpolatedString {
+                start_quotes: start_quote,
+                sections,
+                end_quotes: end_quote,
+            } => {
+                let NonEmpty { head, tail } = sections.map_result(|section| match section {
+                    raw_ast::InterpolatedStringSection::String(string) => Ok((
+                        vec![],
+                        qualified_ast::InterpolatedStringSection::String(string),
+                    )),
+                    raw_ast::InterpolatedStringSection::Expression(expression) => {
+                        let (bangs, expression) =
+                            expression.collect_cps_bangs(current_module_name, name_resolver)?;
+                        Ok((
+                            bangs,
+                            qualified_ast::InterpolatedStringSection::Expression(Box::new(
+                                expression,
+                            )),
+                        ))
+                    }
+                })?;
+                let (bangs, sections): (
+                    Vec<Vec<CollectCpsBangResult>>,
+                    Vec<qualified_ast::InterpolatedStringSection>,
+                ) = tail.into_iter().unzip();
+                let bangs = head
+                    .0
+                    .into_iter()
+                    .chain(bangs.into_iter().flatten())
+                    .collect();
+                Ok((
+                    bangs,
+                    qualified_ast::Expression::InterpolatedString {
+                        start_quotes: start_quote,
+                        sections: NonEmpty {
+                            head: head.1,
+                            tail: sections,
+                        },
+                        end_quotes: end_quote,
+                    },
+                ))
+            }
+            raw_ast::Expression::EnumConstructor { name, payload } => match payload {
+                Some(payload) => {
+                    let (bangs, payload) =
+                        payload.collect_cps_bangs(current_module_name, name_resolver)?;
+                    Ok((
+                        bangs,
+                        qualified_ast::Expression::EnumConstructor {
+                            name,
+                            referring_to: name
+                                .to_value_symbols(current_module_name, name_resolver)?
+                                .map(|symbol| symbol.name.uid),
+                            payload: Some(Box::new(payload)),
+                        },
+                    ))
+                }
+                None => Ok((
+                    vec![],
+                    qualified_ast::Expression::EnumConstructor {
+                        name,
+                        referring_to: name
+                            .to_value_symbols(current_module_name, name_resolver)?
+                            .map(|symbol| symbol.name.uid),
+                        payload: None,
+                    },
+                )),
+            },
+            raw_ast::Expression::Function(lambda) => {
+                todo!()
+            }
+            raw_ast::Expression::FunctionCall(function_call) => {
+                let (bangs1, function) = function_call
+                    .function
+                    .collect_cps_bangs(current_module_name, name_resolver)?;
+                let (bangs2, argument) = function_call
+                    .argument
+                    .collect_cps_bangs(current_module_name, name_resolver)?;
+                Ok((
+                    bangs1.into_iter().chain(bangs2.into_iter()).collect(),
+                    qualified_ast::Expression::FunctionCall(Box::new(
+                        qualified_ast::FunctionCall {
+                            function: Box::new(function),
+                            argument: Box::new(argument),
+                        },
+                    )),
+                ))
+            }
+            raw_ast::Expression::Record {
+                wildcard,
+                left_parenthesis: left_square_bracket,
+                key_value_pairs,
+                right_parenthesis: right_square_bracket,
+            } => {
+                let (bangs, key_value_pairs): (
+                    Vec<Vec<CollectCpsBangResult>>,
+                    Vec<qualified_ast::RecordKeyValue>,
+                ) = key_value_pairs
+                    .into_iter()
+                    .map(|key_value_pair| {
+                        let (bangs, value) = key_value_pair
+                            .value
+                            .collect_cps_bangs(current_module_name, name_resolver)?;
+                        Ok((
+                            bangs,
+                            qualified_ast::RecordKeyValue {
+                                key: key_value_pair.key,
+                                value,
+                            },
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .unzip();
+                Ok((
+                    bangs.into_iter().flatten().collect(),
+                    qualified_ast::Expression::Record {
+                        wildcard: match wildcard {
+                            Some(token) => Some(qualified_ast::RecordWildcard {
+                                token,
+                                scope_name: todo!("Get current scope name from name resolver"),
+                            }),
+                            None => None,
+                        },
+                        left_parenthesis: left_square_bracket,
+                        key_value_pairs,
+                        right_parenthesis: right_square_bracket,
+                    },
+                ))
+            }
+            raw_ast::Expression::RecordAccess {
+                expression,
+                property_name,
+            } => {
+                let (bangs, expression) =
+                    expression.collect_cps_bangs(current_module_name, name_resolver)?;
+                Ok((
+                    bangs,
+                    qualified_ast::Expression::RecordAccess {
+                        expression: Box::new(expression),
+                        property_name,
+                    },
+                ))
+            }
+            raw_ast::Expression::RecordUpdate {
+                expression,
+                left_parenthesis: left_curly_bracket,
+                updates,
+                right_parenthesis: right_curly_bracket,
+            } => todo!(),
+            raw_ast::Expression::Array {
+                left_square_bracket,
+                elements,
+                right_square_bracket,
+            } => todo!(),
+            raw_ast::Expression::Let {
+                keyword_let,
+                left,
+                right,
+                type_annotation,
+                body,
+            } => todo!(),
+            raw_ast::Expression::CpsBang {
+                argument,
+                bang,
+                function,
+            } => {
+                // TODO: continue from here (moving CPS transfomer from unify to name resolution
+                // phase)
+                let temporary_variable_identifier = RawIdentifier {
+                    position: bang.position,
+                    representation: "cps_transform_autogenerated_variable".to_string(),
+                };
+                let symbol_uid = name_resolver.current_symbol_uid.next();
+                name_resolver.insert_local_value_symbol(symbol_uid, temporary_variable_identifier);
+                Ok((
+                    vec![CollectCpsBangResult {
+                        temporary_variable: ResolvedName {
+                            uid: symbol_uid,
+                            position: temporary_variable_identifier.position,
+                            representation: temporary_variable_identifier.representation,
+                            scope: todo!("get current scope name from name resolver"),
+                        },
+                        function: function.to_qualified(current_module_name, name_resolver)?,
+                        argument: argument.to_qualified(current_module_name, name_resolver)?,
+                    }],
+                    qualified_ast::Expression::Identifier {
+                        name: RawName {
+                            qualifier: None,
+                            name: temporary_variable_identifier,
+                        },
+                        referring_to: NonEmpty {
+                            head: symbol_uid,
+                            tail: vec![],
+                        },
+                    },
+                ))
+            }
+        }
+    }
+}
+
+struct CollectCpsBangResult {
+    temporary_variable: ResolvedName,
+    function: qualified_ast::Expression,
+    argument: qualified_ast::Expression,
 }
