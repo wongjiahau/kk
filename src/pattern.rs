@@ -1,3 +1,4 @@
+use crate::qualified_ast::ResolvedName;
 use crate::tokenize::{Position, Token};
 use crate::{inferred_ast::Identifier, raw_ast::*, typ::*, unify::Positionable};
 use crate::{inferred_ast::PropertyName, module::*};
@@ -61,9 +62,9 @@ pub enum CheckablePatternKind {
         right_parenthesis: Token,
     },
     Underscore(Token),
-    Identifier(Box<Identifier>),
+    Identifier(Box<ResolvedName>),
     EnumConstructor {
-        constructor_name: Token,
+        constructor_name: ResolvedName,
         payload: Option<Box<CheckablePattern>>,
     },
     Record {
@@ -91,7 +92,7 @@ impl Positionable for CheckablePatternKind {
                 left_parenthesis,
                 right_parenthesis,
             } => left_parenthesis.position.join(right_parenthesis.position),
-            CheckablePatternKind::Identifier(identifier) => identifier.token.position,
+            CheckablePatternKind::Identifier(identifier) => identifier.position,
             CheckablePatternKind::EnumConstructor {
                 constructor_name,
                 payload,
@@ -349,14 +350,14 @@ pub fn expand_pattern(module: &Module, type_value: &Type) -> Vec<ExpandablePatte
                 let constructor_name = constructor_symbol.constructor_name.clone();
                 match &constructor_symbol.payload {
                     None => ExpandablePattern::EnumConstructor {
-                        name: constructor_name,
+                        name: constructor_name.representation,
                         payload: None,
                     },
                     Some(payload) => {
                         let payload =
                             rewrite_type_variables_in_type(type_arguments.clone(), payload.clone());
                         ExpandablePattern::EnumConstructor {
-                            name: constructor_name,
+                            name: constructor_name.representation,
                             payload: Some(Box::new(ExpandablePattern::Any {
                                 type_value: payload,
                             })),
@@ -507,11 +508,11 @@ pub fn match_pattern(
         (CheckablePatternKind::Underscore(_), _) => MatchPatternResult::Matched,
         (CheckablePatternKind::Identifier(identifier), _) => {
             // check if the identifier matches any enum constructor
-            if module.matches_some_enum_constructor(&identifier.token.representation) {
+            if module.matches_some_enum_constructor(&identifier.representation) {
                 match_pattern(
                     module,
                     &CheckablePatternKind::EnumConstructor {
-                        constructor_name: identifier.token.clone(),
+                        constructor_name: *identifier.clone(),
                         payload: None,
                     },
                     expected_pattern,

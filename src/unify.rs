@@ -327,7 +327,6 @@ pub enum UnifyErrorKind {
         possible_value_symbols: NonEmpty<ValueSymbol>,
     },
     AmbiguousConstructorUsage {
-        constructor_name: String,
         possible_enum_names: NonEmpty<String>,
     },
     DuplicatedRecordKey,
@@ -454,7 +453,7 @@ pub fn infer_enum_statement(
             Ok(EnumConstructorSymbol {
                 enum_uid: enum_uid.clone(),
                 enum_name: enum_statement.name.representation.clone(),
-                constructor_name: constructor.name.representation.clone(),
+                constructor_name: constructor.name.clone(),
                 type_variables: enum_statement
                     .type_variables()
                     .into_iter()
@@ -1297,14 +1296,16 @@ pub struct GetEnumTypeResult {
 pub fn get_enum_type(
     module: &mut Module,
     expected_type: Option<Type>,
-    constructor_name: &ResolvedName,
+    constructor_uids: &NonEmpty<SymbolUid>,
+    position: Position,
 ) -> Result<GetEnumTypeResult, UnifyError> {
     let expected_enum_uid = match &expected_type {
         Some(Type::Named { symbol_uid, .. }) => Some(symbol_uid.clone()),
         _ => None,
     };
     // Look up constructor
-    let constructor = module.get_constructor_symbol(expected_enum_uid, &constructor_name)?;
+    let constructor =
+        module.get_constructor_symbol(expected_enum_uid, &constructor_uids, position)?;
 
     let enum_type = module.get_type_symbol_by_uid(&constructor.enum_uid);
 
@@ -1452,12 +1453,12 @@ fn infer_expression_type_(
             payload,
             referring_to,
         } => {
-            let result = get_enum_type(module, expected_type, name)?;
+            let result = get_enum_type(module, expected_type, referring_to, name.position())?;
             match (result.expected_payload_type, payload.clone()) {
                 (None, None) => Ok(InferExpressionResult {
                     type_value: result.expected_enum_type,
                     expression: InferredExpression::EnumConstructor {
-                        constructor_name: name.representation.clone(),
+                        constructor_name: name.name.representation.clone(),
                         payload: None,
                     },
                 }),
@@ -1466,7 +1467,7 @@ fn infer_expression_type_(
                     kind: UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload,
                 }),
                 (Some(expected_payload_type), None) => Err(UnifyError {
-                    position: name.position,
+                    position: name.position(),
                     kind: UnifyErrorKind::ThisEnumConstructorRequiresPaylod {
                         payload_type: expected_payload_type,
                     },
@@ -1477,7 +1478,7 @@ fn infer_expression_type_(
                     Ok(InferExpressionResult {
                         type_value: result.expected_enum_type,
                         expression: InferredExpression::EnumConstructor {
-                            constructor_name: name.representation.clone(),
+                            constructor_name: name.name.representation.clone(),
                             payload: Some(Box::new(typechecked_payload.expression)),
                         },
                     })
@@ -2105,36 +2106,6 @@ fn infer_expression_type_(
                 },
             })
         }
-        Expression::CpsClosure { expression, .. } => {
-            // Collect CpsBangs
-            let (bangs, expression) = expression.clone().collect_cps_bangs(module);
-
-            let expression = bangs.into_iter().fold(expression, |expression, bang| {
-                Expression::FunctionCall(Box::new(FunctionCall {
-                    function: Box::new(Expression::FunctionCall(Box::new(FunctionCall {
-                        function: Box::new(bang.function),
-                        argument: Box::new(bang.argument),
-                    }))),
-                    argument: Box::new(Expression::Function(Box::new(Function {
-                        left_curly_bracket: Token::dummy(),
-                        branches: NonEmpty {
-                            head: FunctionBranch {
-                                parameter: Box::new(bang.temporary_variable),
-                                body: Box::new(expression),
-                            },
-                            tail: vec![],
-                        },
-                        right_curly_bracket: Token::dummy(),
-                    }))),
-                }))
-            });
-            infer_expression_type(module, expected_type, &expression)
-        }
-        Expression::CpsBang {
-            argument,
-            bang,
-            function,
-        } => panic!("Missing CPS closure"),
     }?;
     Ok(InferExpressionResult {
         type_value: module.apply_subtitution_to_type(&result.type_value),
@@ -2569,7 +2540,7 @@ pub fn to_checkable_pattern(
         InferredDestructurePatternKind::Identifier(identifier) => {
             vec![CheckablePattern {
                 is_result_of_expansion,
-                kind: CheckablePatternKind::Identifier(identifier.clone()),
+                kind: CheckablePatternKind::Identifier(Box::new(identifier.clone())),
             }]
         }
     }

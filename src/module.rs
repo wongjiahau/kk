@@ -479,61 +479,48 @@ impl Module {
     pub fn matches_some_enum_constructor(&self, name: &str) -> bool {
         self.enum_constructor_symbols
             .iter()
-            .any(|symbol| symbol.constructor_name == *name)
+            .any(|symbol| symbol.constructor_name.representation.eq(name))
     }
 
-    /// `expected_enum_name` -
+    pub fn get_enum_constructor_symbol_by_uid(&self, uid: &SymbolUid) -> EnumConstructorSymbol {
+        self.enum_constructor_symbols
+            .iter()
+            .find(|symbol| symbol.constructor_name.uid.eq(uid))
+            .expect("This should not happen")
+            .clone()
+    }
+
+    /// `expected_enum_uid` -
     ///     This is for disambiguating constructors with the same name that belongs to different enums
     pub fn get_constructor_symbol(
         &self,
         expected_enum_uid: Option<SymbolUid>,
-        constructor_name: &ResolvedName,
+        constructor_uids: &NonEmpty<SymbolUid>,
+        position: Position,
     ) -> Result<EnumConstructorSymbol, UnifyError> {
-        let matching_constructors = self
-            .enum_constructor_symbols
-            .iter()
-            .filter_map(|symbol| {
-                if symbol.constructor_name == constructor_name.representation {
-                    Some(symbol.clone())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<EnumConstructorSymbol>>();
-
-        match matching_constructors.split_first() {
-            None => Err(self.unify_error(
-                &constructor_name.position,
-                UnifyErrorKind::UnknownEnumConstructor,
-            )),
-            Some((constructor, tail)) => {
-                if tail.is_empty() {
-                    Ok(EnumConstructorSymbol::clone(constructor))
-                } else {
-                    // If more than one matching constructors found
-                    // Need to disambiguate using expected_enum_name
-                    let error = Err(self.unify_error(
-                        &constructor_name.position,
-                        UnifyErrorKind::AmbiguousConstructorUsage {
-                            constructor_name: constructor_name.representation.clone(),
-                            possible_enum_names: NonEmpty {
-                                head: constructor.enum_name.clone(),
-                                tail: tail
-                                    .iter()
-                                    .map(|constructor| constructor.enum_name.clone())
-                                    .collect(),
-                            },
-                        },
-                    ));
-                    match expected_enum_uid {
-                        None => error,
-                        Some(expected_enum_uid) => match matching_constructors
-                            .into_iter()
-                            .find(|constructor| constructor.enum_uid == expected_enum_uid)
-                        {
-                            Some(constructor_symbol) => Ok(constructor_symbol),
-                            None => error,
-                        },
+        if constructor_uids.tail.is_empty() {
+            Ok(self.get_enum_constructor_symbol_by_uid(&constructor_uids.head))
+        } else {
+            let matching_constructors =
+                constructor_uids.map(|uid| self.get_enum_constructor_symbol_by_uid(&uid));
+            match expected_enum_uid {
+                None => Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::AmbiguousConstructorUsage {
+                        possible_enum_names: matching_constructors
+                            .map(|constructor| constructor.enum_name),
+                    },
+                }),
+                Some(expected_enum_uid) => {
+                    match matching_constructors.find_map(|constructor| {
+                        if constructor.enum_uid.eq(&expected_enum_uid) {
+                            Some(constructor)
+                        } else {
+                            None
+                        }
+                    }) {
+                        Some(constructor) => Ok(constructor.clone()),
+                        None => panic!("The expected enum does not contains this constructor"),
                     }
                 }
             }
@@ -712,7 +699,7 @@ pub struct EnumConstructorSymbol {
     /// Refers to the UID of the enum that contains this constructor
     pub enum_uid: SymbolUid,
     pub enum_name: String,
-    pub constructor_name: String,
+    pub constructor_name: ResolvedName,
     pub type_variables: Vec<String>,
     pub payload: Option<Type>,
 }

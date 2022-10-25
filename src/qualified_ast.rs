@@ -97,7 +97,7 @@ pub struct EnumStatement {
 
 #[derive(Debug, Clone)]
 pub struct EnumConstructorDefinition {
-    pub name: Token,
+    pub name: ResolvedName,
     pub payload: Option<Box<EnumConstructorDefinitionPayload>>,
 }
 
