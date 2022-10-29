@@ -45,7 +45,7 @@ pub enum ParseContext {
     StatementLet,
     StatementType,
     StatementEnum,
-    StatementModule,
+    StatementImport,
 
     // Type annotation
     TypeAnnotationRecord,
@@ -178,9 +178,9 @@ impl<'a> Parser<'a> {
                     self.parse_type_alias_or_enum_statement(access, token)
                         .map(vectorized)
                 }
-                TokenType::KeywordModule => {
+                TokenType::KeywordImport => {
                     let token = self.next_meaningful_token()?.unwrap();
-                    self.parse_module_statement(access, token).map(vectorized)
+                    self.parse_import_statement(access, token).map(vectorized)
                 }
                 _ => Err(Parser::invalid_token(token, None)),
             },
@@ -347,11 +347,7 @@ impl<'a> Parser<'a> {
         let name = self.eat_token(TokenType::Identifier, context)?;
         let type_variables_declaration = self.try_parse_type_variables_declaration()?;
         self.eat_token(TokenType::Equals, context)?;
-        if let Some(Token {
-            token_type: TokenType::Tag,
-            ..
-        }) = self.peek_next_meaningful_token()?
-        {
+        if self.try_eat_token(TokenType::KeywordCase)?.is_some() {
             self.parse_enum_statement(access, keyword_type, name, type_variables_declaration)
         } else {
             let right = self.parse_type_annotation(context)?;
@@ -375,7 +371,8 @@ impl<'a> Parser<'a> {
         let mut constructors = vec![self.parse_enum_constructor_definition()?];
 
         let constructors = loop {
-            if self.try_eat_token(TokenType::Pipe)?.is_some() {
+            let access = self.parse_access()?;
+            if self.try_eat_token(TokenType::KeywordCase)?.is_some() {
                 constructors.push(self.parse_enum_constructor_definition()?);
             } else {
                 break constructors;
@@ -390,84 +387,55 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_module_statement(
+    fn parse_import_statement(
         &mut self,
         access: Access,
-        keyword_module: Token,
+        keyword_import: Token,
     ) -> Result<Statement, ParseError> {
-        let context = Some(ParseContext::StatementModule);
+        let context = Some(ParseContext::StatementImport);
 
-        let left = self.parse_module_destructure_pattern()?;
-        self.eat_token(TokenType::Equals, context)?;
-        let right = self.parse_module_value()?;
+        let url = self.eat_string_literal()?;
+        let right = self.try_parse_import_specification()?;
 
-        Ok(Statement::Module(ModuleStatement {
+        Ok(Statement::Import(ImportStatement {
             access,
-            keyword_module,
-            left,
-            right,
+            keyword_import,
+            url,
+            specification: right,
         }))
     }
 
-    fn parse_module_value(&mut self) -> Result<ModuleValue, ParseError> {
+    fn try_parse_import_specification(
+        &mut self,
+    ) -> Result<Option<ImportStatementSpecification>, ParseError> {
         let context = None;
-        let token = self.next_meaningful_token()?;
-        match token {
-            None => Err(Parser::unexpected_eof(context)),
-            Some(token) => match token.token_type {
-                TokenType::KeywordImport => {
-                    let url = self.try_eat_string_literal()?;
-                    if let Some(url) = url {
-                        Ok(ModuleValue::Import {
-                            keyword_import: token,
-                            url,
-                        })
-                    } else {
-                        panic!("parse error")
-                    }
-                }
-                _ => Err(Parser::invalid_token(token, context)),
-            },
-        }
-    }
-
-    fn parse_module_destructure_pattern(&mut self) -> Result<ModuleDestructurePattern, ParseError> {
-        let context = None;
-        let token = self.next_meaningful_token()?;
-        match token {
-            None => Err(Parser::unexpected_eof(context)),
-            Some(token) => match token.token_type {
-                TokenType::Identifier => Ok(ModuleDestructurePattern::Identifier(token)),
-                TokenType::LeftParenthesis => {
-                    let mut pairs = vec![];
-                    let (pairs, right_parenthesis) = loop {
-                        if let Some(right_parenthesis) =
-                            self.try_eat_token(TokenType::RightParenthesis)?
-                        {
-                            break (pairs, right_parenthesis);
+        if let Some(left_curly_bracket) = self.try_eat_token(TokenType::LeftCurlyBracket)? {
+            let mut aliases = vec![];
+            let aliases = loop {
+                aliases.push(ImportSpecificationAlias {
+                    name: self.eat_token(TokenType::Identifier, context)?,
+                    alias: {
+                        if self.try_eat_token(TokenType::KeywordAs)?.is_some() {
+                            Some(self.eat_token(TokenType::Identifier, context)?)
+                        } else {
+                            None
                         }
-                        pairs.push(ModuleDestructurePatternPair {
-                            name: self.eat_token(TokenType::Identifier, context)?,
-                            pattern: {
-                                if self.next_token_is_terminating()? {
-                                    None
-                                } else {
-                                    Some(self.parse_module_destructure_pattern()?)
-                                }
-                            },
-                        })
-                    };
-                    Ok(ModuleDestructurePattern::Record {
-                        left_parenthesis: token,
-                        spread: None,
-                        pairs,
-                        right_parenthesis,
-                    })
+                    },
+                });
+                if let Some(right_curly_bracket) =
+                    self.try_eat_token(TokenType::RightCurlyBracket)?
+                {
+                    return Ok(Some(ImportStatementSpecification {
+                        left_curly_bracket,
+                        aliases,
+                        right_curly_bracket,
+                    }));
+                } else {
+                    self.eat_token(TokenType::Comma, context)?;
                 }
-                _ => {
-                    todo!()
-                }
-            },
+            };
+        } else {
+            Ok(None)
         }
     }
 
@@ -560,21 +528,28 @@ impl<'a> Parser<'a> {
         &mut self,
     ) -> Result<EnumConstructorDefinition, ParseError> {
         let context = Some(ParseContext::EnumConstructorDefinition);
-        let name = self.eat_token(TokenType::Tag, context)?;
-        if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
-            Ok(EnumConstructorDefinition {
-                name,
-                payload: Some(Box::new(EnumConstructorDefinitionPayload {
-                    type_annotation: self
-                        .parse_parenthesized_or_record_type_annotation(left_parenthesis)?,
-                })),
-            })
-        } else {
-            Ok(EnumConstructorDefinition {
-                name,
-                payload: None,
-            })
-        }
+        let name = self.eat_token(TokenType::Identifier, context)?;
+        Ok(EnumConstructorDefinition {
+            name,
+            access: Access::Protected, // TODO: allow constructor to be marked as private or public
+            payload: {
+                if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
+                    Some(Box::new(EnumConstructorDefinitionPayload {
+                        type_annotation: self
+                            .parse_parenthesized_type_annotation(left_parenthesis)?,
+                    }))
+                } else if let Some(hash_left_curly_bracket) =
+                    self.try_eat_token(TokenType::HashLeftCurlyBracket)?
+                {
+                    Some(Box::new(EnumConstructorDefinitionPayload {
+                        type_annotation: self
+                            .parse_record_type_annotation(hash_left_curly_bracket)?,
+                    }))
+                } else {
+                    None
+                }
+            },
+        })
     }
 
     fn try_parse_type_variables_declaration(
@@ -638,31 +613,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_shorthand_dot_expression(&mut self, period: Token) -> Result<Function, ParseError> {
-        // This is a function shorthand expression
-        let phantom_variable = Token {
-            token_type: TokenType::Identifier,
-            representation: "$".to_string(),
-            position: period.position,
-        };
-        let function_body =
-            self.parse_dot_expression(period, Expression::Identifier(phantom_variable.clone()))?;
-        todo!();
-        // Ok(Lambda {
-        //     branches: NonEmpty {
-        //         head: FunctionBranch {
-        //             start_token: phantom_variable.clone(),
-        //             parameters: NonEmpty {
-        //                 head: DestructurePattern::Identifier(phantom_variable),
-        //                 tail: vec![],
-        //             },
-        //             body: Box::new(function_body),
-        //         },
-        //         tail: vec![],
-        //     },
-        // })
-    }
-
     fn try_parse_type_annotation(&mut self) -> Result<Option<TypeAnnotation>, ParseError> {
         if self.try_eat_token(TokenType::Colon)?.is_some() {
             Ok(Some(self.parse_type_annotation(None)?))
@@ -704,6 +654,10 @@ impl<'a> Parser<'a> {
                         type_annotation: Box::new(self.parse_type_annotation(None)?),
                     })
                 }
+                TokenType::HashLeftCurlyBracket => {
+                    let hash_left_curly_bracket = token;
+                    self.parse_record_type_annotation(hash_left_curly_bracket)
+                }
                 TokenType::LeftParenthesis => {
                     let left_parenthesis = token;
                     if let Some(right_parenthesis) =
@@ -714,7 +668,7 @@ impl<'a> Parser<'a> {
                             right_parenthesis,
                         })
                     } else {
-                        self.parse_parenthesized_or_record_type_annotation(left_parenthesis)
+                        self.parse_parenthesized_type_annotation(left_parenthesis)
                     }
                 }
                 _ => Err(Parser::invalid_token(token, context)),
@@ -727,33 +681,28 @@ impl<'a> Parser<'a> {
 
     fn parse_record_type_annotation(
         &mut self,
-        left_parenthesis: Token,
-        first_key_type_pair: (Token, TypeAnnotation),
+        hash_left_curly_bracket: Token,
     ) -> Result<TypeAnnotation, ParseError> {
         let context = Some(ParseContext::TypeAnnotationRecord);
-        let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = vec![first_key_type_pair];
-        let right_parenthesis = loop {
-            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
-                break right_parenthesis;
+        let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = vec![];
+        let right_curly_bracket = loop {
+            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
+                break right_curly_bracket;
             }
-            self.eat_token(TokenType::Comma, context)?;
             let key = self.eat_token(TokenType::Identifier, context)?;
             self.eat_token(TokenType::Colon, context)?;
             let type_annotation = self.parse_type_annotation(context)?;
             key_type_annotation_pairs.push((key, type_annotation));
+
+            if self.try_eat_token(TokenType::Comma)?.is_none() {
+                break self.eat_token(TokenType::RightCurlyBracket, context)?;
+            };
         };
-        if key_type_annotation_pairs.is_empty() {
-            Ok(TypeAnnotation::Unit {
-                left_parenthesis,
-                right_parenthesis,
-            })
-        } else {
-            Ok(TypeAnnotation::Record {
-                left_parenthesis,
-                key_type_annotation_pairs,
-                right_parenthesis,
-            })
-        }
+        Ok(TypeAnnotation::Record {
+            hash_left_curly_bracket,
+            key_type_annotation_pairs,
+            right_curly_bracket,
+        })
     }
 
     fn try_parse_function_type_annotation(
@@ -865,12 +814,6 @@ impl<'a> Parser<'a> {
     pub fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         if let Some(token) = self.peek_next_meaningful_token()? {
             let expression = match &token.token_type {
-                TokenType::Period => {
-                    let period = self.next_meaningful_token()?.unwrap();
-                    Ok(Expression::Function(Box::new(
-                        self.parse_shorthand_dot_expression(period)?,
-                    )))
-                }
                 TokenType::Underscore => Ok(Expression::Identifier(
                     self.next_meaningful_token()?.unwrap(),
                 )),
@@ -916,9 +859,10 @@ impl<'a> Parser<'a> {
                 TokenType::Character => Ok(Expression::Character(token.clone())),
                 TokenType::LeftSquareBracket => self.parse_array(token.clone()),
                 TokenType::LeftCurlyBracket => self.parse_function(token.clone()),
+                TokenType::HashLeftCurlyBracket => self.parse_record(token.clone()),
                 TokenType::LeftParenthesis => {
                     let left_parenthesis = token;
-                    self.parse_parenthesized_or_record(left_parenthesis)
+                    self.parse_parenthesized_or_unit(left_parenthesis)
                 }
                 TokenType::Float => Ok(Expression::Float(token.clone())),
                 TokenType::Integer => Ok(Expression::Integer(token.clone())),
@@ -957,17 +901,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_record(
-        &mut self,
-        left_parenthesis: Token,
-        first_element: RecordKeyValue,
-    ) -> Result<Expression, ParseError> {
+    fn parse_record(&mut self, hash_left_curly_bracket: Token) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::ExpressionRecord);
-        let mut wildcard = None;
-        let mut elements: Vec<RecordKeyValue> = vec![first_element];
-        let right_parenthesis = loop {
-            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
-                break right_parenthesis;
+        let wildcard = None; // TODO: parse wildcard
+        let mut elements: Vec<RecordKeyValue> = vec![];
+        let right_curly_bracket = loop {
+            if let Some(right_curly_bracket) = self.try_eat_token(TokenType::RightCurlyBracket)? {
+                break right_curly_bracket;
             }
 
             elements.push({
@@ -986,14 +926,14 @@ impl<'a> Parser<'a> {
             });
 
             if self.try_eat_token(TokenType::Comma)?.is_none() {
-                break self.eat_token(TokenType::RightParenthesis, context)?;
+                break self.eat_token(TokenType::RightCurlyBracket, context)?;
             }
         };
         Ok(Expression::Record {
             wildcard,
             key_value_pairs: elements,
-            left_parenthesis,
-            right_parenthesis,
+            hash_left_curly_bracket,
+            right_curly_bracket,
         })
     }
 
@@ -1026,21 +966,20 @@ impl<'a> Parser<'a> {
 
     fn parse_record_pattern(
         &mut self,
-        left_parenthesis: Token,
-        first_key_pattern_pair: DestructuredRecordKeyValue,
+        hash_left_curly_bracket: Token,
     ) -> Result<DestructurePattern, ParseError> {
         let context = Some(ParseContext::PatternRecord);
         let mut wildcard = None;
-        let mut key_value_pairs: Vec<DestructuredRecordKeyValue> = vec![first_key_pattern_pair];
-        let right_parenthesis = loop {
+        let mut key_value_pairs: Vec<DestructuredRecordKeyValue> = vec![];
+        let right_curly_bracket = loop {
             match self.next_meaningful_token()? {
                 Some(
-                    right_parenthesis @ Token {
-                        token_type: TokenType::RightParenthesis,
+                    right_curly_bracket @ Token {
+                        token_type: TokenType::RightCurlyBracket,
                         ..
                     },
                 ) => {
-                    break right_parenthesis;
+                    break right_curly_bracket;
                 }
                 Some(
                     double_period @ Token {
@@ -1057,16 +996,16 @@ impl<'a> Parser<'a> {
                     };
                     key_value_pairs.push(DestructuredRecordKeyValue { key, as_value });
                     if self.try_eat_token(TokenType::Comma)?.is_none() {
-                        break self.eat_token(TokenType::RightParenthesis, context)?;
+                        break self.eat_token(TokenType::RightCurlyBracket, context)?;
                     }
                 }
             }
         };
         Ok(DestructurePattern::Record {
             wildcard,
-            left_parenthesis,
+            hash_left_curly_bracket,
             key_value_pairs,
-            right_parenthesis,
+            right_curly_bracket,
         })
     }
 
@@ -1074,87 +1013,33 @@ impl<'a> Parser<'a> {
     /// OR patterns means `P1 | P2 | P3`
     fn parse_simple_destructure_pattern(&mut self) -> Result<DestructurePattern, ParseError> {
         if let Some(token) = self.next_meaningful_token()? {
-            let pattern = match token.token_type {
-                TokenType::Tag => Ok(DestructurePattern::EnumConstructor {
-                    name: token,
-                    payload: None,
-                }),
-                TokenType::Identifier => Ok(DestructurePattern::Identifier(token)),
-                TokenType::Underscore => Ok(DestructurePattern::Underscore(token)),
-                TokenType::LeftParenthesis => {
-                    let left_parenthesis = token;
-                    if let Some(right_parenthesis) =
-                        self.try_eat_token(TokenType::RightParenthesis)?
+            match token.token_type {
+                TokenType::Identifier => {
+                    if let Some(left_parenthesis) =
+                        self.try_eat_token(TokenType::LeftParenthesis)?
                     {
-                        return Ok(DestructurePattern::Unit {
-                            left_parenthesis,
-                            right_parenthesis,
-                        });
-                    }
-
-                    if let Some(wildcard) = self.try_eat_token(TokenType::DoublePeriod)? {
-                        return Ok(DestructurePattern::Record {
-                            left_parenthesis,
-                            wildcard: Some(wildcard),
-                            key_value_pairs: vec![],
-                            right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
-                        });
-                    }
-
-                    let pattern = self.parse_destructure_pattern()?;
-                    match pattern {
-                        DestructurePattern::Identifier(identifier) => {
-                            if self.try_eat_token(TokenType::Comma)?.is_some() {
-                                self.parse_record_pattern(
-                                    left_parenthesis,
-                                    DestructuredRecordKeyValue {
-                                        key: identifier,
-                                        as_value: None,
-                                    },
-                                )
-                            } else if self.try_eat_token(TokenType::Equals)?.is_some() {
-                                let key = identifier;
-                                let as_value = Some(self.parse_destructure_pattern()?);
-                                if self.try_eat_token(TokenType::Comma)?.is_some() {
-                                    self.parse_record_pattern(
-                                        left_parenthesis,
-                                        DestructuredRecordKeyValue { key, as_value },
-                                    )
-                                } else {
-                                    Ok(DestructurePattern::Record {
-                                        wildcard: None,
-                                        left_parenthesis,
-                                        key_value_pairs: vec![DestructuredRecordKeyValue {
-                                            key,
-                                            as_value,
-                                        }],
-                                        right_parenthesis: self.eat_token(
-                                            TokenType::RightParenthesis,
-                                            Some(ParseContext::PatternRecord),
-                                        )?,
-                                    })
-                                }
-                            } else {
-                                let right_parenthesis =
-                                    self.eat_token(TokenType::RightParenthesis, None)?;
-                                Ok(DestructurePattern::Parenthesized {
-                                    left_parenthesis,
-                                    pattern: Box::new(DestructurePattern::Identifier(identifier)),
-                                    right_parenthesis,
-                                })
-                            }
-                        }
-                        _ => {
-                            let right_parenthesis =
-                                self.eat_token(TokenType::RightParenthesis, None)?;
-                            Ok(DestructurePattern::Parenthesized {
-                                left_parenthesis,
-                                pattern: Box::new(pattern),
-                                right_parenthesis,
-                            })
-                        }
+                        Ok(DestructurePattern::EnumConstructor {
+                            name: token,
+                            payload: Some(Box::new(
+                                self.parse_parenthesized_pattern(left_parenthesis)?,
+                            )),
+                        })
+                    } else if let Some(hash_left_curly_bracket) =
+                        self.try_eat_token(TokenType::HashLeftCurlyBracket)?
+                    {
+                        Ok(DestructurePattern::EnumConstructor {
+                            name: token,
+                            payload: Some(Box::new(
+                                self.parse_record_pattern(hash_left_curly_bracket)?,
+                            )),
+                        })
+                    } else {
+                        Ok(DestructurePattern::Identifier(token))
                     }
                 }
+                TokenType::Underscore => Ok(DestructurePattern::Underscore(token)),
+                TokenType::LeftParenthesis => self.parse_parenthesized_pattern(token),
+                TokenType::HashLeftCurlyBracket => self.parse_record_pattern(token),
                 TokenType::Integer => Ok(DestructurePattern::Infinite {
                     token,
                     kind: InfinitePatternKind::Integer,
@@ -1196,42 +1081,10 @@ impl<'a> Parser<'a> {
                     }
                 }
                 _ => Err(Parser::invalid_token(token, Some(ParseContext::Pattern))),
-            }?;
-            self.try_parse_enum_constructor_with_payload_pattern(pattern)
+            }
         } else {
             Err(Parser::unexpected_eof(Some(ParseContext::Pattern)))
         }
-    }
-
-    fn try_parse_enum_constructor_with_payload_pattern(
-        &mut self,
-        previous_pattern: DestructurePattern,
-    ) -> Result<DestructurePattern, ParseError> {
-        if self.next_token_is_terminating()? {
-            return Ok(previous_pattern);
-        }
-        let next_pattern = self.parse_simple_destructure_pattern()?;
-        let pattern = match next_pattern {
-            DestructurePattern::EnumConstructor {
-                name,
-                payload: None,
-            } => DestructurePattern::EnumConstructor {
-                name,
-                payload: Some(Box::new(previous_pattern)),
-            },
-
-            _ => match previous_pattern {
-                DestructurePattern::EnumConstructor {
-                    name,
-                    payload: None,
-                } => DestructurePattern::EnumConstructor {
-                    name,
-                    payload: Some(Box::new(next_pattern)),
-                },
-                _ => panic!("Syntax error"),
-            },
-        };
-        self.try_parse_enum_constructor_with_payload_pattern(pattern)
     }
 
     fn parse_function_tail_branches(
@@ -1240,7 +1093,7 @@ impl<'a> Parser<'a> {
     ) -> Result<NonEmpty<FunctionBranch>, ParseError> {
         let mut tail = vec![];
         let tail = loop {
-            if self.try_eat_token(TokenType::Backslash)?.is_some() {
+            if self.try_eat_token(TokenType::KeywordCase)?.is_some() {
                 tail.push(self.parse_function_branch()?)
             } else {
                 break tail;
@@ -1251,37 +1104,67 @@ impl<'a> Parser<'a> {
 
     fn parse_function(&mut self, left_curly_bracket: Token) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::Lambda);
-        let (branches, right_curly_bracket) = {
-            if self.try_eat_token(TokenType::Backslash)?.is_some() {
-                // This is a function
-                let head = FunctionBranch {
-                    parameter: Box::new(self.parse_destructure_pattern()?),
-                    body: {
-                        self.eat_token(TokenType::ArrowRight, context)?;
-                        Box::new(self.parse_low_precedence_expression()?)
-                    },
-                };
-                (
-                    self.parse_function_tail_branches(head)?,
-                    self.eat_token(TokenType::RightCurlyBracket, context)?,
-                )
-            } else {
-                let expression = self.parse_low_precedence_expression()?;
-                (
-                    NonEmpty {
-                        head: FunctionBranch {
-                            parameter: Box::new(DestructurePattern::Unit {
-                                left_parenthesis: left_curly_bracket.clone(),
-                                right_parenthesis: left_curly_bracket.clone(),
-                            }),
-                            body: Box::new(expression),
+        let (branches, right_curly_bracket) =
+            {
+                if self.try_eat_token(TokenType::KeywordCase)?.is_some() {
+                    // This is a function
+                    let head = FunctionBranch {
+                        parameter: Box::new(self.parse_destructure_pattern()?),
+                        body: {
+                            self.eat_token(TokenType::ArrowRight, context)?;
+                            Box::new(self.parse_low_precedence_expression()?)
                         },
-                        tail: vec![],
-                    },
-                    self.eat_token(TokenType::RightCurlyBracket, context)?,
-                )
-            }
-        };
+                    };
+                    (
+                        self.parse_function_tail_branches(head)?,
+                        self.eat_token(TokenType::RightCurlyBracket, context)?,
+                    )
+                } else if let Some(identifier) = self.try_eat_token(TokenType::Identifier)? {
+                    if self.try_eat_token(TokenType::ArrowRight)?.is_some() {
+                        (
+                            NonEmpty {
+                                head: FunctionBranch {
+                                    parameter: Box::new(DestructurePattern::Identifier(identifier)),
+                                    body: Box::new(self.parse_low_precedence_expression()?),
+                                },
+                                tail: vec![],
+                            },
+                            self.eat_token(TokenType::RightCurlyBracket, context)?,
+                        )
+                    } else {
+                        (
+                            NonEmpty {
+                                head: FunctionBranch {
+                                    parameter: Box::new(DestructurePattern::Unit {
+                                        left_parenthesis: left_curly_bracket.clone(),
+                                        right_parenthesis: left_curly_bracket.clone(),
+                                    }),
+                                    body: Box::new(self.try_parse_function_call(
+                                        Expression::Identifier(identifier),
+                                    )?),
+                                },
+                                tail: vec![],
+                            },
+                            self.eat_token(TokenType::RightCurlyBracket, context)?,
+                        )
+                    }
+                } else {
+                    let expression = self.parse_low_precedence_expression()?;
+                    (
+                        NonEmpty {
+                            head: FunctionBranch {
+                                parameter: Box::new(DestructurePattern::Unit {
+                                    left_parenthesis: left_curly_bracket.clone(),
+                                    right_parenthesis: left_curly_bracket.clone(),
+                                }),
+                                body: Box::new(expression),
+                            },
+                            tail: vec![],
+                        },
+                        self.eat_token(TokenType::RightCurlyBracket, context)?,
+                    )
+                }
+            };
         Ok(Expression::Function(Box::new(Function {
             left_curly_bracket,
             branches,
@@ -1361,6 +1244,7 @@ impl<'a> Parser<'a> {
                     | TokenType::KeywordType
                     | TokenType::KeywordPublic
                     | TokenType::KeywordPrivate
+                    | TokenType::KeywordCase
                     | TokenType::KeywordEntry
                     | TokenType::Semicolon
                     | TokenType::Colon
@@ -1371,37 +1255,16 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_parenthesized_or_record_type_annotation(
+    fn parse_parenthesized_type_annotation(
         &mut self,
         left_parenthesis: Token,
     ) -> Result<TypeAnnotation, ParseError> {
         let context = None;
-        let type_annotation = self.parse_type_annotation(context)?;
-        match &type_annotation {
-            TypeAnnotation::Named {
-                name,
-                type_arguments: None,
-            } => {
-                if self.try_eat_token(TokenType::Colon)?.is_some() {
-                    let type_annotation = self.parse_type_annotation(context)?;
-                    self.parse_record_type_annotation(
-                        left_parenthesis,
-                        (name.clone(), type_annotation),
-                    )
-                } else {
-                    Ok(TypeAnnotation::Parenthesized {
-                        left_parenthesis,
-                        type_annotation: Box::new(type_annotation),
-                        right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
-                    })
-                }
-            }
-            _ => Ok(TypeAnnotation::Parenthesized {
-                left_parenthesis,
-                type_annotation: Box::new(type_annotation),
-                right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
-            }),
-        }
+        Ok(TypeAnnotation::Parenthesized {
+            left_parenthesis,
+            type_annotation: Box::new(self.parse_type_annotation(context)?),
+            right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
+        })
     }
 
     fn try_parse_type_constraints(
@@ -1434,7 +1297,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_parenthesized_or_record(
+    fn parse_parenthesized_or_unit(
         &mut self,
         left_parenthesis: Token,
     ) -> Result<Expression, ParseError> {
@@ -1444,57 +1307,11 @@ impl<'a> Parser<'a> {
                 right_parenthesis,
             });
         }
-        if let Some(wildcard) = self.try_eat_token(TokenType::DoublePeriod)? {
-            return Ok(Expression::Record {
-                left_parenthesis,
-                wildcard: Some(wildcard),
-                key_value_pairs: vec![],
-                right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
-            });
-        }
-        let expression = self.parse_low_precedence_expression()?;
-        if self.try_eat_token(TokenType::Comma)?.is_some() {
-            let first_key_value_pair = match &expression {
-                Expression::Identifier(key) => RecordKeyValue {
-                    key: key.clone(),
-                    value: expression,
-                },
-                other => RecordKeyValue {
-                    key: Token {
-                        token_type: TokenType::Identifier,
-                        representation: "0".to_string(),
-                        position: other.position(),
-                    },
-                    value: other.clone(),
-                },
-            };
-            return self.parse_record(left_parenthesis, first_key_value_pair);
-        }
-        if self.try_eat_token(TokenType::Equals)?.is_some() {
-            let key = match expression {
-                Expression::Identifier(token) => Ok(token),
-                _ => panic!("Expected identifier"),
-            }?;
-            let value = self.parse_low_precedence_expression()?;
-            if self.try_eat_token(TokenType::Comma)?.is_some() {
-                return self.parse_record(left_parenthesis, RecordKeyValue { key, value });
-            } else {
-                return Ok(Expression::Record {
-                    wildcard: None,
-                    left_parenthesis,
-                    key_value_pairs: vec![RecordKeyValue { key, value }],
-                    right_parenthesis: self.eat_token(
-                        TokenType::RightParenthesis,
-                        Some(ParseContext::ExpressionRecord),
-                    )?,
-                });
-            }
-        }
 
         Ok(Expression::Parenthesized {
             left_parenthesis,
+            value: Box::new(self.parse_low_precedence_expression()?),
             right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
-            value: Box::new(expression),
         })
     }
 
@@ -1508,6 +1325,36 @@ impl<'a> Parser<'a> {
                 }
                 _ => None,
             },
+        })
+    }
+
+    fn eat_string_literal(&mut self) -> Result<StringLiteral, ParseError> {
+        match self.next_meaningful_token()? {
+            None => Err(Parser::unexpected_eof(None)),
+            Some(token) => match token.token_type {
+                TokenType::String(string_literal) => Ok(string_literal),
+                _ => Err(Parser::invalid_token(token, None)),
+            },
+        }
+    }
+
+    fn parse_parenthesized_pattern(
+        &mut self,
+        token: Token,
+    ) -> Result<DestructurePattern, ParseError> {
+        let context = None;
+        let left_parenthesis = token;
+        if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+            return Ok(DestructurePattern::Unit {
+                left_parenthesis,
+                right_parenthesis,
+            });
+        }
+
+        Ok(DestructurePattern::Parenthesized {
+            left_parenthesis,
+            pattern: Box::new(self.parse_destructure_pattern()?),
+            right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
         })
     }
 }

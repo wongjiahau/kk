@@ -271,10 +271,12 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::Operator => "used for defining symbolic functions",
         TokenType::KeywordEntry => "used for defining the entry point of a file",
         TokenType::Semicolon => "used for separating statements",
-        TokenType::KeywordModule => "used for declaring/importing/aliasing modules",
         TokenType::Tilde => "used for declaring the start of a CPS Sugar",
         TokenType::KeywordExists => "used for declaring constraints",
         TokenType::Backslash => "used for declaring lambda",
+        TokenType::KeywordAs => todo!(),
+        TokenType::HashLeftCurlyBracket => "used for declaring record",
+        TokenType::KeywordCase => "used for declaring variants, or in pattern matching",
 
     }
 }
@@ -318,7 +320,7 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
                 "enum Color { Red, Green }",
             ],
         },
-        ParseContext::StatementModule => ParseContextDescription {
+        ParseContext::StatementImport => ParseContextDescription {
             name: "Import Statement",
             examples: vec![
                 "import { bar } from \"./foo.kk\"",
@@ -425,7 +427,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordPublic => "public",
         TokenType::KeywordPrivate => "private",
         TokenType::KeywordEntry => "entry",
-        TokenType::KeywordModule => "module",
         TokenType::KeywordExists => "exists",
         TokenType::Whitespace => " ",
         TokenType::LeftCurlyBracket => "{",
@@ -461,6 +462,9 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Semicolon => ";",
         TokenType::Tilde => "~",
         TokenType::Backslash => "\\",
+        TokenType::KeywordAs => "as",
+        TokenType::HashLeftCurlyBracket => "#{",
+        TokenType::KeywordCase => "case",
     }
 }
 
@@ -901,8 +905,8 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::TopLevelLetStatementCannotBeDestructured => todo!(),
         UnifyErrorKind::MissingTypeAnnotationForTopLevelBinding => todo!(),
-        UnifyErrorKind::CannotBeOverloaded => StringifiedError { 
-            summary: "Cannot be overloaded".to_string(), 
+        UnifyErrorKind::CannotBeOverloaded {name} => StringifiedError { 
+            summary: format!("`{}` cannot be overloaded", name), 
             body: "".to_string() 
         },
         UnifyErrorKind::AmbiguousSymbol { matching_value_symbols } => StringifiedError { 
@@ -996,13 +1000,13 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                 name
             } else {
                 let result = format!(
-                    "{}<\n{}\n>",
+                    "{}<{}>",
                     name,
                     arguments
                         .into_iter()
-                        .map(|(_, type_value)| indent_string(stringify_type(type_value, 0), 2))
+                        .map(|(_, type_value)| stringify_type(type_value, 0))
                         .collect::<Vec<String>>()
-                        .join("\n")
+                        .join(", ")
                 );
                 indent_string(result, indent_level * 2)
             }
@@ -1024,18 +1028,18 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Record { mut key_type_pairs } => {
             key_type_pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
             let result = format!(
-                "(\n{}\n)",
+                "#{{{}}}",
                 key_type_pairs
                     .into_iter()
                     .map(|(key, type_value)| {
                         format!(
-                            "{} =\n{},",
-                            indent_string(key, 2),
-                            indent_string(stringify_type(type_value, 0), 4)
+                            "{}: {}",
+                            key,
+                            stringify_type(type_value, 0)
                         )
                     })
                     .collect::<Vec<String>>()
-                    .join("\n")
+                    .join(", ")
             );
             indent_string(result, indent_level * 2)
         }

@@ -11,7 +11,7 @@ pub enum Statement {
     /// This represents named sum types (a.k.a tagged union).
     Enum(EnumStatement),
 
-    Module(ModuleStatement),
+    Import(ImportStatement),
 
     /// This represents the entry points of a module.
     /// Will be ignored for imported modules.
@@ -19,37 +19,24 @@ pub enum Statement {
 }
 
 #[derive(Debug, Clone)]
-pub struct ModuleStatement {
+pub struct ImportStatement {
     pub access: Access,
-    pub keyword_module: Token,
-    pub left: ModuleDestructurePattern,
-    pub right: ModuleValue,
+    pub keyword_import: Token,
+    pub url: StringLiteral,
+    pub specification: Option<ImportStatementSpecification>,
 }
 
 #[derive(Debug, Clone)]
-pub enum ModuleDestructurePattern {
-    Identifier(Token),
-    Record {
-        left_parenthesis: Token,
-        spread: Option<Token>,
-        pairs: Vec<ModuleDestructurePatternPair>,
-        right_parenthesis: Token,
-    },
+pub struct ImportStatementSpecification {
+    pub left_curly_bracket: Token,
+    pub aliases: Vec<ImportSpecificationAlias>,
+    pub right_curly_bracket: Token,
 }
 
 #[derive(Debug, Clone)]
-pub struct ModuleDestructurePatternPair {
+pub struct ImportSpecificationAlias {
     pub name: Token,
-    pub pattern: Option<ModuleDestructurePattern>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ModuleValue {
-    Import {
-        keyword_import: Token,
-        url: StringLiteral,
-    },
-    Name(Token),
+    pub alias: Option<Token>,
 }
 
 #[derive(Debug, Clone)]
@@ -125,6 +112,7 @@ impl EnumStatement {
 pub struct EnumConstructorDefinition {
     pub name: Token,
     pub payload: Option<Box<EnumConstructorDefinitionPayload>>,
+    pub access: Access,
 }
 
 #[derive(Debug, Clone)]
@@ -190,9 +178,9 @@ pub enum TypeAnnotation {
         type_arguments: Option<TypeArguments>,
     },
     Record {
-        left_parenthesis: Token,
+        hash_left_curly_bracket: Token,
         key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
-        right_parenthesis: Token,
+        right_curly_bracket: Token,
     },
     Array {
         left_square_bracket: Token,
@@ -241,10 +229,10 @@ pub enum DestructurePattern {
         payload: Option<Box<DestructurePattern>>,
     },
     Record {
-        left_parenthesis: Token,
+        hash_left_curly_bracket: Token,
         wildcard: Option<Token>,
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
-        right_parenthesis: Token,
+        right_curly_bracket: Token,
     },
     Parenthesized {
         left_parenthesis: Token,
@@ -325,10 +313,10 @@ pub enum Expression {
 
     FunctionCall(Box<FunctionCall>),
     Record {
-        left_parenthesis: Token,
+        hash_left_curly_bracket: Token,
         wildcard: Option<Token>,
         key_value_pairs: Vec<RecordKeyValue>,
-        right_parenthesis: Token,
+        right_curly_bracket: Token,
     },
     RecordAccess {
         expression: Box<Expression>,
@@ -586,7 +574,6 @@ pub enum TokenType {
     KeywordEntry,
     KeywordLet,
     KeywordType,
-    KeywordModule,
     KeywordImport,
     KeywordPublic,
     KeywordPrivate,
@@ -636,6 +623,9 @@ pub enum TokenType {
     MultilineComment,
 
     Other(char),
+    KeywordAs,
+    HashLeftCurlyBracket,
+    KeywordCase,
 }
 
 #[derive(Debug, Clone)]
@@ -685,15 +675,11 @@ impl Position {
         }
     }
 }
-impl ModuleValue {
+impl ImportStatementSpecification {
     pub fn position(&self) -> Position {
-        match self {
-            ModuleValue::Import {
-                keyword_import,
-                url,
-            } => keyword_import.position.join(url.position()),
-            ModuleValue::Name(token) => token.position,
-        }
+        self.left_curly_bracket
+            .position
+            .join(self.right_curly_bracket.position)
     }
 }
 

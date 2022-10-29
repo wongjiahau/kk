@@ -2,6 +2,7 @@ use crate::{
     compile::{CompileError, CompileErrorKind},
     non_empty::NonEmpty,
     parse::Parser,
+    stringify_error::stringify_type,
     tokenize::Tokenizer,
 };
 
@@ -84,7 +85,7 @@ pub fn unify_statements(
                         top_level_expressions.push(entry_statement.expression)
                     }
                 }
-                Statement::Module(module_statement) => module_statements.push(module_statement),
+                Statement::Import(import_statement) => module_statements.push(import_statement),
             }
         }
         (
@@ -106,11 +107,11 @@ pub fn unify_statements(
     let (typechecked_import_statements, imported_modules) =
         module_statments
             .into_iter()
-            .fold(Ok(init), |result, module_statement| match result {
+            .fold(Ok(init), |result, import_statement| match result {
                 Err(error) => Err(error),
                 Ok((mut statements, mut imported_modules)) => {
                     let current =
-                        infer_module_statement(&mut module, &imported_modules, module_statement)?;
+                        infer_import_statement(&mut module, &imported_modules, import_statement)?;
 
                     statements.extend(
                         current
@@ -136,10 +137,10 @@ pub fn unify_statements(
     let enum_statements = enum_statements
         .into_iter()
         .map(|enum_statement| {
-            let enum_uid = insert_enum_symbol(&mut module, enum_statement.clone())?;
-            Ok((enum_uid, enum_statement))
+            let (enum_uid, enum_type) = insert_enum_symbol(&mut module, enum_statement.clone())?;
+            Ok((enum_uid, enum_type, enum_statement))
         })
-        .collect::<Result<Vec<(SymbolUid, EnumStatement)>, UnifyError>>()
+        .collect::<Result<Vec<_>, UnifyError>>()
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     // Check the definition of type alias statement
@@ -150,13 +151,16 @@ pub fn unify_statements(
         .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
 
     // Check the definition of enum statement
-    enum_statements
+    let constructors_definitions = enum_statements
         .into_iter()
-        .map(|(enum_uid, enum_statement)| {
-            infer_enum_statement(&mut module, &enum_uid, enum_statement)
+        .map(|(enum_uid, enum_type, enum_statement)| {
+            infer_enum_statement(&mut module, &enum_uid, enum_type, enum_statement)
         })
-        .collect::<Result<Vec<()>, UnifyError>>()
-        .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?;
+        .collect::<Result<Vec<_>, UnifyError>>()
+        .map_err(|unify_error| unify_error.into_compile_error(module.meta.clone()))?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
 
     // 4. Insert the type of top-level let statement (for implementing mutually recursive functions)
     let unchecked_let_statements = let_statements
@@ -235,6 +239,7 @@ pub fn unify_statements(
                 let mut statements = Vec::new();
                 statements.extend(typechecked_import_statements);
                 statements.extend(typechecked_let_statements);
+                statements.extend(constructors_definitions);
                 statements.extend(typechecked_top_level_expressions_statements);
                 statements
             },
@@ -471,7 +476,9 @@ pub enum UnifyErrorKind {
     },
     TopLevelLetStatementCannotBeDestructured,
     MissingTypeAnnotationForTopLevelBinding,
-    CannotBeOverloaded,
+    CannotBeOverloaded {
+        name: String,
+    },
 }
 
 /// We use IndexMap instead of HashMap for storing imported modules because we need to preserve the insertion order,
@@ -490,157 +497,130 @@ pub struct InferImportStatementResult {
     pub imported_modules: ImportedModules,
 }
 
-pub fn infer_module_statement(
+pub fn infer_import_statement(
     module: &mut Module,
     imported_modules: &ImportedModules,
-    module_statement: ModuleStatement,
+    import_statement: ImportStatement,
 ) -> Result<InferImportStatementResult, CompileError> {
     let importer_path = module.uid().string_value();
 
-    let inferred_right: UnifyProgramResult = match module_statement.right {
-        ModuleValue::Name(_) => todo!("module aliasing"),
-        ModuleValue::Import {
-            keyword_import,
-            url,
-        } => {
-            let import_path = url.content.trim_matches('"');
-            let path = RelativePath::new(&importer_path)
-                .parent()
-                .expect("Should always have parent")
-                .join(RelativePath::new(import_path))
-                .normalize();
-            let path_string = path.to_string();
-            if module
-                .meta
-                .import_relations
-                .iter()
-                .any(|relation| path_string == relation.importer_path)
-            {
-                return Err(UnifyError {
-                    position: url.position(),
-                    kind: UnifyErrorKind::CyclicDependency {
+    let import_path = import_statement.url.content.trim_matches('"');
+    let path = RelativePath::new(&importer_path)
+        .parent()
+        .expect("Should always have parent")
+        .join(RelativePath::new(import_path))
+        .normalize();
+    let path_string = path.to_string();
+    if module
+        .meta
+        .import_relations
+        .iter()
+        .any(|relation| path_string == relation.importer_path)
+    {
+        return Err(UnifyError {
+            position: import_statement.url.position(),
+            kind: UnifyErrorKind::CyclicDependency {
+                import_relations: {
+                    let mut relations = module.meta.import_relations.clone();
+                    relations.push(ImportRelation {
+                        importer_path,
+                        importee_path: path_string,
+                    });
+                    relations
+                },
+            },
+        }
+        .into_compile_error(module.meta.clone()));
+    }
+    let relative_path = path.to_path(Path::new("."));
+    let uid = ModuleUid::Local {
+        relative_path: path.to_string(),
+    };
+
+    // Look up for memoize imported modules
+    let inferred_right = match imported_modules.get(&uid) {
+        Some(module) => {
+            println!("Compile cache hit: {}", uid.string_value());
+            UnifyProgramResult {
+                entrypoint: module.clone(),
+                imported_modules: IndexMap::new(),
+            }
+        }
+        None => {
+            match fs::read_to_string(relative_path) {
+                Ok(code) => {
+                    let module_meta = ModuleMeta {
+                        uid: uid.clone(),
+                        code: code.clone(),
                         import_relations: {
-                            let mut relations = module.meta.import_relations.clone();
-                            relations.push(ImportRelation {
-                                importer_path,
+                            let mut importer_paths = module.meta.import_relations.clone();
+                            importer_paths.push(ImportRelation {
+                                importer_path: module.meta.uid.string_value(),
                                 importee_path: path_string,
                             });
-                            relations
+                            importer_paths
                         },
-                    },
+                    };
+
+                    // Parse the imported module
+                    let statements = match Parser::parse(&mut Tokenizer::new(code)) {
+                        Ok(statements) => Ok(statements),
+                        Err(parse_error) => Err(CompileError {
+                            module_meta: module_meta.clone(),
+                            kind: CompileErrorKind::ParseError(Box::new(parse_error)),
+                        }),
+                    }?;
+
+                    // Typecheck the imported module
+                    unify_statements(module_meta, statements, imported_modules, false)?
                 }
-                .into_compile_error(module.meta.clone()));
-            }
-            let relative_path = path.to_path(Path::new("."));
-            let uid = ModuleUid::Local {
-                relative_path: path.to_string(),
-            };
-
-            // Look up for memoize imported modules
-            match imported_modules.get(&uid) {
-                Some(module) => {
-                    println!("Compile cache hit: {}", uid.string_value());
-                    UnifyProgramResult {
-                        entrypoint: module.clone(),
-                        imported_modules: IndexMap::new(),
+                Err(error) => {
+                    return Err(UnifyError {
+                        position: import_statement.url.position(),
+                        kind: UnifyErrorKind::ErrorneousImportPath {
+                            extra_information: format!("{}", error),
+                        },
                     }
-                }
-                None => {
-                    match fs::read_to_string(relative_path) {
-                        Ok(code) => {
-                            let module_meta = ModuleMeta {
-                                uid: uid.clone(),
-                                code: code.clone(),
-                                import_relations: {
-                                    let mut importer_paths = module.meta.import_relations.clone();
-                                    importer_paths.push(ImportRelation {
-                                        importer_path: module.meta.uid.string_value(),
-                                        importee_path: path_string,
-                                    });
-                                    importer_paths
-                                },
-                            };
-
-                            // Parse the imported module
-                            let statements = match Parser::parse(&mut Tokenizer::new(code)) {
-                                Ok(statements) => Ok(statements),
-                                Err(parse_error) => Err(CompileError {
-                                    module_meta: module_meta.clone(),
-                                    kind: CompileErrorKind::ParseError(Box::new(parse_error)),
-                                }),
-                            }?;
-
-                            // Typecheck the imported module
-                            unify_statements(module_meta, statements, imported_modules, false)?
-                        }
-                        Err(error) => {
-                            return Err(UnifyError {
-                                position: url.position(),
-                                kind: UnifyErrorKind::ErrorneousImportPath {
-                                    extra_information: format!("{}", error),
-                                },
-                            }
-                            .into_compile_error(module.meta.clone()))
-                        }
-                    }
+                    .into_compile_error(module.meta.clone()))
                 }
             }
         }
     };
 
-    infer_module_destructure_pattern(
-        module,
-        module_statement.access,
-        module_statement.left,
-        inferred_right,
-    )
-}
-
-pub fn infer_module_destructure_pattern(
-    module: &mut Module,
-    access: Access,
-    pattern: ModuleDestructurePattern,
-    inferred_right: UnifyProgramResult,
-) -> Result<InferImportStatementResult, CompileError> {
     // Check whether each imported name exists and is exported in this program
-    let matching_symbol_entries: Vec<(SymbolEntry, Option<Token>)> = match pattern {
-        ModuleDestructurePattern::Identifier(_) => todo!("module alias"),
-        ModuleDestructurePattern::Record { spread, pairs, .. } => match spread {
-            Some(token) => {
-                if pairs.is_empty() {
-                    inferred_right
-                        .entrypoint
-                        .module
-                        .get_all_protected_symbols()
-                        .into_iter()
-                        .map(|entry| {
-                            let name = entry.symbol.meta.name.clone();
-                            (
-                                entry,
-                                Some(Token {
-                                    position: token.position,
-                                    ..name
-                                }),
-                            )
-                        })
-                        .collect()
-                } else {
-                    todo!("Get all exported symbols, but set difference with names found in pairs")
-                }
-            }
+    let matching_symbol_entries: Vec<(SymbolEntry, Option<Token>)> =
+        match import_statement.specification {
+            // Import all symbols
+            None => inferred_right
+                .entrypoint
+                .module
+                .get_all_protected_symbols()
+                .into_iter()
+                .map(|entry| {
+                    let name = entry.symbol.meta.name.clone();
+                    (
+                        entry,
+                        Some(Token {
+                            position: import_statement.keyword_import.position,
+                            ..name
+                        }),
+                    )
+                })
+                .collect(),
 
             // Not importing all symbols
-            None => pairs
+            Some(specification) => specification
+                .aliases
                 .into_iter()
-                .map(|pair| {
+                .map(|alias| {
                     let matching_symbol_entries = inferred_right
                         .entrypoint
                         .module
-                        .get_all_matching_symbols(&pair.name);
+                        .get_all_matching_symbols(&alias.name);
 
                     if matching_symbol_entries.is_empty() {
                         Err(UnifyError {
-                            position: pair.name.position,
+                            position: alias.name.position,
                             kind: UnifyErrorKind::UnknownImportedName,
                         }
                         .into_compile_error(module.meta.clone()))
@@ -649,20 +629,17 @@ pub fn infer_module_destructure_pattern(
                             .into_iter()
                             .map(|entry| match entry.symbol.meta.access {
                                 Access::Private { keyword_private } => Err(UnifyError {
-                                    position: pair.name.position,
+                                    position: alias.name.position.clone(),
                                     kind: UnifyErrorKind::CannotImportPrivateSymbol,
                                 }
                                 .into_compile_error(module.meta.clone())),
-                                _ => match &pair.pattern {
-                                    Some(ModuleDestructurePattern::Identifier(alias)) => {
-                                        Ok((entry, Some(alias.clone())))
-                                    }
-                                    Some(ModuleDestructurePattern::Record { .. }) => {
-                                        todo!("Destructure nested module")
-                                    }
-
-                                    None => Ok((entry, Some(pair.name.clone()))),
-                                },
+                                _ => Ok((
+                                    entry,
+                                    Some(match &alias.alias {
+                                        Some(alias) => alias.clone(),
+                                        None => alias.name.clone(),
+                                    }),
+                                )),
                             })
                             .collect::<Result<Vec<(SymbolEntry, Option<Token>)>, CompileError>>()?)
                     }
@@ -671,8 +648,7 @@ pub fn infer_module_destructure_pattern(
                 .into_iter()
                 .flatten()
                 .collect(),
-        },
-    };
+        };
 
     let import_statements = matching_symbol_entries
         .into_iter()
@@ -683,7 +659,7 @@ pub fn infer_module_destructure_pattern(
                 Symbol {
                     meta: SymbolMeta {
                         name: alias_as.clone(),
-                        access: access.clone(),
+                        access: Access::Protected,
                     },
                     kind: entry.symbol.kind.clone(),
                 },
@@ -729,7 +705,7 @@ pub fn infer_module_destructure_pattern(
 pub fn insert_enum_symbol(
     module: &mut Module,
     enum_statement: EnumStatement,
-) -> Result<SymbolUid, UnifyError> {
+) -> Result<(SymbolUid, Type), UnifyError> {
     let enum_uid = module.get_next_symbol_uid();
     let enum_name = enum_statement.name.representation.clone();
     let enum_type = Type::Named {
@@ -741,7 +717,7 @@ pub fn insert_enum_symbol(
             .map(|type_variable| {
                 (
                     type_variable.representation.clone(),
-                    Type::ImplicitTypeVariable(ImplicitTypeVariable {
+                    Type::ExplicitTypeVariable(ExplicitTypeVariable {
                         name: type_variable.representation,
                     }),
                 )
@@ -769,39 +745,42 @@ pub fn insert_enum_symbol(
         })),
     };
 
-    module.insert_symbol(
+    let uid = module.insert_symbol(
         Some(enum_uid),
         Symbol {
             meta: SymbolMeta {
                 name: enum_statement.name,
                 access: enum_statement.access,
             },
-            kind: SymbolKind::Type(TypeSymbol { type_value }),
+            kind: SymbolKind::Type(TypeSymbol {
+                type_value: type_value.clone(),
+            }),
         },
-    )
+    )?;
+    Ok((uid, type_value))
 }
 
-/// Validate the body of an enum statement and insert the constructors into the current module
+/// Validate the body of an enum statement
+/// and insert the constructors into the current module
+/// and insert the constructors as functions
 pub fn infer_enum_statement(
     module: &mut Module,
     enum_uid: &SymbolUid,
+    enum_type: Type,
     enum_statement: EnumStatement,
-) -> Result<(), UnifyError> {
+) -> Result<Vec<InferredStatement>, UnifyError> {
     let constructor_symbols = module.run_in_new_child_scope(|module| {
         // 1. Populate type variables into current module
         populate_explicit_type_variables(module, &enum_statement.type_variables_declaration)?;
 
-        // 2. Add each tags into the enum namespace
-        let constructor_symbols = enum_statement
+        // 2. Validate the definition of each constructor
+        enum_statement
             .constructors
             .iter()
             .map(|constructor| {
-                Ok(Symbol {
-                    meta: SymbolMeta {
-                        name: constructor.name.clone(),
-                        access: enum_statement.access.clone(),
-                    },
-                    kind: SymbolKind::EnumConstructor(EnumConstructorSymbol {
+                Ok((
+                    constructor,
+                    EnumConstructorSymbol {
                         enum_uid: enum_uid.clone(),
                         enum_name: enum_statement.name.representation.clone(),
                         constructor_name: constructor.name.representation.clone(),
@@ -819,19 +798,123 @@ pub fn infer_enum_statement(
                                 Some(payload_type_value)
                             }
                         },
-                    }),
-                })
+                    },
+                ))
             })
-            .collect::<Result<Vec<Symbol>, UnifyError>>()?;
-        Ok(constructor_symbols)
+            .collect::<Result<Vec<_>, UnifyError>>()
     })?;
 
     constructor_symbols
         .into_iter()
-        .map(|constructor_symbol| module.insert_symbol(None, constructor_symbol))
-        .collect::<Result<Vec<_>, UnifyError>>()?;
+        .map(|(constructor, constructor_symbol)| {
+            // 3. Add each constructor into the symbol tables
+            module.insert_symbol(
+                None,
+                Symbol {
+                    meta: SymbolMeta {
+                        name: constructor.name.clone(),
+                        access: constructor.access.clone(),
+                    },
+                    kind: SymbolKind::EnumConstructor(constructor_symbol.clone()),
+                },
+            )?;
 
-    Ok(())
+            // 4. Create a function for each constructor, so that constructors does not require special
+            //    treatment
+
+            let type_value = {
+                match (&constructor_symbol.payload, &enum_type) {
+                    // If the enum_type is a type scheme, we need to inject the payload type into
+                    // the type scheme
+                    (Some(payload), Type::TypeScheme(type_scheme)) => {
+                        Type::TypeScheme(Box::new(TypeScheme {
+                            type_variables: type_scheme.type_variables.clone(),
+                            type_value: Type::Function(FunctionType {
+                                parameter_type: Box::new(payload.clone()),
+                                return_type: Box::new(type_scheme.type_value.clone()),
+                                type_constraints: vec![],
+                            }),
+                        }))
+                    }
+
+                    // If the enum_type is not a type scheme, we can simply construct a function
+                    // type, using the enum_type as the return type
+                    (Some(payload), _) => Type::Function(FunctionType {
+                        parameter_type: Box::new(payload.clone()),
+                        return_type: Box::new(enum_type.clone()),
+                        type_constraints: vec![],
+                    }),
+
+                    // If there's no payload, the type of this constructor will be just the
+                    // enum_tpye
+                    _ => enum_type.clone(),
+                }
+            };
+
+            let value_symbol = Symbol {
+                meta: SymbolMeta {
+                    name: constructor.name.clone(),
+                    access: enum_statement.access.clone(),
+                },
+                kind: SymbolKind::Value(ValueSymbol {
+                    type_value: type_value.clone(),
+                }),
+            };
+
+            let uid = module.insert_symbol(None, value_symbol)?;
+            Ok(InferredStatement::Let {
+                access: constructor.access.clone(),
+                left: InferredDestructurePattern {
+                    type_value: type_value.clone(),
+                    kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
+                        uid,
+                        token: constructor.name.clone(),
+                    })),
+                },
+                right: match &constructor_symbol.payload {
+                    None => InferredExpression::EnumConstructor {
+                        constructor_name: constructor.name.representation.clone(),
+                        payload: None,
+                    },
+                    Some(payload_type) => {
+                        InferredExpression::BranchedFunction(Box::new(InferredBranchedFunction {
+                            branches: Box::new(NonEmpty {
+                                head: {
+                                    let dummy_identifier = Identifier {
+                                        uid: module.get_next_symbol_uid(),
+                                        token: Token::dummy_identifier(
+                                            "$$constructor_payload_parameter$$".to_string(),
+                                        ),
+                                    };
+                                    InferredFunctionBranch {
+                                        parameter: Box::new(InferredDestructurePattern {
+                                            type_value: payload_type.clone(),
+                                            kind: InferredDestructurePatternKind::Identifier(
+                                                Box::new(dummy_identifier.clone()),
+                                            ),
+                                        }),
+                                        body: Box::new(InferExpressionResult {
+                                            expression: InferredExpression::EnumConstructor {
+                                                constructor_name: constructor
+                                                    .name
+                                                    .representation
+                                                    .clone(),
+                                                payload: Some(Box::new(
+                                                    InferredExpression::Variable(dummy_identifier),
+                                                )),
+                                            },
+                                            type_value,
+                                        }),
+                                    }
+                                },
+                                tail: vec![],
+                            }),
+                        }))
+                    }
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, UnifyError>>()
 }
 
 /// Validate the body of a type alias statement
@@ -919,8 +1002,8 @@ impl Positionable for TypeAnnotation {
                 .position
                 .join(right_square_bracket.position),
             TypeAnnotation::Record {
-                left_parenthesis: left_curly_bracket,
-                right_parenthesis: right_curly_bracket,
+                hash_left_curly_bracket: left_curly_bracket,
+                right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
@@ -976,8 +1059,8 @@ impl Positionable for DestructurePattern {
                 right_parenthesis,
             } => left_parenthesis.position.join(right_parenthesis.position),
             DestructurePattern::Record {
-                left_parenthesis: left_curly_bracket,
-                right_parenthesis: right_curly_bracket,
+                hash_left_curly_bracket: left_curly_bracket,
+                right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
@@ -1062,8 +1145,8 @@ impl Positionable for Expression {
                 property_name,
             } => expression.position().join(property_name.position),
             Expression::Record {
-                left_parenthesis: left_curly_bracket,
-                right_parenthesis: right_curly_bracket,
+                hash_left_curly_bracket: left_curly_bracket,
+                right_curly_bracket,
                 ..
             } => left_curly_bracket
                 .position
@@ -1142,10 +1225,13 @@ impl Positionable for Statement {
                 .keyword_entry
                 .position
                 .join(entry_statement.expression.position()),
-            Statement::Module(module_statement) => module_statement
-                .keyword_module
+            Statement::Import(import_statement) => import_statement
+                .keyword_import
                 .position
-                .join(module_statement.right.position()),
+                .join_maybe(match &import_statement.specification {
+                    None => None,
+                    Some(specification) => Some(specification.position()),
+                }),
         }
     }
 }
@@ -1870,17 +1956,20 @@ fn infer_expression_type_(
                 }
             }
         }
-        Expression::Identifier(variable) => {
-            let result =
-                module.get_value_symbol(&variable, &expected_type, module.current_scope_name())?;
+        Expression::Identifier(identifier) => {
+            let result = module.get_value_symbol(
+                &identifier,
+                &expected_type,
+                module.current_scope_name(),
+            )?;
 
             // If this variable has type of type scheme, then instantiate the type scheme with fresh type variables.
             // Note that we have to bubble up the constraints provided by the type scheme if applicable.
             let identifier = Identifier {
                 uid: result.symbol_uid,
-                token: variable.clone(),
+                token: identifier.clone(),
             };
-            match result.type_value {
+            let result = match result.type_value {
                 Type::TypeScheme(type_scheme) => {
                     let type_value = instantiate_type_scheme(module, *type_scheme);
 
@@ -1893,7 +1982,8 @@ fn infer_expression_type_(
                     type_value: other,
                     expression: InferredExpression::Variable(identifier),
                 }),
-            }
+            }?;
+            Ok(result)
         }
         Expression::RecordAccess {
             expression,
@@ -2150,11 +2240,11 @@ fn infer_expression_type_(
                 // If the function is a function call, then we will typecheck the function first
                 // This is so that we can typecheck curried expression like:
                 //
-                //    xs map { \x -> x + 1 }
+                //    xs map { x -> x + 1 }
                 //
                 //  Which means:
                 //
-                //    (xs map) { \x -> x + 1 }
+                //    (xs map) { x -> x + 1 }
                 //
                 // If we type check the argument first, we will not be able to determine the type
                 // of `x`
@@ -2327,8 +2417,8 @@ fn infer_expression_type_(
         }
         Expression::Record {
             key_value_pairs,
-            left_parenthesis: left_curly_bracket,
-            right_parenthesis: right_curly_bracket,
+            hash_left_curly_bracket: left_curly_bracket,
+            right_curly_bracket,
             wildcard,
             ..
         } => {
@@ -2645,9 +2735,9 @@ impl Expression {
             }
             Expression::Record {
                 wildcard,
-                left_parenthesis: left_square_bracket,
+                hash_left_curly_bracket: left_square_bracket,
                 key_value_pairs,
-                right_parenthesis: right_square_bracket,
+                right_curly_bracket: right_square_bracket,
             } => {
                 let (bangs, key_value_pairs): (
                     Vec<Vec<CollectCpsBangResult>>,
@@ -2669,9 +2759,9 @@ impl Expression {
                     bangs.into_iter().flatten().collect(),
                     Expression::Record {
                         wildcard,
-                        left_parenthesis: left_square_bracket,
+                        hash_left_curly_bracket: left_square_bracket,
                         key_value_pairs,
-                        right_parenthesis: right_square_bracket,
+                        right_curly_bracket: right_square_bracket,
                     },
                 )
             }
@@ -3542,19 +3632,42 @@ fn infer_destructure_pattern_(
             kind: InferredDestructurePatternKind::Underscore(token.clone()),
         }),
         DestructurePattern::Identifier(identifier) => {
-            let (uid, type_value) = module.insert_value_symbol_with_type(
-                identifier,
-                expected_type,
-                Access::Protected,
-                false,
-            )?;
-            Ok(InferredDestructurePattern {
-                type_value,
-                kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
-                    uid,
-                    token: identifier.clone(),
-                })),
-            })
+            match get_enum_type(module, expected_type.clone(), identifier) {
+                Ok(result) => {
+                    // Treat this as an enum constructor
+                    Ok(InferredDestructurePattern {
+                        type_value: match &expected_type {
+                            Some(expected_type) => unify_type(
+                                module,
+                                &expected_type,
+                                &result.expected_enum_type,
+                                identifier.position,
+                            )?,
+                            None => result.expected_enum_type,
+                        },
+                        kind: InferredDestructurePatternKind::EnumConstructor {
+                            constructor_name: identifier.clone(),
+                            payload: None,
+                        },
+                    })
+                }
+                Err(_) => {
+                    // Treat this identifier as a normal variable
+                    let (uid, type_value) = module.insert_value_symbol_with_type(
+                        identifier,
+                        expected_type,
+                        Access::Protected,
+                        false,
+                    )?;
+                    Ok(InferredDestructurePattern {
+                        type_value,
+                        kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {
+                            uid,
+                            token: identifier.clone(),
+                        })),
+                    })
+                }
+            }
         }
         DestructurePattern::Tuple(tuple) => {
             let typechecked_values = tuple.values.clone().fold_result(|destructure_pattern| {
@@ -3667,8 +3780,8 @@ fn infer_destructure_pattern_(
         DestructurePattern::Record {
             wildcard,
             key_value_pairs,
-            left_parenthesis: left_curly_bracket,
-            right_parenthesis: right_curly_bracket,
+            hash_left_curly_bracket: left_curly_bracket,
+            right_curly_bracket,
             ..
         } => {
             let expected_key_type_pairs = match expected_type {

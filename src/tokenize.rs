@@ -221,13 +221,13 @@ impl Tokenizer {
                     .into_parse_error()),
                 },
                 // Quoted Identifers
-                // Similar to Java Quoted Identifier using double-quote
-                '`' => {
+                // same as MS SQL Identifier using square bracket
+                '[' => {
                     let quote = character;
                     let characters = self
                         .characters_iterator
                         .by_ref()
-                        .peeking_take_while(|character| character.value != quote.value)
+                        .peeking_take_while(|character| character.value != ']')
                         .collect::<Vec<Character>>();
 
                     match self.characters_iterator.next() {
@@ -239,7 +239,7 @@ impl Tokenizer {
                                 position: make_position(quote, Some(&end_quote)),
                             }))
                         }
-                        None => panic!("missing closing backtick(`) for quoted identifier"),
+                        None => panic!("missing closing square bracket `]` for quoted identifier"),
                     }
                 }
                 // String
@@ -496,24 +496,34 @@ impl Tokenizer {
                         }
                     }
                 }
-                // Tag
-                '#' => {
-                    let characters = self
-                        .characters_iterator
-                        .by_ref()
-                        .peeking_take_while(|character| {
-                            character.value.is_alphanumeric() || character.value == '_'
-                        })
-                        .collect::<Vec<Character>>();
+                // Tag or HashLeftCurlyBracket
+                '#' => match self.characters_iterator.by_ref().peek() {
+                    Some(Character { value: '{', .. }) => Ok(Some(Token {
+                        token_type: TokenType::HashLeftCurlyBracket,
+                        representation: "#{".to_string(),
+                        position: make_position(
+                            character,
+                            self.characters_iterator.by_ref().next().as_ref(),
+                        ),
+                    })),
+                    _ => {
+                        let characters = self
+                            .characters_iterator
+                            .by_ref()
+                            .peeking_take_while(|character| {
+                                character.value.is_alphanumeric() || character.value == '_'
+                            })
+                            .collect::<Vec<Character>>();
 
-                    let representation =
-                        format!("{}{}", character.value, stringify(characters.clone()));
-                    Ok(Some(Token {
-                        token_type: TokenType::Tag,
-                        representation,
-                        position: make_position(character, characters.last()),
-                    }))
-                }
+                        let representation =
+                            format!("{}{}", character.value, stringify(characters.clone()));
+                        Ok(Some(Token {
+                            token_type: TokenType::Tag,
+                            representation,
+                            position: make_position(character, characters.last()),
+                        }))
+                    }
+                },
                 // Identifier
                 'A'..='Z' | 'a'..='z' => {
                     let characters = self
@@ -672,11 +682,12 @@ pub fn get_token_type(s: String) -> TokenType {
         "entry" => TokenType::KeywordEntry,
         "let" => TokenType::KeywordLet,
         "type" => TokenType::KeywordType,
-        "module" => TokenType::KeywordModule,
         "import" => TokenType::KeywordImport,
         "public" => TokenType::KeywordPublic,
         "private" => TokenType::KeywordPrivate,
         "exists" => TokenType::KeywordExists,
+        "as" => TokenType::KeywordAs,
+        "case" => TokenType::KeywordCase,
         _ => TokenType::Identifier,
     }
 }

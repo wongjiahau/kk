@@ -616,21 +616,7 @@ impl Module {
                         if entry.scope_name == scope_name
                             && entry.symbol.meta.name.representation == name
                         {
-                            let error = Err(UnifyError {
-                                position: new_symbol.meta.name.position,
-                                kind: UnifyErrorKind::DuplicatedIdentifier {
-                                    name: entry.symbol.meta.name.representation.clone(),
-                                    first_declared_at: entry.symbol.meta.name.position,
-                                    then_declared_at: new_symbol.meta.name.position,
-                                },
-                            });
                             match &entry.symbol.kind {
-                                SymbolKind::EnumConstructor(constructor)
-                                    if constructor.constructor_name
-                                        == new_symbol.meta.name.representation =>
-                                {
-                                    error
-                                }
                                 SymbolKind::Value(existing_value_symbol) => {
                                     if overlap(
                                         &existing_value_symbol.type_value,
@@ -639,7 +625,9 @@ impl Module {
                                     ) {
                                         Err(UnifyError {
                                             position: new_symbol.meta.name.position,
-                                            kind: UnifyErrorKind::CannotBeOverloaded,
+                                            kind: UnifyErrorKind::CannotBeOverloaded {
+                                                name: new_symbol.meta.name.representation.clone(),
+                                            },
                                         })
                                     } else {
                                         Ok(())
@@ -873,7 +861,7 @@ impl Module {
             })
     }
 
-    /// `expected_enum_name` -
+    /// `constructor_name` -
     ///     This is for disambiguating constructors with the same name that belongs to different enums
     pub fn get_constructor_symbol(
         &self,
@@ -1128,7 +1116,9 @@ pub struct UsageReference {
 fn built_in_symbols() -> Vec<Symbol> {
     fn meta(name: String) -> SymbolMeta {
         SymbolMeta {
-            access: Access::Protected,
+            access: Access::Private {
+                keyword_private: Token::dummy(),
+            },
             name: Token {
                 position: Position::dummy(),
                 representation: name,

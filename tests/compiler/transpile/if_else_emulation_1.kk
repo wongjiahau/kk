@@ -1,70 +1,76 @@
-type Bool
-  = #true
-  | #false
+type Bool = 
+  case True
+  case False
 
-type List<A>
-  = #nil
-  | #cons (current: A, next: List<A>)
+type List<A> = 
+  case Nil 
+  case Cons #{ current: A, next: List<A> }
 
-type Option<A>
-  = #none
-  | #some(A)
+type Option<A> = 
+  case None 
+  case Some(A)
 
-let <A, B> (a: A) match (f: A -> B): B = a f
+let <A, B> (a : A) match (f : A -> B) : B = a f
 
-let <A, B> (xs: List<A>) `find map` (f: A -> Option<B>): Option<B> = 
+let <A, B> (xs : List<A>) [find map] (f : A -> Option<B>) : Option<B> = 
   xs match {
-    #cons (current, next) -> current f match {
-      #some(o) -> #some(o),
-      #none -> next `find map` (f)
-    },
-    #nil -> #none
+    case Cons #{current, next} -> current f match {
+      case Some(o) -> Some(o)
+      case None -> next [find map] (f)
+    }
+    case Nil -> None
   }
 
-type Branch<A> = (condition: () -> Bool, body: () -> A)
+type Branch<A> = #{
+  condition: () -> Bool, 
+  body: () -> A
+}
 
-let <A> (xs: List<A>) push (x: A): List<A> = 
+let <A> (xs : List<A>) push (x : A) : List<A> = 
   xs match {
-    #nil -> #cons (current = x, next = #nil),
-    #cons (current, next) -> #cons (current, next = next push (x))
+    case Nil -> Cons #{current = x, next = Nil}
+    case Cons #{current, next} -> Cons #{current, next = next push (x)}
   }
 
-let <A> if (condition: Bool) (body: () -> A): List<Branch<A>> =
-  #nil push (condition = { condition }, body)
+let <A> if (condition : Bool) (body : () -> A) : List<Branch<A>> =
+  Nil push #{ condition = { condition }, body }
 
-let <A> (branches: List<Branch<A>>) elif (condition: () -> Bool) (body: () -> A): List<Branch<A>> = 
-  branches push (condition, body)
+let <A> (branches: List<Branch<A>>) elif (condition: () -> Bool) (body: () -> A) : List<Branch<A>> = 
+  branches push #{ condition, body }
 
-let <A> (branches: List<Branch<A>>) else (body: () -> A): A =
+let <A> (branches: List<Branch<A>>) else (body: () -> A) : A =
   branches 
-    `find map` { branch -> 
-      branch.condition () match {
-        #true -> 
-          #some (branch.body ()),
+    [find map] { branch ->
+      branch .condition () match {
+        case True -> 
+          Some (branch .body ())
 
-        #false -> 
-          #none
+        case False -> 
+          None
       }
-    } 
+    }
     match {
-      #some (body) -> body,
-      #none -> body ()
+      case Some (body) -> body
+      case None -> body ()
     }
 
-let <A> (branches: List<Branch<A>>) end: Option<A> =
-  branches `find map` { branch -> 
-    branch.condition () match {
-      #true -> #some (branch .body ()),
-      #false -> #none
+let <A> (branches : List<Branch<A>>) end : Option<A> =
+  branches [find map] { branch ->
+    branch .condition () match {
+      case True ->
+        Some (branch .body ())
+
+      case False ->
+        None
     }
   } 
 
 entry
-  if (#true) { "Hello world" print } else { "Bye" print }; // Hello world
+  if (True) { "Hello world" print } else { "Bye" print }; // Hello world
 
-  if (#false) { "Hello world" print } elif { #true } { "Mid" print } else { "Bye" print }; // Mid
+  if (False) { "Hello world" print } elif { True } { "Mid" print } else { "Bye" print }; // Mid
 
-  if (#false) { "Hello world" print } elif { #false } { "Mid" print } else { "Bye" print }; // Bye
+  if (False) { "Hello world" print } elif { False } { "Mid" print } else { "Bye" print }; // Bye
 
-  if (#false) { 1 } end print; // #none
-  if (#true) { 1 } end print // #some(1)
+  if (False) { 1 } end print; // none
+  if (True) { 1 } end print // some(1)
