@@ -11,6 +11,7 @@ use crate::{
 };
 use colored::*;
 use prettytable::{format::Alignment, Cell, Row, Table};
+use std::fs;
 use std::ops::Range;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -121,7 +122,7 @@ fn get_tokenize_error(tokenize_error: TokenizeError) -> (ErrorRange, Stringified
     }
 }
 
-pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
+pub fn print_parse_error(filename: String,code: String, parse_error: ParseError) {
     let parse_context_description = {
         match parse_error.context {
             Some(context) => {
@@ -185,8 +186,8 @@ pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
             expected_token_type,
         } => {
             let range = ErrorRange {
-                character_index_start: module_meta.code.len() - 1,
-                character_index_end: module_meta.code.len() - 1,
+                character_index_start: code.len() - 1,
+                character_index_end: code.len() - 1,
             };
             let expected_token_message = match expected_token_type {
                 None => "".to_string(),
@@ -228,7 +229,7 @@ pub fn print_parse_error(module_meta: ModuleMeta, parse_error: ParseError) {
         }
         ParseErrorKind::TokenizeError(tokenize_error) => get_tokenize_error(tokenize_error),
     };
-    print_error(module_meta, range, error)
+    print_error(filename, code, range, error)
 }
 
 struct ParseContextDescription {
@@ -468,21 +469,23 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
     }
 }
 
-pub fn print_compile_error(CompileError { kind, module_meta }: CompileError) {
+pub fn print_compile_error(CompileError { kind, path }: CompileError) {
+    let filename = path.to_str().unwrap().to_string();
+    let code = fs::read_to_string(path).unwrap();
     match kind {
-        CompileErrorKind::ParseError(parse_error) => print_parse_error(module_meta, *parse_error),
-        CompileErrorKind::UnifyError(unify_error) => print_unify_error(module_meta, *unify_error),
+        CompileErrorKind::ParseError(parse_error) => print_parse_error(filename, code, *parse_error),
+        CompileErrorKind::UnifyError(unify_error) => print_unify_error(filename, code, *unify_error),
     }
 }
 
-pub fn print_unify_error(module_meta: ModuleMeta, unify_error: UnifyError) {
+pub fn print_unify_error(filename: String, code: String, unify_error: UnifyError) {
     let error = stringify_unify_error_kind(unify_error.kind);
     let range = ErrorRange {
         character_index_start: unify_error.position.character_index_start,
         character_index_end: unify_error.position.character_index_end,
     };
 
-    print_error(module_meta, range, error)
+    print_error(filename, code, range, error)
 }
 
 struct ErrorRange {
@@ -490,8 +493,7 @@ struct ErrorRange {
     character_index_end: usize,
 }
 
-fn print_error(module_meta: ModuleMeta, range: ErrorRange, error: StringifiedError) {
-    let origin = module_meta.uid.string_value();
+fn print_error(filename: String, code: String, range: ErrorRange, error: StringifiedError) {
     let range = {
         let start = range.character_index_start;
         let end = range.character_index_end;
@@ -500,7 +502,7 @@ fn print_error(module_meta: ModuleMeta, range: ErrorRange, error: StringifiedErr
 
     let mut files = SimpleFiles::new();
 
-    let file_id = files.add(origin, module_meta.code);
+    let file_id = files.add(filename, code);
     let diagnostic = Diagnostic::error()
         .with_labels(vec![Label::primary(
             file_id,

@@ -5,11 +5,13 @@ use crate::unify::{UnifyError, UnifyErrorKind};
 use crate::{raw_ast::*, typ::*};
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
+type CanonicalizedPath = String;
 #[derive(Debug, Clone)]
 pub struct ImportRelation {
-    pub importer_path: String,
-    pub importee_path: String,
+    pub importer_path: CanonicalizedPath,
+    pub importee_path: CanonicalizedPath,
 }
 
 /// Represents the meta data of this module.
@@ -17,9 +19,6 @@ pub struct ImportRelation {
 pub struct ModuleMeta {
     /// A unique identifier that can be used to uniquely identify this module.
     pub uid: ModuleUid,
-
-    /// Represents the literal code of this module.
-    pub code: String,
 
     /// This is used for checking circular references
     pub import_relations: Vec<ImportRelation>,
@@ -157,11 +156,10 @@ pub struct SymbolMeta {
 #[derive(Debug, Clone)]
 pub enum Access {
     /// Can be imported anywhere (even via remote URL)
-    /// Used for auto semantic versioning
     Public { keyword_public: Token },
     /// Can only be used within one file
     Private { keyword_private: Token },
-    /// Default, can be imported via relative path
+    /// Default, can be use within the same module (folder)
     Protected,
 }
 
@@ -171,15 +169,18 @@ pub enum ModuleUid {
     /// For example, `https://raw.githubusercontent.com/foo/bar/v0.0.1/spam.kk`
     Remote { url: String },
 
-    /// Must be relative path, cannot be absolute.  
-    /// For example, `./foo/bar/spam.kk`
-    Local { relative_path: String },
+    /// This should be a folder name, not a file name.
+    /// For example, `./foo/bar`
+    Local { folder_absolute_path: String },
 }
 
 impl ModuleUid {
     pub fn string_value(&self) -> String {
         match self {
-            ModuleUid::Remote { url: s } | ModuleUid::Local { relative_path: s } => s.clone(),
+            ModuleUid::Remote { url: s }
+            | ModuleUid::Local {
+                folder_absolute_path: s,
+            } => s.clone(),
         }
     }
 }

@@ -1,32 +1,47 @@
+use std::path::PathBuf;
 use std::process;
 
 use indexmap::IndexMap;
 
-use crate::tokenize::Tokenizer;
+use crate::module::ModuleMeta;
+use crate::module::ModuleUid;
+use crate::parse::ParseError;
+use crate::stringify_error::print_compile_error;
 use crate::transpile::transpile_program;
-use crate::unify::unify_statements;
+use crate::unify::read_module;
 use crate::unify::UnifyError;
-use crate::{module::ModuleMeta, stringify_error::print_parse_error};
-use crate::{parse::*, stringify_error::print_compile_error};
 
 pub struct CompileError {
     pub kind: CompileErrorKind,
-    pub module_meta: ModuleMeta,
+    pub path: PathBuf,
 }
 pub enum CompileErrorKind {
     ParseError(Box<ParseError>),
     UnifyError(Box<UnifyError>),
 }
 
-pub fn compile(module_meta: ModuleMeta) {
-    let mut tokenizer = Tokenizer::new(module_meta.code.clone());
-    // match simple_parse::Parser::parse(&mut tokenizer) {
-    //     Err(parse_error) => print_parse_error(module_meta, parse_error),
-    //     Ok(expression) => interpret(expression),
-    // }
-    match Parser::parse(&mut tokenizer) {
-        Err(parse_error) => print_parse_error(module_meta, parse_error),
-        Ok(statements) => match unify_statements(module_meta, statements, &IndexMap::new(), true) {
+pub fn compile(path: PathBuf) {
+    let folder_absolute_path = path.parent().unwrap().to_str().unwrap().to_string();
+    let module_meta = ModuleMeta {
+        uid: ModuleUid::Local {
+            folder_absolute_path: folder_absolute_path.clone(),
+        },
+        import_relations: vec![], // empty, because this is the root
+    };
+    let folder_absolute_path = PathBuf::from(folder_absolute_path);
+    match folder_absolute_path.read_dir() {
+        Err(error) => panic!(
+            "Unable to read folder: {}, due to error: {}",
+            folder_absolute_path.display(),
+            error
+        ),
+        Ok(dir) => match read_module(
+            &module_meta,
+            &IndexMap::new(),
+            folder_absolute_path,
+            dir,
+            Some(&path),
+        ) {
             Err(compile_error) => print_compile_error(compile_error),
             Ok(result) => {
                 // result.interpret(result..into());

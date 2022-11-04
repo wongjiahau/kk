@@ -2,6 +2,7 @@ use crate::compile::compile;
 use crate::module::{ModuleMeta, ModuleUid};
 use clap::Clap;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Clap)]
 struct Opts {
@@ -25,19 +26,11 @@ pub fn cli() {
     let opts: Opts = Opts::parse();
 
     match opts.subcmd {
-        SubCommand::Run(run) => {
-            match fs::read_to_string(&run.filename) {
-                Err(_) => {
-                    eprintln!("Unable to find file '{}'", run.filename);
-                }
-                Ok(code) => compile(ModuleMeta {
-                    uid: ModuleUid::Local {
-                        relative_path: run.filename,
-                    },
-                    code,
-                    import_relations: vec![], // empty, because this is the root
-                }),
+        SubCommand::Run(run) => match PathBuf::from(&run.filename).canonicalize() {
+            Err(error) => {
+                panic!("Unable to find file '{}'. Error = {}", run.filename, error);
             }
-        }
+            Ok(path) => compile(path),
+        },
     }
 }

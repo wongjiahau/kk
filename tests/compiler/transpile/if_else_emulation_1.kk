@@ -1,24 +1,24 @@
 type Bool = 
-  case True
-  case False
+  case true
+  case false
 
 type List<A> = 
-  case Nil 
-  case Cons #{ current: A, next: List<A> }
+  case nil 
+  case cons #{ current: A, next: List<A> }
 
 type Option<A> = 
-  case None 
-  case Some(A)
+  case none 
+  case some(A)
 
 let <A, B> (a : A) match (f : A -> B) : B = a f
 
 let <A, B> (xs : List<A>) [find map] (f : A -> Option<B>) : Option<B> = 
   xs match {
-    case Cons #{current, next} -> current f match {
-      case Some(o) -> Some(o)
-      case None -> next [find map] (f)
+    case cons #{current, next} -> current f match {
+      case some(o) -> some(o)
+      case none -> next [find map] (f)
     }
-    case Nil -> None
+    case nil -> none
   }
 
 type Branch<A> = #{
@@ -28,12 +28,12 @@ type Branch<A> = #{
 
 let <A> (xs : List<A>) push (x : A) : List<A> = 
   xs match {
-    case Nil -> Cons #{current = x, next = Nil}
-    case Cons #{current, next} -> Cons #{current, next = next push (x)}
+    case nil -> cons #{current = x, next = nil}
+    case cons #{current, next} -> cons #{current, next = next push (x)}
   }
 
 let <A> if (condition : Bool) (body : () -> A) : List<Branch<A>> =
-  Nil push #{ condition = { condition }, body }
+  nil push #{ condition = { condition }, body }
 
 let <A> (branches: List<Branch<A>>) elif (condition: () -> Bool) (body: () -> A) : List<Branch<A>> = 
   branches push #{ condition, body }
@@ -42,35 +42,35 @@ let <A> (branches: List<Branch<A>>) else (body: () -> A) : A =
   branches 
     [find map] { branch ->
       branch .condition () match {
-        case True -> 
-          Some (branch .body ())
+        case true -> 
+          some (branch .body ())
 
-        case False -> 
-          None
+        case false -> 
+          none
       }
     }
     match {
-      case Some (body) -> body
-      case None -> body ()
+      case some (body) -> body
+      case none -> body ()
     }
 
 let <A> (branches : List<Branch<A>>) end : Option<A> =
   branches [find map] { branch ->
     branch .condition () match {
-      case True ->
-        Some (branch .body ())
+      case true ->
+        some (branch .body ())
 
-      case False ->
-        None
+      case false ->
+        none
     }
   } 
 
 entry
-  if (True) { "Hello world" print } else { "Bye" print }; // Hello world
+  if (true) { "Hello world" print } else { "Bye" print }; // Hello world
 
-  if (False) { "Hello world" print } elif { True } { "Mid" print } else { "Bye" print }; // Mid
+  if (false) { "Hello world" print } elif { true } { "Mid" print } else { "Bye" print }; // Mid
 
-  if (False) { "Hello world" print } elif { False } { "Mid" print } else { "Bye" print }; // Bye
+  if (false) { "Hello world" print } elif { false } { "Mid" print } else { "Bye" print }; // Bye
 
-  if (False) { 1 } end print; // none
-  if (True) { 1 } end print // some(1)
+  if (false) { 1 } end print; // none
+  if (true) { 1 } end print // some(1)
