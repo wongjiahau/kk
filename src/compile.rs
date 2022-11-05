@@ -26,7 +26,7 @@ pub enum CompileErrorKind {
 }
 
 pub fn compile(path: PathBuf) {
-    let folder_relative_path = to_relative_path(path.parent().unwrap().to_path_buf());
+    let folder_relative_path = to_relative_path(path.parent().unwrap().to_path_buf()).unwrap();
     let module_meta = ModuleMeta {
         uid: ModuleUid::Local {
             folder_relative_path: folder_relative_path.to_str().unwrap().to_string().clone(),
@@ -44,7 +44,7 @@ pub fn compile(path: PathBuf) {
             &IndexMap::new(),
             folder_relative_path.to_path_buf(),
             dir,
-            Some(&path),
+            Some(&to_relative_path(path).unwrap()),
         ) {
             Err(compile_error) => print_compile_error(compile_error),
             Ok(result) => {

@@ -114,7 +114,7 @@ pub fn read_module(
                     ),
                 ))
                 .map_err(|error| CompileError {
-                    path: to_relative_path(dir_entry.path()),
+                    path: dir_entry.path(),
                     kind: CompileErrorKind::ParseError(Box::new(error)),
                 })?,
                 is_entry_point: false,
@@ -182,14 +182,17 @@ pub fn unify_statements(
                         }
                         let_statements.push((path.clone(), let_statement));
                     }
-                    Statement::Entry(entry_statement) => match entry_point_filename {
-                        Some(entry_point_filename) if path.eq(entry_point_filename) => {
-                            top_level_expressions.push((path.clone(), entry_statement.expression))
+                    Statement::Entry(entry_statement) => {
+                        match entry_point_filename {
+                            Some(entry_point_filename) if path.eq(entry_point_filename) => {
+                                top_level_expressions
+                                    .push((path.clone(), entry_statement.expression))
+                            }
+                            _ => {
+                                // do nothing
+                            }
                         }
-                        _ => {
-                            // do nothing
-                        }
-                    },
+                    }
                     Statement::Import(import_statement) => {
                         import_statements.push((path.clone(), import_statement))
                     }
@@ -637,7 +640,8 @@ pub fn infer_import_statement(
                         },
                     })),
                 })?,
-        );
+        )
+        .unwrap();
         let path_string = import_path.to_str().unwrap().to_string();
         if module
             .meta

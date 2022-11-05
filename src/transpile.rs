@@ -336,7 +336,7 @@ pub fn transpile_module(module: InferredModule) -> javascript::Statement {
         .iter()
         .flat_map(|statement| match statement {
             InferredStatement::Let {
-                access: Access::Protected | Access::Public { .. },
+                access: Access::Exported { .. } | Access::Public { .. },
                 left,
                 ..
             } => get_destructure_pattern_bindings(left.kind.clone()),
