@@ -1,3 +1,4 @@
+use std::env;
 use std::path::PathBuf;
 use std::process;
 
@@ -10,35 +11,38 @@ use crate::stringify_error::print_compile_error;
 use crate::transpile::transpile_program;
 use crate::unify::read_module;
 use crate::unify::UnifyError;
+use crate::utils::to_relative_path;
 
+#[derive(Debug)]
 pub struct CompileError {
     pub kind: CompileErrorKind,
     pub path: PathBuf,
 }
+
+#[derive(Debug)]
 pub enum CompileErrorKind {
     ParseError(Box<ParseError>),
     UnifyError(Box<UnifyError>),
 }
 
 pub fn compile(path: PathBuf) {
-    let folder_absolute_path = path.parent().unwrap().to_str().unwrap().to_string();
+    let folder_relative_path = to_relative_path(path.parent().unwrap().to_path_buf());
     let module_meta = ModuleMeta {
         uid: ModuleUid::Local {
-            folder_absolute_path: folder_absolute_path.clone(),
+            folder_relative_path: folder_relative_path.to_str().unwrap().to_string().clone(),
         },
         import_relations: vec![], // empty, because this is the root
     };
-    let folder_absolute_path = PathBuf::from(folder_absolute_path);
-    match folder_absolute_path.read_dir() {
+    match folder_relative_path.read_dir() {
         Err(error) => panic!(
             "Unable to read folder: {}, due to error: {}",
-            folder_absolute_path.display(),
+            folder_relative_path.display(),
             error
         ),
         Ok(dir) => match read_module(
             &module_meta,
             &IndexMap::new(),
-            folder_absolute_path,
+            folder_relative_path.to_path_buf(),
             dir,
             Some(&path),
         ) {

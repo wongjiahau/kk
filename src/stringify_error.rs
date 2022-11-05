@@ -11,8 +11,9 @@ use crate::{
 };
 use colored::*;
 use prettytable::{format::Alignment, Cell, Row, Table};
-use std::fs;
+use std::{fs, env};
 use std::ops::Range;
+use std::path::PathBuf;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFiles;
@@ -243,7 +244,6 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
         TokenType::KeywordImport => "only used for importing symbols from other files, for example:\n\n\timport \"./foo.kk\" { bar spam hello: hello2}",
         TokenType::KeywordPublic => "only used for declaring public symbols, for example:\n\n\tpublic let foo = 1",
-        TokenType::KeywordPrivate => "only used for declaring private symbols, for example:\n\n\tpublic let foo = 1",
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
         TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example:\n\n\t{ x: String }\n\nand constructing record value, for example: \n\n\t{ x: \"hello\" }",
 
@@ -278,6 +278,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordAs => todo!(),
         TokenType::HashLeftCurlyBracket => "used for declaring record",
         TokenType::KeywordCase => "used for declaring variants, or in pattern matching",
+        TokenType::KeywordExport => "used for exporting symbols"
 
     }
 }
@@ -426,7 +427,6 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordType => "type",
         TokenType::KeywordImport => "import",
         TokenType::KeywordPublic => "public",
-        TokenType::KeywordPrivate => "private",
         TokenType::KeywordEntry => "entry",
         TokenType::KeywordExists => "exists",
         TokenType::Whitespace => " ",
@@ -466,6 +466,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordAs => "as",
         TokenType::HashLeftCurlyBracket => "#{",
         TokenType::KeywordCase => "case",
+        TokenType::KeywordExport => todo!(),
     }
 }
 
@@ -779,8 +780,8 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Unknown Name".to_string(),
             body: "This name cannot be found in the imported file.".to_string()
         },
-        UnifyErrorKind::CannotImportPrivateSymbol => StringifiedError {
-            summary: "Cannot import private symbol.".to_string(),
+        UnifyErrorKind::CannotImportProtectedSymbol => StringifiedError {
+            summary: "Cannot import protected symbol.".to_string(),
             body: format!(
                 "{}{}",
                 "Consider exporting this symbol if you want to import it in this file.\nFor example:\n\n",

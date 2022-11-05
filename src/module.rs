@@ -157,8 +157,8 @@ pub struct SymbolMeta {
 pub enum Access {
     /// Can be imported anywhere (even via remote URL)
     Public { keyword_public: Token },
-    /// Can only be used within one file
-    Private { keyword_private: Token },
+    /// Can be imported via relative path
+    Exported { keyword_export: Token },
     /// Default, can be use within the same module (folder)
     Protected,
 }
@@ -170,8 +170,10 @@ pub enum ModuleUid {
     Remote { url: String },
 
     /// This should be a folder name, not a file name.
+    /// Also it should be relative, not absolute (so that error message will not be horrendously
+    /// long)
     /// For example, `./foo/bar`
-    Local { folder_absolute_path: String },
+    Local { folder_relative_path: String },
 }
 
 impl ModuleUid {
@@ -179,7 +181,7 @@ impl ModuleUid {
         match self {
             ModuleUid::Remote { url: s }
             | ModuleUid::Local {
-                folder_absolute_path: s,
+                folder_relative_path: s,
             } => s.clone(),
         }
     }
@@ -653,11 +655,11 @@ impl Module {
         Ok(uid)
     }
 
-    pub fn get_all_protected_symbols(&self) -> Vec<SymbolEntry> {
+    pub fn get_all_exported_symbols(&self) -> Vec<SymbolEntry> {
         self.symbol_entries
             .iter()
             .filter_map(|entry| match entry.symbol.meta.access {
-                Access::Protected => Some(entry.clone()),
+                Access::Exported { .. } => Some(entry.clone()),
                 _ => None,
             })
             .collect()
@@ -1117,9 +1119,7 @@ pub struct UsageReference {
 fn built_in_symbols() -> Vec<Symbol> {
     fn meta(name: String) -> SymbolMeta {
         SymbolMeta {
-            access: Access::Private {
-                keyword_private: Token::dummy(),
-            },
+            access: Access::Protected,
             name: Token {
                 position: Position::dummy(),
                 representation: name,

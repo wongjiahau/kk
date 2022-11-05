@@ -25,7 +25,7 @@ fn run_all_tests() {
                     .expect("Failed to convert entry to string")
                     .to_string();
 
-                if filename.contains("typecheck/module") {
+                if filename.contains("module") {
                     let input_filename = filename;
                     print!("{}", input_filename);
                     let input =

@@ -3,6 +3,7 @@ pub mod raw_ast;
 mod simple_ast;
 
 mod module;
+mod utils;
 
 mod unify;
 

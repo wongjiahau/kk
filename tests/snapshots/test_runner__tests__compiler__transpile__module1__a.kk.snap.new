@@ -1,0 +1,32 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let a : Int = 1
+
+entry
+  // b is defined in b.kk
+  // b can be used without import
+
+  // because every source file in the same folder can access each other's
+  // non-private symbols
+
+  // by default, symbol without access modifiers are protected
+  b print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============

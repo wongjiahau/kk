@@ -1,0 +1,29 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+import "()" // Error invalid URL
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/module_invalid_url/foo.kk:1:8
+  │
+1 │ import "()" // Error invalid URL
+  │        ^^^^ Errorneous Import Path.
+  │
+  = No such file or directory (os error 2)

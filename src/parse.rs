@@ -149,8 +149,8 @@ impl<'a> Parser<'a> {
         Ok(
             if let Some(keyword_public) = self.try_eat_token(TokenType::KeywordPublic)? {
                 Access::Public { keyword_public }
-            } else if let Some(keyword_private) = self.try_eat_token(TokenType::KeywordPrivate)? {
-                Access::Private { keyword_private }
+            } else if let Some(keyword_export) = self.try_eat_token(TokenType::KeywordExport)? {
+                Access::Exported { keyword_export }
             } else {
                 Access::Protected
             },
@@ -1243,7 +1243,7 @@ impl<'a> Parser<'a> {
                     | TokenType::RightSquareBracket
                     | TokenType::KeywordType
                     | TokenType::KeywordPublic
-                    | TokenType::KeywordPrivate
+                    | TokenType::KeywordExport
                     | TokenType::KeywordCase
                     | TokenType::KeywordEntry
                     | TokenType::Semicolon

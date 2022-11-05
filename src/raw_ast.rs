@@ -576,7 +576,7 @@ pub enum TokenType {
     KeywordType,
     KeywordImport,
     KeywordPublic,
-    KeywordPrivate,
+    KeywordExport,
     KeywordExists,
     Whitespace,
     LeftCurlyBracket,

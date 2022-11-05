@@ -4,6 +4,7 @@ use crate::{
     parse::{ParseError, Parser},
     stringify_error::stringify_type,
     tokenize::Tokenizer,
+    utils::to_relative_path,
 };
 
 use crate::inferred_ast::*;
@@ -14,7 +15,7 @@ use crate::typ::*;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use relative_path::RelativePath;
-use std::{any::type_name, fs};
+use std::{any::type_name, ffi::OsStr, fs};
 use std::{collections::HashSet, path::Path};
 use std::{iter, path::PathBuf};
 
@@ -67,22 +68,36 @@ pub fn read_module(
     let path_string = path.to_str().unwrap().to_string();
     let module_meta = ModuleMeta {
         uid: ModuleUid::Local {
-            folder_absolute_path: path_string.clone(),
+            folder_relative_path: path_string.clone(),
         },
         import_relations: {
-            let mut importer_paths = module_meta.import_relations.clone();
-            importer_paths.push(ImportRelation {
-                importer_path: module_meta.uid.string_value(),
-                importee_path: path_string,
-            });
-            importer_paths
+            match entry_point_filename {
+                // If this is the entry point, no need to add import_relations, otherwise
+                // this relation will be a file pointing to itself
+                Some(_) => module_meta.import_relations.clone(),
+                None => {
+                    let mut importer_paths = module_meta.import_relations.clone();
+                    importer_paths.push(ImportRelation {
+                        importer_path: module_meta.uid.string_value(),
+                        importee_path: path_string,
+                    });
+                    importer_paths
+                }
+            }
         },
     };
     let files = dir
         .into_iter()
         .filter_map(|dir_entry| {
             let dir_entry = dir_entry.unwrap();
-            if fs::metadata(dir_entry.path()).unwrap().is_file() {
+
+            if fs::metadata(dir_entry.path()).unwrap().is_file()
+                && dir_entry
+                    .path()
+                    .extension()
+                    .map(|str| str.eq("kk"))
+                    .unwrap_or(false)
+            {
                 Some(dir_entry)
             } else {
                 None
@@ -99,7 +114,7 @@ pub fn read_module(
                     ),
                 ))
                 .map_err(|error| CompileError {
-                    path: dir_entry.path().canonicalize().unwrap(),
+                    path: to_relative_path(dir_entry.path()),
                     kind: CompileErrorKind::ParseError(Box::new(error)),
                 })?,
                 is_entry_point: false,
@@ -500,7 +515,7 @@ pub enum UnifyErrorKind {
     CyclicDependency {
         import_relations: Vec<ImportRelation>,
     },
-    CannotImportPrivateSymbol,
+    CannotImportProtectedSymbol,
     UnknownImportedName,
     ErrorneousImportPath {
         extra_information: String,
@@ -610,15 +625,20 @@ pub fn infer_import_statement(
         let importer_path = module.uid().string_value();
 
         let import_path = import_statement.url.content.trim_matches('"');
-        let path = RelativePath::new(&importer_path)
-            .parent()
-            .expect("Should always have parent")
-            .join(RelativePath::new(import_path))
-            .normalize()
-            .to_path(Path::new("."))
-            .canonicalize()
-            .unwrap();
-        let path_string = path.to_str().unwrap().to_string();
+        let import_path = to_relative_path(
+            PathBuf::from(format!("{}/{}", importer_path, import_path))
+                .canonicalize()
+                .map_err(|error| CompileError {
+                    path: path.clone(),
+                    kind: CompileErrorKind::UnifyError(Box::new(UnifyError {
+                        position: import_statement.url.position(),
+                        kind: UnifyErrorKind::ErrorneousImportPath {
+                            extra_information: error.to_string(),
+                        },
+                    })),
+                })?,
+        );
+        let path_string = import_path.to_str().unwrap().to_string();
         if module
             .meta
             .import_relations
@@ -641,7 +661,7 @@ pub fn infer_import_statement(
             .into_compile_error(path.clone()));
         }
         let uid = ModuleUid::Local {
-            folder_absolute_path: path.to_str().unwrap().to_string(),
+            folder_relative_path: import_path.to_str().unwrap().to_string(),
         };
 
         // Look up for memoize imported modules
@@ -653,7 +673,7 @@ pub fn infer_import_statement(
                     imported_modules: IndexMap::new(),
                 })
             }
-            None => match fs::read_dir(path.clone()) {
+            None => match fs::read_dir(import_path.clone()) {
                 Err(error) => {
                     return Err(UnifyError {
                         position: import_statement.url.position(),
@@ -661,9 +681,9 @@ pub fn infer_import_statement(
                             extra_information: format!("{}", error),
                         },
                     }
-                    .into_compile_error(path.clone()))
+                    .into_compile_error(import_path.clone()))
                 }
-                Ok(dir) => read_module(&module.meta, imported_modules, path, dir, None),
+                Ok(dir) => read_module(&module.meta, imported_modules, import_path, dir, None),
             },
         }
     }?;
@@ -675,7 +695,7 @@ pub fn infer_import_statement(
             None => inferred_right
                 .entrypoint
                 .module
-                .get_all_protected_symbols()
+                .get_all_exported_symbols()
                 .into_iter()
                 .map(|entry| {
                     let name = entry.symbol.meta.name.clone();
@@ -709,9 +729,9 @@ pub fn infer_import_statement(
                         Ok(matching_symbol_entries
                             .into_iter()
                             .map(|entry| match entry.symbol.meta.access {
-                                Access::Private { keyword_private } => Err(UnifyError {
+                                Access::Protected { .. } => Err(UnifyError {
                                     position: alias.name.position.clone(),
-                                    kind: UnifyErrorKind::CannotImportPrivateSymbol,
+                                    kind: UnifyErrorKind::CannotImportProtectedSymbol,
                                 }
                                 .into_compile_error(path.clone())),
                                 _ => Ok((

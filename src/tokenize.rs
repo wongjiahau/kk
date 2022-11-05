@@ -684,7 +684,7 @@ pub fn get_token_type(s: String) -> TokenType {
         "type" => TokenType::KeywordType,
         "import" => TokenType::KeywordImport,
         "public" => TokenType::KeywordPublic,
-        "private" => TokenType::KeywordPrivate,
+        "export" => TokenType::KeywordExport,
         "exists" => TokenType::KeywordExists,
         "as" => TokenType::KeywordAs,
         "case" => TokenType::KeywordCase,
