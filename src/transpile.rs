@@ -626,6 +626,9 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
             }),
         },
         InferredExpression::Unit => javascript::Expression::Null,
+        InferredExpression::Keyword(keyword) => {
+            javascript::Expression::String(keyword.representation)
+        }
     }
 }
 

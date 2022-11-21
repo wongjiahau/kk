@@ -118,6 +118,11 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Look two meaningful tokens ahead.
+    fn peek_two_meaningful_tokens(&mut self) -> Result<Option<(Token, Token)>, ParseError> {
+        todo!()
+    }
+
     fn invalid_token(actual_token: Token, context: Option<ParseContext>) -> ParseError {
         ParseError {
             context,
@@ -175,8 +180,12 @@ impl<'a> Parser<'a> {
                 }
                 TokenType::KeywordType => {
                     let token = self.next_meaningful_token()?.unwrap();
-                    self.parse_type_alias_or_enum_statement(access, token)
+                    self.parse_type_alias_statement(access, token)
                         .map(vectorized)
+                }
+                TokenType::KeywordClass => {
+                    let token = self.next_meaningful_token()?.unwrap();
+                    self.parse_enum_statement(access, token).map(vectorized)
                 }
                 TokenType::KeywordImport => {
                     let token = self.next_meaningful_token()?.unwrap();
@@ -211,6 +220,10 @@ impl<'a> Parser<'a> {
                 vec![]
             }
         };
+
+        if !parameters.is_empty() {
+            self.eat_token(TokenType::Period, context)?;
+        }
 
         let name = self.eat_token(TokenType::Identifier, context)?;
 
@@ -306,7 +319,12 @@ impl<'a> Parser<'a> {
     fn try_parse_parameters(&mut self) -> Result<Vec<Parameter>, ParseError> {
         let mut parameters = vec![];
         loop {
-            if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
+            if let Some(identifier) = self.try_eat_token(TokenType::Identifier)? {
+                parameters.push(Parameter {
+                    pattern: DestructurePattern::Identifier(identifier.clone()),
+                    type_annotation: TypeAnnotation::Keyword { identifier },
+                })
+            } else if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
                 parameters.push(self.parse_parameter(left_parenthesis)?)
             } else {
                 return Ok(parameters);
@@ -338,7 +356,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_type_alias_or_enum_statement(
+    fn parse_type_alias_statement(
         &mut self,
         access: Access,
         keyword_type: Token,
@@ -347,32 +365,30 @@ impl<'a> Parser<'a> {
         let name = self.eat_token(TokenType::Identifier, context)?;
         let type_variables_declaration = self.try_parse_type_variables_declaration()?;
         self.eat_token(TokenType::Equals, context)?;
-        if self.try_eat_token(TokenType::KeywordCase)?.is_some() {
-            self.parse_enum_statement(access, keyword_type, name, type_variables_declaration)
-        } else {
-            let right = self.parse_type_annotation(context)?;
-            Ok(Statement::Type(TypeAliasStatement {
-                access,
-                keyword_type,
-                left: name,
-                type_variables_declaration,
-                right,
-            }))
-        }
+        let right = self.parse_type_annotation(context)?;
+        Ok(Statement::Type(TypeAliasStatement {
+            access,
+            keyword_type,
+            left: name,
+            type_variables_declaration,
+            right,
+        }))
     }
 
     fn parse_enum_statement(
         &mut self,
         access: Access,
-        keyword_type: Token,
-        name: Token,
-        type_variables: Option<TypeVariablesDeclaration>,
+        keyword_class: Token,
     ) -> Result<Statement, ParseError> {
+        let context = None;
+        let name = self.eat_token(TokenType::Identifier, context)?;
+        let type_variables_declaration = self.try_parse_type_variables_declaration()?;
+        self.eat_token(TokenType::Equals, context)?;
         let mut constructors = vec![self.parse_enum_constructor_definition()?];
 
         let constructors = loop {
             let access = self.parse_access()?;
-            if self.try_eat_token(TokenType::KeywordCase)?.is_some() {
+            if self.try_eat_token(TokenType::Pipe)?.is_some() {
                 constructors.push(self.parse_enum_constructor_definition()?);
             } else {
                 break constructors;
@@ -380,9 +396,9 @@ impl<'a> Parser<'a> {
         };
         Ok(Statement::Enum(EnumStatement {
             access,
-            keyword_type,
+            keyword_class,
             name,
-            type_variables_declaration: type_variables,
+            type_variables_declaration,
             constructors,
         }))
     }
@@ -411,7 +427,7 @@ impl<'a> Parser<'a> {
         let context = None;
         if let Some(left_curly_bracket) = self.try_eat_token(TokenType::LeftCurlyBracket)? {
             let mut aliases = vec![];
-            let aliases = loop {
+            loop {
                 aliases.push(ImportSpecificationAlias {
                     name: self.eat_token(TokenType::Identifier, context)?,
                     alias: {
@@ -433,7 +449,7 @@ impl<'a> Parser<'a> {
                 } else {
                     self.eat_token(TokenType::Comma, context)?;
                 }
-            };
+            }
         } else {
             Ok(None)
         }
@@ -538,12 +554,11 @@ impl<'a> Parser<'a> {
                         type_annotation: self
                             .parse_parenthesized_type_annotation(left_parenthesis)?,
                     }))
-                } else if let Some(hash_left_curly_bracket) =
-                    self.try_eat_token(TokenType::HashLeftCurlyBracket)?
+                } else if let Some(left_curly_bracket) =
+                    self.try_eat_token(TokenType::LeftCurlyBracket)?
                 {
                     Some(Box::new(EnumConstructorDefinitionPayload {
-                        type_annotation: self
-                            .parse_record_type_annotation(hash_left_curly_bracket)?,
+                        type_annotation: self.parse_record_type_annotation(left_curly_bracket)?,
                     }))
                 } else {
                     None
@@ -555,8 +570,10 @@ impl<'a> Parser<'a> {
     fn try_parse_type_variables_declaration(
         &mut self,
     ) -> Result<Option<TypeVariablesDeclaration>, ParseError> {
-        if let Some(less_than) = self.try_eat_token(TokenType::LessThan)? {
-            Ok(Some(self.parse_type_variables_declaration(less_than)?))
+        if let Some(left_angular_bracket) = self.try_eat_token(TokenType::LessThan)? {
+            Ok(Some(
+                self.parse_type_variables_declaration(left_angular_bracket)?,
+            ))
         } else {
             Ok(None)
         }
@@ -569,7 +586,6 @@ impl<'a> Parser<'a> {
         let context = Some(ParseContext::TypeVariablesDeclaration);
         let head = self.eat_token(TokenType::Identifier, context)?;
         let mut tail = vec![];
-        let mut constraints = vec![];
         let right_angular_bracket = loop {
             if self.try_eat_token(TokenType::Comma)?.is_some() {
                 tail.push(self.eat_token(TokenType::Identifier, context)?);
@@ -579,37 +595,9 @@ impl<'a> Parser<'a> {
         };
 
         Ok(TypeVariablesDeclaration {
-            left_angular_bracket,
+            // left_angular_bracket,
             type_variables: NonEmpty { head, tail },
-            right_angular_bracket,
-            constraints,
-        })
-    }
-
-    fn parse_type_variable_constraint(
-        &mut self,
-        interface_name: Token,
-    ) -> Result<TypeVariableConstraint, ParseError> {
-        let context = Some(ParseContext::TypeVariableConstraint);
-        let type_variables = {
-            self.eat_token(TokenType::LessThan, context)?;
-            let first_type_variable = self.eat_token(TokenType::Identifier, context)?;
-            let mut tail_type_variables = vec![];
-            loop {
-                if self.try_eat_token(TokenType::MoreThan)?.is_some() {
-                    break NonEmpty {
-                        head: first_type_variable,
-                        tail: tail_type_variables,
-                    };
-                } else {
-                    self.eat_token(TokenType::Comma, context)?;
-                    tail_type_variables.push(self.eat_token(TokenType::Identifier, context)?)
-                }
-            }
-        };
-        Ok(TypeVariableConstraint {
-            interface_name,
-            type_variables,
+            // right_angular_bracket,
         })
     }
 
@@ -681,7 +669,7 @@ impl<'a> Parser<'a> {
 
     fn parse_record_type_annotation(
         &mut self,
-        hash_left_curly_bracket: Token,
+        left_curly_bracket: Token,
     ) -> Result<TypeAnnotation, ParseError> {
         let context = Some(ParseContext::TypeAnnotationRecord);
         let mut key_type_annotation_pairs: Vec<(Token, TypeAnnotation)> = vec![];
@@ -699,7 +687,7 @@ impl<'a> Parser<'a> {
             };
         };
         Ok(TypeAnnotation::Record {
-            hash_left_curly_bracket,
+            left_curly_bracket,
             key_type_annotation_pairs,
             right_curly_bracket,
         })
@@ -729,28 +717,29 @@ impl<'a> Parser<'a> {
     ) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::DotExpression);
 
-        let first_argument =
-            if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
-                self.parse_record_update(left_parenthesis, first_argument)?
-            } else {
-                let name = self.eat_token(TokenType::Identifier, context)?;
-                Expression::RecordAccess {
-                    expression: Box::new(first_argument),
-                    property_name: name,
-                }
-            };
+        let first_argument = if let Some(hash_left_curly_bracket) =
+            self.try_eat_token(TokenType::HashLeftCurlyBracket)?
+        {
+            self.parse_record_update(hash_left_curly_bracket, first_argument)?
+        } else {
+            let name = self.eat_token(TokenType::Identifier, context)?;
+            Expression::RecordAccess {
+                expression: Box::new(first_argument),
+                property_name: name,
+            }
+        };
 
         self.try_parse_dot_expression(first_argument)
     }
 
     fn parse_record_update(
         &mut self,
-        left_parenthesis: Token,
+        hash_left_curly_bracket: Token,
         expression: Expression,
     ) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::ExpressionRecordUpdate);
         let mut record_updates: Vec<RecordUpdate> = Vec::new();
-        let (record_updates, right_parenthesis) = loop {
+        let (record_updates, right_curly_bracket) = loop {
             let property_name = self.eat_token(TokenType::Identifier, context)?;
             if self.try_eat_token(TokenType::Equals)?.is_some() {
                 // this is a value update
@@ -766,7 +755,7 @@ impl<'a> Parser<'a> {
                     new_value: Expression::Identifier(property_name),
                 })
             }
-            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+            if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightCurlyBracket)? {
                 break (record_updates, right_parenthesis);
             } else {
                 self.eat_token(TokenType::Comma, context)?;
@@ -774,10 +763,10 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Expression::RecordUpdate {
-            left_parenthesis,
+            hash_left_curly_bracket,
             expression: Box::new(expression),
             updates: record_updates,
-            right_parenthesis,
+            right_curly_bracket,
         })
     }
     fn try_parse_dot_expression(
@@ -844,7 +833,7 @@ impl<'a> Parser<'a> {
 
     fn parse_high_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         let context = Some(ParseContext::Expression);
-        let expression = if let Some(token) = self.next_meaningful_token()? {
+        if let Some(token) = self.next_meaningful_token()? {
             match token.token_type {
                 TokenType::String(string_literal) => Ok(Expression::String(string_literal)),
                 TokenType::InterpolatedString(InterpolatedString {
@@ -857,7 +846,7 @@ impl<'a> Parser<'a> {
                     end_quotes,
                 }),
                 TokenType::Character => Ok(Expression::Character(token.clone())),
-                TokenType::LeftSquareBracket => self.parse_array(token.clone()),
+                TokenType::HashLeftParenthesis => self.parse_array(token.clone()),
                 TokenType::LeftCurlyBracket => self.parse_function(token.clone()),
                 TokenType::HashLeftCurlyBracket => self.parse_record(token.clone()),
                 TokenType::LeftParenthesis => {
@@ -879,14 +868,13 @@ impl<'a> Parser<'a> {
             }
         } else {
             Err(Parser::unexpected_eof(context))
-        }?;
-        self.try_parse_dot_expression(expression)
+        }
     }
 
-    fn parse_array(&mut self, left_square_bracket: Token) -> Result<Expression, ParseError> {
+    fn parse_array(&mut self, hash_left_parenthesis: Token) -> Result<Expression, ParseError> {
         let mut elements: Vec<Expression> = Vec::new();
-        let right_square_bracket = loop {
-            if let Some(right_square_bracket) = self.try_eat_token(TokenType::RightSquareBracket)? {
+        let right_parenthesis = loop {
+            if let Some(right_square_bracket) = self.try_eat_token(TokenType::RightParenthesis)? {
                 break right_square_bracket;
             };
             if !elements.is_empty() {
@@ -895,9 +883,9 @@ impl<'a> Parser<'a> {
             elements.push(self.parse_low_precedence_expression()?);
         };
         Ok(Expression::Array {
-            left_square_bracket,
+            hash_left_parenthesis,
             elements,
-            right_square_bracket,
+            right_parenthesis,
         })
     }
 
@@ -1196,15 +1184,20 @@ impl<'a> Parser<'a> {
             });
         }
 
+        let has_period = self.try_eat_token(TokenType::Period)?.is_some();
+
         let next = self.parse_high_precedence_expression()?;
-        let (function, argument) = match &next {
-            // TODO: handle operator
-
-            // Postfix
-            Expression::Identifier(_) | Expression::EnumConstructor { .. } => (next, previous),
-
-            // Prefix function call
-            _ => (previous, next),
+        let (function, argument) = if has_period {
+            // This is a postfix function application
+            (next, previous)
+        } else {
+            // This is a prefix function application
+            // And if the argument is an identifier without parenthesis
+            // The identifier will be treated as a keyword
+            match next {
+                Expression::Identifier(identifier) => (previous, Expression::Keyword(identifier)),
+                _ => (previous, next),
+            }
         };
 
         let previous = match (function, argument) {
@@ -1271,7 +1264,7 @@ impl<'a> Parser<'a> {
         &mut self,
     ) -> Result<Option<TypeConstraintsAnnotation>, ParseError> {
         let context = None;
-        if self.try_eat_token(TokenType::KeywordExists)?.is_some() {
+        if self.try_eat_token(TokenType::KeywordGiven)?.is_some() {
             Ok(Some(TypeConstraintsAnnotation {
                 left_parenthesis: self.eat_token(TokenType::LeftParenthesis, context)?,
                 type_constraints: {
@@ -1362,7 +1355,10 @@ impl<'a> Parser<'a> {
 fn is_token_meaningless(token: &Token) -> bool {
     matches!(
         token.token_type,
-        TokenType::Whitespace | TokenType::Newline | TokenType::Comment
+        TokenType::Whitespace
+            | TokenType::Newline
+            | TokenType::Comment
+            | TokenType::MultilineComment
     )
 }
 

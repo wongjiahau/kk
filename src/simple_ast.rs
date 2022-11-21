@@ -171,6 +171,7 @@ impl From<inferred_ast::InferredExpression> for Expression {
             } => todo!(),
             inferred_ast::InferredExpression::Unit => todo!(),
             inferred_ast::InferredExpression::String(_) => todo!(),
+            inferred_ast::InferredExpression::Keyword(_) => todo!(),
         }
     }
 }

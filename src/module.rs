@@ -376,6 +376,7 @@ impl Module {
             Type::String => Type::String,
             Type::Character => Type::Character,
             Type::Unit => Type::Unit,
+            Type::Keyword(identifier) => Type::Keyword(identifier.clone()),
             Type::ExplicitTypeVariable(type_variable) => {
                 Type::ExplicitTypeVariable(type_variable.clone())
             }
@@ -920,6 +921,35 @@ impl Module {
                     }
                 }
             }
+        }
+    }
+
+    pub fn insert_keyword(&mut self, keyword: &Token) {
+        if !self
+            .symbol_entries
+            .iter()
+            .any(|entry| match &entry.symbol.kind {
+                SymbolKind::Value(value) => match &value.type_value {
+                    Type::Keyword(name) if name.eq(&keyword.representation) => true,
+                    _ => false,
+                },
+                _ => false,
+            })
+        {
+            let uid = self.get_next_symbol_uid();
+            self.symbol_entries.push(SymbolEntry {
+                uid,
+                scope_name: self.current_scope_name(),
+                symbol: Symbol {
+                    meta: SymbolMeta {
+                        name: keyword.clone(),
+                        access: Access::Protected,
+                    },
+                    kind: SymbolKind::Value(ValueSymbol {
+                        type_value: Type::Keyword(keyword.representation.clone()),
+                    }),
+                },
+            })
         }
     }
 }

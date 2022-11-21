@@ -85,6 +85,7 @@ pub enum InferredExpression {
         statements: Vec<InferredStatement>,
         return_value: Box<InferredExpression>,
     },
+    Keyword(Token),
 }
 
 #[derive(Debug, Clone)]

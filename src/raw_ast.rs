@@ -47,25 +47,7 @@ pub struct EntryStatement {
 
 #[derive(Debug, Clone)]
 pub struct TypeVariablesDeclaration {
-    pub left_angular_bracket: Token,
     pub type_variables: NonEmpty<Token>,
-    pub right_angular_bracket: Token,
-
-    /// List of constraints that the declared type variables must satisfy
-    pub constraints: Vec<TypeVariableConstraint>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TypeVariableConstraint {
-    pub interface_name: Token,
-    pub type_variables: NonEmpty<Token>,
-}
-
-#[derive(Debug, Clone)]
-pub struct InterfaceDefinition {
-    pub keyword_let: Token,
-    pub name: Token,
-    pub type_annotation: TypeAnnotation,
 }
 
 #[derive(Debug, Clone)]
@@ -96,7 +78,7 @@ pub struct TypeAliasStatement {
 #[derive(Debug, Clone)]
 pub struct EnumStatement {
     pub access: Access,
-    pub keyword_type: Token,
+    pub keyword_class: Token,
     pub name: Token,
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
     pub constructors: Vec<EnumConstructorDefinition>,
@@ -178,7 +160,7 @@ pub enum TypeAnnotation {
         type_arguments: Option<TypeArguments>,
     },
     Record {
-        hash_left_curly_bracket: Token,
+        left_curly_bracket: Token,
         key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
         right_curly_bracket: Token,
     },
@@ -192,6 +174,9 @@ pub enum TypeAnnotation {
     Unit {
         left_parenthesis: Token,
         right_parenthesis: Token,
+    },
+    Keyword {
+        identifier: Token,
     },
 }
 
@@ -303,6 +288,7 @@ pub enum Expression {
     },
     Character(Token),
     Identifier(Token),
+    Keyword(Token),
     EnumConstructor {
         name: Token,
         payload: Option<Box<Expression>>,
@@ -324,14 +310,14 @@ pub enum Expression {
     },
     RecordUpdate {
         expression: Box<Expression>,
-        left_parenthesis: Token,
+        hash_left_curly_bracket: Token,
         updates: Vec<RecordUpdate>,
-        right_parenthesis: Token,
+        right_curly_bracket: Token,
     },
     Array {
-        left_square_bracket: Token,
+        hash_left_parenthesis: Token,
         elements: Vec<Expression>,
-        right_square_bracket: Token,
+        right_parenthesis: Token,
     },
     Let {
         keyword_let: Token,
@@ -577,7 +563,7 @@ pub enum TokenType {
     KeywordImport,
     KeywordPublic,
     KeywordExport,
-    KeywordExists,
+    KeywordGiven,
     Whitespace,
     LeftCurlyBracket,
     RightCurlyBracket,
@@ -626,6 +612,9 @@ pub enum TokenType {
     KeywordAs,
     HashLeftCurlyBracket,
     KeywordCase,
+    HashLeftParenthesis,
+    KeywordClass,
+    KeywordForall,
 }
 
 #[derive(Debug, Clone)]
@@ -689,5 +678,13 @@ impl StringLiteral {
             .first()
             .position()
             .join(self.end_quotes.last().position())
+    }
+}
+impl TypeVariablesDeclaration {
+    pub fn position(&self) -> Position {
+        self.type_variables
+            .head
+            .position
+            .join(self.type_variables.last().position)
     }
 }

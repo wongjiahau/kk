@@ -4,7 +4,7 @@ use std::vec::IntoIter;
 use crate::non_empty::NonEmpty;
 use crate::parse::{ParseErrorKind, Parser};
 use crate::{parse::ParseError, raw_ast::*};
-use peeking_take_while::PeekableExt;
+use itertools::Itertools;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Character {
@@ -63,9 +63,27 @@ impl TokenizeError {
     }
 }
 
+struct Tokens {
+    characters_iterator: Peekable<IntoIter<Character>>,
+}
+
 pub struct Tokenizer {
     characters_iterator: Peekable<IntoIter<Character>>,
     peeked_tokens: Vec<Token>,
+}
+
+impl Iterator for Tokenizer {
+    type Item = Result<Token, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next() {
+            Ok(token) => match token {
+                Some(token) => Some(Ok(token)),
+                None => None,
+            },
+            Err(error) => Some(Err(error)),
+        }
+    }
 }
 
 impl Tokenizer {
@@ -108,10 +126,6 @@ impl Tokenizer {
         }
     }
 
-    pub fn remaining_characters(self) -> Vec<Character> {
-        self.characters_iterator.collect()
-    }
-
     pub fn peek(&mut self) -> Result<Option<Token>, ParseError> {
         match self.peeked_tokens.last() {
             Some(token) => Ok(Some(token.clone())),
@@ -128,6 +142,7 @@ impl Tokenizer {
         }
     }
 
+    // Option (Result Token ParseError)
     pub fn next(&mut self) -> Result<Option<Token>, ParseError> {
         // Clear peeked token
         if let Some(token) = self.peeked_tokens.pop() {
@@ -272,8 +287,6 @@ impl Tokenizer {
                         _ => {}
                     }
 
-                    let allow_escape = start_quotes.len() > 1;
-
                     enum StartOf {
                         Nothing,
                         Escape,
@@ -288,13 +301,9 @@ impl Tokenizer {
                                 let (next_characters, next_start_of) = match &character.value {
                                     '\\' => (
                                         Some(vec![character]),
-                                        if allow_escape {
-                                            match start_of {
-                                                StartOf::Escape => StartOf::Nothing,
-                                                _ => StartOf::Escape,
-                                            }
-                                        } else {
-                                            StartOf::Nothing
+                                        match start_of {
+                                            StartOf::Escape => StartOf::Nothing,
+                                            _ => StartOf::Escape,
                                         },
                                     ),
                                     '"' => match start_of {
@@ -506,6 +515,14 @@ impl Tokenizer {
                             self.characters_iterator.by_ref().next().as_ref(),
                         ),
                     })),
+                    Some(Character { value: '(', .. }) => Ok(Some(Token {
+                        token_type: TokenType::HashLeftParenthesis,
+                        representation: "#(".to_string(),
+                        position: make_position(
+                            character,
+                            self.characters_iterator.by_ref().next().as_ref(),
+                        ),
+                    })),
                     _ => {
                         let characters = self
                             .characters_iterator
@@ -685,9 +702,11 @@ pub fn get_token_type(s: String) -> TokenType {
         "import" => TokenType::KeywordImport,
         "public" => TokenType::KeywordPublic,
         "export" => TokenType::KeywordExport,
-        "exists" => TokenType::KeywordExists,
+        "given" => TokenType::KeywordGiven,
         "as" => TokenType::KeywordAs,
         "case" => TokenType::KeywordCase,
+        "class" => TokenType::KeywordClass,
+        "forall" => TokenType::KeywordForall,
         _ => TokenType::Identifier,
     }
 }

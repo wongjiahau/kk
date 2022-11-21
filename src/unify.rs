@@ -423,6 +423,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::Identifier(_)
         | Expression::String(_)
         | Expression::CpsBang { .. }
+        | Expression::Keyword(_)
         | Expression::Function(_) => None,
         Expression::FunctionCall(function_call) => Some(function_call.function.position()),
         Expression::InterpolatedString { sections, .. } => {
@@ -1107,7 +1108,7 @@ impl Positionable for TypeAnnotation {
                 .position
                 .join(right_square_bracket.position),
             TypeAnnotation::Record {
-                hash_left_curly_bracket: left_curly_bracket,
+                left_curly_bracket,
                 right_curly_bracket,
                 ..
             } => left_curly_bracket
@@ -1131,10 +1132,7 @@ impl Positionable for TypeAnnotation {
             TypeAnnotation::Scheme {
                 type_variables,
                 type_annotation,
-            } => type_variables
-                .left_angular_bracket
-                .position
-                .join(type_annotation.position()),
+            } => type_variables.position().join(type_annotation.position()),
             TypeAnnotation::Parenthesized {
                 left_parenthesis,
                 right_parenthesis,
@@ -1144,6 +1142,7 @@ impl Positionable for TypeAnnotation {
                 left_parenthesis,
                 right_parenthesis,
             } => left_parenthesis.position.join(right_parenthesis.position),
+            TypeAnnotation::Keyword { identifier } => identifier.position,
         }
     }
 }
@@ -1216,8 +1215,8 @@ impl Positionable for Expression {
     fn position(&self) -> Position {
         match self {
             Expression::Array {
-                left_square_bracket,
-                right_square_bracket,
+                hash_left_parenthesis: left_square_bracket,
+                right_parenthesis: right_square_bracket,
                 ..
             } => left_square_bracket
                 .position
@@ -1258,7 +1257,7 @@ impl Positionable for Expression {
                 .join(right_curly_bracket.position),
             Expression::RecordUpdate {
                 expression,
-                right_parenthesis: right_curly_bracket,
+                right_curly_bracket,
                 ..
             } => expression
                 .as_ref()
@@ -1291,6 +1290,7 @@ impl Positionable for Expression {
             Expression::CpsBang {
                 argument, function, ..
             } => argument.position().join(function.position()),
+            Expression::Keyword(identifier) => identifier.position,
         }
     }
 }
@@ -1320,7 +1320,7 @@ impl Positionable for Statement {
                 .keyword_type
                 .position
                 .join(type_statement.right.position()),
-            Statement::Enum(enum_statement) => enum_statement.keyword_type.position.join_maybe(
+            Statement::Enum(enum_statement) => enum_statement.keyword_class.position.join_maybe(
                 enum_statement
                     .constructors
                     .last()
@@ -1390,6 +1390,7 @@ pub fn unify_type_(
         (Type::String, Type::String) => Ok(Type::String),
         (Type::Character, Type::Character) => Ok(Type::Character),
         (Type::Unit, Type::Unit) => Ok(Type::Unit),
+        (Type::Keyword(a), Type::Keyword(b)) if a == b => Ok(Type::Keyword(a)),
         (
             Type::ExplicitTypeVariable(expected_type_variable),
             Type::ExplicitTypeVariable(actual_type_variable),
@@ -1771,6 +1772,7 @@ pub fn rewrite_type_variable_in_type(
         Type::String => Type::String,
         Type::Character => Type::Character,
         Type::Unit => Type::Unit,
+        Type::Keyword(identifier) => Type::Keyword(identifier),
 
         Type::ExplicitTypeVariable(type_variable) => {
             if type_variable.name == *from_type_variable {
@@ -1983,6 +1985,10 @@ fn infer_expression_type_(
         Expression::String(string_literal) => Ok(InferExpressionResult {
             type_value: Type::String,
             expression: InferredExpression::String(string_literal.clone()),
+        }),
+        Expression::Keyword(keyword) => Ok(InferExpressionResult {
+            type_value: Type::Keyword(keyword.representation.clone()),
+            expression: InferredExpression::Keyword(keyword.clone()),
         }),
         Expression::InterpolatedString { sections, .. } => {
             let typechecked_sections = sections
@@ -2738,6 +2744,7 @@ impl Expression {
             | Expression::String(_)
             | Expression::Character(_)
             | Expression::Identifier(_)
+            | Expression::Keyword(_)
             | Expression::CpsClosure { .. } => (vec![], self),
 
             Expression::Statements { current, next } => {
@@ -2885,14 +2892,14 @@ impl Expression {
             }
             Expression::RecordUpdate {
                 expression,
-                left_parenthesis: left_curly_bracket,
+                hash_left_curly_bracket: left_curly_bracket,
                 updates,
-                right_parenthesis: right_curly_bracket,
+                right_curly_bracket,
             } => todo!(),
             Expression::Array {
-                left_square_bracket,
+                hash_left_parenthesis: left_square_bracket,
                 elements,
-                right_square_bracket,
+                right_parenthesis: right_square_bracket,
             } => todo!(),
             Expression::Let {
                 keyword_let,
@@ -3532,6 +3539,12 @@ pub fn type_annotation_to_type(
     match &type_annotation {
         TypeAnnotation::Underscore(_) => Ok(Type::Underscore),
         TypeAnnotation::Unit { .. } => Ok(Type::Unit),
+        TypeAnnotation::Keyword { identifier } => {
+            // Insert a value with the same type into the current module
+            module.insert_keyword(identifier);
+
+            Ok(Type::Keyword(identifier.representation.clone()))
+        }
         TypeAnnotation::Named {
             name,
             type_arguments: actual_type_arguments,
@@ -4332,6 +4345,7 @@ fn apply_type_variable_substitution_to_type(
         Type::Unit => Type::Unit,
         Type::Float => Type::Float,
         Type::Integer => Type::Integer,
+        Type::Keyword(identifier) => Type::Keyword(identifier.to_string()),
         Type::BuiltInOneArgumentType {
             kind,
             type_argument,
@@ -4426,6 +4440,7 @@ fn get_free_type_variables_in_type(type_value: &Type) -> HashSet<String> {
         | Type::Character
         | Type::Unit
         | Type::Underscore
+        | Type::Keyword(_)
         | Type::ExplicitTypeVariable { .. } => HashSet::new(),
         Type::BuiltInOneArgumentType { type_argument, .. } => {
             get_free_type_variables_in_type(type_argument.as_ref())
