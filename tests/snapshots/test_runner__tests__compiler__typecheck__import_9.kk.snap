@@ -6,15 +6,14 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 // testing import all kind of symbols
-import {foo as bar, Color, bomb} from "./import_1.kk"
+import "./import_1.kk"
 
-bar.print()
-
-let x: Color = Red
-x.print()
-Green.print()
-true.bomb().print()
-"hi".bomb().print()
+entry
+  let x: Color = #red;
+  x print;
+  #green print;
+  bomb () print;
+  "hi" bomb print
 
 ============
 EXIT CODE
@@ -24,9 +23,8 @@ EXIT CODE
 ============
 STDOUT
 ============
-123
-{ '$': 'Red', _: null }
-{ '$': 'Green', _: null }
+{ '$': '#red', _: null }
+{ '$': '#green', _: null }
 World
 Hello
 

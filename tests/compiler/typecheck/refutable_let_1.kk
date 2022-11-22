@@ -1,5 +1,5 @@
-type Option<T> = #Some(T) | #None
+type Option<T> = some(T) | none
 
 let foo (x: Option<Int>): Int =
-  let #Some(x) = x;
+  let some(x) = x;
   x

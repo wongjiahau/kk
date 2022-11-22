@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 // error: cannot import private symbol
-module (spam) = import "./import_1.kk"
+import "./import_1.kk" { spam }
 
 ============
 EXIT CODE
@@ -22,10 +22,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/import_4.kk:2:9
+  ┌─ tests/compiler/typecheck/import_4.kk:2:26
   │
-2 │ module (spam) = import "./import_1.kk"
-  │         ^^^^ Cannot import private symbol.
+2 │ import "./import_1.kk" { spam }
+  │                          ^^^^ Cannot import private symbol.
   │
   = Consider exporting this symbol if you want to import it in this file.
     For example:

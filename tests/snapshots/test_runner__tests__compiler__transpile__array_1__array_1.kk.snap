@@ -1,0 +1,27 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo (_ : Int) : Int = 123
+
+
+entry
+  let xs = #( 999 foo, #{ x = 1 foo } .x );
+  xs print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+[ 123, 123 ]
+
+============
+STDERR
+============

@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+type Null = case null
+entry
+  let foo = { case null -> 123 };
+  let xs = (
+    let x = null foo;
+    let y = #{x = null foo} .x;
+    #(x, y)
+  );
+  xs print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+[ 123, 123 ]
+
+============
+STDERR
+============

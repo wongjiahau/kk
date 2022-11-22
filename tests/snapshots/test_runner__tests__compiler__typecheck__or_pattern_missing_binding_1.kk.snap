@@ -9,7 +9,7 @@ type Foo = #a(x: String, y: String) | #bala
 
 entry
   {
-    \#a (x, y)  | #bala -> #true
+    \#a (x, y)  | #bala -> true
             //    ^^^^^ Error: missing binding `x`
   } (#bala)
 
@@ -29,7 +29,7 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/or_pattern_missing_binding_1.kk:6:19
   │
-6 │     \#a (x, y)  | #bala -> #true
+6 │     \#a (x, y)  | #bala -> true
   │                   ^^^^^ Missing bindings
   │
   = Every pattern in an OR pattern must have the same set of bindings, however this pattern is missing the following binding(s) which are found in preceding pattern(s):

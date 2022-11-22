@@ -1,0 +1,27 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+/**
+ * Who lives in a pineapple under the sea?
+ * Spongebob Squarepants
+ */
+ entry
+  "Hello" print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+Hello
+
+============
+STDERR
+============

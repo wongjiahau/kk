@@ -1,6 +1,6 @@
 // base file for testing import
 // should have no error
-type Color = #Red | #Green
+type Color = #red | #green
 type People = (name: String)
 
 let bomb (_: String): String  = "Hello"

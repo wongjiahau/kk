@@ -1,10 +1,10 @@
 type Grade = #a | #b | #c
-type Boolean = #true | #false
+type Boolean = case true case false
 
 let (a : Boolean) not : Boolean = 
   {
-  | #true -> #false
-  | #false -> #true
+  | true -> false
+  | false -> true
   } (a)
 
 let<T> (left : T) `!=` (right : T) : Boolean 

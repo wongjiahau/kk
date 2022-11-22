@@ -1,0 +1,29 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+type R =  #{ x : Int, y : #{ z : Int } }
+
+entry
+  let a = #{ x = 2, y = #{ z = 3 } };
+  let b = a.#{ y = a.y.#{ z = 4 } };
+  a print;
+  b print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+{ '$x': 2, '$y': { '$z': 3 } }
+{ '$x': 2, '$y': { '$z': 4 } }
+
+============
+STDERR
+============

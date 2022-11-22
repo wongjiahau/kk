@@ -5,11 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type Nat = #zero | #succ(Nat)
+type Nat = case zero case succ(Nat)| succ(Nat)
 
 let foo (n : Nat) : Int =
   {
-    \#zero | #zero -> 1
+    \zero | zero -> 1
           // ^^^^^ Error: unreachable case
   } (n)
 
@@ -29,10 +29,10 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_3.kk:5:14
   │
-5 │     \#zero | #zero -> 1
+5 │     \zero | zero -> 1
   │              ^^^^^ Partially unreachable case
   │
   = This case is partially unreachable because it contains a redundant pattern that is already handled by previous cases.
     Namely:
 
-        #zero
+        zero

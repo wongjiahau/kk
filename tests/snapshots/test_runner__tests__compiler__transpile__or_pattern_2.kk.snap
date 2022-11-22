@@ -10,11 +10,11 @@ type Vehicle = #car(Color) | #motor
 
 type Color = #white | #gold | #black
 
-type Boolean = #true | #false
+type Boolean = case true case false
 
 let `is shiny car`: Vehicle -> Boolean = {
-  #car(#white | #gold) -> #true,
-   _ -> #false
+  #car(#white | #gold) -> true,
+   _ -> false
 }
 
 entry
@@ -31,10 +31,10 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': '#true', _: null }
-{ '$': '#true', _: null }
-{ '$': '#false', _: null }
-{ '$': '#false', _: null }
+{ '$': 'true', _: null }
+{ '$': 'true', _: null }
+{ '$': 'false', _: null }
+{ '$': 'false', _: null }
 
 ============
 STDERR

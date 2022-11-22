@@ -1,0 +1,27 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let <T> foo (t: T): Int = 123
+
+entry
+  let z = 3;
+  let x = #{ x = 0 foo, y = "456", z };
+  x print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+{ '$x': 123, '$y': '456', '$z': 3 }
+
+============
+STDERR
+============

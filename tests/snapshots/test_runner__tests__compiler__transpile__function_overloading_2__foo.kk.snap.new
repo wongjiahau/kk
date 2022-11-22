@@ -1,0 +1,50 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo (_: String): String = "Hello"
+
+let foo (_: Int): String = "World"
+
+// map1 takes function last
+let<A, B> map1 (x: A) (f: A -> B): B = f (x)
+
+// map2 takes function first
+let<A, B> map2 (f: A -> B) (x: A) : B = f (x)
+
+entry
+  123 .map1 (foo) .print; // "World"
+  123 .map1 (foo) .map { x -> x foo } .print; // "Hello"
+
+  123 .map2 (foo) .print; // "World"
+  foo .map2 (123) .map2 { x -> x foo } .print // "Hello"
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+   ┌─ tests/compiler/transpile/function_overloading_2/foo.kk:12:14
+   │
+12 │   123 .map1 (foo) .print; // "World"
+   │              ^^^ Ambiguous Symbol
+   │
+   = Matching types:
+
+       String -> String
+
+       Int -> String
+
+     Put type annotation for disambiguation.

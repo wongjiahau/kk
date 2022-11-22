@@ -5,12 +5,12 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type Boolean = #true | #false
+type Boolean = case true case false
 
 let (x : Boolean) and (y: Boolean) : Boolean =
   {
-    \(x = #true, y = #true) -> #true
-    \(x = #false, y = #true) -> #false
+    \(x = true, y = true) -> true
+    \(x = false, y = true) -> false
   } (x, y)
 
 ============
@@ -29,12 +29,12 @@ STDERR
 error:
   ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_2.kk:5:6
   │
-5 │       \(x = #true, y = #true) -> #true
+5 │       \(x = true, y = true) -> true
   │ ╭──────^
-6 │ │     \(x = #false, y = #true) -> #false
+6 │ │     \(x = false, y = true) -> false
   │ ╰──────────────────────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 
-      (x = #true, y = #false)
-      (x = #false, y = #false)
+      (x = true, y = false)
+      (x = false, y = false)

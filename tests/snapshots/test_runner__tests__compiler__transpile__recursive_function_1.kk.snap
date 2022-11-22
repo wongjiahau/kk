@@ -5,18 +5,18 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type Nat = #zero | #succ(Nat)
+type Nat = case zero case succ(Nat)| succ(Nat)
 
 let (x : Nat) add (y : Nat) : Nat =
   {
-    (x = #zero, y = n) -> n,
-    (x = #succ(n), y = a) -> #succ(n add (a))
+    (x = zero, y = n) -> n,
+    (x = succ(n), y = a) -> succ(n add (a))
 
   } (x, y)
 
 
 entry
-  let one = #succ(#zero);
+  let one = succ(zero);
   one add (one) print
 
 ============
@@ -27,7 +27,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': '#succ', _: { '$': '#succ', _: { '$': '#zero', _: null } } }
+{ '$': 'succ', _: { '$': 'succ', _: { '$': 'zero', _: null } } }
 
 ============
 STDERR

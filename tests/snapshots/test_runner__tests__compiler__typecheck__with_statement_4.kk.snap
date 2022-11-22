@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let map = (x: Integer, f: (n: Integer) => Integer): [Integer] => [x.f()]
+let map = (x: Int, f: (n: Int) -> Int): [Int] -> [x.f()]
 
 {
   with 0 = 123.map
@@ -27,11 +27,24 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/with_statement_4.kk:4:8
+  ┌─ tests/compiler/typecheck/with_statement_4.kk:1:9
   │
-4 │   with 0 = 123.map
-  │        ^ Non-exhaustive cases
+1 │ let map = (x: Int, f: (n: Int) -> Int): [Int] -> [x.f()]
+  │         ^ Syntax error: not expecting `=` here
   │
-  = Missing case(s):
+  = The expected token here is `:`.
 
-      case _:
+    Note that `=` is used for declaring variables locally, for example:
+
+    let x = 1.
+
+    We found this error when we are trying to parse a Let Statement.
+    Examples of Let Statement are:
+
+    Example #1:
+
+      let x : Integer = 1
+
+    Example #2:
+
+      let identity = <T>(t: T): T => t

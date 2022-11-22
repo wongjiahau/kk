@@ -10,31 +10,31 @@ type List<T> = #nil | #cons (head : T, tail : List<T>)
 
 type Color = #red | #green
 
-type Boolean = #true | #false
+type Boolean = case true case false
 
 let (left : Color) equals (right : Color) : Boolean =
   {
-    (left = #red, right = #red) -> #true,
-    (left = #green, right = #green) -> #true,
-    _ -> #false
+    (left = #red, right = #red) -> true,
+    (left = #green, right = #green) -> true,
+    _ -> false
   } (left, right)
 
 let (left : Boolean) and (right : Boolean) : Boolean =
   {
-    (left = #true, right = #true) -> #true,
-    _ -> #false
+    (left = true, right = true) -> true,
+    _ -> false
   } (left, right)
 
 let<T> (left : List<T>) equals (right : List<T>) : Boolean
   exists (equals: T -> T -> Boolean)
   = {
     (left = #nil, right = #nil) ->
-      #true,
+      true,
 
     (left = #cons (left), right = #cons (right)) ->
       left .head equals (right .head) and (left .tail equals (right .tail)),
 
-    _ -> #false
+    _ -> false
   } (left, right)
 
 
@@ -52,8 +52,8 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': '#true', _: null }
-{ '$': '#false', _: null }
+{ '$': 'true', _: null }
+{ '$': 'false', _: null }
 
 ============
 STDERR

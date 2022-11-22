@@ -1,0 +1,24 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// This is a comment
+entry
+  "Hello" print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+Hello
+
+============
+STDERR
+============

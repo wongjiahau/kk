@@ -5,20 +5,20 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type Boolean = #true | #false
+type Boolean = case true case false
 type Grade = #a | #b
 
 let (left : Grade) equals (right : Grade) : Boolean =
   {
-    (left = #a, right = #a) -> #true,
-    (left = #b, right = #b) -> #true,
-     _ -> #false
+    (left = #a, right = #a) -> true,
+    (left = #b, right = #b) -> true,
+     _ -> false
   } (left, right)
 
 let (b : Boolean) not : Boolean =
   {
-    #true -> #false,
-    #false -> #true
+    true -> false,
+    false -> true
   } (b)
 
 let<T> (left : T) `not equals` (right : T) : Boolean
@@ -38,9 +38,9 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': '#true', _: null }
-{ '$': '#true', _: null }
-{ '$': '#false', _: null }
+{ '$': 'true', _: null }
+{ '$': 'true', _: null }
+{ '$': 'false', _: null }
 
 ============
 STDERR

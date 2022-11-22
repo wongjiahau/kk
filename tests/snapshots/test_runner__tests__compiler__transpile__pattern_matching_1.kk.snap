@@ -5,19 +5,19 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type Boolean = #true | #false
+type Boolean = case true case false
 
 let (x: Boolean) and (y: Boolean): Boolean =
   {
-    (x = #true, y = #true) -> #true,
-     _ -> #false
+    (x = true, y = true) -> true,
+     _ -> false
   } (x, y)
 
 entry
-  #true and (#true) print;
-  #true and (#false) print;
-  #false and (#true) print;
-  #false and (#false) print
+  true and (true) print;
+  true and (false) print;
+  false and (true) print;
+  false and (false) print
 
 ============
 EXIT CODE
@@ -27,10 +27,10 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': '#true', _: null }
-{ '$': '#false', _: null }
-{ '$': '#false', _: null }
-{ '$': '#false', _: null }
+{ '$': 'true', _: null }
+{ '$': 'false', _: null }
+{ '$': 'false', _: null }
+{ '$': 'false', _: null }
 
 ============
 STDERR

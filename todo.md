@@ -1,16 +1,27 @@
 # Todo
 
+- [x] change access to, private (default), export, public-export
+- [] allow name ambiguity (due to overloading) to propagate until a certain boundary before calling it an error [function_overloading_2 and 3]
 - [] migrate to use interpreter
+- [] make operator to have lower precedence, dot to have higher precedence ?
+- [x] java package (folder as module, files within a folder can access the symbol of each other without having to write import)
+- [x] use #{} for record
+- [x] use #() for array
+- [x] use square braket instead of backtick for quoted identifier (improve readability)
+- [] namespace (without mutually recursive module)
 - [] default can be imported, add public/private identifier
 - [] add code coverage to check for untested branch
-- [] namespace
+- [] detect module/type/name alias cycles
+- [] new tuple syntax for better DSL creation
+- [] new lambda syntax ({case x -> y} OR {it print})
+- [] use back curly bracket for record
+- [] type casting
 - [x] constrained polymorphism
 - [x] cps sugar
-- [] raw string literal with variable length quotes, e.g. $"" {"json": "no need escape double quote yea"} ""
+- [x] raw string literal with variable length quotes
 - [] tail call elimination
 - [] auto lazification?
 - [x] restore square bracket array
-- [] try to remove semicolon?
 - [] record with implicit numeric-indexed field
 - [] module as records with higher-kinded type
 - [] unit test

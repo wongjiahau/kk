@@ -5,32 +5,32 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type Boolean = #true | #false
+type Boolean = case true case false
 
-type Nat = #zero | #succ(Nat)
+type Nat = case zero case succ(Nat)| succ(Nat)
 
-let `is even`
+let [is even]
   : Nat -> Boolean
   = {
-    #zero -> #true,
-    #succ(n) -> n `is odd`
+    zero -> true,
+    succ(n) -> n [is odd]
   }
 
-let `is odd`
+let [is odd]
   : Nat -> Boolean
   = {
-    #zero -> #false,
-    #succ(n) -> n `is even`
+    zero -> false,
+    succ(n) -> n [is even]
   }
 
 entry
-  let one = #succ(#zero);
-  #zero `is odd` print; // false
-  let two = #succ(one);
-  one `is even` print; // false
-  two `is even` print; // true
-  two `is odd` print; // false
-  #succ(two) `is odd` print // false
+  let one = succ(zero);
+  zero [is odd] print; // false
+  let two = succ(one);
+  one [is even] print; // false
+  two [is even] print; // true
+  two [is odd] print; // false
+  succ(two) [is odd] print // false
 
 ============
 EXIT CODE
@@ -40,11 +40,11 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': '#false', _: null }
-{ '$': '#false', _: null }
-{ '$': '#true', _: null }
-{ '$': '#false', _: null }
-{ '$': '#true', _: null }
+{ '$': 'false', _: null }
+{ '$': 'false', _: null }
+{ '$': 'true', _: null }
+{ '$': 'false', _: null }
+{ '$': 'true', _: null }
 
 ============
 STDERR
