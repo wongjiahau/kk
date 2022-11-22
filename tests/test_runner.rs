@@ -25,7 +25,9 @@ fn run_all_tests() {
                     .expect("Failed to convert entry to string")
                     .to_string();
 
-                if filename.contains("module") {
+                if filename.contains("transpile/function_overloading_1")
+                    && filename.ends_with(".kk")
+                {
                     let input_filename = filename;
                     print!("{}", input_filename);
                     let input =

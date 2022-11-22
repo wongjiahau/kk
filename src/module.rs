@@ -1033,6 +1033,7 @@ fn overlap(a: &Type, b: &Type, explicit_type_variable_overlaps_with_any_type: bo
         (Type::Character, Type::Character) => true,
         (Type::Integer, Type::Integer) => true,
         (Type::Float, Type::Float) => true,
+        (Type::Keyword(a), Type::Keyword(b)) => a == b,
         (Type::Tuple(xs), Type::Tuple(ys)) => {
             xs.len() == ys.len()
                 && xs

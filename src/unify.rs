@@ -2347,184 +2347,7 @@ fn infer_expression_type_(
             })
         }),
         Expression::FunctionCall(function_call) => {
-            let typechecked_function = match function_call.function.as_ref() {
-                // If the function is a function call, then we will typecheck the function first
-                // This is so that we can typecheck curried expression like:
-                //
-                //    xs map { x -> x + 1 }
-                //
-                //  Which means:
-                //
-                //    (xs map) { x -> x + 1 }
-                //
-                // If we type check the argument first, we will not be able to determine the type
-                // of `x`
-                Expression::FunctionCall(_) => {
-                    // Get the actual function type
-                    // note that we use infer_expression_type_ instead of infer_expression_type
-                    // This is so that we can throw the error of `cannot invoke non-function`
-                    infer_expression_type_(module, None, function_call.function.as_ref())?
-                }
-
-                // If function is not a function call
-                // We will typecheck the argument first
-                _ => {
-                    let typechecked_argument =
-                        infer_expression_type(module, None, function_call.argument.as_ref())?;
-
-                    // Get expected function type
-                    let expected_function_type = Type::Function(FunctionType {
-                        parameter_type: Box::new(typechecked_argument.type_value),
-                        return_type: Box::new(module.introduce_implicit_type_variable(None)?),
-                        type_constraints: vec![],
-                    });
-
-                    // Get the actual function type
-                    // note that we use infer_expression_type_ instead of infer_expression_type
-                    // This is so that we can throw the error of `cannot invoke non-function`
-                    let typechecked_function = infer_expression_type_(
-                        module,
-                        Some(expected_function_type),
-                        function_call.function.as_ref(),
-                    )?;
-                    typechecked_function
-                }
-            };
-
-            // Check if expression being invoked is a function
-            match typechecked_function.type_value {
-                Type::Function(expected_function_type) => {
-                    // Unify argument
-                    let typechecked_argument = infer_expression_type(
-                        module,
-                        Some(*expected_function_type.parameter_type),
-                        function_call.argument.as_ref(),
-                    )?;
-
-                    let type_value = module
-                        .apply_subtitution_to_type(expected_function_type.return_type.as_ref());
-
-                    if !expected_function_type.type_constraints.is_empty() {
-                        // Search for matching variables
-                        let matching_variables = expected_function_type
-                            .type_constraints
-                            .iter()
-                            .map(|type_constraint| {
-                                let symbol = match module.get_value_symbol(
-                                    &Token::dummy_identifier(type_constraint.name.clone()),
-                                    &Some(type_constraint.type_value.clone()),
-                                    module.current_scope_name(),
-                                ) {
-                                    Ok(result) => Ok(result),
-                                    Err(_) => Err(UnifyError {
-                                        position: function_call.function.position(),
-                                        kind: UnifyErrorKind::UnsatisfiedConstraint {
-                                            missing_constraint: TypeConstraint {
-                                                name: type_constraint.name.clone(),
-                                                type_value: module.apply_subtitution_to_type(
-                                                    &type_constraint.type_value,
-                                                ),
-                                            },
-                                        },
-                                    }),
-                                }?;
-                                Ok((type_constraint.name.clone(), symbol.symbol_uid))
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
-
-                        // Put the matching variables in a dictionary
-                        // And make the dictionary as an extra first argument to the existing function
-                        // call
-
-                        let dictionary = InferredExpression::Record {
-                            key_value_pairs: matching_variables
-                                .into_iter()
-                                .map(|(name, symbol_uid)| {
-                                    (
-                                        PropertyName(Token::dummy_identifier(name.clone())),
-                                        InferredExpression::Variable(Identifier {
-                                            uid: symbol_uid,
-                                            token: Token::dummy_identifier(name),
-                                        }),
-                                    )
-                                })
-                                .collect(),
-                        };
-                        Ok(InferExpressionResult {
-                            type_value,
-                            expression: InferredExpression::FunctionCall(Box::new(
-                                InferredFunctionCall {
-                                    function: Box::new(InferredExpression::FunctionCall(Box::new(
-                                        InferredFunctionCall {
-                                            function: Box::new(typechecked_function.expression),
-                                            argument: Box::new(dictionary),
-                                        },
-                                    ))),
-                                    argument: Box::new(typechecked_argument.expression),
-                                },
-                            )),
-                        })
-                    } else {
-                        Ok(InferExpressionResult {
-                            type_value,
-                            expression: InferredExpression::FunctionCall(Box::new(
-                                InferredFunctionCall {
-                                    function: Box::new(typechecked_function.expression),
-                                    argument: Box::new(typechecked_argument.expression),
-                                },
-                            )),
-                        })
-                    }
-                }
-                Type::ImplicitTypeVariable(type_variable) => {
-                    let expected_function_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
-                        name: module.get_next_type_variable_name(),
-                    });
-
-                    let position = Expression::FunctionCall(function_call.clone()).position();
-
-                    unify_type(
-                        module,
-                        &Type::ImplicitTypeVariable(type_variable),
-                        &expected_function_type,
-                        position,
-                    )?;
-
-                    let return_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
-                        name: module.get_next_type_variable_name(),
-                    });
-
-                    let typechecked_argument =
-                        infer_expression_type(module, None, function_call.argument.as_ref())?;
-
-                    let actual_function_type = Type::Function(FunctionType {
-                        parameter_type: Box::new(typechecked_argument.type_value),
-                        return_type: Box::new(return_type.clone()),
-                        type_constraints: vec![],
-                    });
-
-                    unify_type(
-                        module,
-                        &actual_function_type,
-                        &expected_function_type,
-                        position,
-                    )?;
-
-                    Ok(InferExpressionResult {
-                        type_value: module.apply_subtitution_to_type(&return_type),
-                        expression: InferredExpression::FunctionCall(Box::new(
-                            InferredFunctionCall {
-                                function: Box::new(typechecked_function.expression),
-                                argument: Box::new(typechecked_argument.expression),
-                            },
-                        )),
-                    })
-                }
-                other => Err(UnifyError {
-                    position: function_call.function.position(),
-                    kind: UnifyErrorKind::CannotInvokeNonFunction { actual_type: other },
-                }),
-            }
+            infer_function_call(module, expected_type, function_call)
         }
         Expression::Record {
             key_value_pairs,
@@ -2732,6 +2555,170 @@ fn infer_expression_type_(
         type_value: module.apply_subtitution_to_type(&result.type_value),
         expression: result.expression,
     })
+}
+
+fn infer_function_call(
+    module: &mut Module,
+    expected_type: Option<Type>,
+    function_call: &FunctionCall,
+) -> Result<InferExpressionResult, UnifyError> {
+    let typechecked_function = if let Expression::Function(_) = function_call.argument.as_ref() {
+        // Get the actual function type
+        // note that we use infer_expression_type_ instead of infer_expression_type
+        // This is so that we can throw the error of `cannot invoke non-function`
+        infer_expression_type_(module, None, function_call.function.as_ref())?
+    } else {
+        let typechecked_argument =
+            infer_expression_type(module, None, function_call.argument.as_ref())?;
+
+        // Get expected function type
+        let expected_function_type = Type::Function(FunctionType {
+            parameter_type: Box::new(typechecked_argument.type_value),
+            return_type: match &expected_type {
+                Some(expected_type) => Box::new(expected_type.clone()),
+                None => Box::new(module.introduce_implicit_type_variable(None)?),
+            },
+            type_constraints: vec![],
+        });
+
+        // Get the actual function type
+        // note that we use infer_expression_type_ instead of infer_expression_type
+        // This is so that we can throw the error of `cannot invoke non-function`
+        let typechecked_function = infer_expression_type_(
+            module,
+            Some(expected_function_type),
+            function_call.function.as_ref(),
+        )?;
+        typechecked_function
+    };
+
+    // Check if expression being invoked is a function
+    match typechecked_function.type_value {
+        Type::Function(expected_function_type) => {
+            // Unify argument
+            let typechecked_argument = infer_expression_type(
+                module,
+                Some(*expected_function_type.parameter_type),
+                function_call.argument.as_ref(),
+            )?;
+
+            let type_value =
+                module.apply_subtitution_to_type(expected_function_type.return_type.as_ref());
+
+            if !expected_function_type.type_constraints.is_empty() {
+                // Search for matching variables
+                let matching_variables = expected_function_type
+                    .type_constraints
+                    .iter()
+                    .map(|type_constraint| {
+                        let symbol = match module.get_value_symbol(
+                            &Token::dummy_identifier(type_constraint.name.clone()),
+                            &Some(type_constraint.type_value.clone()),
+                            module.current_scope_name(),
+                        ) {
+                            Ok(result) => Ok(result),
+                            Err(_) => Err(UnifyError {
+                                position: function_call.function.position(),
+                                kind: UnifyErrorKind::UnsatisfiedConstraint {
+                                    missing_constraint: TypeConstraint {
+                                        name: type_constraint.name.clone(),
+                                        type_value: module
+                                            .apply_subtitution_to_type(&type_constraint.type_value),
+                                    },
+                                },
+                            }),
+                        }?;
+                        Ok((type_constraint.name.clone(), symbol.symbol_uid))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                // Put the matching variables in a dictionary
+                // And make the dictionary as an extra first argument to the existing function
+                // call
+
+                let dictionary = InferredExpression::Record {
+                    key_value_pairs: matching_variables
+                        .into_iter()
+                        .map(|(name, symbol_uid)| {
+                            (
+                                PropertyName(Token::dummy_identifier(name.clone())),
+                                InferredExpression::Variable(Identifier {
+                                    uid: symbol_uid,
+                                    token: Token::dummy_identifier(name),
+                                }),
+                            )
+                        })
+                        .collect(),
+                };
+                Ok(InferExpressionResult {
+                    type_value,
+                    expression: InferredExpression::FunctionCall(Box::new(InferredFunctionCall {
+                        function: Box::new(InferredExpression::FunctionCall(Box::new(
+                            InferredFunctionCall {
+                                function: Box::new(typechecked_function.expression),
+                                argument: Box::new(dictionary),
+                            },
+                        ))),
+                        argument: Box::new(typechecked_argument.expression),
+                    })),
+                })
+            } else {
+                Ok(InferExpressionResult {
+                    type_value,
+                    expression: InferredExpression::FunctionCall(Box::new(InferredFunctionCall {
+                        function: Box::new(typechecked_function.expression),
+                        argument: Box::new(typechecked_argument.expression),
+                    })),
+                })
+            }
+        }
+        Type::ImplicitTypeVariable(type_variable) => {
+            let expected_function_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
+                name: module.get_next_type_variable_name(),
+            });
+
+            let position = Expression::FunctionCall(Box::new(function_call.clone())).position();
+
+            unify_type(
+                module,
+                &Type::ImplicitTypeVariable(type_variable),
+                &expected_function_type,
+                position,
+            )?;
+
+            let return_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
+                name: module.get_next_type_variable_name(),
+            });
+
+            let typechecked_argument =
+                infer_expression_type(module, None, function_call.argument.as_ref())?;
+
+            let actual_function_type = Type::Function(FunctionType {
+                parameter_type: Box::new(typechecked_argument.type_value),
+                return_type: Box::new(return_type.clone()),
+                type_constraints: vec![],
+            });
+
+            unify_type(
+                module,
+                &actual_function_type,
+                &expected_function_type,
+                position,
+            )?;
+
+            Ok(InferExpressionResult {
+                type_value: module.apply_subtitution_to_type(&return_type),
+                expression: InferredExpression::FunctionCall(Box::new(InferredFunctionCall {
+                    function: Box::new(typechecked_function.expression),
+                    argument: Box::new(typechecked_argument.expression),
+                })),
+            })
+        }
+        other => Err(UnifyError {
+            position: function_call.function.position(),
+            kind: UnifyErrorKind::CannotInvokeNonFunction { actual_type: other },
+        }),
+    }
 }
 
 impl Expression {
