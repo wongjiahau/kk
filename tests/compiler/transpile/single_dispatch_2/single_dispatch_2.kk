@@ -6,4 +6,4 @@ let<A, B> (x: A) .map (f: A -> B): B = f (x)
 
 entry
   123 .map (foo) .print;
-  123 .map (foo) .map { x -> x foo } .print
+  123 .map (foo) .map { x -> x .foo } .print

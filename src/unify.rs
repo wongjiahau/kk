@@ -2562,35 +2562,24 @@ fn infer_function_call(
     expected_type: Option<Type>,
     function_call: &FunctionCall,
 ) -> Result<InferExpressionResult, UnifyError> {
-    let typechecked_function = if let Expression::Function(_) = function_call.argument.as_ref() {
-        // Get the actual function type
-        // note that we use infer_expression_type_ instead of infer_expression_type
-        // This is so that we can throw the error of `cannot invoke non-function`
-        infer_expression_type_(module, None, function_call.function.as_ref())?
-    } else {
-        let typechecked_argument =
-            infer_expression_type(module, None, function_call.argument.as_ref())?;
+    // Get expected function type
+    let expected_function_type = Type::Function(FunctionType {
+        parameter_type: Box::new(get_expected_type(module, function_call.argument.as_ref())?),
+        return_type: match &expected_type {
+            Some(expected_type) => Box::new(expected_type.clone()),
+            None => Box::new(module.introduce_implicit_type_variable(None)?),
+        },
+        type_constraints: vec![],
+    });
 
-        // Get expected function type
-        let expected_function_type = Type::Function(FunctionType {
-            parameter_type: Box::new(typechecked_argument.type_value),
-            return_type: match &expected_type {
-                Some(expected_type) => Box::new(expected_type.clone()),
-                None => Box::new(module.introduce_implicit_type_variable(None)?),
-            },
-            type_constraints: vec![],
-        });
-
-        // Get the actual function type
-        // note that we use infer_expression_type_ instead of infer_expression_type
-        // This is so that we can throw the error of `cannot invoke non-function`
-        let typechecked_function = infer_expression_type_(
-            module,
-            Some(expected_function_type),
-            function_call.function.as_ref(),
-        )?;
-        typechecked_function
-    };
+    // Get the actual function type
+    // note that we use infer_expression_type_ instead of infer_expression_type
+    // This is so that we can throw the error of `cannot invoke non-function`
+    let typechecked_function = infer_expression_type_(
+        module,
+        Some(expected_function_type),
+        function_call.function.as_ref(),
+    )?;
 
     // Check if expression being invoked is a function
     match typechecked_function.type_value {
@@ -2718,6 +2707,83 @@ fn infer_function_call(
             position: function_call.function.position(),
             kind: UnifyErrorKind::CannotInvokeNonFunction { actual_type: other },
         }),
+    }
+}
+
+fn get_expected_type(module: &Module, expression: &Expression) -> Result<Type, UnifyError> {
+    let implicit_type_variable_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
+        name: "temp".to_string(),
+    });
+    match expression {
+        Expression::Statements { next, .. } => get_expected_type(module, next),
+        Expression::Unit { .. } => Ok(Type::Unit),
+        Expression::Parenthesized { value, .. } => get_expected_type(module, value),
+        Expression::Float(_) => Ok(Type::Float),
+        Expression::Integer(_) => Ok(Type::Integer),
+        Expression::String(_) | Expression::InterpolatedString { .. } => Ok(Type::String),
+        Expression::Character(_) => Ok(Type::Character),
+        Expression::Keyword(keyword) => Ok(Type::Keyword(keyword.representation.clone())),
+        Expression::Identifier(identifier) => {
+            match module.get_value_symbol(identifier, &None, module.current_scope_name()) {
+                Ok(result) => Ok(result.type_value),
+                Err(err) => match err.kind {
+                    // If the symbol is ambiguous, don't throw error, just label its type as an implicit type variable
+                    // And leave the type checking for later phases
+                    UnifyErrorKind::AmbiguousSymbol { .. } => {
+                        Ok(implicit_type_variable_type.clone())
+                    }
+
+                    // If it's other error, just throw the error
+                    _ => Err(err),
+                },
+            }
+        }
+        Expression::EnumConstructor { name, payload } => {
+            unreachable!("EnumConstructor cannot be constructed via user-facing syntax, it is an internal construct")
+        }
+        Expression::Function(function) => {
+            let first_branch = function.branches.first();
+            Ok(Type::Function(FunctionType {
+                parameter_type: Box::new(implicit_type_variable_type.clone()),
+                return_type: Box::new(get_expected_type(module, &first_branch.body)?),
+                type_constraints: vec![],
+            }))
+        }
+        Expression::FunctionCall(_) => Ok(implicit_type_variable_type.clone()),
+        Expression::Record {
+            hash_left_curly_bracket,
+            wildcard,
+            key_value_pairs,
+            right_curly_bracket,
+        } => todo!(),
+        Expression::RecordAccess {
+            expression,
+            property_name,
+        } => todo!(),
+        Expression::RecordUpdate {
+            expression,
+            hash_left_curly_bracket,
+            updates,
+            right_curly_bracket,
+        } => todo!(),
+        Expression::Array {
+            hash_left_parenthesis,
+            elements,
+            right_parenthesis,
+        } => todo!(),
+        Expression::Let {
+            keyword_let,
+            left,
+            right,
+            type_annotation,
+            body,
+        } => todo!(),
+        Expression::CpsClosure { tilde, expression } => todo!(),
+        Expression::CpsBang {
+            argument,
+            bang,
+            function,
+        } => todo!(),
     }
 }
 
@@ -3483,30 +3549,6 @@ fn infer_function_branch(
             },
         })
     })
-}
-
-pub fn get_expected_type(
-    module: &mut Module,
-    expected_type: Option<Type>,
-    expected_type_annotation: Option<TypeAnnotation>,
-) -> Result<Option<Type>, UnifyError> {
-    match (expected_type, expected_type_annotation) {
-        (None, None) => Ok(None),
-        (Some(expected_type), None) => Ok(Some(expected_type)),
-        (None, Some(type_annotation)) => {
-            Ok(Some(type_annotation_to_type(module, &type_annotation)?))
-        }
-        (Some(expected_type), Some(type_annotation)) => {
-            let actual_type = type_annotation_to_type(module, &type_annotation)?;
-            unify_type(
-                module,
-                &expected_type,
-                &actual_type,
-                type_annotation.position(),
-            )?;
-            Ok(Some(actual_type))
-        }
-    }
 }
 
 pub fn optional_type_annotation_to_type(

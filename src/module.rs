@@ -774,7 +774,7 @@ impl Module {
 
     /// `expected_type` is required for single dispatch disambiguation
     pub fn get_value_symbol(
-        &mut self,
+        &self,
         symbol_name: &Token,
         expected_type: &Option<Type>,
         scope_name: usize,
