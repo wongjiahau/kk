@@ -6,7 +6,7 @@ type List<T> {
 {
   let bomb = list -> 
     switch (list) {
-      case Nil: true
-      case Cons({head: true, tail: _}): true
+      \ Nil: true
+      \ Cons({head: true, tail: _}): true
     }
 }

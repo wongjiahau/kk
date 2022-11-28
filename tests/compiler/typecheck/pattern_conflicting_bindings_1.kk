@@ -5,6 +5,6 @@ type Foo {
 }
 
 switch(B) {
-  case A({a: A(x), b: x}): true
+  \ A({a: A(x), b: x}): true
         //            ^ Error: duplicated binding `x`
 }

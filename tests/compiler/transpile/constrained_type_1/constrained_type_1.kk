@@ -1,24 +1,24 @@
-type Boolean = case true case false
-type Grade = case a case b
+class Boolean = true | false
+class Grade = a | b
 
-let (left : Grade) equals (right : Grade) : Boolean =
-  {
-    case #{ left = a, right = a } -> true
-    case #{ left = b, right = b } -> true
-    case _ -> false
-  } #{ left, right }
+let (left : Grade) .equals (right : Grade) : Boolean =
+  { left, right } .(
+    \{ left = a, right = a } -> true
+    \{ left = b, right = b } -> true
+    \_ -> false
+  )
 
-let (g : Boolean) not : Boolean = 
-  {
-    case true -> false
-    case false -> true
-  } (g)
+let (g : Boolean) .not : Boolean = 
+  g. (
+    \true -> false
+    \false -> true
+  )
 
-let<T> (left : T) [not equals] (right : T) : Boolean 
-  exists (equals: T -> T -> Boolean)
-  = left equals (right) not
+let<T> (left : T) .not equals (right : T) : Boolean 
+  given { equals: T -> T -> Boolean }
+  = left .equals (right) .not
 
 entry
-  a equals (a) print; // true
-  a [not equals] (b) print; // true
-  a equals (b) print // false
+  a .equals (a) .print; // true
+  a .not equals (b) .print; // true
+  a .equals (b) .print // false

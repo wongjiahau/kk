@@ -5,13 +5,15 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type R =  { x: Int, y: { z: Int } }
+let x : Int = 123
+let x : String = "Hello"
+let (a : String) .x (b : Int): Int =
+  a .print;
+  b .print;
+  456
 
 entry
-  let a = { x = 2, y = { z = 3 } };
-  let b = a .{ y = a .y .{ z = 4 } };
-  a .print;
-  b .print
+  x .x (x) .print // "Hello" 123 456
 
 ============
 EXIT CODE
@@ -21,8 +23,9 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$x': 2, '$y': { '$z': 3 } }
-{ '$x': 2, '$y': { '$z': 4 } }
+Hello
+123
+456
 
 ============
 STDERR

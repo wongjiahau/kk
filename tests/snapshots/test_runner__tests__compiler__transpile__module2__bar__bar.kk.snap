@@ -8,7 +8,7 @@ INPUT
 import "../foo"
 
 entry
-  foo print
+  foo.print
 
 ============
 EXIT CODE

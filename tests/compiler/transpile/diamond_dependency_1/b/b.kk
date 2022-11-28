@@ -1,3 +1,3 @@
 import "../a"
 
-export let b () : #{ b : a } = #{ b : a }
+export let b () : { b : a } = { b : a }

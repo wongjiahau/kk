@@ -1,9 +1,9 @@
-type Null = case null
+class Null = Null
 entry
-  let foo = { case null -> 123 };
+  let foo = \Null -> 123;
   let xs = (
-    let x = null foo;
-    let y = #{x = null foo} .x;
-    #(x, y)
+    let x = Null .foo;
+    let y = {x = Null .foo} .x;
+    { x, y }
   );
-  xs print
+  xs .print

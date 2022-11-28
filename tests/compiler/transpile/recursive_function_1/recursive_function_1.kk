@@ -1,14 +1,13 @@
-type Nat = case zero case succ(Nat)
+class Nat = zero | succ(Nat)
 
-let (x : Nat) add (y : Nat) : Nat =
-  {
-    case #{ x = zero, y = n } -> n
-    case #{ x = succ(n), y = a } -> succ(n add (a))
-
-  } #{ x, y }
+let (x : Nat) .add (y : Nat) : Nat =
+  {x, y} .(
+    \{ x = zero, y = n } -> n
+    \{ x = succ(n), y = a } -> n .add (a) .succ
+  )
 
 
 entry
-  let one = zero succ;
-  one add (one) print
+  let one = zero .succ;
+  one .add (one) .print
 

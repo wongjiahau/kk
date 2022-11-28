@@ -7,4 +7,4 @@ type People = (
 let toString ((..) : People) : String = "${firstName}, ${lastName}"
 
 entry
-  (firstName = "Adam", lastName = "Bob" ) toString print
+  (firstName = "Adam", lastName = "Bob" ) toString.print

@@ -1,5 +1,5 @@
 // Subpatterns
-type Boolean = case true case false
+class Boolean = true | false
 
 let isVowel
   : Character -> Boolean = {
@@ -8,11 +8,11 @@ let isVowel
   } 
 
 entry
-  'a' isVowel print;
-  'e' isVowel print;
-  'i' isVowel print;
-  'o' isVowel print;
-  'u' isVowel print;
+  'a' isVowel.print;
+  'e' isVowel.print;
+  'i' isVowel.print;
+  'o' isVowel.print;
+  'u' isVowel.print;
 
-  'b' isVowel print;
-  'z' isVowel print
+  'b' isVowel.print;
+  'z' isVowel.print

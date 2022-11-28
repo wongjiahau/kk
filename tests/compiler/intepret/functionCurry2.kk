@@ -4,9 +4,9 @@
   square: {a: a * a},
 
   // Sum of squares
-  3 (+ over square) 4 | print,
+  3 (+ over square) 4 |.print,
 
   // Product of squares
-  3 (* over square) 4 | print, 
+  3 (* over square) 4 |.print, 
 
 )

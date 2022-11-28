@@ -1,4 +1,4 @@
 import "../foo"
 
 entry
-  foo print
+  foo.print

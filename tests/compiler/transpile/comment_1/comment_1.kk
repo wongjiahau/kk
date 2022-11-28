@@ -1,3 +1,3 @@
 // This is a comment
 entry
-  "Hello" print
+  "Hello" .print

@@ -10,7 +10,7 @@
     )
   },
 
-  { (`oh no` 'err' () ! ?) + (2 'ok' () ! ?) } | run | print,
-  { (1 'ok' () ! ?) + (2 'ok' () ! ?) } | run | print,
+  { (`oh no` 'err' () ! ?) + (2 'ok' () ! ?) } | run |.print,
+  { (1 'ok' () ! ?) + (2 'ok' () ! ?) } | run |.print,
 )
 

@@ -48,7 +48,7 @@ pub fn compile(path: PathBuf) {
         ) {
             Err(compile_error) => print_compile_error(compile_error),
             Ok(result) => {
-                // result.interpret(result..into());
+                // result.interpret(result.into());
                 use std::process::Command;
                 let javascript = transpile_program(result);
                 // println!("{}", javascript);

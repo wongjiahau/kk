@@ -5,6 +5,6 @@ type Foo {
 
 let get = (foo: Foo): Boolean ->
   switch(foo) {
-    case A(x) | B(x): true
+    \ A(x) | B(x): true
             //    ^ Error: expected `String` got `Boolean`
   }

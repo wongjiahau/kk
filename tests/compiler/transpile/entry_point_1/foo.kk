@@ -1,2 +1,2 @@
 entry
-  "World" print
+  "World" .print

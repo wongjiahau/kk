@@ -5,17 +5,17 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type Option<T> = case some(T) case none
+class Option<T> = some(T) | none
 
-let<A, B> (o: Option<A>) map (f: A -> B) : Option<B> =
-  {
-    case some(o) -> o f some
-    case none -> none
-  } (o)
+let<A, B> (o: Option<A>) .map (f: A -> B) : Option<B> =
+  o .(
+    \some(o) -> o .f .some
+    \none -> none
+ )
 
 entry
-  ~("%${none ! map}%") print;
-  ~("%${some("hello world") ! map}%") print
+  ~("%${none ! map}%").print;
+  ~("%${some("hello world") ! map}%").print
 
 ============
 EXIT CODE

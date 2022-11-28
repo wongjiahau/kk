@@ -5,15 +5,15 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-type Null = case null
+class Null = Null
 entry
-  let foo = { case null -> 123 };
+  let foo = \Null -> 123;
   let xs = (
-    let x = null foo;
-    let y = #{x = null foo} .x;
-    #(x, y)
+    let x = Null .foo;
+    let y = {x = Null .foo} .x;
+    { x, y }
   );
-  xs print
+  xs .print
 
 ============
 EXIT CODE
@@ -23,7 +23,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-[ 123, 123 ]
+{ '$x': 123, '$y': 123 }
 
 ============
 STDERR

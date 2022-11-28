@@ -1,20 +1,18 @@
 // Nested pattern
-type Vehicle = case car(Color) case motor
+class Vehicle = car(Color) | motor
 
-type Color = 
-  case white 
-  case gold
-  case black
+class Color = white | gold | black
 
-type Boolean = case true case false
+class Boolean = true | false
 
-let [is shiny car]: Vehicle -> Boolean = {
-  case car(white | gold) -> true
-  case _ -> false
-}
+let (vehicle: Vehicle) .is shiny car: Boolean =
+  vehicle .(
+    \ car(white | gold) -> true
+    \ _ -> false
+  )
 
 entry
-  white car [is shiny car] print;
-  gold car [is shiny car] print;
-  black car [is shiny car] print;
-  motor [is shiny car] print
+  white .car .is shiny car .print;
+  gold .car .is shiny car .print;
+  black .car .is shiny car .print;
+  motor .is shiny car .print

@@ -1,1 +1,1 @@
-export let [show me] (s : String): () = s print
+export let show (s: String): () =.print (s)

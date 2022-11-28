@@ -11,5 +11,5 @@ let foo (a : Option<(bar : String)>): Option<String> =
   ~(some((a ! map).bar))
 
 entry
-  some(bar = "hello world") foo print;
-  none fo print
+  some(bar = "hello world") foo.print;
+  none fo.print

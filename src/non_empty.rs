@@ -98,4 +98,13 @@ impl<T> NonEmpty<T> {
     pub fn into_vector(self) -> Vec<T> {
         iter::once(self.head).chain(self.tail).collect()
     }
+
+    pub fn unzip<A, B>(non_empty: NonEmpty<(A, B)>) -> (NonEmpty<A>, NonEmpty<B>) {
+        let (x, y) = non_empty.head;
+        let (xs, bs) = non_empty.tail.into_iter().unzip();
+        (
+            NonEmpty { head: x, tail: xs },
+            NonEmpty { head: y, tail: bs },
+        )
+    }
 }

@@ -2,24 +2,24 @@ let prefix (a: Int): Int = a
 
 let prefix2 (a: Int) (b: Int): Int = b
 
-let (a: Int) postfix: Int = a
+let (a: Int) .postfix: Int = a
 
-let (a: Int) infix (b: Int): String = 
-  a print;
-  b print;
+let (a: Int) .infix (b: Int): String = 
+  a.print;
+  b.print;
   "hello"
 
-let (a: Int) infix2 (b: Int) (c: Int): String = 
-  a print;
-  b print;
-  c print;
+let (a: Int) .infix2 (b: Int) (c: Int): String = 
+  a.print;
+  b.print;
+  c.print;
   "hello"
 
 entry
-  prefix 1 print;
-  prefix2 3 4 print;
-  5 postfix print;
-  6 infix 7 print;
-  8 infix2 9 10 print
+  prefix 1 .print;
+  prefix2 3 4 .print;
+  5 .postfix .print;
+  6 .infix 7 .print;
+  8 .infix2 9 10 .print
 
   

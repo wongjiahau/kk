@@ -25,7 +25,7 @@ fn run_all_tests() {
                     .expect("Failed to convert entry to string")
                     .to_string();
 
-                if filename.contains("transpile/single_dispatch_2") && filename.ends_with(".kk") {
+                if filename.contains("transpile") && filename.ends_with(".kk") {
                     let input_filename = filename;
                     print!("{}", input_filename);
                     let input =

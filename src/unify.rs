@@ -126,6 +126,7 @@ pub fn read_module(
     unify_statements(module_meta, files, imported_modules, entry_point_filename)
 }
 
+#[derive(Debug)]
 pub struct File {
     name: String,
     path: PathBuf,
@@ -460,7 +461,6 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         Expression::Statements { current, next } => {
             has_direct_function_call(current).or(has_direct_function_call(next))
         }
-        Expression::CpsClosure { expression, .. } => has_direct_function_call(expression),
     }
 }
 
@@ -1163,7 +1163,7 @@ impl Positionable for DestructurePattern {
                 right_parenthesis,
             } => left_parenthesis.position.join(right_parenthesis.position),
             DestructurePattern::Record {
-                hash_left_curly_bracket: left_curly_bracket,
+                left_curly_bracket: left_curly_bracket,
                 right_curly_bracket,
                 ..
             } => left_curly_bracket
@@ -1249,7 +1249,7 @@ impl Positionable for Expression {
                 property_name,
             } => expression.position().join(property_name.position),
             Expression::Record {
-                hash_left_curly_bracket: left_curly_bracket,
+                left_curly_bracket: left_curly_bracket,
                 right_curly_bracket,
                 ..
             } => left_curly_bracket
@@ -1284,9 +1284,6 @@ impl Positionable for Expression {
                 keyword_let, body, ..
             } => keyword_let.position.join(body.position()),
             Expression::Statements { current, next } => current.position().join(next.position()),
-            Expression::CpsClosure { tilde, expression } => {
-                tilde.position.join(expression.position())
-            }
             Expression::CpsBang {
                 argument, function, ..
             } => argument.position().join(function.position()),
@@ -2351,7 +2348,7 @@ fn infer_expression_type_(
         }
         Expression::Record {
             key_value_pairs,
-            hash_left_curly_bracket: left_curly_bracket,
+            left_curly_bracket: left_curly_bracket,
             right_curly_bracket,
             wildcard,
             ..
@@ -2518,33 +2515,6 @@ fn infer_expression_type_(
                 },
             })
         }
-        Expression::CpsClosure { expression, .. } => {
-            // Collect CpsBangs
-            let (bangs, expression) = expression.clone().collect_cps_bangs(module);
-
-            let expression = bangs.into_iter().fold(expression, |expression, bang| {
-                Expression::FunctionCall(Box::new(FunctionCall {
-                    function: Box::new(Expression::FunctionCall(Box::new(FunctionCall {
-                        function: Box::new(bang.function),
-                        argument: Box::new(bang.argument),
-                        type_arguments: None,
-                    }))),
-                    argument: Box::new(Expression::Function(Box::new(Function {
-                        left_curly_bracket: Token::dummy(),
-                        branches: NonEmpty {
-                            head: FunctionBranch {
-                                parameter: Box::new(bang.temporary_variable),
-                                body: Box::new(expression),
-                            },
-                            tail: vec![],
-                        },
-                        right_curly_bracket: Token::dummy(),
-                    }))),
-                    type_arguments: None,
-                }))
-            });
-            infer_expression_type(module, expected_type, &expression)
-        }
         Expression::CpsBang {
             argument,
             bang,
@@ -2562,9 +2532,35 @@ fn infer_function_call(
     expected_type: Option<Type>,
     function_call: &FunctionCall,
 ) -> Result<InferExpressionResult, UnifyError> {
+    let expected_parameter_type = get_expected_type(module, function_call.argument.as_ref())?;
+
+    if let Type::Record { key_type_pairs } = &expected_parameter_type {
+        if let Expression::Identifier(identifier) = function_call.function.as_ref() {
+            match key_type_pairs
+                .iter()
+                .find(|(key, _)| key.eq(&identifier.representation))
+            {
+                None => {
+                    // Do nothing
+                }
+                Some(_) => {
+                    // This is a record access
+                    return infer_expression_type(
+                        module,
+                        expected_type,
+                        &Expression::RecordAccess {
+                            expression: function_call.argument.clone(),
+                            property_name: identifier.clone(),
+                        },
+                    );
+                }
+            }
+        }
+    }
+
     // Get expected function type
     let expected_function_type = Type::Function(FunctionType {
-        parameter_type: Box::new(get_expected_type(module, function_call.argument.as_ref())?),
+        parameter_type: Box::new(expected_parameter_type),
         return_type: match &expected_type {
             Some(expected_type) => Box::new(expected_type.clone()),
             None => Box::new(module.introduce_implicit_type_variable(None)?),
@@ -2710,7 +2706,7 @@ fn infer_function_call(
     }
 }
 
-fn get_expected_type(module: &Module, expression: &Expression) -> Result<Type, UnifyError> {
+fn get_expected_type(module: &mut Module, expression: &Expression) -> Result<Type, UnifyError> {
     let implicit_type_variable_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
         name: "temp".to_string(),
     });
@@ -2749,23 +2745,38 @@ fn get_expected_type(module: &Module, expression: &Expression) -> Result<Type, U
                 type_constraints: vec![],
             }))
         }
-        Expression::FunctionCall(_) => Ok(implicit_type_variable_type.clone()),
+        Expression::FunctionCall(function_call) => {
+            match infer_function_call(module, None, function_call) {
+                Ok(result) => Ok(result.type_value),
+                Err(_) => Ok(implicit_type_variable_type.clone()),
+            }
+        }
         Expression::Record {
-            hash_left_curly_bracket,
+            left_curly_bracket,
             wildcard,
             key_value_pairs,
             right_curly_bracket,
-        } => todo!(),
+        } => Ok(Type::Record {
+            key_type_pairs: key_value_pairs
+                .iter()
+                .map(|key_value_pair| {
+                    Ok((
+                        key_value_pair.key.representation.clone(),
+                        get_expected_type(module, &key_value_pair.value)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
         Expression::RecordAccess {
             expression,
             property_name,
         } => todo!(),
         Expression::RecordUpdate {
             expression,
-            hash_left_curly_bracket,
+            left_curly_bracket,
             updates,
             right_curly_bracket,
-        } => todo!(),
+        } => get_expected_type(module, expression),
         Expression::Array {
             hash_left_parenthesis,
             elements,
@@ -2778,7 +2789,6 @@ fn get_expected_type(module: &Module, expression: &Expression) -> Result<Type, U
             type_annotation,
             body,
         } => todo!(),
-        Expression::CpsClosure { tilde, expression } => todo!(),
         Expression::CpsBang {
             argument,
             bang,
@@ -2787,216 +2797,12 @@ fn get_expected_type(module: &Module, expression: &Expression) -> Result<Type, U
     }
 }
 
-impl Expression {
-    /// Collect CPS bangs, and transformed those bangs into temporary variables
-    fn collect_cps_bangs(self, module: &mut Module) -> (Vec<CollectCpsBangResult>, Expression) {
-        match self {
-            Expression::Unit { .. }
-            | Expression::Float(_)
-            | Expression::Integer(_)
-            | Expression::String(_)
-            | Expression::Character(_)
-            | Expression::Identifier(_)
-            | Expression::Keyword(_)
-            | Expression::CpsClosure { .. } => (vec![], self),
-
-            Expression::Statements { current, next } => {
-                let (bangs1, current) = current.collect_cps_bangs(module);
-                let (bangs2, next) = next.collect_cps_bangs(module);
-                (
-                    bangs1.into_iter().chain(bangs2.into_iter()).collect(),
-                    Expression::Statements {
-                        current: Box::new(current),
-                        next: Box::new(next),
-                    },
-                )
-            }
-            Expression::Parenthesized {
-                left_parenthesis,
-                right_parenthesis,
-                value,
-            } => {
-                let (bangs, value) = value.collect_cps_bangs(module);
-                (
-                    bangs,
-                    Expression::Parenthesized {
-                        left_parenthesis,
-                        right_parenthesis,
-                        value: Box::new(value),
-                    },
-                )
-            }
-            Expression::InterpolatedString {
-                start_quotes: start_quote,
-                sections,
-                end_quotes: end_quote,
-            } => {
-                let NonEmpty { head, tail } = sections.map(|section| match section {
-                    InterpolatedStringSection::String(string) => {
-                        (vec![], InterpolatedStringSection::String(string))
-                    }
-                    InterpolatedStringSection::Expression(expression) => {
-                        let (bangs, expression) = expression.collect_cps_bangs(module);
-                        (
-                            bangs,
-                            InterpolatedStringSection::Expression(Box::new(expression)),
-                        )
-                    }
-                });
-                let (bangs, sections): (
-                    Vec<Vec<CollectCpsBangResult>>,
-                    Vec<InterpolatedStringSection>,
-                ) = tail.into_iter().unzip();
-                let bangs = head
-                    .0
-                    .into_iter()
-                    .chain(bangs.into_iter().flatten())
-                    .collect();
-                (
-                    bangs,
-                    Expression::InterpolatedString {
-                        start_quotes: start_quote,
-                        sections: NonEmpty {
-                            head: head.1,
-                            tail: sections,
-                        },
-                        end_quotes: end_quote,
-                    },
-                )
-            }
-            Expression::EnumConstructor { name, payload } => match payload {
-                Some(payload) => {
-                    let (bangs, payload) = payload.collect_cps_bangs(module);
-                    (
-                        bangs,
-                        Expression::EnumConstructor {
-                            name,
-                            payload: Some(Box::new(payload)),
-                        },
-                    )
-                }
-                None => (
-                    vec![],
-                    Expression::EnumConstructor {
-                        name,
-                        payload: None,
-                    },
-                ),
-            },
-            Expression::Function(lambda) => {
-                todo!()
-            }
-            Expression::FunctionCall(function_call) => {
-                let (bangs1, function) = function_call.function.collect_cps_bangs(module);
-                let (bangs2, argument) = function_call.argument.collect_cps_bangs(module);
-                (
-                    bangs1.into_iter().chain(bangs2.into_iter()).collect(),
-                    Expression::FunctionCall(Box::new(FunctionCall {
-                        function: Box::new(function),
-                        argument: Box::new(argument),
-                        type_arguments: function_call.type_arguments,
-                    })),
-                )
-            }
-            Expression::Record {
-                wildcard,
-                hash_left_curly_bracket: left_square_bracket,
-                key_value_pairs,
-                right_curly_bracket: right_square_bracket,
-            } => {
-                let (bangs, key_value_pairs): (
-                    Vec<Vec<CollectCpsBangResult>>,
-                    Vec<RecordKeyValue>,
-                ) = key_value_pairs
-                    .into_iter()
-                    .map(|key_value_pair| {
-                        let (bangs, value) = key_value_pair.value.collect_cps_bangs(module);
-                        (
-                            bangs,
-                            RecordKeyValue {
-                                key: key_value_pair.key,
-                                value,
-                            },
-                        )
-                    })
-                    .unzip();
-                (
-                    bangs.into_iter().flatten().collect(),
-                    Expression::Record {
-                        wildcard,
-                        hash_left_curly_bracket: left_square_bracket,
-                        key_value_pairs,
-                        right_curly_bracket: right_square_bracket,
-                    },
-                )
-            }
-            Expression::RecordAccess {
-                expression,
-                property_name,
-            } => {
-                let (bangs, expression) = expression.collect_cps_bangs(module);
-                (
-                    bangs,
-                    Expression::RecordAccess {
-                        expression: Box::new(expression),
-                        property_name,
-                    },
-                )
-            }
-            Expression::RecordUpdate {
-                expression,
-                hash_left_curly_bracket: left_curly_bracket,
-                updates,
-                right_curly_bracket,
-            } => todo!(),
-            Expression::Array {
-                hash_left_parenthesis: left_square_bracket,
-                elements,
-                right_parenthesis: right_square_bracket,
-            } => todo!(),
-            Expression::Let {
-                keyword_let,
-                left,
-                right,
-                type_annotation,
-                body,
-            } => todo!(),
-            Expression::CpsBang {
-                argument,
-                bang,
-                function,
-            } => {
-                let temporary_variable = Token {
-                    position: function.position().join(argument.position()),
-                    token_type: TokenType::Identifier,
-                    representation: format!("temp{}", module.get_next_symbol_uid().index),
-                };
-                (
-                    vec![CollectCpsBangResult {
-                        temporary_variable: DestructurePattern::Identifier(
-                            temporary_variable.clone(),
-                        ),
-                        function: function.as_ref().clone(),
-                        argument: argument.as_ref().clone(),
-                    }],
-                    Expression::Identifier(temporary_variable),
-                )
-            }
-        }
-    }
-}
-
-struct CollectCpsBangResult {
-    temporary_variable: DestructurePattern,
-    function: Expression,
-    argument: Expression,
-}
-
 impl Function {
     fn position(&self) -> Position {
-        self.left_curly_bracket
-            .position
-            .join(self.right_curly_bracket.position)
+        self.branches
+            .first()
+            .position()
+            .join(self.branches.last().position())
     }
 }
 
@@ -3019,75 +2825,6 @@ impl Positionable for InferredDestructurePattern {
     fn position(&self) -> Position {
         self.kind.position()
     }
-}
-
-fn infer_block_level_statements(
-    module: &mut Module,
-    expected_final_type: Option<Type>,
-    statements: Vec<Statement>,
-) -> Result<Vec<(InferredStatement, Type)>, UnifyError> {
-    match statements.split_first() {
-        None => Ok(vec![]),
-        Some((head, tail)) => module.run_in_new_child_scope(|module| {
-            // We only pass in the expected type for the last statement
-            // As the last statement will be returned as expression
-            let expected_type = if tail.is_empty() {
-                expected_final_type.clone()
-            } else {
-                Some(Type::Unit)
-            };
-            let mut result = vec![infer_block_level_statement(module, expected_type, head)?];
-            let tail =
-                infer_block_level_statements(module, expected_final_type.clone(), tail.to_vec())?;
-            result.extend(tail);
-            Ok(result)
-        }),
-    }
-}
-
-fn infer_let_statement(
-    module: &mut Module,
-    LetStatement {
-        type_annotation,
-        name,
-        expression,
-        access,
-        ..
-    }: &LetStatement,
-) -> Result<InferredStatement, UnifyError> {
-    let type_annotation_type = type_annotation_to_type(module, type_annotation)?;
-    let typechecked_right =
-        { infer_expression_type(module, Some(type_annotation_type.clone()), expression)? };
-
-    let typechecked_left = infer_destructure_pattern(
-        module,
-        Some(type_annotation_type),
-        &DestructurePattern::Identifier(name.clone()),
-    )?;
-
-    Ok(InferredStatement::Let {
-        access: access.clone(),
-        left: typechecked_left,
-        right: typechecked_right.expression,
-    })
-}
-
-/// Returns the typechecked statement, the type value of the statement, and the accumulated constraints
-fn infer_block_level_statement(
-    module: &mut Module,
-    expected_type: Option<Type>,
-    statement: &Statement,
-) -> Result<(InferredStatement, Type), UnifyError> {
-    let result = match statement {
-        Statement::Let(let_statement) => {
-            Ok((infer_let_statement(module, let_statement)?, Type::Unit))
-        }
-        _ => {
-            // TODO: separate Statement enum as TopLevelStatement and BlockLevelStatement
-            panic!()
-        }
-    }?;
-    Ok(result)
 }
 
 fn infer_record_type(
@@ -3779,26 +3516,8 @@ fn infer_destructure_pattern_(
             kind: InferredDestructurePatternKind::Underscore(token.clone()),
         }),
         DestructurePattern::Identifier(identifier) => {
-            match get_enum_type(module, expected_type.clone(), identifier) {
-                Ok(result) => {
-                    // Treat this as an enum constructor
-                    Ok(InferredDestructurePattern {
-                        type_value: match &expected_type {
-                            Some(expected_type) => unify_type(
-                                module,
-                                &expected_type,
-                                &result.expected_enum_type,
-                                identifier.position,
-                            )?,
-                            None => result.expected_enum_type,
-                        },
-                        kind: InferredDestructurePatternKind::EnumConstructor {
-                            constructor_name: identifier.clone(),
-                            payload: None,
-                        },
-                    })
-                }
-                Err(_) => {
+            match expected_type {
+                Some(Type::Keyword(_)) => {
                     // Treat this identifier as a normal variable
                     let (uid, type_value) = module.insert_value_symbol_with_type(
                         identifier,
@@ -3813,6 +3532,46 @@ fn infer_destructure_pattern_(
                             token: identifier.clone(),
                         })),
                     })
+                }
+                _ => {
+                    match get_enum_type(module, expected_type.clone(), identifier) {
+                        Ok(result) => {
+                            // Treat this as an enum constructor
+                            Ok(InferredDestructurePattern {
+                                type_value: match &expected_type {
+                                    Some(expected_type) => unify_type(
+                                        module,
+                                        &expected_type,
+                                        &result.expected_enum_type,
+                                        identifier.position,
+                                    )?,
+                                    None => result.expected_enum_type,
+                                },
+                                kind: InferredDestructurePatternKind::EnumConstructor {
+                                    constructor_name: identifier.clone(),
+                                    payload: None,
+                                },
+                            })
+                        }
+                        Err(_) => {
+                            // Treat this identifier as a normal variable
+                            let (uid, type_value) = module.insert_value_symbol_with_type(
+                                identifier,
+                                expected_type,
+                                Access::Protected,
+                                false,
+                            )?;
+                            Ok(InferredDestructurePattern {
+                                type_value,
+                                kind: InferredDestructurePatternKind::Identifier(Box::new(
+                                    Identifier {
+                                        uid,
+                                        token: identifier.clone(),
+                                    },
+                                )),
+                            })
+                        }
+                    }
                 }
             }
         }
@@ -3927,7 +3686,7 @@ fn infer_destructure_pattern_(
         DestructurePattern::Record {
             wildcard,
             key_value_pairs,
-            hash_left_curly_bracket: left_curly_bracket,
+            left_curly_bracket: left_curly_bracket,
             right_curly_bracket,
             ..
         } => {

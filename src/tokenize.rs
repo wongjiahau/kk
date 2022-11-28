@@ -236,13 +236,13 @@ impl Tokenizer {
                     .into_parse_error()),
                 },
                 // Quoted Identifers
-                // same as MS SQL Identifier using square bracket
-                '[' => {
+                // similar as MS SQL Identifier using square bracket
+                '`' => {
                     let quote = character;
                     let characters = self
                         .characters_iterator
                         .by_ref()
-                        .peeking_take_while(|character| character.value != ']')
+                        .peeking_take_while(|character| character.value != quote.value)
                         .collect::<Vec<Character>>();
 
                     match self.characters_iterator.next() {

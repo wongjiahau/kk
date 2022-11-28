@@ -1,9 +1,9 @@
 (
-  f: {`hello world` | print},
+  f: {`hello world` |.print},
 
-  `yoyo` | print,
+  `yoyo` |.print,
 
   () | f
 
-  // Expect `yoyo` is printed before `hello world`
+  // Expect `yoyo` is.printed before `hello world`
 )

@@ -1,4 +1,4 @@
-type Boolean = case true case false
+class Boolean = true | false
 
 let (x : Boolean) and (y: Boolean) : Boolean =
   {

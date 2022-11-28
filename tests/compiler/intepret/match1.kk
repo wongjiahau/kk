@@ -8,7 +8,7 @@
       width * height
   },
 
-  (side: 10) 'square' () | area | print,
+  (side: 10) 'square' () | area |.print,
   
-  (width: 7, height: 3) 'rectangle' () | area | print,
+  (width: 7, height: 3) 'rectangle' () | area |.print,
 )

@@ -7,4 +7,4 @@ type People = (
 let s (firstName: String) (lastName: String): People = (..)
 
 entry
-  "Adam" s "James" print
+  "Adam" s "James".print

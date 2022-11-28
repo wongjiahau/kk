@@ -13,5 +13,5 @@ let raiseConst () =
     ]
 
 entry
-  raiseConst print // should be 100 not 99
+  raiseConst.print // should be 100 not 99
 

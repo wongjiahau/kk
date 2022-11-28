@@ -1,5 +1,5 @@
 type Grade = #a | #b | #c
-type Boolean = case true case false
+class Boolean = true | false
 
 let (a : Boolean) not : Boolean = 
   {
@@ -12,5 +12,5 @@ let<T> (left : T) `!=` (right : T) : Boolean
   = left equals (right) not
 
 entry
-  #a `!=` (#a) print
+  #a `!=` (#a).print
 // Error, missing [ equals : Grade -> Grade -> Boolean ]

@@ -1,6 +1,6 @@
 let x : Int = 123
 let x : String = "Hello"
-let (a : String) .x (b : Int) =
+let (a : String) .x (b : Int): Int =
   a .print;
   b .print;
   456

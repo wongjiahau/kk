@@ -8,4 +8,4 @@ entry
   // non-private symbols
 
   // by default, symbol without access modifiers are protected
-  b print
+  b.print

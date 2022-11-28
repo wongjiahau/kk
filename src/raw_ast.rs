@@ -120,16 +120,16 @@ pub struct NamedTypeAnnotationArguments {
 
 #[derive(Debug, Clone)]
 pub struct TypeConstraintsAnnotation {
-    pub left_parenthesis: Token,
-    pub right_parenthesis: Token,
+    pub left_curly_bracket: Token,
+    pub right_curly_bracket: Token,
     pub type_constraints: Vec<TypeConstraintAnnotation>,
 }
 
 impl TypeConstraintsAnnotation {
     pub fn position(&self) -> Position {
-        self.left_parenthesis
+        self.left_curly_bracket
             .position
-            .join(self.right_parenthesis.position)
+            .join(self.right_curly_bracket.position)
     }
 }
 
@@ -214,7 +214,7 @@ pub enum DestructurePattern {
         payload: Option<Box<DestructurePattern>>,
     },
     Record {
-        hash_left_curly_bracket: Token,
+        left_curly_bracket: Token,
         wildcard: Option<Token>,
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
         right_curly_bracket: Token,
@@ -299,7 +299,7 @@ pub enum Expression {
 
     FunctionCall(Box<FunctionCall>),
     Record {
-        hash_left_curly_bracket: Token,
+        left_curly_bracket: Token,
         wildcard: Option<Token>,
         key_value_pairs: Vec<RecordKeyValue>,
         right_curly_bracket: Token,
@@ -310,7 +310,7 @@ pub enum Expression {
     },
     RecordUpdate {
         expression: Box<Expression>,
-        hash_left_curly_bracket: Token,
+        left_curly_bracket: Token,
         updates: Vec<RecordUpdate>,
         right_curly_bracket: Token,
     },
@@ -325,11 +325,6 @@ pub enum Expression {
         right: Box<Expression>,
         type_annotation: Option<TypeAnnotation>,
         body: Box<Expression>,
-    },
-    /// CPS = Continuation Passing Style
-    CpsClosure {
-        tilde: Token,
-        expression: Box<Expression>,
     },
     CpsBang {
         argument: Box<Expression>,
@@ -434,9 +429,7 @@ pub struct FunctionCallRestArguments {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub left_curly_bracket: Token,
     pub branches: NonEmpty<FunctionBranch>,
-    pub right_curly_bracket: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -686,5 +679,10 @@ impl TypeVariablesDeclaration {
             .head
             .position
             .join(self.type_variables.last().position)
+    }
+}
+impl FunctionBranch {
+    pub fn position(&self) -> Position {
+        self.parameter.position().join(self.body.position())
     }
 }

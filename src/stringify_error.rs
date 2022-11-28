@@ -1,9 +1,9 @@
+use crate::tokenize::TokenizeError;
 use crate::{compile::CompileError, raw_ast::*, typ::*};
 use crate::{
     compile::CompileErrorKind,
     parse::{ParseContext, ParseError, ParseErrorKind},
 };
-use crate::tokenize::TokenizeError;
 use crate::{module::ModuleMeta, pattern::ExpandablePattern};
 use crate::{
     pattern::CheckablePatternKind,
@@ -11,9 +11,9 @@ use crate::{
 };
 use colored::*;
 use prettytable::{format::Alignment, Cell, Row, Table};
-use std::{fs, env};
 use std::ops::Range;
 use std::path::PathBuf;
+use std::{env, fs};
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFiles;
@@ -123,7 +123,7 @@ fn get_tokenize_error(tokenize_error: TokenizeError) -> (ErrorRange, Stringified
     }
 }
 
-pub fn print_parse_error(filename: String,code: String, parse_error: ParseError) {
+pub fn print_parse_error(filename: String, code: String, parse_error: ParseError) {
     let parse_context_description = {
         match parse_error.context {
             Some(context) => {
@@ -456,9 +456,9 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Float => "123.0",
         TokenType::Integer => "123",
         TokenType::Comment => "// this is a comment",
-        TokenType::MultilineComment { .. } => "/* This is multiline comment */", 
+        TokenType::MultilineComment { .. } => "/* This is multiline comment */",
         TokenType::Bang => "!",
-        TokenType::String{..} => "\"Hello \"",
+        TokenType::String { .. } => "\"Hello \"",
         TokenType::InterpolatedString { .. } => "\"Hello #{my_name}\"",
         TokenType::Other(_) => "unknown character",
         TokenType::Tag => "tag",
@@ -480,8 +480,12 @@ pub fn print_compile_error(CompileError { kind, path }: CompileError) {
     let filename = path.to_str().unwrap().to_string();
     let code = fs::read_to_string(path).unwrap();
     match kind {
-        CompileErrorKind::ParseError(parse_error) => print_parse_error(filename, code, *parse_error),
-        CompileErrorKind::UnifyError(unify_error) => print_unify_error(filename, code, *unify_error),
+        CompileErrorKind::ParseError(parse_error) => {
+            print_parse_error(filename, code, *parse_error)
+        }
+        CompileErrorKind::UnifyError(unify_error) => {
+            print_unify_error(filename, code, *unify_error)
+        }
     }
 }
 
@@ -948,7 +952,11 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
             "({})",
             key_pattern_pairs
                 .into_iter()
-                .map(|(key, pattern)| format!("{} = {}", key, stringify_expandable_pattern(pattern)))
+                .map(|(key, pattern)| format!(
+                    "{} = {}",
+                    key,
+                    stringify_expandable_pattern(pattern)
+                ))
                 .collect::<Vec<String>>()
                 .join(", ")
         ),
@@ -988,7 +996,9 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Unit => indent_string("()".to_string(), indent_level * 2),
         Type::String => indent_string("String".to_string(), indent_level * 2),
         Type::Character => indent_string("Character".to_string(), indent_level * 2),
-        Type::Keyword(identifier) => indent_string(format!("keyword [{}]", identifier), indent_level * 2),
+        Type::Keyword(identifier) => {
+            indent_string(format!("keyword [{}]", identifier), indent_level * 2)
+        }
         Type::BuiltInOneArgumentType {
             kind,
             type_argument,
@@ -1042,11 +1052,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                 key_type_pairs
                     .into_iter()
                     .map(|(key, type_value)| {
-                        format!(
-                            "{}: {}",
-                            key,
-                            stringify_type(type_value, 0)
-                        )
+                        format!("{}: {}", key, stringify_type(type_value, 0))
                     })
                     .collect::<Vec<String>>()
                     .join(", ")
@@ -1086,7 +1092,7 @@ impl CheckablePatternKind {
                 InfinitePatternKind::Integer => token.representation.clone(),
             },
             CheckablePatternKind::Boolean { token, .. } => token.representation.clone(),
-            CheckablePatternKind::Unit{..} => "()".to_string(),
+            CheckablePatternKind::Unit { .. } => "()".to_string(),
             CheckablePatternKind::Underscore(_) => "_".to_string(),
             CheckablePatternKind::Identifier(identifier) => identifier.token.representation.clone(),
             CheckablePatternKind::EnumConstructor {

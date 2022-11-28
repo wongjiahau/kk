@@ -15,6 +15,6 @@ entry
   run {
     let x = `tests/compiler/intepret/basic1.kk` readFile await;
     let y = `tests/compiler/intepret/effectHandlers3.kk` readFile await;
-    x print;
-    y print
+    x.print;
+    y.print
   }

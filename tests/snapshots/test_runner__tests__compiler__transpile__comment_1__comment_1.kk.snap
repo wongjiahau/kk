@@ -7,7 +7,7 @@ INPUT
 ============
 // This is a comment
 entry
-  "Hello" print
+  "Hello" .print
 
 ============
 EXIT CODE
