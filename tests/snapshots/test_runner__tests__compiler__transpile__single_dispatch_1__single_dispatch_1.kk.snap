@@ -5,10 +5,14 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let b : Int = 2
+let foo (_: String): String = "Hello"
+
+let foo (): String = "World"
 
 entry
-  a.print
+  "test" .foo .print;
+  foo () .print;
+  foo () .foo .print
 
 ============
 EXIT CODE
@@ -18,7 +22,9 @@ EXIT CODE
 ============
 STDOUT
 ============
-1
+Hello
+World
+Hello
 
 ============
 STDERR

@@ -5,10 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let b : Int = 2
+import "../a"
 
-entry
-  a.print
+export let c () : { c : Int } = { c = a }
 
 ============
 EXIT CODE
@@ -18,7 +17,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-1
+
 
 ============
 STDERR

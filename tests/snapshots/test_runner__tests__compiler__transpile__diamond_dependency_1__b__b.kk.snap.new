@@ -1,0 +1,31 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+import "../a"
+
+export let b () : { b : a } = { b = a }
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/transpile/diamond_dependency_1/b/b.kk:3:25
+  │
+3 │ export let b () : { b : a } = { b = a }
+  │                         ^ Unknown type symbol
+  │
+  = Cannot find this type symbol in the current scope

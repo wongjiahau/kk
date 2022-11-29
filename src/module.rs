@@ -772,6 +772,44 @@ impl Module {
             .cloned()
     }
 
+    fn get_value_symbol_based_on_expected_type(
+        &self,
+        symbol_name: &Token,
+        expected_type: &Type,
+        scope_name: usize,
+    ) -> Option<GetValueSymbolResult> {
+        // Firstly, search for value symbols based on name and expected type
+        let matching_symbol =
+            self.symbol_entries
+                .iter()
+                .find_map(|entry| match &entry.symbol.kind {
+                    SymbolKind::Value(value_symbol)
+                        if entry.scope_name == scope_name
+                            && entry.symbol.meta.name.representation
+                                == symbol_name.representation
+                            && overlap(&value_symbol.type_value, expected_type, false) =>
+                    {
+                        Some((entry.uid.clone(), value_symbol.clone()))
+                    }
+                    _ => None,
+                });
+
+        match matching_symbol {
+            Some(matching_symbol) => Some(GetValueSymbolResult {
+                symbol_uid: matching_symbol.0,
+                type_value: matching_symbol.1.type_value,
+            }),
+            None => match self.scope.get_parent_scope_name(scope_name) {
+                None => None,
+                Some(parent_scope_name) => self.get_value_symbol_based_on_expected_type(
+                    symbol_name,
+                    expected_type,
+                    parent_scope_name,
+                ),
+            },
+        }
+    }
+
     /// `expected_type` is required for single dispatch disambiguation
     pub fn get_value_symbol(
         &self,
@@ -779,7 +817,22 @@ impl Module {
         expected_type: &Option<Type>,
         scope_name: usize,
     ) -> Result<GetValueSymbolResult, UnifyError> {
-        // Firstly, search for value symbols based on name
+        // Firstly, search for value symbols based on expected type and name
+        let matching_symbol = match expected_type {
+            Some(expected_type) => {
+                self.get_value_symbol_based_on_expected_type(symbol_name, expected_type, scope_name)
+            }
+            None => None,
+        };
+
+        match matching_symbol {
+            Some(matching_symbol) => return Ok(matching_symbol),
+            None => {
+                // Do nothing
+            }
+        }
+
+        // If no matching symbol with expected type and name, then search for value symbols based on name
         let value_symbols_with_matching_name = self
             .symbol_entries
             .iter()
@@ -813,42 +866,13 @@ impl Module {
                 type_value: head.1.type_value.clone(),
             }),
 
-            // Otherwise, disambiguate based on `expected_type`
-            Some(_) => match expected_type {
-                None => Err(UnifyError {
-                    position: symbol_name.position,
-                    kind: UnifyErrorKind::AmbiguousSymbol {
-                        matching_value_symbols: value_symbols_with_matching_name,
-                    },
-                }),
-                Some(expected_type) => {
-                    let value_symbols_with_matching_type = value_symbols_with_matching_name
-                        .iter()
-                        .filter(|(_, value_symbol)| {
-                            overlap(&expected_type, &value_symbol.type_value, false)
-                        })
-                        .collect::<Vec<_>>();
-
-                    match value_symbols_with_matching_type.split_first() {
-                        None => Err(UnifyError {
-                            position: symbol_name.position,
-                            kind: UnifyErrorKind::NoMatchingValueSymbol {
-                                possible_value_symbols: value_symbols_with_matching_name,
-                            },
-                        }),
-                        Some((head, [])) => Ok(GetValueSymbolResult {
-                            symbol_uid: head.0.clone(),
-                            type_value: head.1.type_value.clone(),
-                        }),
-                        Some(_) => Err(UnifyError {
-                            position: symbol_name.position,
-                            kind: UnifyErrorKind::AmbiguousSymbol {
-                                matching_value_symbols: value_symbols_with_matching_name,
-                            },
-                        }),
-                    }
-                }
-            },
+            // Otherwise, the symbol is ambiguous
+            Some(_) => Err(UnifyError {
+                position: symbol_name.position,
+                kind: UnifyErrorKind::AmbiguousSymbol {
+                    matching_value_symbols: value_symbols_with_matching_name,
+                },
+            }),
         }
     }
 
