@@ -50,6 +50,7 @@ pub fn compile(path: PathBuf) {
             Ok(result) => {
                 // result.interpret(result.into());
                 use std::process::Command;
+                // println!("result = {:#?}", result);
                 let javascript = transpile_program(result);
                 // println!("{}", javascript);
                 let output = Command::new("node")

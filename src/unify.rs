@@ -19,6 +19,7 @@ use std::{any::type_name, ffi::OsStr, fs};
 use std::{collections::HashSet, path::Path};
 use std::{iter, path::PathBuf};
 
+#[derive(Debug)]
 pub struct UnifyProgramResult {
     /// The entrypoint module
     pub entrypoint: InferredModule,
@@ -2559,40 +2560,68 @@ fn infer_function_call(
     }
 
     // Get expected function type
-    let expected_function_type = Type::Function(FunctionType {
+    let expected_function_type = FunctionType {
         parameter_type: Box::new(expected_parameter_type),
         return_type: match &expected_type {
             Some(expected_type) => Box::new(expected_type.clone()),
             None => Box::new(module.introduce_implicit_type_variable(None)?),
         },
         type_constraints: vec![],
-    });
+    };
 
     // Get the actual function type
     // note that we use infer_expression_type_ instead of infer_expression_type
     // This is so that we can throw the error of `cannot invoke non-function`
     let typechecked_function = infer_expression_type_(
         module,
-        Some(expected_function_type),
+        Some(Type::Function(expected_function_type.clone())),
         function_call.function.as_ref(),
     )?;
 
     // Check if expression being invoked is a function
     match typechecked_function.type_value {
-        Type::Function(expected_function_type) => {
+        Type::Function(actual_function_type) => {
+            // Unify the actual function type with the expected function type
+            let paramater_type = unify_type(
+                module,
+                expected_function_type.parameter_type.as_ref(),
+                actual_function_type.parameter_type.as_ref(),
+                function_call.argument.position(),
+            )?;
+
+            let return_type = unify_type(
+                module,
+                expected_function_type.return_type.as_ref(),
+                actual_function_type.return_type.as_ref(),
+                function_call.position(),
+            )?;
+
+            let parameter_type = module.apply_subtitution_to_type(&paramater_type);
+
             // Unify argument
             let typechecked_argument = infer_expression_type(
                 module,
-                Some(*expected_function_type.parameter_type),
+                Some(parameter_type),
                 function_call.argument.as_ref(),
             )?;
 
-            let type_value =
-                module.apply_subtitution_to_type(expected_function_type.return_type.as_ref());
+            let type_value = module.apply_subtitution_to_type(&return_type);
 
-            if !expected_function_type.type_constraints.is_empty() {
+            // println!("==========");
+            // println!("function = {:#?}", function_call.function);
+            // println!(
+            //     "actual_function_type = {}",
+            //     stringify_type(Type::Function(actual_function_type.clone()), 0)
+            // );
+            // println!(
+            //     "actual_function_type.type_constraints.len() = {}",
+            //     actual_function_type.type_constraints.len()
+            // );
+
+            // println!("==========");
+            if !actual_function_type.type_constraints.is_empty() {
                 // Search for matching variables
-                let matching_variables = expected_function_type
+                let matching_variables = actual_function_type
                     .type_constraints
                     .iter()
                     .map(|type_constraint| {
@@ -2602,7 +2631,10 @@ fn infer_function_call(
                             module.current_scope_name(),
                         ) {
                             Ok(result) => Ok(result),
-                            Err(_) => Err(UnifyError {
+                            Err(UnifyError {
+                                position: _,
+                                kind: UnifyErrorKind::UnknownValueSymbol { .. },
+                            }) => Err(UnifyError {
                                 position: function_call.function.position(),
                                 kind: UnifyErrorKind::UnsatisfiedConstraint {
                                     missing_constraint: TypeConstraint {
@@ -2612,6 +2644,7 @@ fn infer_function_call(
                                     },
                                 },
                             }),
+                            Err(err) => Err(err),
                         }?;
                         Ok((type_constraint.name.clone(), symbol.symbol_uid))
                     })
@@ -2708,7 +2741,7 @@ fn infer_function_call(
 
 fn get_expected_type(module: &mut Module, expression: &Expression) -> Result<Type, UnifyError> {
     let implicit_type_variable_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
-        name: "temp".to_string(),
+        name: module.get_next_type_variable_name(),
     });
     match expression {
         Expression::Statements { next, .. } => get_expected_type(module, next),
@@ -2721,7 +2754,10 @@ fn get_expected_type(module: &mut Module, expression: &Expression) -> Result<Typ
         Expression::Keyword(keyword) => Ok(Type::Keyword(keyword.representation.clone())),
         Expression::Identifier(identifier) => {
             match module.get_value_symbol(identifier, &None, module.current_scope_name()) {
-                Ok(result) => Ok(result.type_value),
+                Ok(result) => Ok(match result.type_value {
+                    Type::TypeScheme(type_scheme) => instantiate_type_scheme(module, *type_scheme),
+                    _ => result.type_value,
+                }),
                 Err(err) => match err.kind {
                     // If the symbol is ambiguous, don't throw error, just label its type as an implicit type variable
                     // And leave the type checking for later phases
@@ -3215,7 +3251,7 @@ pub fn unify_function_type(
                     Ok(FunctionType {
                         parameter_type: Box::new(parameter_type),
                         return_type: Box::new(return_type),
-                        type_constraints: expected_function_type.type_constraints.clone(),
+                        type_constraints: actual_function_type.type_constraints.clone(),
                     })
                 }
                 Err(_) => Err(UnifyError {

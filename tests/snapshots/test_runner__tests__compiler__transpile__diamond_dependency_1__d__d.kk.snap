@@ -9,26 +9,21 @@ import "../b"
 import "../c"
 
 entry
-  b.print;
-  c.print
+  b () .print;
+  c () .print
 
 ============
 EXIT CODE
 ============
-1
+0
 
 ============
 STDOUT
 ============
-
+Compile cache hit: tests/compiler/transpile/diamond_dependency_1/a
+{ '$b': 1 }
+{ '$c': 1 }
 
 ============
 STDERR
 ============
-error:
-  ┌─ tests/compiler/transpile/diamond_dependency_1/b/b.kk:3:25
-  │
-3 │ export let b () : { b : a } = { b = a }
-  │                         ^ Unknown type symbol
-  │
-  = Cannot find this type symbol in the current scope

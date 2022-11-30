@@ -431,7 +431,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordImport => "import",
         TokenType::KeywordPublic => "public",
         TokenType::KeywordEntry => "entry",
-        TokenType::KeywordGiven => "exists",
+        TokenType::KeywordGiven => "given",
         TokenType::Whitespace => " ",
         TokenType::LeftCurlyBracket => "{",
         TokenType::RightCurlyBracket => "}",
@@ -997,7 +997,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::String => indent_string("String".to_string(), indent_level * 2),
         Type::Character => indent_string("Character".to_string(), indent_level * 2),
         Type::Keyword(identifier) => {
-            indent_string(format!("keyword [{}]", identifier), indent_level * 2)
+            indent_string(format!("#{}", identifier), indent_level * 2)
         }
         Type::BuiltInOneArgumentType {
             kind,
@@ -1060,11 +1060,30 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
             indent_string(result, indent_level * 2)
         }
         Type::Function(function_type) => {
-            let result = format!(
-                "{} -> {}",
-                stringify_type(*function_type.parameter_type, 0),
-                stringify_type(*function_type.return_type, 0)
-            );
+            let result = 
+            if function_type.type_constraints.is_empty() {
+                format!(
+                    "{} -> {}",
+                    stringify_type(*function_type.parameter_type, 0),
+                    stringify_type(*function_type.return_type, 0)
+                )
+            }
+            else {
+                format!(
+                    "{} -> {} given {{{}}}",
+                    stringify_type(*function_type.parameter_type, 0),
+                    stringify_type(*function_type.return_type, 0),
+                    function_type
+                        .type_constraints
+                        .into_iter()
+                        .map(|type_constraint| {
+                            format!("{}: {}", type_constraint.name, stringify_type(type_constraint.type_value, 0))
+
+                        })
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            };
             indent_string(result, indent_level * 2)
         }
         Type::TypeScheme(type_scheme) => {

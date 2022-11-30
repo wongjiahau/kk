@@ -2,5 +2,5 @@ import "../b"
 import "../c"
 
 entry
-  b.print;
-  c.print
+  b () .print;
+  c () .print

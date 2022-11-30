@@ -777,30 +777,37 @@ impl Module {
         symbol_name: &Token,
         expected_type: &Type,
         scope_name: usize,
-    ) -> Option<GetValueSymbolResult> {
+    ) -> Result<Option<GetValueSymbolResult>, UnifyError> {
         // Firstly, search for value symbols based on name and expected type
-        let matching_symbol =
-            self.symbol_entries
-                .iter()
-                .find_map(|entry| match &entry.symbol.kind {
-                    SymbolKind::Value(value_symbol)
-                        if entry.scope_name == scope_name
-                            && entry.symbol.meta.name.representation
-                                == symbol_name.representation
-                            && overlap(&value_symbol.type_value, expected_type, false) =>
-                    {
-                        Some((entry.uid.clone(), value_symbol.clone()))
-                    }
-                    _ => None,
-                });
+        let matching_symbols = self
+            .symbol_entries
+            .iter()
+            .filter_map(|entry| match &entry.symbol.kind {
+                SymbolKind::Value(value_symbol)
+                    if entry.scope_name == scope_name
+                        && entry.symbol.meta.name.representation == symbol_name.representation
+                        && overlap(&value_symbol.type_value, expected_type, false) =>
+                {
+                    Some((entry.uid.clone(), value_symbol.clone()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
 
-        match matching_symbol {
-            Some(matching_symbol) => Some(GetValueSymbolResult {
-                symbol_uid: matching_symbol.0,
-                type_value: matching_symbol.1.type_value,
+        match matching_symbols.split_first() {
+            Some((matching_symbol, [])) => Ok(Some(GetValueSymbolResult {
+                symbol_uid: matching_symbol.0.clone(),
+                type_value: matching_symbol.1.type_value.clone(),
+            })),
+            Some(_) => Err(UnifyError {
+                position: symbol_name.position,
+                kind: UnifyErrorKind::AmbiguousSymbol {
+                    matching_value_symbols: matching_symbols,
+                },
             }),
+
             None => match self.scope.get_parent_scope_name(scope_name) {
-                None => None,
+                None => Ok(None),
                 Some(parent_scope_name) => self.get_value_symbol_based_on_expected_type(
                     symbol_name,
                     expected_type,
@@ -819,9 +826,11 @@ impl Module {
     ) -> Result<GetValueSymbolResult, UnifyError> {
         // Firstly, search for value symbols based on expected type and name
         let matching_symbol = match expected_type {
-            Some(expected_type) => {
-                self.get_value_symbol_based_on_expected_type(symbol_name, expected_type, scope_name)
-            }
+            Some(expected_type) => self.get_value_symbol_based_on_expected_type(
+                symbol_name,
+                &self.apply_subtitution_to_type(expected_type),
+                scope_name,
+            )?,
             None => None,
         };
 
@@ -832,7 +841,7 @@ impl Module {
             }
         }
 
-        // If no matching symbol with expected type and name, then search for value symbols based on name
+        // If no matching symbol with expected type and name, then search for value symbols based on name only
         let value_symbols_with_matching_name = self
             .symbol_entries
             .iter()
@@ -860,7 +869,12 @@ impl Module {
             },
 
             // If there's only one value symbol with matching name in this scope,
-            // then return the value
+            // then return the value.
+            //
+            // Even though it might not match the `expected_type`.
+            //
+            // This is so that we can get `function argument type` error, instead of `unknown symbol`,
+            // for function that are not overloaded.
             Some((head, [])) => Ok(GetValueSymbolResult {
                 symbol_uid: head.0.clone(),
                 type_value: head.1.type_value.clone(),

@@ -414,6 +414,11 @@ pub struct FunctionCall {
     pub argument: Box<Expression>,
     pub type_arguments: Option<TypeArguments>,
 }
+impl FunctionCall {
+    pub fn position(&self) -> Position {
+        self.function.position().join(self.argument.position())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TypeArguments {

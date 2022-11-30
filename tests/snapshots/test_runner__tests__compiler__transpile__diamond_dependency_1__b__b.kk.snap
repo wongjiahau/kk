@@ -5,12 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-import "../b"
-import "../c"
+import "../a"
 
-entry
-  b.print;
-  c.print
+export let b () : { b : Int } = { b = a }
 
 ============
 EXIT CODE
@@ -20,9 +17,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-Compile cache hit: tests/compiler/transpile/diamond_dependency_1/a
-[Function: b_5]
-[Function: c_5]
+
 
 ============
 STDERR
