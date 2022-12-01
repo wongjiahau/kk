@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let lift (x : Int) : { x : Int } = { x, }
+
+entry
+  ~(
+   print (123 ! lift)
+             // ^^^^ Error, lift is not a satisfactory bind function
+  )
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/cps_sugar_3/cps_sugar_3.kk:5:11
+  │
+5 │    print (123 ! lift)
+  │           ^^^^^^^^^^ Cannot call a non-function
+  │
+  = The type of this expression is not function, so you cannot call it.

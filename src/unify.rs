@@ -2582,19 +2582,29 @@ fn infer_function_call(
     match typechecked_function.type_value {
         Type::Function(actual_function_type) => {
             // Unify the actual function type with the expected function type
-            let paramater_type = unify_type(
-                module,
-                expected_function_type.parameter_type.as_ref(),
-                actual_function_type.parameter_type.as_ref(),
-                function_call.argument.position(),
-            )?;
-
+            //
+            // Important:
+            //   we have to unify the return_type first before the parameter_type,
+            //   so that the expected type from top of the AST can propagate down,
+            //   consequently, user will get a more "focused" type error.
+            //
+            // For example, look at tests/compiler/typecheck/enum_1/enum_1.kk
+            //
             let return_type = unify_type(
                 module,
                 expected_function_type.return_type.as_ref(),
                 actual_function_type.return_type.as_ref(),
                 function_call.position(),
-            )?;
+            )
+            .unwrap_or_else(|_| *actual_function_type.return_type.clone());
+
+            let paramater_type = unify_type(
+                module,
+                expected_function_type.parameter_type.as_ref(),
+                actual_function_type.parameter_type.as_ref(),
+                function_call.argument.position(),
+            )
+            .unwrap_or_else(|_| *actual_function_type.parameter_type.clone());
 
             let parameter_type = module.apply_subtitution_to_type(&paramater_type);
 

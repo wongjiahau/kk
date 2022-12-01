@@ -1,0 +1,43 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class List<T> = Nil | Cons { current: T, next: List<T> }
+
+let xs : Int =
+  let x = Cons {
+    current = 1,
+    next = Cons {
+      current = (),
+      next = Nil
+    }
+  };
+  123
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/enum_1/enum_1.kk:7:17
+  │
+7 │       current = (),
+  │                 ^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - Int         | + ()        |
+    +---------------+-------------+

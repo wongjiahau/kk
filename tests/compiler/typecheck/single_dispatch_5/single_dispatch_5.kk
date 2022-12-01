@@ -1,1 +1,2 @@
-true.foo().print()
+entry
+  () .foo .print

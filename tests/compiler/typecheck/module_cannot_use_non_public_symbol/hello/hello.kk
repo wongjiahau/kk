@@ -1,4 +1,4 @@
-import "./foo"
+import "../foo"
 
 entry
   // Error: [bar] is not public

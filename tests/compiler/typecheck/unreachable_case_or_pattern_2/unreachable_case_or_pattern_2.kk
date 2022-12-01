@@ -1,10 +1,11 @@
-type Foo = #a | #b
+class Foo = a | b
 
 let foo (x: Foo) (y: Foo): Int =
-  {
-    \(x = #a | #b, y = #a) -> 1
-    \(x = #a | #b, y = #a | #b) -> 1
-  //  ^^^^^^^^^^^^^^^^^^^^^^^^
+  {x, y} .(
+
+    \{x = a | b, y = a} -> 1
+    \{x = a | b, y = a | b} -> 1
+  // ^^^^^^^^^^^^^^^^^^^^^^
   // Error: this pattern contains a an unreachable subpattern, namely:
   //    {x: A, y: A}
-  } (x, y)
+  )

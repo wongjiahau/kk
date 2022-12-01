@@ -1,0 +1,41 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo (s: String): Int
+  """""
+  This function takes any string and output 123.
+  For example:
+  ```javascript
+  foo () .print
+  ```
+  """""
+  = 123
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/documentation_code_snippet_1/documentation_code_snippet_1.kk:6:7
+  │
+6 │   foo () .print
+  │       ^^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - String      | + ()        |
+    +---------------+-------------+

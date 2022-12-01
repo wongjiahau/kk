@@ -294,7 +294,6 @@ pub enum Expression {
         payload: Option<Box<Expression>>,
     },
 
-    /// This cannot be constructed directly from syntax, it is only for internal usage
     Function(Box<Function>),
 
     FunctionCall(Box<FunctionCall>),

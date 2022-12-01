@@ -1,0 +1,36 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Option<T> = some(T) | none
+
+let foo (x: Option<Int>): Int =
+  let some(x) = x;
+  x
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/refutable_let_1/refutable_let_1.kk:4:7
+  │
+4 │   let some(x) = x;
+  │       ^^^^^^^ Let Binding Refutable Pattern
+  │
+  = Refutable pattern (a.k.a non-exhaustive pattern) is not allowed for let binding.
+    The cases that are not matched are:
+
+      none

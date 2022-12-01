@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo (c: Character): Int =
+  c .(
+    \ 'a' -> 0
+    \ 'b' -> 1
+ )
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_character_1/case_exhaustiveness_character_1.kk:3:7
+  │
+3 │       \ 'a' -> 0
+  │ ╭───────^
+4 │ │     \ 'b' -> 1
+  │ ╰──────────────^ Non-exhaustive cases
+  │
+  = Missing case(s):
+
+      _

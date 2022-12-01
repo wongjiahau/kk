@@ -1,3 +1,4 @@
-export let foo = (i: Int): Int -> 2
+export let foo (i: Int): Int = 2
 
-2.foo(3).print()
+entry
+  2 .foo 3 .print

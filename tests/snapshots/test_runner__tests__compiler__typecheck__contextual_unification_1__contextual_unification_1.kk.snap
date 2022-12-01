@@ -1,0 +1,31 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+entry
+  let f : Float -> Float =  \o -> o .bar;
+  ()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/contextual_unification_1/contextual_unification_1.kk:2:38
+  │
+2 │   let f : Float -> Float =  \o -> o .bar;
+  │                                      ^^^ Unknown variable `bar`
+  │
+  = Cannot find this value symbol in the current scope

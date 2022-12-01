@@ -1,6 +1,6 @@
-let foo = (c: Character): Boolean ->
-  switch (c) {
-    \ 'a': true
-    \ 'b': false
-  }
+let foo (c: Character): Int =
+  c .( 
+    \ 'a' -> 0
+    \ 'b' -> 1
+ )
 

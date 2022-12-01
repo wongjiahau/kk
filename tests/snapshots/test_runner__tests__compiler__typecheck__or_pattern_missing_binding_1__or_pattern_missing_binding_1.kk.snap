@@ -1,0 +1,38 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Foo = a { x: String, y: String } | bala
+
+entry
+  bala .(
+    \a { x, y } | bala -> true
+            //    ^^^^ Error: missing binding `x`
+  )
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/or_pattern_missing_binding_1/or_pattern_missing_binding_1.kk:5:19
+  │
+5 │     \a { x, y } | bala -> true
+  │                   ^^^^ Missing bindings
+  │
+  = Every pattern in an OR pattern must have the same set of bindings, however this pattern is missing the following binding(s) which are found in preceding pattern(s):
+
+        x
+        y

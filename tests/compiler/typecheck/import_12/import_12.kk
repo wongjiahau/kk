@@ -1,1 +1,1 @@
-let foo : Int = 2
+export let foo : Int = 2

@@ -161,7 +161,7 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
                 None => "".to_string(),
                 Some(expected_token_type) => {
                     format!(
-                        "The expected token here is [{}].\n\n",
+                        "The expected token here is `{}`.\n\n",
                         stringify_token_type(expected_token_type)
                     )
                 }
@@ -194,7 +194,7 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
                 None => "".to_string(),
                 Some(expected_token_type) => {
                     format!(
-                        "The expected token here is [{}].\n\n",
+                        "The expected token here is `{}`.\n\n",
                         stringify_token_type(expected_token_type)
                     )
                 }
@@ -614,7 +614,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             body: "The type of this expression is not function, so you cannot call it.".to_string(),
         },
         UnifyErrorKind::UnknownValueSymbol {symbol_name} => StringifiedError {
-            summary: format!("Unknown variable [{}]", symbol_name),
+            summary: format!("Unknown variable `{}`", symbol_name),
             body: "Cannot find this value symbol in the current scope".to_string(),
         },
         UnifyErrorKind::UnknownTypeSymbol => StringifiedError {
@@ -662,7 +662,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::InfiniteTypeDetected {type_variable_name, in_type} => StringifiedError {
             summary: "Infinite type".to_string(),
             body: format!(
-                "Infinite type expansion will happen when substituting [{}] into:\n\n{}",
+                "Infinite type expansion will happen when substituting `{}` into:\n\n{}",
                 type_variable_name,
                 stringify_type(in_type, 1)
             )
@@ -708,7 +708,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             ..
         } => StringifiedError {
             summary: "Duplicated name".to_string(),
-            body: format!("This variable [{}] is already declared before in this module.", name)
+            body: format!("This variable `{}` is already declared before in this module.", name)
         },
         UnifyErrorKind::ConflictingFunctionDefinition {
             function_name,
@@ -718,7 +718,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         } => StringifiedError {
             summary: "Conflicting function definition".to_string(),
             body: format!(
-                "The first parameter type of this [{}]:\n\n{}\n\noverlaps with the first parameter type of another [{}] in this scope:\n\n{}\n\n", 
+                "The first parameter type of this `{}`:\n\n{}\n\noverlaps with the first parameter type of another `{}` in this scope:\n\n{}\n\n", 
                 function_name,
                 stringify_type(new_first_parameter_type, 2),
                 function_name,
@@ -731,7 +731,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         } => StringifiedError {
             summary: "Ambiguous Constructor Usage".to_string(),
             body: format!(
-                "The constructor [{}] belongs to more than one enums, which are:\n\n{}\n\n{}\n\n{}",
+                "The constructor `{}` belongs to more than one enums, which are:\n\n{}\n\n{}\n\n{}",
                 constructor_name,
                 indent_string(possible_enum_names.clone().into_vector().join("\n"), 2),
                 "You can use type annotation to resolve this problem, for example:",
@@ -827,7 +827,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Let Binding Refutable Pattern".to_string(),
             body: format!(
                 "{}\n{}\n{}",
-                "Refutable pattern (non-exhaustive) pattern is not allowed for let binding.",
+                "Refutable pattern (a.k.a non-exhaustive pattern) is not allowed for let binding.",
                 "The cases that are not matched are:\n",
                 missing_patterns
                     .into_iter()
@@ -880,7 +880,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::ExtraneousBinding {extraneous_binding ,expected_bindings} => StringifiedError {
             summary: "Extraneous Binding".to_string(),
             body: format!(
-                "All preceding patterns does not have this binding, namely [{}].\n{}\n{}\n\n{}",
+                "All preceding patterns does not have this binding, namely `{}`.\n{}\n{}\n\n{}",
                 extraneous_binding.identifier.token.representation,
                 "Note that every patterns in an OR pattern must have the same set of bindings.",
                 "In this case:",
@@ -919,7 +919,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::TopLevelLetStatementCannotBeDestructured => todo!(),
         UnifyErrorKind::MissingTypeAnnotationForTopLevelBinding => todo!(),
         UnifyErrorKind::CannotBeOverloaded {name} => StringifiedError { 
-            summary: format!("[{}] cannot be overloaded", name), 
+            summary: format!("`{}` cannot be overloaded", name), 
             body: "".to_string() 
         },
         UnifyErrorKind::AmbiguousSymbol { matching_value_symbols } => StringifiedError { 
@@ -949,7 +949,7 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
             )
         }
         ExpandablePattern::Record { key_pattern_pairs } => format!(
-            "({})",
+            "{{ {} }}",
             key_pattern_pairs
                 .into_iter()
                 .map(|(key, pattern)| format!(
@@ -1008,7 +1008,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                 indent_level * 2,
             ),
             BuiltInOneArgumentTypeKind::Quoted => {
-                format!("[{}]", stringify_type(*type_argument, indent_level))
+                format!("`{}`", stringify_type(*type_argument, indent_level))
             }
         },
         Type::Named {
@@ -1048,7 +1048,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Record { mut key_type_pairs } => {
             key_type_pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
             let result = format!(
-                "#{{{}}}",
+                "{{{}}}",
                 key_type_pairs
                     .into_iter()
                     .map(|(key, type_value)| {
@@ -1130,7 +1130,7 @@ impl CheckablePatternKind {
             CheckablePatternKind::Record {
                 key_pattern_pairs, ..
             } => format!(
-                "({})",
+                "{{ {} }}",
                 key_pattern_pairs
                     .iter()
                     .map(|(property_name, pattern)| format!(

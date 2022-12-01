@@ -1,5 +1,5 @@
-let isFriendly = (s: String): Boolean ->
-  switch s {
-    \ "cat": true
-    \ "tiger": false
-  }
+let isFriendly (s: String): Int =
+  s .( 
+    \"cat" -> 0
+    \"tiger" -> 1
+ )

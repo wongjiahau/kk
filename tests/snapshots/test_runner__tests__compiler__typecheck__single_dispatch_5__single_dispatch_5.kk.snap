@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+entry
+  () .foo .print
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/single_dispatch_5/single_dispatch_5.kk:2:7
+  │
+2 │   () .foo .print
+  │       ^^^ Unknown variable `foo`
+  │
+  = Cannot find this value symbol in the current scope

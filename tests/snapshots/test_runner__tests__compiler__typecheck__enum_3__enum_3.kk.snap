@@ -1,0 +1,38 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Option<T> = Some(T) | None
+
+entry
+  let a = Some(None);
+  let x: Option<String> = a; // Error, expectd Option<String>, found Option<Option<@TVAR>>
+  ()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/enum_3/enum_3.kk:5:27
+  │
+5 │   let x: Option<String> = a; // Error, expectd Option<String>, found Option<Option<@TVAR>>
+  │                           ^ Type mismatch
+  │
+  = +------------------+--------------------------+
+    |  EXPECTED TYPE   |       ACTUAL TYPE        |
+    +------------------+--------------------------+
+    | - Option<String> | + Option<Option<@TVAR5>> |
+    +------------------+--------------------------+

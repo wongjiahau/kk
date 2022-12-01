@@ -1,4 +1,6 @@
-type Option<T> { Some(T), None }
+class Option<T> = Some(T) | None
 
-let a = Some(None)
-let x: Option<String> = a
+entry
+  let a = Some(None);
+  let x: Option<String> = a; // Error, expectd Option<String>, found Option<Option<@TVAR>>
+  ()

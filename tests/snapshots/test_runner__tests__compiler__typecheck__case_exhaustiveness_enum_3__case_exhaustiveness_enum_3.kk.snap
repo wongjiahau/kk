@@ -1,0 +1,39 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Option<T> = Some(T) | None
+
+entry
+  let isSomeSome = \x ->
+    x .(
+      \ Some(Some(_)) -> 1
+    );
+  ()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_3/case_exhaustiveness_enum_3.kk:6:9
+  │
+6 │       \ Some(Some(_)) -> 1
+  │         ^^^^^^^^^^^^^^^^^^ Non-exhaustive cases
+  │
+  = Missing case(s):
+
+      Some(None)
+      None

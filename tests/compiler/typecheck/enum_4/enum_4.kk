@@ -1,3 +1,3 @@
-type Foo = #Bar(String) 
+class Foo = Bar(String) 
 
-let a : Foo = #Bar
+let a : Foo = Bar

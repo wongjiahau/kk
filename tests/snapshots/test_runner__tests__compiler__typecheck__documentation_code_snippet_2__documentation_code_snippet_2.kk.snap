@@ -1,0 +1,46 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo (s : String) : Int
+  """
+  This function takes anything string and output 123.
+  For example:
+  ```
+  "Hey" .foo .print
+  ```
+
+  Second example:
+  ```
+  123 .foo .print // Compile error: expected `String` but got `Int`
+  ```
+  """
+  = 123
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+   ┌─ tests/compiler/typecheck/documentation_code_snippet_2/documentation_code_snippet_2.kk:11:3
+   │
+11 │   123 .foo .print // Compile error: expected `String` but got `Int`
+   │   ^^^ Type mismatch
+   │
+   = +---------------+-------------+
+     | EXPECTED TYPE | ACTUAL TYPE |
+     +---------------+-------------+
+     | - String      | + Int       |
+     +---------------+-------------+

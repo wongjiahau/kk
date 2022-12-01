@@ -1,0 +1,39 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Nat = zero | succ(Nat)
+
+let foo (n : Nat) : Int =
+  n.(
+    \succ(succ(zero)) -> 1
+    \succ(zero | succ(zero)) -> 0
+//   ^^^^^^^^^^^^^^^^^^^^^^^^^^^ Error: partially unreachable \, namely `succ(succ(zero))`
+  )
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_1/unreachable_case_or_pattern_1.kk:6:6
+  │
+6 │     \succ(zero | succ(zero)) -> 0
+  │      ^^^^^^^^^^^^^^^^^^^^^ Partially unreachable case
+  │
+  = This case is partially unreachable because it contains a redundant pattern that is already handled by previous cases.
+    Namely:
+
+        succ(succ(zero))

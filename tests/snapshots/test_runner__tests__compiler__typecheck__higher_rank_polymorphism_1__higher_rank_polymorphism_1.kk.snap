@@ -1,0 +1,41 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let <T> id (t: T): T = t
+
+entry
+  let foo = { id, };
+  let x: String = "Hello" .(foo .id); // No error
+  let y: Int = 123 .(foo .id); // No error
+  let z: String = 123 .(foo .id);
+  123
+  //                   ^^^^^^^^^^ Error: expected String -> String, got Int -> Int
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/higher_rank_polymorphism_1/higher_rank_polymorphism_1.kk:6:22
+  │
+6 │   let y: Int = 123 .(foo .id); // No error
+  │                      ^^^^^^^ Type mismatch
+  │
+  = +---------------+--------------------+
+    | EXPECTED TYPE |    ACTUAL TYPE     |
+    +---------------+--------------------+
+    | - Int -> Int  | + String -> String |
+    +---------------+--------------------+

@@ -1,0 +1,41 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let foo (s: String): String = "Hello"
+
+let foo (i: Int): String = "World"
+
+entry
+  () .foo .print
+//    ^^^ Error: no matching overloaded function found
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/single_dispatch_4/single_dispatch_4.kk:6:7
+  │
+6 │   () .foo .print
+  │       ^^^ Ambiguous Symbol
+  │
+  = Matching types:
+
+      String -> String
+
+      Int -> String
+
+    Put type annotation for disambiguation.

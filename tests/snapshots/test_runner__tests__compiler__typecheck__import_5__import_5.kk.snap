@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// import from non-existent path
+import "../spongbob"
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/import_5/import_5.kk:2:8
+  │
+2 │ import "../spongbob"
+  │        ^^^^^^^^^^^^^ Errorneous Import Path.
+  │
+  = No such file or directory (os error 2)

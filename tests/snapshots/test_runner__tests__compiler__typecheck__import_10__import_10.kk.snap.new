@@ -1,0 +1,38 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// import all
+import "../import_1"
+
+entry
+  foo .print;
+  let x: Color = Red;
+  x .print;
+  Green .print;
+  true .bomb .print;
+  "hi" .bomb .print
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/import_10/import_10.kk:9:3
+  │
+9 │   true .bomb .print;
+  │   ^^^^ Unknown variable `true`
+  │
+  = Cannot find this value symbol in the current scope

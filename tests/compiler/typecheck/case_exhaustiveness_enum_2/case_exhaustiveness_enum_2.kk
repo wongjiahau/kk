@@ -1,12 +1,11 @@
-type List<T> {
-  Nil,
-  Cons({head: T, tail: List<T>})
-} 
+class Boolean = True | False
+class List<T> = Nil | Cons {head: T, tail: List<T>}
 
-{
-  let bomb = list -> 
-    switch (list) {
-      \ Nil: true
-      \ Cons({head: true, tail: _}): true
-    }
-}
+entry
+  let bomb = \list -> 
+    list .(
+      \Nil -> True
+      \Cons {head = True, tail = _} -> True
+    );
+  ()
+

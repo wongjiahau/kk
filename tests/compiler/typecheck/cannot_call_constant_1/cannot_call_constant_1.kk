@@ -1,4 +1,5 @@
-let pi = 3.142
+let pi: Float = 3.142
 
-null.pi() // Error: pi is not a function
+entry
+ () .pi // Error: pi is not a function
 

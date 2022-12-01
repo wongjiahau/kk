@@ -1,6 +1,6 @@
-type Foo = #foo(Bar) | #nullFoo 
+class Foo = foo(Bar) | nullFoo 
 
-type Bar = #bar(Foo) | #nullBar
+class Bar = bar(Foo) | nullBar
 
 entry
-  #foo(#bar(#foo(#nullFoo))).print // Compile Error
+  foo(bar(foo(nullFoo))) .print // Compile Error

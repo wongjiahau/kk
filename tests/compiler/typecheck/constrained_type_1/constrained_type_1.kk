@@ -1,16 +1,16 @@
-type Grade = #a | #b | #c
+class Grade = A | B | C
 class Boolean = true | false
 
-let (a : Boolean) not : Boolean = 
-  {
-  | true -> false
-  | false -> true
-  } (a)
+let (a : Boolean) .not : Boolean = 
+  a. (
+    \true -> false
+    \false -> true
+  )
 
-let<T> (left : T) `!=` (right : T) : Boolean 
-  | [ equals : T -> T -> Boolean ]
-  = left equals (right) not
+let<T> (left : T) .`!=` (right : T) : Boolean 
+  given { equals : T -> T -> Boolean }
+  = left .equals (right) .not
 
 entry
-  #a `!=` (#a).print
-// Error, missing [ equals : Grade -> Grade -> Boolean ]
+  A .`!=` (A) .print
+// Error, missing { equals : Grade -> Grade -> Boolean }

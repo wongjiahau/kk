@@ -1,11 +1,11 @@
-type List<T> = #Nil | #Cons (current: T, next: List<T>)
+class List<T> = Nil | Cons { current: T, next: List<T> }
 
 let xs : Int =
-  let x = #Cons(
+  let x = Cons { 
     current = 1,
-    next = #Cons(
+    next = Cons {
       current = (),
       next = Nil
-    )
-  );
+    }
+  };
   123

@@ -1,17 +1,12 @@
-type List<Element> {
-  Nil,
-  Cons({
-    current: Element,
-    next: List<Element>
-  })
-}
+class List<Element> = Nil | Cons { current: Element, next: List<Element> }
 
-{
-  let foo = Cons({
-    current: 1,
-    next: Cons({
-      current: true,
-      next: Nil
-    })
-  }) -> 0
-}
+entry
+  let foo = \Cons {
+    current = 1,
+    next = Cons {
+      current = true,
+      next = ()
+      //     ^^ Expected Int, got ()
+    }
+  } -> 0;
+  ()

@@ -1,0 +1,32 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+import "../module_b" // Error: mutually recursive import
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/mutually_recursive_module_1/module_b/b.kk:1:8
+  │
+1 │ import "../module_a" // Error: mutually recursive import
+  │        ^^^^^^^^^^^^^ Cyclic dependencies detected.
+  │
+  = Explanation:
+
+      tests/compiler/typecheck/mutually_recursive_module_1/module_a imports tests/compiler/typecheck/mutually_recursive_module_1/module_b
+      tests/compiler/typecheck/mutually_recursive_module_1/module_b imports tests/compiler/typecheck/mutually_recursive_module_1/module_a

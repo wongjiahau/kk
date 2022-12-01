@@ -1,3 +1,6 @@
-type Foo = #Bar
+class Foo = Bar
 
-let a: Foo = #Bar "hi"
+entry
+  let a: Foo = Bar "hi";
+  ()
+

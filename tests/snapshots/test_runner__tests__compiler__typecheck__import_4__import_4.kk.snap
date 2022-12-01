@@ -1,0 +1,33 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// error: cannot import private symbol
+import "../import_1" { spam }
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/import_4/import_4.kk:2:24
+  │
+2 │ import "../import_1" { spam }
+  │                        ^^^^ Cannot import protected symbol.
+  │
+  = Consider exporting this symbol if you want to import it in this file.
+    For example:
+
+        export let x = 2

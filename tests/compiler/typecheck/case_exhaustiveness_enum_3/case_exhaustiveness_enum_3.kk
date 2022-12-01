@@ -1,8 +1,9 @@
-type Option<T> { Some(T), None }
+class Option<T> = Some(T) | None 
 
-{
-  let isSomeSome = x ->
-    switch x {
-      \ Some(Some(_)) : true
-    }
-}
+entry
+  let isSomeSome = \x ->
+    x .(
+      \ Some(Some(_)) -> 1
+    );
+  ()
+  

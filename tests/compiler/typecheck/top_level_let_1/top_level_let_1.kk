@@ -1,8 +1,11 @@
-let foo = (_: Null) -> 123
+// Expect no errors
+let foo (): Int = 123
 
-let x = {
-  y: [
-    null.foo()
-  ]
-}
+entry
+  let x = {
+    y = [
+      () .foo
+    ]
+  };
+  ()
 

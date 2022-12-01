@@ -1,0 +1,42 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Boolean = True | False
+class List<T> = Nil | Cons {head: T, tail: List<T>}
+
+entry
+  let bomb = \list ->
+    list .(
+      \Nil -> True
+      \Cons {head = True, tail = _} -> True
+    );
+  ()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_2/case_exhaustiveness_enum_2.kk:7:8
+  │
+7 │         \Nil -> True
+  │ ╭────────^
+8 │ │       \Cons {head = True, tail = _} -> True
+  │ ╰───────────────────────────────────────────^ Non-exhaustive cases
+  │
+  = Missing case(s):
+
+      Cons({ head = False, tail = _ })

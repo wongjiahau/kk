@@ -926,6 +926,15 @@ impl<'a> Parser<'a> {
         &mut self,
         left_curly_bracket: Token,
     ) -> Result<Expression, ParseError> {
+        let context = None;
+        if let Some(double_period) = self.try_eat_token(TokenType::DoublePeriod)? {
+            return Ok(Expression::Record {
+                left_curly_bracket,
+                wildcard: Some(double_period),
+                key_value_pairs: vec![],
+                right_curly_bracket: self.eat_token(TokenType::RightCurlyBracket, context)?,
+            });
+        }
         if let Some(identifier) = self.try_eat_token(TokenType::Identifier)? {
             let first_record_key_value = if self.try_eat_token(TokenType::Equals)?.is_some() {
                 Some(RecordKeyValue {

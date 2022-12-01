@@ -1,0 +1,40 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let bar:  { o: { f: { n: { x: Int } } -> Int } } -> Int
+  = \props -> (
+    let { f } = props;
+    //    ^ Error: no such property
+    //    In Haskell, we would have gotten a longer error message as follows,
+    //    due to bottom-up type inference:
+
+    //    Expected { o: { f: { n: { x: Int } } -> Int } } -> Int
+    //    But got <A> { f: {x: String} -> A } -> A
+    {x = "hi"} .f
+  )
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/contextual_unification_9/contextual_unification_9.kk:3:11
+  │
+3 │     let { f } = props;
+  │           ^ No such property
+  │
+  = Available properties:
+      o

@@ -1,0 +1,37 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+entry
+  "I am ${{ my_age = [123] }} years old".print()
+//        ^^^^^^^^^^^^^^^^^^ Error: should be string
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/string_interpolation_1/string_interpolation_1.kk:2:11
+  │
+2 │   "I am ${{ my_age = [123] }} years old".print()
+  │           ^^^^^^^^^^^^^^^^^^ Type mismatch
+  │
+  = +---------------+--------------+
+    | EXPECTED TYPE | ACTUAL TYPE  |
+    +---------------+--------------+
+    | - String      | + {my_age: [ |
+    |               | +   Int      |
+    |               | + ]}         |
+    +---------------+--------------+

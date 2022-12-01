@@ -1,4 +1,6 @@
-type Food { Nut }
-type Tool { Nut }
+class Food = Nut
+class Tool = Nut
 
-let a = Nut
+entry
+  let a = Nut;
+  ()

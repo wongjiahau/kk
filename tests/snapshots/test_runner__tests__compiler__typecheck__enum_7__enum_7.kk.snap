@@ -1,0 +1,40 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Food = Nut
+class Tool = Nut
+
+let a: Tool = Nut
+let f (Nut: Food): Int = 123
+
+entry
+  a .f
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/enum_7/enum_7.kk:8:3
+  │
+8 │   a .f
+  │   ^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - Food        | + Tool      |
+    +---------------+-------------+

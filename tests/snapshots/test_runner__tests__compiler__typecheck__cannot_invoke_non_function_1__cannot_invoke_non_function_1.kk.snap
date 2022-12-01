@@ -1,0 +1,32 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+entry
+  let x = 2;
+  let f = "hi" x;
+  ()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/cannot_invoke_non_function_1/cannot_invoke_non_function_1.kk:3:11
+  │
+3 │   let f = "hi" x;
+  │           ^^^^ Cannot call a non-function
+  │
+  = The type of this expression is not function, so you cannot call it.

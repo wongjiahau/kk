@@ -1,7 +1,8 @@
-type Food { Nut }
-type Tool { Nut }
+class Food = Nut 
+class Tool = Nut
 
 let a: Tool = Nut
-let f = (Nut: Food): Int -> 123
+let f (Nut: Food): Int = 123
 
-a.f()
+entry
+  a .f

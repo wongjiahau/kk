@@ -1,0 +1,44 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let<A> identity (a: A): A = a
+
+let<A> constant (_: A) : Int = 2
+
+let<A, B> map (a: A) (f: A -> B) : B = a .f
+
+entry
+  let x: String = "hello" .map (identity);
+  let y: String = "hello" .map (\_ -> "yo");
+  let z: String = "hello" .map (constant);
+                //^^^^^^^^^^^^^^^^^^^^^^^ Expected String, got Int
+  ()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+   ┌─ tests/compiler/typecheck/generic_function_1/generic_function_1.kk:10:19
+   │
+10 │   let z: String = "hello" .map (constant);
+   │                   ^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
+   │
+   = +---------------+-------------+
+     | EXPECTED TYPE | ACTUAL TYPE |
+     +---------------+-------------+
+     | - String      | + Int       |
+     +---------------+-------------+

@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+import "../import_1"
+import "../import_12"
+//     ^ Error: import all clashing with symbols declared in this module
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/import_11/import_11.kk:2:1
+  │
+2 │ import "../import_12"
+  │ ^^^^^^ `foo` cannot be overloaded
+  │

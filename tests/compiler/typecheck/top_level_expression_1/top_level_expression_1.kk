@@ -1,4 +1,6 @@
-let foo = (null: Null): Int -> 123
+let foo (): Int = 123
 
-null.foo()
-// Error: expected Null but got Int 
+entry
+  foo ()
+  // Error: expected () but got Int 
+  // This is because expressions tha are not assigned to a variable must have unit type
