@@ -606,9 +606,7 @@ pub enum TokenType {
 
     Other(char),
     KeywordAs,
-    HashLeftCurlyBracket,
     KeywordCase,
-    HashLeftParenthesis,
     KeywordClass,
     KeywordForall,
 }

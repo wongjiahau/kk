@@ -505,24 +505,8 @@ impl Tokenizer {
                         }
                     }
                 }
-                // Tag or HashLeftCurlyBracket
+                // Tag
                 '#' => match self.characters_iterator.by_ref().peek() {
-                    Some(Character { value: '{', .. }) => Ok(Some(Token {
-                        token_type: TokenType::HashLeftCurlyBracket,
-                        representation: "#{".to_string(),
-                        position: make_position(
-                            character,
-                            self.characters_iterator.by_ref().next().as_ref(),
-                        ),
-                    })),
-                    Some(Character { value: '(', .. }) => Ok(Some(Token {
-                        token_type: TokenType::HashLeftParenthesis,
-                        representation: "#(".to_string(),
-                        position: make_position(
-                            character,
-                            self.characters_iterator.by_ref().next().as_ref(),
-                        ),
-                    })),
                     _ => {
                         let characters = self
                             .characters_iterator
@@ -704,9 +688,7 @@ pub fn get_token_type(s: String) -> TokenType {
         "export" => TokenType::KeywordExport,
         "given" => TokenType::KeywordGiven,
         "as" => TokenType::KeywordAs,
-        "case" => TokenType::KeywordCase,
         "class" => TokenType::KeywordClass,
-        "forall" => TokenType::KeywordForall,
         _ => TokenType::Identifier,
     }
 }

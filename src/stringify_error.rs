@@ -276,10 +276,8 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordGiven => "used for declaring constraints",
         TokenType::Backslash => "used for declaring lambda",
         TokenType::KeywordAs => todo!(),
-        TokenType::HashLeftCurlyBracket => "used for declaring record",
         TokenType::KeywordCase => "used for declaring variants, or in pattern matching",
         TokenType::KeywordExport => "used for exporting symbols",
-        TokenType::HashLeftParenthesis => todo!(),
         TokenType::KeywordClass => todo!(),
         TokenType::KeywordForall => todo!(),
 
@@ -467,10 +465,8 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::Tilde => "~",
         TokenType::Backslash => "\\",
         TokenType::KeywordAs => "as",
-        TokenType::HashLeftCurlyBracket => "#{",
         TokenType::KeywordCase => "case",
         TokenType::KeywordExport => todo!(),
-        TokenType::HashLeftParenthesis => todo!(),
         TokenType::KeywordClass => todo!(),
         TokenType::KeywordForall => todo!(),
     }

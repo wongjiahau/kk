@@ -220,11 +220,17 @@ impl<'a> Parser<'a> {
             }
         };
 
-        if !parameters.is_empty() {
-            self.eat_token(TokenType::Period, context)?;
-        }
-
-        let name = self.eat_token(TokenType::Identifier, context)?;
+        let name = {
+            if !parameters.is_empty() {
+                if self.try_eat_token(TokenType::Period)?.is_some() {
+                    self.eat_token(TokenType::Identifier, context)?
+                } else {
+                    self.eat_token(TokenType::Operator, context)?
+                }
+            } else {
+                self.eat_token(TokenType::Identifier, context)?
+            }
+        };
 
         parameters.extend(self.try_parse_parameters()?);
 
@@ -724,6 +730,46 @@ impl<'a> Parser<'a> {
 
                 TokenType::Backslash => self.parse_function(),
 
+                TokenType::Operator => {
+                    let operator = self.next_meaningful_token()?.unwrap();
+                    // Operator shorthand
+                    // e.g. + x means \temp -> temp + x
+                    let argument = self.parse_high_precedence_expression()?;
+                    Ok(Expression::Function(Box::new(Function {
+                        branches: NonEmpty {
+                            head: {
+                                let phantom_parameter = Token::dummy_identifier(format!(
+                                    "temp{}",
+                                    self.get_next_temporary_variable_index()
+                                ));
+                                FunctionBranch {
+                                    parameter: Box::new(DestructurePattern::Identifier(
+                                        phantom_parameter.clone(),
+                                    )),
+                                    body: Box::new(Expression::FunctionCall(Box::new(
+                                        FunctionCall {
+                                            function: Box::new(Expression::FunctionCall(Box::new(
+                                                FunctionCall {
+                                                    function: Box::new(Expression::Identifier(
+                                                        operator,
+                                                    )),
+                                                    argument: Box::new(Expression::Identifier(
+                                                        phantom_parameter,
+                                                    )),
+                                                    type_arguments: None,
+                                                },
+                                            ))),
+                                            argument: Box::new(argument),
+                                            type_arguments: None,
+                                        },
+                                    ))),
+                                }
+                            },
+                            tail: vec![],
+                        },
+                    })))
+                }
+
                 TokenType::KeywordLet => {
                     let keyword_let = self.next_meaningful_token()?.unwrap();
                     Ok(Expression::Let {
@@ -1139,19 +1185,25 @@ impl<'a> Parser<'a> {
             });
         }
 
-        let has_period = self.try_eat_token(TokenType::Period)?.is_some();
-
-        let next = self.parse_high_precedence_expression()?;
-
-        let (function, argument) = if has_period {
-            (next, previous)
-        } else {
-            // This is a prefix function application
-            // And if the argument is an identifier without parenthesis
-            // The identifier will be treated as a keyword
-            match next {
-                Expression::Identifier(identifier) => (previous, Expression::Keyword(identifier)),
-                _ => (previous, next),
+        let (function, argument) = {
+            if self.try_eat_token(TokenType::Period)?.is_some() {
+                let next = self.parse_high_precedence_expression()?;
+                // This is a postfix function application
+                (next, previous)
+            } else if let Some(token) = self.try_eat_token(TokenType::Operator)? {
+                // This is a postfix function application
+                (Expression::Identifier(token), previous)
+            } else {
+                let next = self.parse_high_precedence_expression()?;
+                // This is a prefix function application
+                // And if the argument is an identifier without parenthesis
+                // The identifier will be treated as a keyword
+                match next {
+                    Expression::Identifier(identifier) => {
+                        (previous, Expression::Keyword(identifier))
+                    }
+                    _ => (previous, next),
+                }
             }
         };
 
