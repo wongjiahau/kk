@@ -1,0 +1,42 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+let (x : Int) .foo (y : Int) : Int = 123
+
+let (x : Float) .foo (y : Float) : Float = 789.0
+
+entry
+  9 .foo 8 .print;
+  9.0 .foo 8.0 .print;
+  1.0 .foo 2 .print // compile error
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/single_dispatch_6/single_dispatch_6.kk:8:8
+  │
+8 │   1.0 .foo 2 .print // compile error
+  │        ^^^ Ambiguous Symbol
+  │
+  = Matching types:
+
+      Int -> Int -> Int
+
+      Float -> Float -> Float
+
+    Put type annotation for disambiguation.

@@ -1,2 +1,2 @@
 // circular import
-import "./import_6.kk" { spam }
+import "../import_6" { spam }

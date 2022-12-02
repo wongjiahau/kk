@@ -1,0 +1,40 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Boolean = true | false
+class Foo = A(String) | B(Boolean)
+
+let get (foo: Foo): Boolean =
+  foo .(
+    \ A(x) | B(x) -> true
+        //     ^ Error: expected `String` got `Boolean`
+ )
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/or_pattern_heterogenous_bindings_1/or_pattern_heterogenous_bindings_1.kk:6:16
+  │
+6 │     \ A(x) | B(x) -> true
+  │                ^ Type mismatch
+  │
+  = +---------------+-------------+
+    | EXPECTED TYPE | ACTUAL TYPE |
+    +---------------+-------------+
+    | - String      | + Boolean   |
+    +---------------+-------------+

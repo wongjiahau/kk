@@ -1,4 +1,3 @@
-let bar = (null: Null): Int -> {
-  let x = "Hello"
+let bar (): Int =
+  let x = "Hello";
   x
-}

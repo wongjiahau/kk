@@ -94,7 +94,6 @@ impl EnumStatement {
 pub struct EnumConstructorDefinition {
     pub name: Token,
     pub payload: Option<Box<EnumConstructorDefinitionPayload>>,
-    pub access: Access,
 }
 
 #[derive(Debug, Clone)]

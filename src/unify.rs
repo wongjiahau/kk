@@ -920,7 +920,7 @@ pub fn infer_enum_statement(
                 Symbol {
                     meta: SymbolMeta {
                         name: constructor.name.clone(),
-                        access: constructor.access.clone(),
+                        access: enum_statement.access.clone(),
                     },
                     kind: SymbolKind::EnumConstructor(constructor_symbol.clone()),
                 },
@@ -970,7 +970,7 @@ pub fn infer_enum_statement(
 
             let uid = module.insert_symbol(None, value_symbol)?;
             Ok(InferredStatement::Let {
-                access: constructor.access.clone(),
+                access: enum_statement.access.clone(),
                 left: InferredDestructurePattern {
                     type_value: type_value.clone(),
                     kind: InferredDestructurePatternKind::Identifier(Box::new(Identifier {

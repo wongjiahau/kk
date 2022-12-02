@@ -1,7 +1,8 @@
-{
-  let bomb = (n) -> 
-    switch(n) {
-      \ null: true
-      \ null: false
-    }
-}
+entry
+  let bomb = \(n) -> 
+    (n) .(
+      \() -> 1
+      \() -> 0
+    );
+  ()
+

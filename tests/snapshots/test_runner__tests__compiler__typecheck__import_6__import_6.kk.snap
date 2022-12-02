@@ -1,0 +1,34 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// circular import
+import "../import_7" { spam }
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/import_8/import_8.kk:2:8
+  │
+2 │ import "../import_6" { spam }
+  │        ^^^^^^^^^^^^^ Cyclic dependencies detected.
+  │
+  = Explanation:
+
+      tests/compiler/typecheck/import_6 imports tests/compiler/typecheck/import_7
+      tests/compiler/typecheck/import_7 imports tests/compiler/typecheck/import_8
+      tests/compiler/typecheck/import_8 imports tests/compiler/typecheck/import_6

@@ -1,10 +1,8 @@
+class Foo = A {a: Int, b: Int} | B
 
-type Foo {
-  A({a: Foo, b: Foo}),
-  B
-}
-
-switch(B) {
-  \ A({a: A(x), b: x}): true
-        //            ^ Error: duplicated binding `x`
-}
+entry
+  B .(
+    
+    \ A {a = x, b = x} -> ()
+       //           ^ Error: duplicated binding `x`
+  )

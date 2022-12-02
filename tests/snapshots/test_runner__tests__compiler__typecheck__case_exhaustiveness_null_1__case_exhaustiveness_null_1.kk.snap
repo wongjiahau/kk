@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+entry
+  let bomb = \(n) ->
+    (n) .(
+      \() -> 1
+      \() -> 0
+    );
+  ()
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_null_1/case_exhaustiveness_null_1.kk:5:8
+  │
+5 │       \() -> 0
+  │        ^^ Unreachable case
+  │
+  = This case is unreachable as it is already handled by previous cases.

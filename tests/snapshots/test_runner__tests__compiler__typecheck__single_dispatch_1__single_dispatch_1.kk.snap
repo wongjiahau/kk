@@ -1,0 +1,30 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// Cannot be overloaded
+let foo (s: String): String = "Hello"
+let <T> foo (t: T): String = "hello"
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/single_dispatch_1/single_dispatch_1.kk:3:9
+  │
+3 │ let <T> foo (t: T): String = "hello"
+  │         ^^^ `foo` cannot be overloaded
+  │

@@ -1,0 +1,33 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Boolean = true | false
+let (a : String) .`not equals` (b : String) : Boolean
+  given { equals : T -> T -> Boolean }
+ //                ^ Error: Unknown type symbol
+  = true
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/constrained_type_2/constrained_type_2.kk:3:20
+  │
+3 │   given { equals : T -> T -> Boolean }
+  │                    ^ Unknown type symbol
+  │
+  = Cannot find this type symbol in the current scope

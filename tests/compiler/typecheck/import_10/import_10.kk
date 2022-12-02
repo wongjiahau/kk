@@ -6,5 +6,5 @@ entry
   let x: Color = Red;
   x .print;
   Green .print;
-  true .bomb .print;
-  "hi" .bomb .print
+  bomb () .print;
+  bomb "hi".print

@@ -5,34 +5,29 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-// import all
+// testing import all kind of symbols
 import "../import_1"
 
 entry
-  foo .print;
   let x: Color = Red;
   x .print;
   Green .print;
-  true .bomb .print;
-  "hi" .bomb .print
+  bomb () .print;
+  bomb "hi" .print
 
 ============
 EXIT CODE
 ============
-1
+0
 
 ============
 STDOUT
 ============
-
+{ '$': 'Red', _: null }
+{ '$': 'Green', _: null }
+World
+Hello
 
 ============
 STDERR
 ============
-error:
-  ┌─ tests/compiler/typecheck/import_10/import_10.kk:9:3
-  │
-9 │   true .bomb .print;
-  │   ^^^^ Unknown variable `true`
-  │
-  = Cannot find this value symbol in the current scope

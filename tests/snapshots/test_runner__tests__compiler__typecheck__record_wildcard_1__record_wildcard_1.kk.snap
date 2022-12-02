@@ -1,0 +1,31 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// No error
+type People = {
+  firstName: String,
+  lastName: String
+}
+
+let toString ({..} : People) : String = "${firstName}, ${lastName}"
+
+entry
+  { firstName = "Adam", lastName = "Bob" } .toString .print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+Adam, Bob
+
+============
+STDERR
+============

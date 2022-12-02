@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+class Foo = A {a: Int, b: Int} | B
+
+entry
+  B .(
+
+    \ A {a = x, b = x} -> ()
+       //           ^ Error: duplicated binding `x`
+  )
+
+============
+EXIT CODE
+============
+1
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============
+error:
+  ┌─ tests/compiler/typecheck/pattern_conflicting_bindings_1/pattern_conflicting_bindings_1.kk:6:21
+  │
+6 │     \ A {a = x, b = x} -> ()
+  │                     ^ `x` cannot be overloaded
+  │

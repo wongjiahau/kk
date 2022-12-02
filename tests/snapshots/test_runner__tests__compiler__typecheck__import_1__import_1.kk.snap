@@ -1,3 +1,10 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
 // base file for testing import
 // should have no error
 export class Color = Red | Green
@@ -9,3 +16,17 @@ export let bomb (): String = "World"
 
 export let foo : Int = 123
 let spam : Int = 123
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+
+
+============
+STDERR
+============

@@ -552,7 +552,6 @@ impl<'a> Parser<'a> {
         let name = self.eat_token(TokenType::Identifier, context)?;
         Ok(EnumConstructorDefinition {
             name,
-            access: Access::Protected, // TODO: allow constructor to be marked as private or public
             payload: {
                 if let Some(left_parenthesis) = self.try_eat_token(TokenType::LeftParenthesis)? {
                     Some(Box::new(EnumConstructorDefinitionPayload {

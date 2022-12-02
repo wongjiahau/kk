@@ -1,2 +1,3 @@
-let foo = (s: String): String -> "Hello"
-let foo = <T>(t: T): String -> "hello"
+// Cannot be overloaded
+let foo (s: String): String = "Hello"
+let <T> foo (t: T): String = "hello"

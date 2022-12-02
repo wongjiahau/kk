@@ -1,0 +1,35 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+// import all
+import "../import_1"
+
+entry
+  foo .print;
+  let x: Color = Red;
+  x .print;
+  Green .print;
+  bomb () .print;
+  bomb "hi".print
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+123
+{ '$': 'Red', _: null }
+{ '$': 'Green', _: null }
+World
+Hello
+
+============
+STDERR
+============
