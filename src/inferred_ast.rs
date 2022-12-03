@@ -16,7 +16,6 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum InferredStatement {
-    ImportStatement(InferredImportStatement),
     Let {
         access: Access,
         left: InferredDestructurePattern,

@@ -1,10 +1,5 @@
-use crate::{
-    inferred_ast::*,
-    module::Access,
-    non_empty::NonEmpty,
-    raw_ast::InfinitePatternKind,
-    unify::{InferredModule, UnifyProgramResult},
-};
+use crate::inferred_ast::*;
+use crate::{non_empty::NonEmpty, raw_ast::InfinitePatternKind, unify::UnifyProgramResult};
 
 mod javascript {
     use crate::non_empty::NonEmpty;
@@ -25,17 +20,8 @@ mod javascript {
 
     #[derive(Debug, Clone)]
     pub struct Assignment {
-        pub left: AssignmentLeft,
+        pub left: Identifier,
         pub right: Expression,
-    }
-
-    #[derive(Debug, Clone)]
-    pub enum AssignmentLeft {
-        Variable(Identifier),
-        Object {
-            name: Identifier,
-            accesses: NonEmpty<Expression>,
-        },
     }
 
     #[derive(Debug, Clone)]
@@ -79,11 +65,6 @@ mod javascript {
         ObjectWithSpread {
             spread: Box<Expression>,
             key_values: Vec<ObjectKeyValue>,
-        },
-        Conditional {
-            condition: Box<Expression>,
-            if_true: Box<Expression>,
-            if_false: Box<Expression>,
         },
         MemberAccess {
             object: Box<Expression>,
@@ -130,24 +111,6 @@ mod javascript {
                 }
                 Statement::If { condition, if_true } => {
                     format!("if({}){{{}}}", condition.print(), print_statements(if_true))
-                }
-            }
-        }
-    }
-    impl Printable for AssignmentLeft {
-        fn print(self) -> String {
-            match self {
-                AssignmentLeft::Variable(identifier) => identifier.print(),
-                AssignmentLeft::Object { name, accesses } => {
-                    format!(
-                        "{}{}",
-                        name.print(),
-                        accesses
-                            .map(|access| access.print())
-                            .map(|expression| { format!("[{}]", expression) })
-                            .into_vector()
-                            .join("")
-                    )
                 }
             }
         }
@@ -244,18 +207,6 @@ mod javascript {
                             .join(",")
                     )
                 }
-                Expression::Conditional {
-                    condition,
-                    if_true,
-                    if_false,
-                } => {
-                    format!(
-                        "(({}) ? ({}) : ({}))",
-                        condition.print(),
-                        if_true.print(),
-                        if_false.print()
-                    )
-                }
                 Expression::MemberAccess { object, property } => {
                     format!("({})[{}]", object.print(), property.print())
                 }
@@ -286,12 +237,11 @@ mod javascript {
     }
     impl Printable for Identifier {
         fn print(self) -> String {
-            self.0.replace(" ", "_").replace("+", "plus")
+            self.0.replace(" ", "_").replace("+", "")
         }
     }
 }
 
-const KK_MODULE: &str = "KK_MODULE";
 const ENUM_TAG_NAME: &str = "$";
 const ENUM_PAYLOAD_NAME: &str = "_";
 
@@ -302,110 +252,21 @@ pub fn transpile_program(unify_project_result: UnifyProgramResult) -> String {
             " const print_0 = (x) => console.log(x); ".to_string(),
         ));
 
-    let global_module_dictionary_declaration = javascript::Statement::Assignment {
-        is_declaration: true,
-        assignment: javascript::Assignment {
-            left: javascript::AssignmentLeft::Variable(javascript::Identifier(
-                KK_MODULE.to_string(),
-            )),
-            right: javascript::Expression::Object(vec![]),
-        },
-    };
-    let imported_modules = unify_project_result
-        .imported_modules
+    let statements = vec![built_in_library]
         .into_iter()
-        .map(|(_, module)| transpile_module(module))
-        .collect::<Vec<javascript::Statement>>();
-
-    let entry_module = transpile_module(unify_project_result.entrypoint);
-
-    let statements = vec![built_in_library, global_module_dictionary_declaration]
-        .into_iter()
-        .chain(imported_modules)
-        .chain(vec![entry_module])
-        .collect::<Vec<javascript::Statement>>();
+        .chain(
+            unify_project_result
+                .imported_modules
+                .clone()
+                .into_iter()
+                .flat_map(|(_, imported_module)| imported_module.statements)
+                .chain(unify_project_result.entrypoint.statements)
+                .map(transpile_statement)
+                .flatten(),
+        )
+        .collect::<Vec<_>>();
 
     javascript::print_statements(statements)
-}
-
-pub fn transpile_module(module: InferredModule) -> javascript::Statement {
-    let module_uid = module.module.meta.uid.string_value();
-    let statements = transpile_statements(module.statements.clone());
-    let exported_symbols = module
-        .statements
-        .iter()
-        .flat_map(|statement| match statement {
-            InferredStatement::Let {
-                access: Access::Exported { .. } | Access::Public { .. },
-                left,
-                ..
-            } => get_destructure_pattern_bindings(left.kind.clone()),
-            _ => vec![],
-        })
-        .map(transpile_identifier)
-        .map(|identifier| javascript::ObjectKeyValue {
-            key: identifier,
-            value: None,
-        })
-        .collect::<Vec<javascript::ObjectKeyValue>>();
-
-    javascript::Statement::Assignment {
-        is_declaration: false,
-        assignment: javascript::Assignment {
-            left: javascript::AssignmentLeft::Object {
-                name: javascript::Identifier(KK_MODULE.to_string()),
-                accesses: NonEmpty {
-                    head: javascript::Expression::String(module_uid),
-                    tail: vec![],
-                },
-            },
-            right: javascript::Expression::FunctionCall {
-                arguments: vec![],
-                function: Box::new(javascript::Expression::ArrowFunction {
-                    parameters: vec![],
-                    body: statements
-                        .into_iter()
-                        .chain(vec![javascript::Statement::Return(
-                            javascript::Expression::Object(exported_symbols),
-                        )])
-                        .collect(),
-                }),
-            },
-        },
-    }
-}
-
-pub fn get_destructure_pattern_bindings(
-    destructure_pattern: InferredDestructurePatternKind,
-) -> Vec<Identifier> {
-    match destructure_pattern {
-        InferredDestructurePatternKind::Infinite { .. }
-        | InferredDestructurePatternKind::Boolean { .. }
-        | InferredDestructurePatternKind::Unit { .. }
-        | InferredDestructurePatternKind::Underscore(_) => vec![],
-        InferredDestructurePatternKind::Identifier(name) => vec![*name],
-        InferredDestructurePatternKind::EnumConstructor { payload, .. } => match payload {
-            None => vec![],
-            Some(payload) => get_destructure_pattern_bindings(payload.kind),
-        },
-        InferredDestructurePatternKind::Record {
-            key_pattern_pairs, ..
-        } => key_pattern_pairs
-            .into_iter()
-            .flat_map(|(_, pattern)| get_destructure_pattern_bindings(pattern.kind))
-            .collect(),
-        InferredDestructurePatternKind::Array { .. } => {
-            panic!("")
-        }
-        InferredDestructurePatternKind::Tuple { patterns } => patterns
-            .into_vector()
-            .into_iter()
-            .flat_map(|pattern| get_destructure_pattern_bindings(pattern.kind))
-            .collect(),
-        InferredDestructurePatternKind::Or { patterns } => {
-            get_destructure_pattern_bindings(patterns.first().kind.clone())
-        }
-    }
 }
 
 pub fn transpile_statements(statements: Vec<InferredStatement>) -> Vec<javascript::Statement> {
@@ -434,31 +295,6 @@ pub fn transpile_statement(statement: InferredStatement) -> Vec<javascript::Stat
                     assignment: binding,
                 })
                 .collect()
-        }
-        InferredStatement::ImportStatement(InferredImportStatement {
-            module_uid,
-            imported_name,
-            imported_as,
-        }) => {
-            vec![javascript::Statement::Assignment {
-                is_declaration: true,
-                assignment: javascript::Assignment {
-                    left: javascript::AssignmentLeft::Variable(transpile_identifier(imported_as)),
-                    right: javascript::Expression::MemberAccess {
-                        object: Box::new(javascript::Expression::MemberAccess {
-                            object: Box::new(javascript::Expression::Variable(
-                                javascript::Identifier(KK_MODULE.to_string()),
-                            )),
-                            property: Box::new(javascript::Expression::String(
-                                module_uid.string_value(),
-                            )),
-                        }),
-                        property: Box::new(javascript::Expression::String(
-                            transpile_identifier(imported_name).0,
-                        )),
-                    },
-                },
-            }]
         }
     }
 }
@@ -709,12 +545,6 @@ pub struct TranspiledDestructurePattern {
     bindings: Vec<javascript::Assignment>,
 }
 
-#[derive(Debug)]
-struct Binding {
-    name: Identifier,
-    expression: InferredExpression,
-}
-
 pub fn transpile_destructure_pattern(
     destructure_pattern: InferredDestructurePatternKind,
     from_expression: javascript::Expression,
@@ -778,7 +608,7 @@ pub fn transpile_destructure_pattern(
         InferredDestructurePatternKind::Identifier(variable) => TranspiledDestructurePattern {
             conditions: vec![],
             bindings: vec![javascript::Assignment {
-                left: javascript::AssignmentLeft::Variable(transpile_identifier(*variable)),
+                left: transpile_identifier(*variable),
                 right: from_expression,
             }],
         },

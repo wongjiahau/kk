@@ -222,19 +222,9 @@ pub fn unify_statements(
             .into_iter()
             .fold(Ok(init), |result, import_statement| match result {
                 Err(error) => Err(error),
-                Ok((mut statements, mut imported_modules)) => {
+                Ok((statements, mut imported_modules)) => {
                     let current =
                         infer_import_statement(&mut module, &imported_modules, import_statement)?;
-
-                    statements.extend(
-                        current
-                            .import_statements
-                            .into_iter()
-                            .map(|import_statement| {
-                                InferredStatement::ImportStatement(import_statement)
-                            })
-                            .collect::<Vec<InferredStatement>>(),
-                    );
 
                     imported_modules.extend(current.imported_modules);
 

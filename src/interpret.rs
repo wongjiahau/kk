@@ -1,3 +1,4 @@
+use crate::inferred_ast::InferredStatement;
 use crate::non_empty::NonEmpty;
 use crate::raw_ast::Token;
 use crossbeam_channel::{unbounded as channel, Receiver, Sender};
@@ -254,8 +255,10 @@ type Evalled = (Value, Vec<Promise>);
 trait Eval {
     fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError>;
 }
-// if (x > 0) { 2 } else { 3 }
-// if (x > 0) [ 2 ] else [ 3 ]
+
+pub fn interpret_statements(statements: Vec<InferredStatement>) {
+    //
+}
 
 pub fn interpret(expression: Expression) {
     tokio::runtime::Builder::new_multi_thread()
@@ -292,6 +295,16 @@ pub fn interpret(expression: Expression) {
 enum HandlerResponse {
     BodyEvalDone(Result<Evalled, EvalError>),
     BodyPerform(EffectHandlerPerformValue),
+}
+
+impl InferredStatement {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
+        match self {
+            InferredStatement::Let { access, left, right } => todo!(),
+            InferredStatement::Expression(_) => todo!(),
+        }
+    }
+
 }
 
 impl Eval for Expression {

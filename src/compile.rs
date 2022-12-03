@@ -4,6 +4,7 @@ use std::process;
 
 use indexmap::IndexMap;
 
+use crate::interpret;
 use crate::module::ModuleMeta;
 use crate::module::ModuleUid;
 use crate::parse::ParseError;
@@ -48,7 +49,15 @@ pub fn compile(path: PathBuf) {
         ) {
             Err(compile_error) => print_compile_error(compile_error),
             Ok(result) => {
-                // result.interpret(result.into());
+                // interpret::interpret_statements(
+                //     result
+                //         .imported_modules
+                //         .into_iter()
+                //         .flat_map(|(_, imported_module)| imported_module.statements)
+                //         .chain(result.entrypoint.statements)
+                //         .map(|statement| statement.into())
+                //         .collect(),
+                // );
                 use std::process::Command;
                 // println!("result = {:#?}", result);
                 let javascript = transpile_program(result);
