@@ -163,7 +163,7 @@ impl Tokenizer {
                         Ok(Some(Token {
                             token_type: TokenType::Comment,
                             position: make_position(character, comment.last()),
-                            representation: stringify(comment),
+                            representation: stringify(&comment),
                         }))
                     }
                     Some(Character { value: '*', .. }) => {
@@ -194,7 +194,7 @@ impl Tokenizer {
                         Ok(Some(Token {
                             position: make_position(character, comment.last()),
                             token_type: TokenType::MultilineComment,
-                            representation: stringify(comment),
+                            representation: stringify(&comment),
                         }))
                     }
                     Some(other) => Err(ParseError {
@@ -247,7 +247,7 @@ impl Tokenizer {
 
                     match self.characters_iterator.next() {
                         Some(end_quote) => {
-                            let representation = format!("{}", stringify(characters.clone()),);
+                            let representation = format!("{}", stringify(&characters),);
                             Ok(Some(Token {
                                 token_type: TokenType::Identifier,
                                 representation,
@@ -336,7 +336,7 @@ impl Tokenizer {
                                         if let StartOf::StringInterpolation = start_of {
                                             interpolated_string_sections.push(
                                                 InterpolatedStringSection::String(stringify(
-                                                    characters.clone(),
+                                                    &characters,
                                                 )),
                                             );
                                             characters.clear();
@@ -377,8 +377,9 @@ impl Tokenizer {
                             let interpolated_string_sections = {
                                 let mut interpolated_string_sections =
                                     interpolated_string_sections.to_vec();
-                                interpolated_string_sections
-                                    .push(InterpolatedStringSection::String(stringify(characters)));
+                                interpolated_string_sections.push(
+                                    InterpolatedStringSection::String(stringify(&characters)),
+                                );
                                 interpolated_string_sections
                             };
                             Ok(Some(Token {
@@ -402,10 +403,10 @@ impl Tokenizer {
                         None => Ok(Some(Token {
                             token_type: TokenType::String(StringLiteral {
                                 start_quotes: start_quotes.clone(),
-                                content: stringify(characters.clone()),
+                                content: stringify(&characters.clone()),
                                 end_quotes: end_quotes.clone(),
                             }),
-                            representation: stringify(characters),
+                            representation: stringify(&characters),
                             position: make_position(
                                 start_quotes.head.clone(),
                                 Some(&end_quotes.last()),
@@ -438,7 +439,7 @@ impl Tokenizer {
                                 .collect::<Vec<Character>>();
 
                             let representation =
-                                format!("{}{}", character.value, stringify(characters.clone()));
+                                format!("{}{}", character.value, stringify(&characters));
                             Ok(Some(Token {
                                 token_type: TokenType::Identifier,
                                 representation,
@@ -475,7 +476,7 @@ impl Tokenizer {
                                             representation: format!(
                                                 "{}{}",
                                                 character.value,
-                                                stringify(intergral.clone())
+                                                stringify(&intergral)
                                             ),
                                             position: make_position(character, intergral.last()),
                                         }))
@@ -485,8 +486,8 @@ impl Tokenizer {
                                             representation: format!(
                                                 "{}{}.{}",
                                                 character.value,
-                                                stringify(intergral),
-                                                stringify(fractional.clone())
+                                                stringify(&intergral),
+                                                stringify(&fractional)
                                             ),
                                             position: make_position(character, fractional.last()),
                                         }))
@@ -497,7 +498,7 @@ impl Tokenizer {
                                     representation: format!(
                                         "{}{}",
                                         character.value,
-                                        stringify(intergral.clone())
+                                        stringify(&intergral)
                                     ),
                                     position: make_position(character, intergral.last()),
                                 })),
@@ -517,7 +518,7 @@ impl Tokenizer {
                             .collect::<Vec<Character>>();
 
                         let representation =
-                            format!("{}{}", character.value, stringify(characters.clone()));
+                            format!("{}{}", character.value, stringify(&characters));
                         Ok(Some(Token {
                             token_type: TokenType::Tag,
                             representation,
@@ -535,8 +536,7 @@ impl Tokenizer {
                         })
                         .collect::<Vec<Character>>();
 
-                    let representation =
-                        format!("{}{}", character.value, stringify(characters.clone()));
+                    let representation = format!("{}{}", character.value, stringify(&characters));
                     Ok(Some(Token {
                         token_type: get_token_type(representation.clone()),
                         representation,
@@ -616,8 +616,7 @@ impl Tokenizer {
                         .peeking_take_while(|character| is_symbol(character.value))
                         .collect::<Vec<Character>>();
 
-                    let representation =
-                        format!("{}{}", character.value, stringify(characters.clone()));
+                    let representation = format!("{}{}", character.value, stringify(&characters));
                     Ok(Some(Token {
                         token_type: TokenType::Operator,
                         representation,
@@ -670,7 +669,7 @@ pub fn make_position(first: Character, last: Option<&Character>) -> Position {
     }
 }
 
-pub fn stringify(characters: Vec<Character>) -> String {
+pub fn stringify(characters: &Vec<Character>) -> String {
     characters
         .into_iter()
         .map(|character| character.value.to_string())
