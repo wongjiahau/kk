@@ -8,6 +8,6 @@ let<A, B> (o: Option<A>) .map (f: A -> B) : Option<B> =
  )
 
 entry
-  ~("%${none ! map}%").print;
-  ~("%${some("hello world") ! map}%").print
+  ~map("%${none !}%").print;
+  ~map("%${some "hello world" !}%").print
 

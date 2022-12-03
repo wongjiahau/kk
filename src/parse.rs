@@ -808,10 +808,13 @@ impl<'a> Parser<'a> {
                     payload: None,
                 }),
                 TokenType::Tilde => {
+                    let bind_function =
+                        Expression::Identifier(self.eat_token(TokenType::Identifier, None)?);
                     let expression = Box::new(self.parse_high_precedence_expression()?);
 
                     // Collect CpsBangs
-                    let (bangs, expression) = expression.clone().collect_cps_bangs(self);
+                    let (bangs, expression) =
+                        expression.clone().collect_cps_bangs(self, &bind_function);
 
                     let expression = bangs.into_iter().fold(expression, |expression, bang| {
                         Expression::FunctionCall(Box::new(FunctionCall {
@@ -832,7 +835,11 @@ impl<'a> Parser<'a> {
                             type_arguments: None,
                         }))
                     });
-                    Ok(expression)
+                    Ok(Expression::TildeClosure(TildeClosure {
+                        tilde: token,
+                        bind_function: Box::new(bind_function),
+                        expression: Box::new(expression),
+                    }))
                 }
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             }
@@ -1160,11 +1167,9 @@ impl<'a> Parser<'a> {
         }
 
         if let Some(bang) = self.try_eat_token(TokenType::Bang)? {
-            let function = Box::new(self.parse_low_precedence_expression()?);
             return self.try_parse_function_call(Expression::CpsBang {
                 argument: Box::new(previous),
                 bang,
-                function,
             });
         }
 
@@ -1424,8 +1429,39 @@ impl StringLiteral {
 
 impl Expression {
     /// Collect CPS bangs, and transformed those bangs into temporary variables
-    fn collect_cps_bangs(self, parser: &mut Parser) -> (Vec<CollectCpsBangResult>, Expression) {
+    fn collect_cps_bangs(
+        self,
+        parser: &mut Parser,
+        bind_function: &Expression,
+    ) -> (Vec<CollectCpsBangResult>, Expression) {
         match self {
+            // The main logic is here
+            Expression::CpsBang { argument, bang } => {
+                let temporary_variable = Token {
+                    position: argument.position().join(bang.position),
+                    token_type: TokenType::Identifier,
+                    representation: format!("temp{}", parser.get_next_temporary_variable_index()),
+                };
+                (
+                    vec![CollectCpsBangResult {
+                        temporary_variable: DestructurePattern::Identifier(
+                            temporary_variable.clone(),
+                        ),
+                        function: bind_function.clone(),
+                        argument: argument.as_ref().clone(),
+                    }],
+                    Expression::Identifier(temporary_variable),
+                )
+            }
+
+            Expression::TildeClosure(tilde_closure) => {
+                // Do nothing, since it is already desugared
+                (vec![], Expression::TildeClosure(tilde_closure))
+            }
+
+            // Whatever down here is boilerplate code
+            // Which can be solved using the Scrap Your Boilerplate technique
+            // Reference: https://www.microsoft.com/en-us/research/wp-content/uploads/2003/01/hmap.pdf
             Expression::Unit { .. }
             | Expression::Float(_)
             | Expression::Integer(_)
@@ -1435,8 +1471,8 @@ impl Expression {
             | Expression::Keyword(_) => (vec![], self),
 
             Expression::Statements { current, next } => {
-                let (bangs1, current) = current.collect_cps_bangs(parser);
-                let (bangs2, next) = next.collect_cps_bangs(parser);
+                let (bangs1, current) = current.collect_cps_bangs(parser, bind_function);
+                let (bangs2, next) = next.collect_cps_bangs(parser, bind_function);
                 (
                     bangs1.into_iter().chain(bangs2.into_iter()).collect(),
                     Expression::Statements {
@@ -1450,7 +1486,7 @@ impl Expression {
                 right_parenthesis,
                 value,
             } => {
-                let (bangs, value) = value.collect_cps_bangs(parser);
+                let (bangs, value) = value.collect_cps_bangs(parser, bind_function);
                 (
                     bangs,
                     Expression::Parenthesized {
@@ -1470,7 +1506,8 @@ impl Expression {
                         (vec![], InterpolatedStringSection::String(string))
                     }
                     InterpolatedStringSection::Expression(expression) => {
-                        let (bangs, expression) = expression.collect_cps_bangs(parser);
+                        let (bangs, expression) =
+                            expression.collect_cps_bangs(parser, bind_function);
                         (
                             bangs,
                             InterpolatedStringSection::Expression(Box::new(expression)),
@@ -1500,7 +1537,7 @@ impl Expression {
             }
             Expression::EnumConstructor { name, payload } => match payload {
                 Some(payload) => {
-                    let (bangs, payload) = payload.collect_cps_bangs(parser);
+                    let (bangs, payload) = payload.collect_cps_bangs(parser, bind_function);
                     (
                         bangs,
                         Expression::EnumConstructor {
@@ -1519,7 +1556,7 @@ impl Expression {
             },
             Expression::Function(function) => {
                 let result = function.branches.map(|branch| {
-                    let (bangs, body) = branch.body.collect_cps_bangs(parser);
+                    let (bangs, body) = branch.body.collect_cps_bangs(parser, bind_function);
                     (
                         bangs,
                         FunctionBranch {
@@ -1546,8 +1583,12 @@ impl Expression {
                 )
             }
             Expression::FunctionCall(function_call) => {
-                let (bangs1, function) = function_call.function.collect_cps_bangs(parser);
-                let (bangs2, argument) = function_call.argument.collect_cps_bangs(parser);
+                let (bangs1, function) = function_call
+                    .function
+                    .collect_cps_bangs(parser, bind_function);
+                let (bangs2, argument) = function_call
+                    .argument
+                    .collect_cps_bangs(parser, bind_function);
                 (
                     bangs1.into_iter().chain(bangs2.into_iter()).collect(),
                     Expression::FunctionCall(Box::new(FunctionCall {
@@ -1569,7 +1610,9 @@ impl Expression {
                 ) = key_value_pairs
                     .into_iter()
                     .map(|key_value_pair| {
-                        let (bangs, value) = key_value_pair.value.collect_cps_bangs(parser);
+                        let (bangs, value) = key_value_pair
+                            .value
+                            .collect_cps_bangs(parser, bind_function);
                         (
                             bangs,
                             RecordKeyValue {
@@ -1593,7 +1636,7 @@ impl Expression {
                 expression,
                 property_name,
             } => {
-                let (bangs, expression) = expression.collect_cps_bangs(parser);
+                let (bangs, expression) = expression.collect_cps_bangs(parser, bind_function);
                 (
                     bangs,
                     Expression::RecordAccess {
@@ -1620,27 +1663,6 @@ impl Expression {
                 type_annotation,
                 body,
             } => todo!(),
-            Expression::CpsBang {
-                argument,
-                bang,
-                function,
-            } => {
-                let temporary_variable = Token {
-                    position: function.position().join(argument.position()),
-                    token_type: TokenType::Identifier,
-                    representation: format!("temp{}", parser.get_next_temporary_variable_index()),
-                };
-                (
-                    vec![CollectCpsBangResult {
-                        temporary_variable: DestructurePattern::Identifier(
-                            temporary_variable.clone(),
-                        ),
-                        function: function.as_ref().clone(),
-                        argument: argument.as_ref().clone(),
-                    }],
-                    Expression::Identifier(temporary_variable),
-                )
-            }
         }
     }
 }

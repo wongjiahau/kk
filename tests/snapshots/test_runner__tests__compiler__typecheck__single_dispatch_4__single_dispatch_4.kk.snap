@@ -34,8 +34,8 @@ error:
   │
   = Matching types:
 
-      String -> String
+      (String -> String)
 
-      Int -> String
+      (Int -> String)
 
     Put type annotation for disambiguation.

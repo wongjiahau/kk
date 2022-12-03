@@ -427,6 +427,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::CpsBang { .. }
         | Expression::Keyword(_)
         | Expression::Function(_) => None,
+        Expression::TildeClosure(tilde_closure) => Some(tilde_closure.bind_function.position()),
         Expression::FunctionCall(function_call) => Some(function_call.function.position()),
         Expression::InterpolatedString { sections, .. } => {
             sections.find_map(|section| match section {
@@ -602,6 +603,7 @@ pub enum UnifyErrorKind {
     CannotBeOverloaded {
         name: String,
     },
+    MissingTildeClosure,
 }
 
 /// We use IndexMap instead of HashMap for storing imported modules because we need to preserve the insertion order,
@@ -1285,10 +1287,12 @@ impl Positionable for Expression {
                 keyword_let, body, ..
             } => keyword_let.position.join(body.position()),
             Expression::Statements { current, next } => current.position().join(next.position()),
-            Expression::CpsBang {
-                argument, function, ..
-            } => argument.position().join(function.position()),
+            Expression::CpsBang { argument, bang } => argument.position().join(bang.position),
             Expression::Keyword(identifier) => identifier.position,
+            Expression::TildeClosure(tilde_closure) => tilde_closure
+                .tilde
+                .position
+                .join(tilde_closure.expression.position()),
         }
     }
 }
@@ -2516,16 +2520,72 @@ fn infer_expression_type_(
                 },
             })
         }
-        Expression::CpsBang {
-            argument,
-            bang,
-            function,
-        } => panic!("Missing CPS closure"),
+        Expression::CpsBang { argument, bang } => Err(UnifyError {
+            position: bang.position,
+            kind: UnifyErrorKind::MissingTildeClosure,
+        }),
+        Expression::TildeClosure(tilde_closure) => {
+            infer_tilde_closure(module, expected_type, tilde_closure)
+        }
     }?;
     Ok(InferExpressionResult {
         type_value: module.apply_subtitution_to_type(&result.type_value),
         expression: result.expression,
     })
+}
+
+fn infer_tilde_closure(
+    module: &mut Module,
+    expected_type: Option<Type>,
+    TildeClosure {
+        bind_function,
+        expression,
+        ..
+    }: &TildeClosure,
+) -> Result<InferExpressionResult, UnifyError> {
+    // The expected bind function type should be:
+    //
+    //   X -> (Y -> Z) -> Z
+    //
+    // Basically, the same as Haskell's Monad Bind:
+    //
+    //     (>>=)  :: m a -> (a -> m b) -> m b
+    //
+    // The only difference is that KK don't have higher-kinded type,
+    // So we cannot say that Y (a) is actually the element type of X (m a).
+    //
+    // Reference: https://wiki.haskell.org/Monad
+    //
+    // // TODO: the following commented code is not working as expected
+    // //       For example, run typecheck/cps_sugar_3
+    // let x = Type::ImplicitTypeVariable(ImplicitTypeVariable {
+    //     name: module.get_next_type_variable_name(),
+    // });
+    // let y = Type::ImplicitTypeVariable(ImplicitTypeVariable {
+    //     name: module.get_next_type_variable_name(),
+    // });
+    // let z = Type::ImplicitTypeVariable(ImplicitTypeVariable {
+    //     name: module.get_next_type_variable_name(),
+    // });
+    // let bind_function_type = Type::Function(FunctionType {
+    //     parameter_type: Box::new(x),
+    //     return_type: Box::new(Type::Function(FunctionType {
+    //         parameter_type: Box::new(Type::Function(FunctionType {
+    //             parameter_type: Box::new(y),
+    //             return_type: Box::new(z.clone()),
+    //             type_constraints: vec![],
+    //         })),
+    //         return_type: Box::new(z),
+    //         type_constraints: vec![],
+    //     })),
+    //     type_constraints: vec![],
+    // });
+
+    // Ensure that the bind function has the expected type
+    // infer_expression_type(module, Some(bind_function_type), bind_function)?;
+
+    // Infer the desugared expression
+    infer_expression_type(module, expected_type, expression)
 }
 
 fn infer_function_call(
@@ -2797,6 +2857,12 @@ fn get_expected_type(module: &mut Module, expression: &Expression) -> Result<Typ
                 Err(_) => Ok(implicit_type_variable_type.clone()),
             }
         }
+        Expression::TildeClosure(tilde_closure) => {
+            match infer_tilde_closure(module, None, tilde_closure) {
+                Ok(result) => Ok(result.type_value),
+                Err(_) => Ok(implicit_type_variable_type.clone()),
+            }
+        }
         Expression::Record {
             left_curly_bracket,
             wildcard,
@@ -2835,11 +2901,7 @@ fn get_expected_type(module: &mut Module, expression: &Expression) -> Result<Typ
             type_annotation,
             body,
         } => todo!(),
-        Expression::CpsBang {
-            argument,
-            bang,
-            function,
-        } => todo!(),
+        Expression::CpsBang { argument, bang } => todo!(),
     }
 }
 

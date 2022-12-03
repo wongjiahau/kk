@@ -30,4 +30,4 @@ error:
   │
   = Infinite type expansion will happen when substituting `@TVAR4` into:
 
-      @TVAR4 -> @TVAR5
+      (@TVAR4 -> @TVAR5)

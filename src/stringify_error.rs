@@ -928,6 +928,10 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                   .collect::<Vec<String>>().join("\n\n")
             )
         },
+        UnifyErrorKind::MissingTildeClosure => StringifiedError { 
+            summary: "Missing Tilde Closure".to_string(), 
+            body: "Bang can only be used in a tilde closure, for example ~unwrap (banana ! + (apple !))".to_string()
+        }
     }
 }
 
@@ -1059,14 +1063,14 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
             let result = 
             if function_type.type_constraints.is_empty() {
                 format!(
-                    "{} -> {}",
+                    "({} -> {})",
                     stringify_type(*function_type.parameter_type, 0),
                     stringify_type(*function_type.return_type, 0)
                 )
             }
             else {
                 format!(
-                    "{} -> {} given {{{}}}",
+                    "({} -> {} given {{{}}})",
                     stringify_type(*function_type.parameter_type, 0),
                     stringify_type(*function_type.return_type, 0),
                     function_type

@@ -327,8 +327,17 @@ pub enum Expression {
     CpsBang {
         argument: Box<Expression>,
         bang: Token,
-        function: Box<Expression>,
     },
+    TildeClosure(TildeClosure),
+}
+
+#[derive(Debug, Clone)]
+pub struct TildeClosure {
+    pub tilde: Token,
+    pub bind_function: Box<Expression>,
+
+    /// The expression desugared into CPS
+    pub expression: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]

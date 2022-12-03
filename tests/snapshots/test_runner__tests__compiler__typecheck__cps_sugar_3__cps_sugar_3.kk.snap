@@ -8,9 +8,9 @@ INPUT
 let lift (x : Int) : { x : Int } = { x, }
 
 entry
-  ~(
-   print (123 ! lift)
-             // ^^^^ Error, lift is not a satisfactory bind function
+  ~lift (
+// ^^^^ Error, lift is not a satisfactory bind function
+   print (123 !)
   )
 
 ============
@@ -27,9 +27,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/cps_sugar_3/cps_sugar_3.kk:5:11
+  ┌─ tests/compiler/typecheck/cps_sugar_3/cps_sugar_3.kk:4:4
   │
-5 │    print (123 ! lift)
-  │           ^^^^^^^^^^ Cannot call a non-function
+4 │     ~lift (
+  │ ╭────^
+5 │ │ // ^^^^ Error, lift is not a satisfactory bind function
+6 │ │    print (123 !)
+  │ ╰─────────────^ Cannot call a non-function
   │
   = The type of this expression is not function, so you cannot call it.

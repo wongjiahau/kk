@@ -35,8 +35,8 @@ error:
   │
   = Matching types:
 
-      Int -> Int -> Int
+      (Int -> (Int -> Int))
 
-      Float -> Float -> Float
+      (Float -> (Float -> Float))
 
     Put type annotation for disambiguation.

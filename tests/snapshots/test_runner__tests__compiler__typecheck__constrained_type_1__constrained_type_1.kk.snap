@@ -43,4 +43,4 @@ error:
    │
    = The following variable is required but not found:
 
-     equals: Grade -> Grade -> Boolean
+     equals: (Grade -> (Grade -> Boolean))
