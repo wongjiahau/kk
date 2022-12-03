@@ -722,77 +722,60 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
-        if let Some(token) = self.peek_next_meaningful_token()? {
-            match &token.token_type {
-                TokenType::Underscore => Ok(Expression::Identifier(
-                    self.next_meaningful_token()?.unwrap(),
-                )),
-
-                TokenType::Backslash => self.parse_function(),
-
-                TokenType::Operator => {
-                    let operator = self.next_meaningful_token()?.unwrap();
-                    // Operator shorthand
-                    // e.g. + x means \temp -> temp + x
-                    let argument = self.parse_high_precedence_expression()?;
-                    Ok(Expression::Function(Box::new(Function {
-                        branches: NonEmpty {
-                            head: {
-                                let phantom_parameter = Token::dummy_identifier(format!(
-                                    "temp{}",
-                                    self.get_next_temporary_variable_index()
-                                ));
-                                FunctionBranch {
-                                    parameter: Box::new(DestructurePattern::Identifier(
-                                        phantom_parameter.clone(),
-                                    )),
-                                    body: Box::new(Expression::FunctionCall(Box::new(
-                                        FunctionCall {
-                                            function: Box::new(Expression::FunctionCall(Box::new(
-                                                FunctionCall {
-                                                    function: Box::new(Expression::Identifier(
-                                                        operator,
-                                                    )),
-                                                    argument: Box::new(Expression::Identifier(
-                                                        phantom_parameter,
-                                                    )),
-                                                    type_arguments: None,
-                                                },
-                                            ))),
-                                            argument: Box::new(argument),
-                                            type_arguments: None,
-                                        },
-                                    ))),
-                                }
-                            },
-                            tail: vec![],
-                        },
-                    })))
-                }
-
-                TokenType::KeywordLet => {
-                    let keyword_let = self.next_meaningful_token()?.unwrap();
-                    Ok(Expression::Let {
-                        keyword_let,
-                        left: self.parse_destructure_pattern()?,
-                        type_annotation: self.try_parse_type_annotation()?,
-                        right: {
-                            self.eat_token(TokenType::Equals, None)?;
-                            Box::new(self.parse_mid_precedence_expression()?)
-                        },
-                        body: {
-                            self.eat_token(TokenType::Semicolon, None)?;
-                            Box::new(self.parse_low_precedence_expression()?)
-                        },
-                    })
-                }
-                _ => {
-                    let expression = self.parse_high_precedence_expression()?;
-                    self.try_parse_function_call(expression)
-                }
-            }
+        if let Some(token) = self.try_eat_token(TokenType::Underscore)? {
+            Ok(Expression::Identifier(token))
+        } else if self.try_eat_token(TokenType::Backslash)?.is_some() {
+            self.parse_function()
+        } else if let Some(operator) = self.try_eat_token(TokenType::Operator)? {
+            // Operator shorthand
+            // e.g. + x means \temp -> temp + x
+            let argument = self.parse_high_precedence_expression()?;
+            Ok(Expression::Function(Box::new(Function {
+                branches: NonEmpty {
+                    head: {
+                        let phantom_parameter = Token::dummy_identifier(format!(
+                            "temp{}",
+                            self.get_next_temporary_variable_index()
+                        ));
+                        FunctionBranch {
+                            parameter: Box::new(DestructurePattern::Identifier(
+                                phantom_parameter.clone(),
+                            )),
+                            body: Box::new(Expression::FunctionCall(Box::new(FunctionCall {
+                                function: Box::new(Expression::FunctionCall(Box::new(
+                                    FunctionCall {
+                                        function: Box::new(Expression::Identifier(operator)),
+                                        argument: Box::new(Expression::Identifier(
+                                            phantom_parameter,
+                                        )),
+                                        type_arguments: None,
+                                    },
+                                ))),
+                                argument: Box::new(argument),
+                                type_arguments: None,
+                            }))),
+                        }
+                    },
+                    tail: vec![],
+                },
+            })))
+        } else if let Some(keyword_let) = self.try_eat_token(TokenType::KeywordLet)? {
+            Ok(Expression::Let {
+                keyword_let,
+                left: self.parse_destructure_pattern()?,
+                type_annotation: self.try_parse_type_annotation()?,
+                right: {
+                    self.eat_token(TokenType::Equals, None)?;
+                    Box::new(self.parse_mid_precedence_expression()?)
+                },
+                body: {
+                    self.eat_token(TokenType::Semicolon, None)?;
+                    Box::new(self.parse_low_precedence_expression()?)
+                },
+            })
         } else {
-            Err(Parser::unexpected_eof(Some(ParseContext::Expression)))
+            let expression = self.parse_high_precedence_expression()?;
+            self.try_parse_function_call(expression)
         }
     }
 
