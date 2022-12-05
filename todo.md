@@ -1,7 +1,8 @@
 # Todo
 
 - [x] change access to, private (default), export, public-export
-- [] allow name ambiguity (due to overloading) to propagate until a certain boundary before calling it an error [function_overloading_2 and 3]
+- [x] allow name ambiguity (due to overloading) to propagate until a certain boundary before calling it an error [function_overloading_2 and 3]
+- [] mechanism for safe native function call
 - [x] migrate to use interpreter
 - [] make operator to have lower precedence, dot to have higher precedence ?
 - [] better syntax for CPS, example ~async(getFoo ! + (getBar !))
