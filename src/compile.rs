@@ -10,7 +10,7 @@ use crate::module::ModuleMeta;
 use crate::module::ModuleUid;
 use crate::parse::ParseError;
 use crate::stringify_error::print_compile_error;
-use crate::transpile::javascript::print_statements;
+use crate::transpile::interpretable::print_statements;
 use crate::transpile::transpile_program;
 use crate::unify::read_module;
 use crate::unify::UnifyError;

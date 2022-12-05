@@ -1,13 +1,12 @@
 use crate::inferred_ast::*;
 use crate::{non_empty::NonEmpty, raw_ast::InfinitePatternKind, unify::UnifyProgramResult};
 
-pub mod javascript {
+pub mod interpretable {
     use crate::non_empty::NonEmpty;
 
     #[derive(Debug, Clone)]
     pub enum Statement {
         Assignment {
-            is_declaration: bool,
             assignment: Assignment,
         },
         Expression(Expression),
@@ -81,6 +80,18 @@ pub mod javascript {
         },
         UnsafeJavascriptCode(String),
         Assignment(Box<Assignment>),
+        InternalOp(Box<InternalOp>),
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum InternalOp {
+        Add(Expression, Expression),
+        Multiply(Expression, Expression),
+        LessThan(Expression, Expression),
+        ReadFile {
+            filename: Expression,
+            callback: Expression,
+        },
     }
 
     #[derive(Debug, Clone)]
@@ -104,15 +115,8 @@ pub mod javascript {
     impl Printable for Statement {
         fn print(self) -> String {
             match self {
-                Statement::Assignment {
-                    is_declaration,
-                    assignment,
-                } => {
-                    format!(
-                        "{} {}",
-                        if is_declaration { "var" } else { "" },
-                        assignment.print(),
-                    )
+                Statement::Assignment { assignment } => {
+                    format!("{}", assignment.print(),)
                 }
                 Statement::Expression(expression) => expression.print(),
                 Statement::Return(expression) => {
@@ -218,6 +222,7 @@ pub mod javascript {
                 Expression::EnumConstructor { tag, payload } => todo!(),
                 Expression::HasTag { expression, tag } => todo!(),
                 Expression::GetEnumPayload(_) => todo!(),
+                Expression::InternalOp(_) => todo!(),
             }
         }
     }
@@ -236,10 +241,12 @@ pub mod javascript {
 const ENUM_TAG_NAME: &str = "$";
 const ENUM_PAYLOAD_NAME: &str = "_";
 
-pub fn transpile_program(unify_project_result: UnifyProgramResult) -> Vec<javascript::Statement> {
+pub fn transpile_program(
+    unify_project_result: UnifyProgramResult,
+) -> Vec<interpretable::Statement> {
     // TODO: move this to a file
     let built_in_library =
-        javascript::Statement::Expression(javascript::Expression::UnsafeJavascriptCode(
+        interpretable::Statement::Expression(interpretable::Expression::UnsafeJavascriptCode(
             " const print_0 = (x) => console.log(x); ".to_string(),
         ));
 
@@ -254,17 +261,17 @@ pub fn transpile_program(unify_project_result: UnifyProgramResult) -> Vec<javasc
         .collect::<Vec<_>>()
 }
 
-pub fn transpile_statements(statements: Vec<InferredStatement>) -> Vec<javascript::Statement> {
+pub fn transpile_statements(statements: Vec<InferredStatement>) -> Vec<interpretable::Statement> {
     statements
         .into_iter()
         .flat_map(transpile_statement)
         .collect()
 }
 
-pub fn transpile_statement(statement: InferredStatement) -> Vec<javascript::Statement> {
+pub fn transpile_statement(statement: InferredStatement) -> Vec<interpretable::Statement> {
     match statement {
         InferredStatement::Expression(expression) => {
-            vec![javascript::Statement::Expression(transpile_expression(
+            vec![interpretable::Statement::Expression(transpile_expression(
                 expression,
             ))]
         }
@@ -275,8 +282,7 @@ pub fn transpile_statement(statement: InferredStatement) -> Vec<javascript::Stat
             } = transpile_destructure_pattern(left.kind, transpile_expression(right));
             bindings
                 .into_iter()
-                .map(|binding| javascript::Statement::Assignment {
-                    is_declaration: true,
+                .map(|binding| interpretable::Statement::Assignment {
                     assignment: binding,
                 })
                 .collect()
@@ -284,69 +290,69 @@ pub fn transpile_statement(statement: InferredStatement) -> Vec<javascript::Stat
     }
 }
 
-fn transpile_identifier(identifier: Identifier) -> javascript::Identifier {
+fn transpile_identifier(identifier: Identifier) -> interpretable::Identifier {
     // Note that when we transpile identifier, we omit the module_uid and only use the index
-    javascript::Identifier(format!(
+    interpretable::Identifier(format!(
         "{}_{}",
         identifier.token.representation, identifier.uid.index
     ))
 }
 
-pub fn transpile_expression(expression: InferredExpression) -> javascript::Expression {
+pub fn transpile_expression(expression: InferredExpression) -> interpretable::Expression {
     match expression {
         InferredExpression::String(string_literal) => {
-            javascript::Expression::String(string_literal.content)
+            interpretable::Expression::String(string_literal.content)
         }
         InferredExpression::Character { representation } => {
-            javascript::Expression::String(representation)
+            interpretable::Expression::String(representation)
         }
         InferredExpression::Float { representation } => {
-            javascript::Expression::Float(representation.parse().unwrap())
+            interpretable::Expression::Float(representation.parse().unwrap())
         }
         InferredExpression::Integer { representation } => {
-            javascript::Expression::Int(representation.parse().unwrap())
+            interpretable::Expression::Int(representation.parse().unwrap())
         }
         InferredExpression::InterpolatedString { sections } => {
-            javascript::Expression::StringConcat(
+            interpretable::Expression::StringConcat(
                 sections
                     .into_iter()
                     .map(|section| match section {
                         InferredInterpolatedStringSection::String(string) => {
-                            javascript::Expression::String(string)
+                            interpretable::Expression::String(string)
                         }
                         InferredInterpolatedStringSection::Expression(expression) => {
                             transpile_expression(expression.expression)
                         }
                     })
-                    .collect::<Vec<javascript::Expression>>(),
+                    .collect::<Vec<interpretable::Expression>>(),
             )
         }
         InferredExpression::Variable(variable) => {
-            javascript::Expression::Variable(transpile_identifier(variable))
+            interpretable::Expression::Variable(transpile_identifier(variable))
         }
         InferredExpression::EnumConstructor {
             constructor_name,
             payload,
             ..
-        } => javascript::Expression::EnumConstructor {
+        } => interpretable::Expression::EnumConstructor {
             tag: constructor_name,
             payload: payload.map(|payload| Box::new(transpile_expression(*payload))),
         },
         InferredExpression::RecordAccess {
             expression,
             property_name,
-        } => javascript::Expression::MemberAccess {
+        } => interpretable::Expression::MemberAccess {
             object: Box::new(transpile_expression(*expression)),
             property: transpile_property_name(property_name),
         },
-        InferredExpression::Record { key_value_pairs } => javascript::Expression::Object(
+        InferredExpression::Record { key_value_pairs } => interpretable::Expression::Object(
             key_value_pairs
                 .into_iter()
-                .map(|(key, value)| javascript::ObjectKeyValue {
-                    key: javascript::Identifier(transpile_property_name(key)),
+                .map(|(key, value)| interpretable::ObjectKeyValue {
+                    key: interpretable::Identifier(transpile_property_name(key)),
                     value: Box::new(transpile_expression(value)),
                 })
-                .collect::<Vec<javascript::ObjectKeyValue>>(),
+                .collect::<Vec<interpretable::ObjectKeyValue>>(),
         ),
         InferredExpression::BranchedFunction(function) => {
             let InferredBranchedFunction { branches } = *function;
@@ -357,35 +363,36 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                 .into_iter()
                 .flatten()
                 .collect();
-            javascript::Expression::ArrowFunction { parameter, body }
+            interpretable::Expression::ArrowFunction { parameter, body }
         }
         InferredExpression::FunctionCall(function) => {
             let InferredFunctionCall { function, argument } = *function;
             let function = transpile_expression(*function);
             let argument = transpile_expression(*argument);
 
-            javascript::Expression::FunctionCall {
+            interpretable::Expression::FunctionCall {
                 function: Box::new(function),
                 argument: Box::new(argument),
             }
         }
-        InferredExpression::Array { elements, .. } => {
-            javascript::Expression::Array(elements.into_iter().map(transpile_expression).collect())
-        }
+        InferredExpression::Array { elements, .. } => interpretable::Expression::Array(
+            elements.into_iter().map(transpile_expression).collect(),
+        ),
         InferredExpression::RecordUpdate {
             expression,
             updates,
         } => {
-            let temporary_identifier = javascript::Identifier("$".to_string());
-            let temporary_variable = javascript::Expression::Variable(temporary_identifier.clone());
+            let temporary_identifier = interpretable::Identifier("$".to_string());
+            let temporary_variable =
+                interpretable::Expression::Variable(temporary_identifier.clone());
             let updates = updates
                 .into_iter()
                 .map(|update| match update {
                     InferredRecordUpdate::ValueUpdate {
                         property_name,
                         new_value,
-                    } => javascript::ObjectKeyValue {
-                        key: javascript::Identifier(transpile_property_name(property_name)),
+                    } => interpretable::ObjectKeyValue {
+                        key: interpretable::Identifier(transpile_property_name(property_name)),
                         value: Box::new(transpile_expression(new_value)),
                     },
                     InferredRecordUpdate::FunctionalUpdate {
@@ -393,11 +400,11 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                         function,
                     } => {
                         let property_name = transpile_property_name(property_name);
-                        javascript::ObjectKeyValue {
-                            key: javascript::Identifier(property_name.clone()),
-                            value: Box::new(javascript::Expression::FunctionCall {
+                        interpretable::ObjectKeyValue {
+                            key: interpretable::Identifier(property_name.clone()),
+                            value: Box::new(interpretable::Expression::FunctionCall {
                                 function: Box::new(transpile_expression(function)),
-                                argument: Box::new(javascript::Expression::MemberAccess {
+                                argument: Box::new(interpretable::Expression::MemberAccess {
                                     object: Box::new(temporary_variable.clone()),
                                     property: property_name,
                                 }),
@@ -405,13 +412,13 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                         }
                     }
                 })
-                .collect::<Vec<javascript::ObjectKeyValue>>();
+                .collect::<Vec<interpretable::ObjectKeyValue>>();
 
-            javascript::Expression::FunctionCall {
-                function: Box::new(javascript::Expression::ArrowFunction {
+            interpretable::Expression::FunctionCall {
+                function: Box::new(interpretable::Expression::ArrowFunction {
                     parameter: temporary_identifier,
-                    body: vec![javascript::Statement::Return(
-                        javascript::Expression::ObjectWithSpread {
+                    body: vec![interpretable::Statement::Return(
+                        interpretable::Expression::ObjectWithSpread {
                             spread: Box::new(temporary_variable),
                             key_values: updates,
                         },
@@ -423,21 +430,21 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
         InferredExpression::Block {
             statements,
             return_value,
-        } => javascript::Expression::FunctionCall {
-            argument: Box::new(javascript::Expression::Null),
-            function: Box::new(javascript::Expression::ArrowFunction {
-                parameter: javascript::Identifier("temp".to_string()),
+        } => interpretable::Expression::FunctionCall {
+            argument: Box::new(interpretable::Expression::Null),
+            function: Box::new(interpretable::Expression::ArrowFunction {
+                parameter: interpretable::Identifier("temp".to_string()),
                 body: transpile_statements(statements)
                     .into_iter()
-                    .chain(vec![javascript::Statement::Return(transpile_expression(
-                        *return_value,
-                    ))])
+                    .chain(vec![interpretable::Statement::Return(
+                        transpile_expression(*return_value),
+                    )])
                     .collect(),
             }),
         },
-        InferredExpression::Unit => javascript::Expression::Null,
+        InferredExpression::Unit => interpretable::Expression::Null,
         InferredExpression::Keyword(keyword) => {
-            javascript::Expression::String(keyword.representation)
+            interpretable::Expression::String(keyword.representation)
         }
     }
 }
@@ -446,38 +453,37 @@ fn transpile_property_name(property_name: PropertyName) -> String {
     format!("{}", property_name.0.representation)
 }
 
-pub fn build_function_argument(index: usize) -> javascript::Identifier {
-    javascript::Identifier(format!("_{}", index))
+pub fn build_function_argument(index: usize) -> interpretable::Identifier {
+    interpretable::Identifier(format!("_{}", index))
 }
 
 pub fn transpile_function_branch(
     function_branch: InferredFunctionBranch,
-) -> Vec<javascript::Statement> {
+) -> Vec<interpretable::Statement> {
     let transpiled_destructure_pattern = transpile_destructure_pattern(
         function_branch.parameter.kind,
-        javascript::Expression::Variable(build_function_argument(0)),
+        interpretable::Expression::Variable(build_function_argument(0)),
     );
 
     let body = transpiled_destructure_pattern
         .bindings
         .into_iter()
-        .map(|binding| javascript::Statement::Assignment {
-            is_declaration: true,
+        .map(|binding| interpretable::Statement::Assignment {
             assignment: binding,
         })
-        .chain(vec![javascript::Statement::Return(transpile_expression(
-            function_branch.body.expression,
-        ))])
-        .collect::<Vec<javascript::Statement>>();
+        .chain(vec![interpretable::Statement::Return(
+            transpile_expression(function_branch.body.expression),
+        )])
+        .collect::<Vec<interpretable::Statement>>();
     match join_expressions(transpiled_destructure_pattern.conditions, |left, right| {
-        javascript::Expression::LogicalAnd {
+        interpretable::Expression::LogicalAnd {
             left: Box::new(left),
             right: Box::new(right),
         }
     }) {
         None => body,
         Some(condition) => {
-            vec![javascript::Statement::If {
+            vec![interpretable::Statement::If {
                 condition,
                 if_true: body,
             }]
@@ -491,11 +497,11 @@ pub fn transpile_function_branch(
 /// join_expressions([a, b, c], &&) === Some(a && b && c)
 /// ```
 fn join_expressions<Join>(
-    expressions: Vec<javascript::Expression>,
+    expressions: Vec<interpretable::Expression>,
     join: Join,
-) -> Option<javascript::Expression>
+) -> Option<interpretable::Expression>
 where
-    Join: Fn(javascript::Expression, javascript::Expression) -> javascript::Expression,
+    Join: Fn(interpretable::Expression, interpretable::Expression) -> interpretable::Expression,
 {
     match expressions.split_first() {
         None => None,
@@ -515,23 +521,23 @@ where
 
 #[derive(Debug)]
 pub struct TranspiledDestructurePattern {
-    conditions: Vec<javascript::Expression>,
-    bindings: Vec<javascript::Assignment>,
+    conditions: Vec<interpretable::Expression>,
+    bindings: Vec<interpretable::Assignment>,
 }
 
 pub fn transpile_destructure_pattern(
     destructure_pattern: InferredDestructurePatternKind,
-    from_expression: javascript::Expression,
+    from_expression: interpretable::Expression,
 ) -> TranspiledDestructurePattern {
     match destructure_pattern {
         InferredDestructurePatternKind::Infinite { token, kind } => TranspiledDestructurePattern {
-            conditions: vec![javascript::Expression::Equals {
+            conditions: vec![interpretable::Expression::Equals {
                 left: Box::new(from_expression),
                 right: match kind {
                     InfinitePatternKind::String | InfinitePatternKind::Character => {
-                        Box::new(javascript::Expression::String(token.representation))
+                        Box::new(interpretable::Expression::String(token.representation))
                     }
-                    InfinitePatternKind::Integer => Box::new(javascript::Expression::Int(
+                    InfinitePatternKind::Integer => Box::new(interpretable::Expression::Int(
                         token.representation.parse().unwrap(),
                     )),
                 },
@@ -539,16 +545,16 @@ pub fn transpile_destructure_pattern(
             bindings: vec![],
         },
         InferredDestructurePatternKind::Boolean { value, .. } => TranspiledDestructurePattern {
-            conditions: vec![javascript::Expression::Equals {
+            conditions: vec![interpretable::Expression::Equals {
                 left: Box::new(from_expression),
-                right: Box::new(javascript::Expression::Boolean(value)),
+                right: Box::new(interpretable::Expression::Boolean(value)),
             }],
             bindings: vec![],
         },
         InferredDestructurePatternKind::Unit { .. } => TranspiledDestructurePattern {
-            conditions: vec![javascript::Expression::Equals {
+            conditions: vec![interpretable::Expression::Equals {
                 left: Box::new(from_expression),
-                right: Box::new(javascript::Expression::Null),
+                right: Box::new(interpretable::Expression::Null),
             }],
             bindings: vec![],
         },
@@ -581,7 +587,7 @@ pub fn transpile_destructure_pattern(
         }
         InferredDestructurePatternKind::Identifier(variable) => TranspiledDestructurePattern {
             conditions: vec![],
-            bindings: vec![javascript::Assignment {
+            bindings: vec![interpretable::Assignment {
                 left: transpile_identifier(*variable),
                 right: from_expression,
             }],
@@ -591,7 +597,7 @@ pub fn transpile_destructure_pattern(
             payload,
             ..
         } => {
-            let match_enum_tagname = javascript::Expression::HasTag {
+            let match_enum_tagname = interpretable::Expression::HasTag {
                 expression: Box::new(from_expression.clone()),
                 tag: constructor_name.representation,
             };
@@ -603,7 +609,7 @@ pub fn transpile_destructure_pattern(
                 None => None,
                 Some(payload) => Some(transpile_destructure_pattern(
                     payload.kind,
-                    javascript::Expression::GetEnumPayload(Box::new(from_expression)),
+                    interpretable::Expression::GetEnumPayload(Box::new(from_expression)),
                 )),
             };
             match rest {
@@ -623,7 +629,7 @@ pub fn transpile_destructure_pattern(
                     result,
                     transpile_destructure_pattern(
                         destructure_pattern.kind,
-                        javascript::Expression::MemberAccess {
+                        interpretable::Expression::MemberAccess {
                             object: Box::new(from_expression.clone()),
                             property: transpile_property_name(key),
                         },
@@ -655,40 +661,42 @@ pub fn transpile_destructure_pattern(
             /// ```
             fn into_in_place_assignment(
                 pattern: TranspiledDestructurePattern,
-            ) -> javascript::Expression {
+            ) -> interpretable::Expression {
                 let assignments = {
                     match pattern
                         .bindings
                         .into_iter()
-                        .map(|binding| javascript::Expression::Assignment(Box::new(binding)))
-                        .collect::<Vec<javascript::Expression>>()
+                        .map(|binding| interpretable::Expression::Assignment(Box::new(binding)))
+                        .collect::<Vec<interpretable::Expression>>()
                         .split_first()
                     {
-                        None => javascript::Expression::Boolean(true),
-                        Some((head, tail)) => javascript::Expression::LogicalOr {
-                            left: Box::new(javascript::Expression::Sequence(Box::new(NonEmpty {
-                                head: head.clone(),
-                                tail: tail.to_vec(),
-                            }))),
-                            right: Box::new(javascript::Expression::Boolean(true)),
+                        None => interpretable::Expression::Boolean(true),
+                        Some((head, tail)) => interpretable::Expression::LogicalOr {
+                            left: Box::new(interpretable::Expression::Sequence(Box::new(
+                                NonEmpty {
+                                    head: head.clone(),
+                                    tail: tail.to_vec(),
+                                },
+                            ))),
+                            right: Box::new(interpretable::Expression::Boolean(true)),
                         },
                     }
                 };
                 match join_expressions(pattern.conditions, |left, right| {
-                    javascript::Expression::LogicalAnd {
+                    interpretable::Expression::LogicalAnd {
                         left: Box::new(left),
                         right: Box::new(right),
                     }
                 }) {
                     None => assignments,
-                    Some(conditions) => javascript::Expression::LogicalAnd {
+                    Some(conditions) => interpretable::Expression::LogicalAnd {
                         left: Box::new(conditions),
                         right: Box::new(assignments),
                     },
                 }
             }
             match join_expressions(in_place_assignments, |left, right| {
-                javascript::Expression::LogicalOr {
+                interpretable::Expression::LogicalOr {
                     left: Box::new(left),
                     right: Box::new(right),
                 }
