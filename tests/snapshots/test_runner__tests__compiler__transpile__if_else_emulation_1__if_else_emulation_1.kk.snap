@@ -25,8 +25,8 @@ EXIT CODE
 ============
 STDOUT
 ============
-Hello world
-Bye
+"Hello world"
+"Bye"
 
 ============
 STDERR

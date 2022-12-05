@@ -24,7 +24,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$firstName': 'Adam', '$lastName': 'James' }
+{ firstName = "Adam", lastName = "James" }
 
 ============
 STDERR

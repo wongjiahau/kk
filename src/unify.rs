@@ -1156,7 +1156,7 @@ impl Positionable for DestructurePattern {
                 right_parenthesis,
             } => left_parenthesis.position.join(right_parenthesis.position),
             DestructurePattern::Record {
-                left_curly_bracket: left_curly_bracket,
+                left_curly_bracket,
                 right_curly_bracket,
                 ..
             } => left_curly_bracket
@@ -1242,7 +1242,7 @@ impl Positionable for Expression {
                 property_name,
             } => expression.position().join(property_name.position),
             Expression::Record {
-                left_curly_bracket: left_curly_bracket,
+                left_curly_bracket,
                 right_curly_bracket,
                 ..
             } => left_curly_bracket
@@ -2343,7 +2343,7 @@ fn infer_expression_type_(
         }
         Expression::Record {
             key_value_pairs,
-            left_curly_bracket: left_curly_bracket,
+            left_curly_bracket,
             right_curly_bracket,
             wildcard,
             ..
@@ -3784,7 +3784,7 @@ fn infer_destructure_pattern_(
         DestructurePattern::Record {
             wildcard,
             key_value_pairs,
-            left_curly_bracket: left_curly_bracket,
+            left_curly_bracket,
             right_curly_bracket,
             ..
         } => {

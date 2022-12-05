@@ -5,10 +5,12 @@ use std::process;
 use indexmap::IndexMap;
 
 use crate::interpret;
+use crate::interpret::interpret_statements;
 use crate::module::ModuleMeta;
 use crate::module::ModuleUid;
 use crate::parse::ParseError;
 use crate::stringify_error::print_compile_error;
+use crate::transpile::javascript::print_statements;
 use crate::transpile::transpile_program;
 use crate::unify::read_module;
 use crate::unify::UnifyError;
@@ -49,6 +51,7 @@ pub fn compile(path: PathBuf) {
         ) {
             Err(compile_error) => print_compile_error(compile_error),
             Ok(result) => {
+                let interpret = true;
                 // interpret::interpret_statements(
                 //     result
                 //         .imported_modules
@@ -58,26 +61,32 @@ pub fn compile(path: PathBuf) {
                 //         .map(|statement| statement.into())
                 //         .collect(),
                 // );
-                use std::process::Command;
                 // println!("result = {:#?}", result);
-                let javascript = transpile_program(result);
-                // println!("{}", javascript);
-                let output = Command::new("node")
-                    .arg("-e")
-                    .arg(javascript)
-                    .output()
-                    .expect("Failed to run NodeJS binary");
+                if interpret {
+                    let ast = transpile_program(result);
+                    // println!("{}", print_statements(ast.clone()));
+                    interpret_statements(ast);
+                } else {
+                    use std::process::Command;
+                    let javascript = print_statements(transpile_program(result));
+                    println!("{}", javascript);
+                    let output = Command::new("node")
+                        .arg("-e")
+                        .arg(javascript)
+                        .output()
+                        .expect("Failed to run NodeJS binary");
 
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                if !stdout.is_empty() {
-                    println!("{}", stdout.trim())
-                }
-                if !stderr.is_empty() {
-                    eprintln!("{}", stderr.trim())
-                }
-                if let Some(code) = output.status.code() {
-                    process::exit(code)
+                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    if !stdout.is_empty() {
+                        println!("{}", stdout.trim())
+                    }
+                    if !stderr.is_empty() {
+                        eprintln!("{}", stderr.trim())
+                    }
+                    if let Some(code) = output.status.code() {
+                        process::exit(code)
+                    }
                 }
             }
         },

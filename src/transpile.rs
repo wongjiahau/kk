@@ -1,7 +1,7 @@
 use crate::inferred_ast::*;
 use crate::{non_empty::NonEmpty, raw_ast::InfinitePatternKind, unify::UnifyProgramResult};
 
-mod javascript {
+pub mod javascript {
     use crate::non_empty::NonEmpty;
 
     #[derive(Debug, Clone)]
@@ -48,27 +48,36 @@ mod javascript {
         Boolean(bool),
         Variable(Identifier),
         String(String),
-        Number {
-            representation: String,
-        },
+        Float(f64),
+        Int(i64),
         StringConcat(Vec<Expression>),
         Array(Vec<Expression>),
         FunctionCall {
             function: Box<Expression>,
-            arguments: Vec<Expression>,
+            argument: Box<Expression>,
         },
         ArrowFunction {
-            parameters: Vec<Identifier>,
+            parameter: Identifier,
             body: Vec<Statement>,
         },
         Object(Vec<ObjectKeyValue>),
+
+        EnumConstructor {
+            tag: String,
+            payload: Option<Box<Expression>>,
+        },
+        HasTag {
+            expression: Box<Expression>,
+            tag: String,
+        },
+        GetEnumPayload(Box<Expression>),
         ObjectWithSpread {
             spread: Box<Expression>,
             key_values: Vec<ObjectKeyValue>,
         },
         MemberAccess {
             object: Box<Expression>,
-            property: Box<Expression>,
+            property: String,
         },
         UnsafeJavascriptCode(String),
         Assignment(Box<Assignment>),
@@ -77,7 +86,7 @@ mod javascript {
     #[derive(Debug, Clone)]
     pub struct ObjectKeyValue {
         pub key: Identifier,
-        pub value: Option<Box<Expression>>,
+        pub value: Box<Expression>,
     }
 
     pub fn print_statements(statements: Vec<Statement>) -> String {
@@ -144,7 +153,6 @@ mod javascript {
                         format!("(\"{}\")", string)
                     }
                 }
-                Expression::Number { representation } => representation,
                 Expression::StringConcat(expressions) => {
                     let result = expressions
                         .into_iter()
@@ -161,28 +169,13 @@ mod javascript {
                         .join(",");
                     format!("[{}]", elements)
                 }
-                Expression::FunctionCall {
-                    function,
-                    arguments,
-                } => {
-                    format!(
-                        "(({})({}))",
-                        function.print(),
-                        arguments
-                            .into_iter()
-                            .map(Printable::print)
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                    )
+                Expression::FunctionCall { function, argument } => {
+                    format!("(({})({}))", function.print(), argument.print())
                 }
-                Expression::ArrowFunction { parameters, body } => {
+                Expression::ArrowFunction { parameter, body } => {
                     format!(
                         "(({}) => {{{}}})",
-                        parameters
-                            .into_iter()
-                            .map(Printable::print)
-                            .collect::<Vec<String>>()
-                            .join(","),
+                        parameter.print(),
                         print_statements(body)
                     )
                 }
@@ -208,7 +201,7 @@ mod javascript {
                     )
                 }
                 Expression::MemberAccess { object, property } => {
-                    format!("({})[{}]", object.print(), property.print())
+                    format!("({})[{}]", object.print(), property)
                 }
                 Expression::UnsafeJavascriptCode(code) => code,
                 Expression::Sequence(expressions) => {
@@ -220,19 +213,17 @@ mod javascript {
                 Expression::Assignment(assignment) => {
                     format!("({})", assignment.print())
                 }
+                Expression::Float(_) => todo!(),
+                Expression::Int(_) => todo!(),
+                Expression::EnumConstructor { tag, payload } => todo!(),
+                Expression::HasTag { expression, tag } => todo!(),
+                Expression::GetEnumPayload(_) => todo!(),
             }
         }
     }
     impl Printable for ObjectKeyValue {
         fn print(self) -> String {
-            format!(
-                "{}: {}",
-                self.key.clone().print(),
-                match self.value {
-                    Some(value) => value.print(),
-                    None => self.key.print(),
-                }
-            )
+            format!("{}: {}", self.key.clone().print(), self.value.print())
         }
     }
     impl Printable for Identifier {
@@ -245,28 +236,22 @@ mod javascript {
 const ENUM_TAG_NAME: &str = "$";
 const ENUM_PAYLOAD_NAME: &str = "_";
 
-pub fn transpile_program(unify_project_result: UnifyProgramResult) -> String {
+pub fn transpile_program(unify_project_result: UnifyProgramResult) -> Vec<javascript::Statement> {
     // TODO: move this to a file
     let built_in_library =
         javascript::Statement::Expression(javascript::Expression::UnsafeJavascriptCode(
             " const print_0 = (x) => console.log(x); ".to_string(),
         ));
 
-    let statements = vec![built_in_library]
+    unify_project_result
+        .imported_modules
+        .clone()
         .into_iter()
-        .chain(
-            unify_project_result
-                .imported_modules
-                .clone()
-                .into_iter()
-                .flat_map(|(_, imported_module)| imported_module.statements)
-                .chain(unify_project_result.entrypoint.statements)
-                .map(transpile_statement)
-                .flatten(),
-        )
-        .collect::<Vec<_>>();
-
-    javascript::print_statements(statements)
+        .flat_map(|(_, imported_module)| imported_module.statements)
+        .chain(unify_project_result.entrypoint.statements)
+        .map(transpile_statement)
+        .flatten()
+        .collect::<Vec<_>>()
 }
 
 pub fn transpile_statements(statements: Vec<InferredStatement>) -> Vec<javascript::Statement> {
@@ -315,9 +300,11 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
         InferredExpression::Character { representation } => {
             javascript::Expression::String(representation)
         }
-        InferredExpression::Float { representation }
-        | InferredExpression::Integer { representation } => {
-            javascript::Expression::Number { representation }
+        InferredExpression::Float { representation } => {
+            javascript::Expression::Float(representation.parse().unwrap())
+        }
+        InferredExpression::Integer { representation } => {
+            javascript::Expression::Int(representation.parse().unwrap())
         }
         InferredExpression::InterpolatedString { sections } => {
             javascript::Expression::StringConcat(
@@ -341,56 +328,45 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
             constructor_name,
             payload,
             ..
-        } => javascript::Expression::Object(vec![
-            javascript::ObjectKeyValue {
-                key: javascript::Identifier(ENUM_TAG_NAME.to_string()),
-                value: Some(Box::new(javascript::Expression::String(constructor_name))),
-            },
-            javascript::ObjectKeyValue {
-                key: javascript::Identifier(ENUM_PAYLOAD_NAME.to_string()),
-                value: Some(match payload {
-                    Some(payload) => Box::new(transpile_expression(*payload)),
-                    None => Box::new(javascript::Expression::Null),
-                }),
-            },
-        ]),
+        } => javascript::Expression::EnumConstructor {
+            tag: constructor_name,
+            payload: payload.map(|payload| Box::new(transpile_expression(*payload))),
+        },
         InferredExpression::RecordAccess {
             expression,
             property_name,
         } => javascript::Expression::MemberAccess {
             object: Box::new(transpile_expression(*expression)),
-            property: Box::new(javascript::Expression::String(transpile_property_name(
-                property_name,
-            ))),
+            property: transpile_property_name(property_name),
         },
         InferredExpression::Record { key_value_pairs } => javascript::Expression::Object(
             key_value_pairs
                 .into_iter()
                 .map(|(key, value)| javascript::ObjectKeyValue {
                     key: javascript::Identifier(transpile_property_name(key)),
-                    value: Some(Box::new(transpile_expression(value))),
+                    value: Box::new(transpile_expression(value)),
                 })
                 .collect::<Vec<javascript::ObjectKeyValue>>(),
         ),
         InferredExpression::BranchedFunction(function) => {
             let InferredBranchedFunction { branches } = *function;
-            let parameters = vec![build_function_argument(0)];
+            let parameter = build_function_argument(0);
             let body = branches
                 .map(transpile_function_branch)
                 .into_vector()
                 .into_iter()
                 .flatten()
                 .collect();
-            javascript::Expression::ArrowFunction { parameters, body }
+            javascript::Expression::ArrowFunction { parameter, body }
         }
         InferredExpression::FunctionCall(function) => {
             let InferredFunctionCall { function, argument } = *function;
             let function = transpile_expression(*function);
-            let arguments = vec![transpile_expression(*argument)];
+            let argument = transpile_expression(*argument);
 
             javascript::Expression::FunctionCall {
                 function: Box::new(function),
-                arguments,
+                argument: Box::new(argument),
             }
         }
         InferredExpression::Array { elements, .. } => {
@@ -410,7 +386,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                         new_value,
                     } => javascript::ObjectKeyValue {
                         key: javascript::Identifier(transpile_property_name(property_name)),
-                        value: Some(Box::new(transpile_expression(new_value))),
+                        value: Box::new(transpile_expression(new_value)),
                     },
                     InferredRecordUpdate::FunctionalUpdate {
                         property_name,
@@ -419,15 +395,13 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                         let property_name = transpile_property_name(property_name);
                         javascript::ObjectKeyValue {
                             key: javascript::Identifier(property_name.clone()),
-                            value: Some(Box::new(javascript::Expression::FunctionCall {
+                            value: Box::new(javascript::Expression::FunctionCall {
                                 function: Box::new(transpile_expression(function)),
-                                arguments: vec![javascript::Expression::MemberAccess {
+                                argument: Box::new(javascript::Expression::MemberAccess {
                                     object: Box::new(temporary_variable.clone()),
-                                    property: Box::new(javascript::Expression::String(
-                                        property_name,
-                                    )),
-                                }],
-                            })),
+                                    property: property_name,
+                                }),
+                            }),
                         }
                     }
                 })
@@ -435,7 +409,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
 
             javascript::Expression::FunctionCall {
                 function: Box::new(javascript::Expression::ArrowFunction {
-                    parameters: vec![temporary_identifier],
+                    parameter: temporary_identifier,
                     body: vec![javascript::Statement::Return(
                         javascript::Expression::ObjectWithSpread {
                             spread: Box::new(temporary_variable),
@@ -443,16 +417,16 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
                         },
                     )],
                 }),
-                arguments: vec![transpile_expression(*expression)],
+                argument: Box::new(transpile_expression(*expression)),
             }
         }
         InferredExpression::Block {
             statements,
             return_value,
         } => javascript::Expression::FunctionCall {
-            arguments: vec![],
+            argument: Box::new(javascript::Expression::Null),
             function: Box::new(javascript::Expression::ArrowFunction {
-                parameters: vec![],
+                parameter: javascript::Identifier("temp".to_string()),
                 body: transpile_statements(statements)
                     .into_iter()
                     .chain(vec![javascript::Statement::Return(transpile_expression(
@@ -469,7 +443,7 @@ pub fn transpile_expression(expression: InferredExpression) -> javascript::Expre
 }
 
 fn transpile_property_name(property_name: PropertyName) -> String {
-    format!("${}", property_name.0.representation)
+    format!("{}", property_name.0.representation)
 }
 
 pub fn build_function_argument(index: usize) -> javascript::Identifier {
@@ -557,9 +531,9 @@ pub fn transpile_destructure_pattern(
                     InfinitePatternKind::String | InfinitePatternKind::Character => {
                         Box::new(javascript::Expression::String(token.representation))
                     }
-                    InfinitePatternKind::Integer => Box::new(javascript::Expression::Number {
-                        representation: token.representation,
-                    }),
+                    InfinitePatternKind::Integer => Box::new(javascript::Expression::Int(
+                        token.representation.parse().unwrap(),
+                    )),
                 },
             }],
             bindings: vec![],
@@ -617,14 +591,9 @@ pub fn transpile_destructure_pattern(
             payload,
             ..
         } => {
-            let match_enum_tagname = javascript::Expression::Equals {
-                left: Box::new(javascript::Expression::MemberAccess {
-                    object: Box::new(from_expression.clone()),
-                    property: Box::new(javascript::Expression::String(ENUM_TAG_NAME.to_string())),
-                }),
-                right: Box::new(javascript::Expression::String(
-                    constructor_name.representation,
-                )),
+            let match_enum_tagname = javascript::Expression::HasTag {
+                expression: Box::new(from_expression.clone()),
+                tag: constructor_name.representation,
             };
             let first = TranspiledDestructurePattern {
                 conditions: vec![match_enum_tagname],
@@ -634,12 +603,7 @@ pub fn transpile_destructure_pattern(
                 None => None,
                 Some(payload) => Some(transpile_destructure_pattern(
                     payload.kind,
-                    javascript::Expression::MemberAccess {
-                        object: Box::new(from_expression),
-                        property: Box::new(javascript::Expression::String(
-                            ENUM_PAYLOAD_NAME.to_string(),
-                        )),
-                    },
+                    javascript::Expression::GetEnumPayload(Box::new(from_expression)),
                 )),
             };
             match rest {
@@ -661,9 +625,7 @@ pub fn transpile_destructure_pattern(
                         destructure_pattern.kind,
                         javascript::Expression::MemberAccess {
                             object: Box::new(from_expression.clone()),
-                            property: Box::new(javascript::Expression::String(
-                                transpile_property_name(key),
-                            )),
+                            property: transpile_property_name(key),
                         },
                     ),
                 )

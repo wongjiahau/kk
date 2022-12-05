@@ -31,13 +31,13 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': 'true', _: null }
-{ '$': 'true', _: null }
-{ '$': 'true', _: null }
-{ '$': 'true', _: null }
-{ '$': 'true', _: null }
-{ '$': 'false', _: null }
-{ '$': 'false', _: null }
+true
+true
+true
+true
+true
+false
+false
 
 ============
 STDERR

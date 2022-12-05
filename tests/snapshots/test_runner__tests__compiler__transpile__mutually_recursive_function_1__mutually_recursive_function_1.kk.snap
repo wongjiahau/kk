@@ -38,11 +38,11 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': 'false', _: null }
-{ '$': 'false', _: null }
-{ '$': 'true', _: null }
-{ '$': 'false', _: null }
-{ '$': 'true', _: null }
+false
+false
+true
+false
+true
 
 ============
 STDERR

@@ -1,6 +1,7 @@
 use crate::inferred_ast::InferredStatement;
 use crate::non_empty::NonEmpty;
 use crate::raw_ast::Token;
+use crate::transpile::javascript;
 use crossbeam_channel::{unbounded as channel, Receiver, Sender};
 use futures::future::{BoxFuture, FutureExt};
 use std::collections::HashMap;
@@ -16,13 +17,18 @@ enum Value {
     Int64(i64),
     Float32(f64),
     Boolean(bool),
-    String(Token),
-    TagOnlyVariant(Token),
-    Variant(ValueVariant),
+    String(String),
+    TagOnlyVariant(String),
+    Variant {
+        tag: String,
+        payload: Box<Value>
+    },
     NativeFunction(NativeFunction),
     ResumeFunction(ResumeFunction),
     Object(ValueObject),
     Function(ValueFunction),
+    Unit,
+    Array(Vec<Value>),
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +52,8 @@ struct ValueVariant {
 #[derive(Debug, Clone)]
 struct ValueFunction {
     closure: Environment,
-    branches: NonEmpty<ValueFunctionBranch>,
+    parameter: String,
+    body: Vec<javascript::Statement>
 }
 
 #[derive(Clone, Debug)]
@@ -66,12 +73,11 @@ impl Value {
             Value::Int64(integer) => integer.to_string(),
             Value::Float32(float) => float.to_string(),
             Value::Boolean(boolean) => boolean.to_string(),
-            Value::TagOnlyVariant(tag) => tag.representation.clone(),
-            Value::Variant(variant) => format!(
-                "{} {} {}",
-                variant.left.print(),
-                variant.tag.representation,
-                variant.right.print()
+            Value::TagOnlyVariant(tag) => tag.clone(),
+            Value::Variant { tag, payload } => format!(
+                "{}({})",
+                tag,
+                payload.print()
             ),
             Value::NativeFunction(function) => format!("<native:{:#?}>", function),
             Value::Object(object) => {
@@ -79,15 +85,17 @@ impl Value {
                     .pairs
                     .iter()
                     .sorted_by(|a, b| a.0.cmp(&b.0))
-                    .map(|(name, value)| format!("{}: {}", name, value.print()));
-                format!("({})", values.join(", "))
+                    .map(|(name, value)| format!("{} = {}", name, value.print()));
+                format!("{{ {} }}", values.join(", "))
             }
             Value::Function(function) => format!("<function>:({:#?})", function),
-            Value::String(string) => format!("`{}`", string.representation.to_string()),
+            Value::String(string) => format!("\"{}\"", string.to_string()),
             Value::ResumeFunction(resume_function) => format!(
                 "<resume_function({})>",
                 resume_function.handler.name.representation
             ),
+            Value::Unit => "()".to_string(),
+            Value::Array(values) => format!("[ {} ]", values.into_iter().map(|value| value.print()).collect_vec().join(", "))
         }
     }
 }
@@ -143,7 +151,7 @@ impl Environment {
             parent: None,
             bindings: HashMap::from(
                 [
-                    ("print", Value::NativeFunction(NativeFunction::Print)),
+                    ("print_0", Value::NativeFunction(NativeFunction::Print)),
                     ("+", Value::NativeFunction(NativeFunction::Plus)),
                     ("*", Value::NativeFunction(NativeFunction::Multiply)),
                     ("<", Value::NativeFunction(NativeFunction::LessThan)),
@@ -226,8 +234,12 @@ pub struct EffectHandlerPerformValue {
     resume_handled_thread: Sender<Evalled>,
 }
 
-#[derive(Clone, Debug)]
-pub enum EvalError {
+#[derive(Debug)]
+enum EvalError {
+    Return((Value, Vec<Promise>)),
+
+
+
     /// This is used for exiting evaluation of a handled thread that is not resumed.
     Exit,
     NoEffectHandlerFound {
@@ -256,8 +268,45 @@ trait Eval {
     fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError>;
 }
 
-pub fn interpret_statements(statements: Vec<InferredStatement>) {
-    //
+pub fn interpret_statements(statements: Vec<javascript::Statement>) {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let mut global = Environment::global();
+
+            let promises = statements
+                .into_iter()
+                .map(|statement| {
+                    let (_, promises) = statement.eval(&mut global).unwrap();
+                    promises
+                })
+                .collect_vec()
+                .into_iter()
+                .flatten()
+                .collect();
+
+            // Refer https://rust-lang.github.io/async-book/07_workarounds/04_recursion.html
+            fn run_promises(promises: Vec<Promise>) -> BoxFuture<'static, ()> {
+                async move {
+                    for promise in promises {
+                        let (result,) = tokio::join!(promise.handle);
+
+                        let (_, promises) = call_function(
+                            &mut Environment::global(),
+                            promise.callback,
+                            result.unwrap(),
+                        )
+                        .unwrap();
+
+                        run_promises(promises).await
+                    }
+                }
+                .boxed()
+            }
+            run_promises(promises).await
+        });
 }
 
 pub fn interpret(expression: Expression) {
@@ -297,15 +346,243 @@ enum HandlerResponse {
     BodyPerform(EffectHandlerPerformValue),
 }
 
-impl InferredStatement {
+impl Eval for javascript::Statement {
     fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
         match self {
-            InferredStatement::Let { access, left, right } => todo!(),
-            InferredStatement::Expression(_) => todo!(),
+            javascript::Statement::Assignment {
+                is_declaration,
+                assignment,
+            } => {
+                let (value, promises) = assignment.right.eval(env)?;
+                env.set_value(assignment.left.0, value)?;
+                Ok((Value::Unit, promises))
+            }
+            javascript::Statement::Expression(expression) => expression.eval(env),
+            javascript::Statement::Return(expression) => {
+                Err(EvalError::Return(expression.eval(env)?))
+            }
+            javascript::Statement::If { condition, if_true } => {
+                let (value, promises) = condition.eval(env)?;
+                match value {
+                    Value::Boolean(true) => { if_true.eval(env) }
+
+                    // O.O Javascript-style falsy value???
+                    _ => Ok((Value::Unit, vec![]))
+
+                }
+            },
         }
     }
-
 }
+
+impl Eval for javascript::Expression {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
+        match self {
+            javascript::Expression::Sequence(expressions) => {
+                let (expression, promises) = expressions.head.eval(env)?;
+                let expressions = expressions
+                    .tail
+                    .into_iter()
+                    .map(|expression| expression.eval(env))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                let (expressions, promisess): (Vec<Value>, Vec<Vec<Promise>>) = expressions.into_iter().unzip();
+                let promises = promises.into_iter().chain(promisess.into_iter().flatten()).collect();
+                match expressions.split_last() {
+                    Some((last, _)) => Ok((last.clone(), promises)),
+                    None => Ok((expression, promises))
+                }
+            },
+            javascript::Expression::LogicalOr { left, right } => {
+                let (left, promises1) = left.eval(env)?;
+                match left {
+                    Value::Boolean(a) if a => {
+                        // Short circuit, no need to evaluate right
+                        Ok((Value::Boolean(true), promises1))
+                    },
+                    _ => {
+                        let (right, promises2) = right.eval(env)?;
+
+                        let promises = promises1.into_iter().chain(promises2.into_iter()).collect();
+                        match right {
+                            Value::Boolean(b) => {
+                                Ok((Value::Boolean(b), promises))
+                            }
+                            _ => unreachable!("left = {:#?}, right = {:#?}", left.print(), right)
+                        }
+                    },
+                }
+            },
+            javascript::Expression::LogicalAnd { left, right } => {
+                let (left, promises1) = left.eval(env)?;
+                match left {
+                    Value::Boolean(false) => Ok((Value::Boolean(false), promises1)),
+                    _ => {
+                        let (right, promises2) = right.eval(env)?;
+                        let promises = promises1.into_iter().chain(promises2.into_iter()).collect();
+                        match right {
+                            Value::Boolean(b) => {
+                                Ok((Value::Boolean(b), promises))
+                            }
+                            _ => unreachable!("left = {:#?}, right = {:#?}", left.print(), right)
+                        }
+
+                    }
+                }
+
+            },
+            javascript::Expression::Equals { left, right } => {
+                let (left, promises1) = left.eval(env)?;
+                let (right, promises2) = right.eval(env)?;
+                let promises = promises1.into_iter().chain(promises2.into_iter()).collect();
+                match (left, right) {
+                    (Value::String(a), Value::String(b)) => Ok((Value::Boolean(a == b), promises)),
+                    (Value::Unit, Value::Unit) => Ok((Value::Boolean(true), vec![])),
+                    (left, right) => todo!("(left, right)=({:#?},{:#?})", left, right)
+                }
+            },
+            javascript::Expression::Null => Ok((Value::Unit, vec![])),
+            javascript::Expression::Boolean(boolean) => Ok((Value::Boolean(boolean), vec![])),
+            javascript::Expression::Variable(identifier) => Ok((env.get_value(&Token::dummy_identifier(identifier.0)).unwrap(), vec![])),
+            javascript::Expression::String(string) => Ok((Value::String(string), vec![])),
+            javascript::Expression::StringConcat(expressions) => {
+                let strings = expressions
+                    .into_iter()
+                    .map(|expression| {
+                        Ok(
+                            match expression.eval(env)? {
+                                (Value::String(string), promises) => {
+                                    Some((string, promises))
+                                },
+                                _ => None
+
+
+                            }
+                            .unwrap()
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let (strings, promises): (Vec<String>, Vec<Vec<Promise>>) = strings.into_iter().unzip();
+                Ok((Value::String(strings.join("")), promises.into_iter().flatten().collect()))
+            },
+            javascript::Expression::Array(expressions) => {
+                let (values, promises): (Vec<Value>, Vec<Vec<Promise>>) = expressions
+                    .into_iter()
+                    .map(|expression| expression.eval(env))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .unzip();
+                Ok((Value::Array(values), promises.into_iter().flatten().collect()))
+            },
+            javascript::Expression::FunctionCall { function, argument } => {
+                let mut argument = argument.eval(env)?;
+                let mut function = function.eval(env)?;
+
+                let mut result = call_function(env, function.0, argument.0)?;
+
+                let mut promises = vec![];
+                promises.append(&mut argument.1);
+                promises.append(&mut function.1);
+                promises.append(&mut result.1);
+
+                Ok((result.0, promises))
+            }
+            javascript::Expression::ArrowFunction { parameter, body } => {
+                Ok((
+                        Value::Function(ValueFunction {
+                            closure: env.clone(),
+                            parameter: parameter.0,
+                            body
+                        }),
+                        vec![],
+                        ))
+            },
+            javascript::Expression::Object(key_values) => {
+                let mut pairs = HashMap::new();
+                let mut promises = vec![];
+                for key_value in key_values {
+                    let (value, new_promises) = key_value.value.eval(env)?;
+                    pairs.insert(key_value.key.0, value);
+                    promises.extend(new_promises)
+                }
+
+                Ok((Value::Object(ValueObject { pairs }), promises))
+            },
+            javascript::Expression::ObjectWithSpread { spread, key_values } => {
+                let (object, promises) = spread.eval(env)?;
+                let mut promises = promises;
+                match object {
+                    Value::Object(mut object) => {
+                        for key_value in key_values {
+                            let (value, new_promises) = key_value.value.eval(env)?;
+                            promises.extend(new_promises);
+                            object.pairs.insert(key_value.key.0, value);
+                        }
+                        Ok((Value::Object(object), promises))
+
+                    }
+                    _ => unreachable!()
+                }
+                
+            }
+            javascript::Expression::MemberAccess { object, property } => {
+                let (object, promises) = object.eval(env)?;
+                match object {
+                    Value::Object(object) => {
+                        let value = object
+                            .pairs
+                            .iter()
+                            .find(|pair| pair.0.eq(&property))
+                            .unwrap()
+                            .1
+                            .clone();
+                        Ok((value, promises))
+                    }
+                    _ => unreachable!()
+                }
+            },
+            javascript::Expression::UnsafeJavascriptCode(_) => todo!(),
+            javascript::Expression::Assignment(assignment) => {
+                let (value, promises) = assignment.right.eval(env)?;
+                env.set_value(assignment.left.0, value.clone())?;
+                Ok((value, promises))
+            }
+            javascript::Expression::Float(_) => todo!(),
+            javascript::Expression::Int(int) => Ok((Value::Int64(int), vec![])),
+            javascript::Expression::EnumConstructor { tag, payload } => {
+                match payload {
+                    None => Ok((Value::TagOnlyVariant(tag), vec![])),
+                    Some(payload) => {
+                        let (payload, promises) = payload.eval(env)?;
+                        Ok((Value::Variant { tag, payload: Box::new(payload) }, promises))
+                    }
+                }
+            },
+            javascript::Expression::HasTag { expression, tag } => {
+                let (value, promises) = expression.eval(env)?;
+                match value {
+                    Value::Variant { tag: tag2, .. } => {
+                        Ok((Value::Boolean(tag == tag2), promises))
+                    }
+                    Value::TagOnlyVariant(tag2) => {
+                        Ok((Value::Boolean(tag == tag2), promises))
+                    }
+                    _ => unreachable!()
+                }
+            }
+            javascript::Expression::GetEnumPayload(expression) => {
+                let (value, promises) = expression.eval(env)?;
+                match value {
+                    Value::Variant { tag, payload } => {
+                        Ok((*payload, promises))
+                    }
+                    _ => unreachable!()
+                }
+            }
+        }
+    }
+}
+
 
 impl Eval for Expression {
     fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
@@ -315,7 +592,7 @@ impl Eval for Expression {
             Expression::ObjectAccess(object_access) => object_access.eval(env),
             Expression::Array(_) => todo!(),
             Expression::Function(function) => function.eval(env),
-            Expression::String(string) => Ok((Value::String(string), Vec::new())),
+            Expression::String(string) => Ok((Value::String(string.representation), Vec::new())),
             Expression::Identifier(name) => Ok((env.get_value(&name)?, Vec::new())),
             Expression::Number(Number::Int64(integer)) => Ok((Value::Int64(integer), Vec::new())),
             Expression::Number(Number::Float64(float)) => todo!(),
@@ -324,15 +601,11 @@ impl Eval for Expression {
                 let mut right = variant.right.eval(env)?;
                 left.1.append(&mut right.1);
                 Ok((
-                    Value::Variant(ValueVariant {
-                        left: Box::new(left.0),
-                        tag: variant.tag,
-                        right: Box::new(right.0),
-                    }),
+                    todo!(),
                     left.1,
                 ))
             }
-            Expression::TagOnlyVariant(variant) => Ok((Value::TagOnlyVariant(variant), Vec::new())),
+            Expression::TagOnlyVariant(variant) => Ok((Value::TagOnlyVariant(variant.representation), Vec::new())),
             Expression::InternalOp(op) => op.eval(env),
             Expression::Parenthesized(parenthesized) => parenthesized.expression.eval(env),
             Expression::EffectHandlerNode(handler) => handler.eval(env),
@@ -474,29 +747,10 @@ impl Pattern {
                 Ok(Some(env))
             }
             (Pattern::TagOnlyVariant(pattern), Value::TagOnlyVariant(value)) => {
-                Ok(if pattern.representation == value.representation {
-                    Some(Environment::new(None))
-                } else {
-                    None
-                })
+                todo!()
             }
-            (Pattern::Variant { left, tag, right }, Value::Variant(value)) => {
-                if tag.representation != value.tag.representation {
-                    Ok(None)
-                } else {
-                    match (
-                        left.matches(value.left.as_ref())?,
-                        right.matches(value.right.as_ref())?,
-                    ) {
-                        (Some(bindings_a), Some(bindings_b)) => {
-                            let mut env = Environment::new(None);
-                            env.combine(bindings_a);
-                            env.combine(bindings_b);
-                            Ok(Some(env))
-                        }
-                        _ => Ok(None),
-                    }
-                }
+            (Pattern::Variant { left, tag, right }, Value::Variant {tag: _, payload}) => {
+                todo!()
             }
             (Pattern::Object { pairs, .. }, Value::Object(value)) => {
                 let mut env = Environment::new(None);
@@ -518,16 +772,7 @@ impl Pattern {
 
 impl Eval for Function {
     fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
-        Ok((
-            Value::Function(ValueFunction {
-                closure: env.clone(),
-                branches: self.branches.map(|branch| ValueFunctionBranch {
-                    parameter: *branch.parameter,
-                    body: *branch.body,
-                }),
-            }),
-            vec![],
-        ))
+        todo!()
     }
 }
 
@@ -568,10 +813,10 @@ impl Eval for InternalOp {
                 eval_native(env, callback, filename, |a, b| match (a, b) {
                     (Value::String(filename), callback) => {
                         let handle = tokio::spawn(async move {
-                            let content = tokio::fs::read_to_string(filename.representation)
+                            let content = tokio::fs::read_to_string(filename)
                                 .await
                                 .unwrap();
-                            Value::String(Token::dummy_identifier(content))
+                            Value::String(content)
                         });
 
                         Ok((unit(), vec![Promise { handle, callback }]))
@@ -616,22 +861,29 @@ fn call_function(
             call_native_function(env, native_function, argument)
         }
         Value::Function(function) => {
-            for branch in function.branches.into_vector() {
-                let mut env = {
-                    // TODO: think about how to make this work for both closure and effect handler
-                    // Note: if the logic here is wrong, it will cause Effect handler to not work
-                    let mut child_env = env.new_child();
-                    let closure = function.closure.clone();
-                    child_env.combine(closure);
-                    child_env
-                };
+            let mut env = {
+                // TODO: think about how to make this work for both closure and effect handler
+                // Note: if the logic here is wrong, it will cause Effect handler to not work
+                let mut child_env = env.new_child();
+                let closure = function.closure.clone();
+                child_env.combine(closure);
+                child_env
+            };
 
-                if let Some(bindings) = branch.parameter.matches(&argument)? {
-                    env.combine(bindings);
-                    return branch.body.eval(&mut env);
+            env.set_value(function.parameter, argument)?;
+
+            match function.body.eval(&mut env) {
+                Err(EvalError::Return((value, promises))) => {
+                    return Ok((value, promises))
                 }
+                _ => unreachable!("One of the child statement should be Return statement")
+
             }
-            panic!("No matching branches")
+
+            unreachable!("Transpilation issue, the body of a function should always has a reachable Return statement");
+
+            // If no return statement found 
+            Ok((Value::Unit, vec![]))
         }
         Value::ResumeFunction(resume_function) => {
             // Send a value to resume the handled thread
@@ -646,6 +898,18 @@ fn call_function(
             )
         }
         value => Err(EvalError::NotAFunction { value }),
+    }
+}
+
+impl Eval for Vec<javascript::Statement> {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, EvalError> {
+        let mut promises = vec![];
+        for statement in self {
+            let (_, new_promises) = statement.eval(env)?;
+            promises.extend(new_promises);
+
+        };
+        Ok((Value::Unit, promises))
     }
 }
 
@@ -678,16 +942,18 @@ fn call_native_function(
         let dummy = Token::dummy_identifier("x".to_string());
         Value::Function(ValueFunction {
             closure: env.clone(),
-            branches: NonEmpty {
-                head: ValueFunctionBranch {
-                    parameter: Pattern::Identifier(dummy.clone()),
-                    body: Expression::InternalOp(Box::new(internal_op(
-                        Expression::Identifier(dummy),
-                        expression,
-                    ))),
-                },
-                tail: vec![],
-            },
+            body: todo!(),
+            parameter: todo!()
+                // NonEmpty {
+                // head: ValueFunctionBranch {
+                //     parameter: Pattern::Identifier(dummy.clone()),
+                //     body: Expression::InternalOp(Box::new(internal_op(
+                //         Expression::Identifier(dummy),
+                //         expression,
+                //     ))),
+                // },
+                // tail: vec![],
+            // },
         })
     }
     match function {
@@ -697,7 +963,7 @@ fn call_native_function(
         }
         NativeFunction::ReadFile => match argument {
             Value::String(filename) => Ok((
-                curry_binary_op(env, Expression::String(filename), &|a, b| {
+                curry_binary_op(env, Expression::String(Token::dummy_identifier(filename)), &|a, b| {
                     InternalOp::ReadFile {
                         filename: a,
                         callback: b,

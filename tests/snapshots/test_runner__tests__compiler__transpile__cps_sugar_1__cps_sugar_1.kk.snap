@@ -31,10 +31,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-{
-  '$': 'some',
-  _: { '$x': 'hi', '$y': 2, '$z': { '$': 'none', _: null } }
-}
+some({ x = "hi", y = 2, z = none })
 
 ============
 STDERR

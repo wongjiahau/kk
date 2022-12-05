@@ -25,8 +25,8 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': 'none', _: null }
-{ '$': 'some', _: '%hello world%' }
+none
+some("%hello world%")
 
 ============
 STDERR

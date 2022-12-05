@@ -22,9 +22,9 @@ EXIT CODE
 ============
 STDOUT
 ============
-Hello
-World
-Hello
+"Hello"
+"World"
+"Hello"
 
 ============
 STDERR

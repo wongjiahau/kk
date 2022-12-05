@@ -893,7 +893,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 "The following variable is required but not found:\n\n{}: {}",
                 missing_constraint.name,
                 stringify_type(missing_constraint.type_value, 0)
-                
             )
         },
         UnifyErrorKind::ConstraintUnsatisfied { interface_name, for_types } => StringifiedError {
@@ -914,11 +913,11 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         },
         UnifyErrorKind::TopLevelLetStatementCannotBeDestructured => todo!(),
         UnifyErrorKind::MissingTypeAnnotationForTopLevelBinding => todo!(),
-        UnifyErrorKind::CannotBeOverloaded {name} => StringifiedError { 
+        UnifyErrorKind::CannotBeOverloaded {name} => StringifiedError {
             summary: format!("`{}` cannot be overloaded", name), 
             body: "".to_string() 
         },
-        UnifyErrorKind::AmbiguousSymbol { matching_value_symbols } => StringifiedError { 
+        UnifyErrorKind::AmbiguousSymbol { matching_value_symbols } => StringifiedError {
             summary: "Ambiguous Symbol".to_string(), 
             body: format!(
                 "Matching types:\n\n{}\n\nPut type annotation for disambiguation.", 
@@ -928,7 +927,7 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                   .collect::<Vec<String>>().join("\n\n")
             )
         },
-        UnifyErrorKind::MissingTildeClosure => StringifiedError { 
+        UnifyErrorKind::MissingTildeClosure => StringifiedError {
             summary: "Missing Tilde Closure".to_string(), 
             body: "Bang can only be used in a tilde closure, for example ~unwrap (banana ! + (apple !))".to_string()
         }
@@ -996,9 +995,7 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
         Type::Unit => indent_string("()".to_string(), indent_level * 2),
         Type::String => indent_string("String".to_string(), indent_level * 2),
         Type::Character => indent_string("Character".to_string(), indent_level * 2),
-        Type::Keyword(identifier) => {
-            indent_string(format!("#{}", identifier), indent_level * 2)
-        }
+        Type::Keyword(identifier) => indent_string(format!("#{}", identifier), indent_level * 2),
         Type::BuiltInOneArgumentType {
             kind,
             type_argument,
@@ -1060,15 +1057,13 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
             indent_string(result, indent_level * 2)
         }
         Type::Function(function_type) => {
-            let result = 
-            if function_type.type_constraints.is_empty() {
+            let result = if function_type.type_constraints.is_empty() {
                 format!(
                     "({} -> {})",
                     stringify_type(*function_type.parameter_type, 0),
                     stringify_type(*function_type.return_type, 0)
                 )
-            }
-            else {
+            } else {
                 format!(
                     "({} -> {} given {{{}}})",
                     stringify_type(*function_type.parameter_type, 0),
@@ -1077,8 +1072,11 @@ pub fn stringify_type(type_value: Type, indent_level: usize) -> String {
                         .type_constraints
                         .into_iter()
                         .map(|type_constraint| {
-                            format!("{}: {}", type_constraint.name, stringify_type(type_constraint.type_value, 0))
-
+                            format!(
+                                "{}: {}",
+                                type_constraint.name,
+                                stringify_type(type_constraint.type_value, 0)
+                            )
                         })
                         .collect::<Vec<String>>()
                         .join(", ")

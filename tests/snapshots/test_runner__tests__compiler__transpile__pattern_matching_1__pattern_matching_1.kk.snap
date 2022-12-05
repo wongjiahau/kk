@@ -27,10 +27,10 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': 'true', _: null }
-{ '$': 'false', _: null }
-{ '$': 'false', _: null }
-{ '$': 'false', _: null }
+true
+false
+false
+false
 
 ============
 STDERR

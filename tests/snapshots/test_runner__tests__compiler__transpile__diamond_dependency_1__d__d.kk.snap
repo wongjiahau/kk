@@ -21,8 +21,8 @@ EXIT CODE
 STDOUT
 ============
 Compile cache hit: tests/compiler/transpile/diamond_dependency_1/a
-{ '$b': 1 }
-{ '$c': 1 }
+{ b = 1 }
+{ c = 1 }
 
 ============
 STDERR

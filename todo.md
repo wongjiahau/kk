@@ -2,7 +2,7 @@
 
 - [x] change access to, private (default), export, public-export
 - [] allow name ambiguity (due to overloading) to propagate until a certain boundary before calling it an error [function_overloading_2 and 3]
-- [] migrate to use interpreter
+- [x] migrate to use interpreter
 - [] make operator to have lower precedence, dot to have higher precedence ?
 - [] better syntax for CPS, example ~async(getFoo ! + (getBar !))
 - [x] java package (folder as module, files within a folder can access the symbol of each other without having to write import)

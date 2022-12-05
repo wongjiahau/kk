@@ -25,10 +25,10 @@ EXIT CODE
 STDOUT
 ============
 123
-{ '$': 'Red', _: null }
-{ '$': 'Green', _: null }
-World
-Hello
+Red
+Green
+"World"
+"Hello"
 
 ============
 STDERR

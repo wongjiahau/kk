@@ -38,9 +38,9 @@ EXIT CODE
 ============
 STDOUT
 ============
-{ '$': 'true', _: null }
-{ '$': 'true', _: null }
-{ '$': 'false', _: null }
+true
+true
+false
 
 ============
 STDERR
