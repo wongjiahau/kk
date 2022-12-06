@@ -279,6 +279,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordExport => "used for exporting symbols",
         TokenType::KeywordClass => todo!(),
         TokenType::KeywordForall => todo!(),
+        TokenType::KeywordInnate => todo!(),
 
     }
 }
@@ -468,6 +469,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordExport => todo!(),
         TokenType::KeywordClass => todo!(),
         TokenType::KeywordForall => todo!(),
+        TokenType::KeywordInnate => todo!(),
     }
 }
 
@@ -828,7 +830,11 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
         UnifyErrorKind::MissingTildeClosure => StringifiedError {
             summary: "Missing Tilde Closure".to_string(), 
             body: "Bang can only be used in a tilde closure, for example ~unwrap (banana ! + (apple !))".to_string()
-        }
+        },
+        UnifyErrorKind::UnknownInnateFunction { name } => StringifiedError { 
+            summary: "Unknown innate function".to_string(), 
+            body: format!("The compiler does not has an innate function called `{}`", name) 
+        },
     }
 }
 
@@ -870,13 +876,6 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
     }
 }
 
-pub fn pluralize(input: String, count: usize) -> String {
-    if count > 1 {
-        format!("{}s", input)
-    } else {
-        input
-    }
-}
 
 pub fn indent_string(string: String, number_of_spaces: usize) -> String {
     string

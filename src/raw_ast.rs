@@ -232,12 +232,6 @@ pub enum DestructurePattern {
 }
 
 #[derive(Debug, Clone)]
-pub struct DestructuredRecordSpread {
-    double_period: Token,
-    identifier: Token,
-}
-
-#[derive(Debug, Clone)]
 pub struct DestructurePatternEnumConstructorPayload {
     pub left_parenthesis: Token,
     pub pattern: DestructurePattern,
@@ -270,6 +264,11 @@ pub enum Expression {
     },
     Unit {
         left_parenthesis: Token,
+        right_parenthesis: Token,
+    },
+    Tuple {
+        left_parenthesis: Token,
+        elements: Box<NonEmpty<Expression>>,
         right_parenthesis: Token,
     },
     Parenthesized {
@@ -329,6 +328,18 @@ pub enum Expression {
         bang: Token,
     },
     TildeClosure(TildeClosure),
+    InnateFunctionCall(InnateFunctionCall),
+}
+
+#[derive(Debug, Clone)]
+pub struct InnateFunctionCall {
+    pub function_name: Token,
+    pub argument: Box<Expression>,
+}
+impl InnateFunctionCall {
+    pub fn position(&self) -> Position {
+        self.function_name.position.join(self.argument.position())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -338,43 +349,6 @@ pub struct TildeClosure {
 
     /// The expression desugared into CPS
     pub expression: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub enum Block {
-    WithBrackets {
-        left_curly_bracket: Token,
-        statements: Vec<Statement>,
-        right_curly_bracket: Token,
-    },
-    WithoutBrackets {
-        statements: Box<NonEmpty<Statement>>,
-    },
-}
-
-impl Block {
-    pub fn statements(self) -> Vec<Statement> {
-        match self {
-            Block::WithBrackets { statements, .. } => statements,
-            Block::WithoutBrackets { statements } => statements.into_vector(),
-        }
-    }
-
-    pub fn position(&self) -> Position {
-        match self {
-            Block::WithBrackets {
-                left_curly_bracket,
-                statements,
-                right_curly_bracket,
-            } => left_curly_bracket
-                .position
-                .join(right_curly_bracket.position),
-            Block::WithoutBrackets { statements } => statements
-                .first()
-                .position()
-                .join(statements.last().position()),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -618,6 +592,7 @@ pub enum TokenType {
     KeywordCase,
     KeywordClass,
     KeywordForall,
+    KeywordInnate,
 }
 
 #[derive(Debug, Clone)]

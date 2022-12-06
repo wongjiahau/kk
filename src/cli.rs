@@ -1,7 +1,5 @@
 use crate::compile::compile;
-use crate::module::{ModuleMeta, ModuleUid};
 use clap::Clap;
-use std::fs;
 use std::path::PathBuf;
 
 #[derive(Clap)]

@@ -1,10 +1,8 @@
-use std::env;
 use std::path::PathBuf;
 use std::process;
 
 use indexmap::IndexMap;
 
-use crate::interpret;
 use crate::interpret::interpret_statements;
 use crate::module::ModuleMeta;
 use crate::module::ModuleUid;

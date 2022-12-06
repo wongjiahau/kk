@@ -798,7 +798,7 @@ impl<'a> Parser<'a> {
                 TokenType::LeftCurlyBracket => self.parse_record_or_block(token.clone()),
                 TokenType::LeftParenthesis => {
                     let left_parenthesis = token;
-                    self.parse_parenthesized_or_unit(left_parenthesis)
+                    self.parse_parenthesized_or_unit_or_tuple(left_parenthesis)
                 }
                 TokenType::Float => Ok(Expression::Float(token.clone())),
                 TokenType::Integer => Ok(Expression::Integer(token.clone())),
@@ -839,6 +839,14 @@ impl<'a> Parser<'a> {
                         tilde: token,
                         bind_function: Box::new(bind_function),
                         expression: Box::new(expression),
+                    }))
+                }
+                TokenType::KeywordInnate => {
+                    let context = None;
+                    let function_name = self.eat_token(TokenType::Identifier, context)?;
+                    Ok(Expression::InnateFunctionCall(InnateFunctionCall {
+                        function_name,
+                        argument: Box::new(self.parse_high_precedence_expression()?),
                     }))
                 }
                 _ => Err(Parser::invalid_token(token.clone(), context)),
@@ -1307,7 +1315,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_parenthesized_or_unit(
+    fn parse_parenthesized_or_unit_or_tuple(
         &mut self,
         left_parenthesis: Token,
     ) -> Result<Expression, ParseError> {
@@ -1318,11 +1326,36 @@ impl<'a> Parser<'a> {
             });
         }
 
-        Ok(Expression::Parenthesized {
-            left_parenthesis,
-            value: Box::new(self.parse_low_precedence_expression()?),
-            right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
-        })
+        let head = self.parse_low_precedence_expression()?;
+
+        if !self.try_eat_token(TokenType::Comma)?.is_some() {
+            Ok(Expression::Parenthesized {
+                left_parenthesis,
+                value: Box::new(head),
+                right_parenthesis: self.eat_token(TokenType::RightParenthesis, None)?,
+            })
+        } else {
+            // This is a tuple
+            let mut tail = vec![];
+            let (tail, right_parenthesis) = loop {
+                if let Some(right_parenthesis) = self.try_eat_token(TokenType::RightParenthesis)? {
+                    break (tail, right_parenthesis);
+                } else {
+                    tail.push(self.parse_low_precedence_expression()?);
+                    if self.try_eat_token(TokenType::Comma)?.is_none() {
+                        let right_parenthesis =
+                            self.eat_token(TokenType::RightParenthesis, None)?;
+                        break (tail, right_parenthesis);
+                    }
+                }
+            };
+
+            Ok(Expression::Tuple {
+                left_parenthesis,
+                elements: Box::new(NonEmpty { head, tail }),
+                right_parenthesis,
+            })
+        }
     }
 
     fn try_eat_string_literal(&mut self) -> Result<Option<StringLiteral>, ParseError> {
@@ -1645,24 +1678,7 @@ impl Expression {
                     },
                 )
             }
-            Expression::RecordUpdate {
-                expression,
-                left_curly_bracket,
-                updates,
-                right_curly_bracket,
-            } => todo!(),
-            Expression::Array {
-                left_square_bracket,
-                elements,
-                right_square_bracket,
-            } => todo!(),
-            Expression::Let {
-                keyword_let,
-                left,
-                right,
-                type_annotation,
-                body,
-            } => todo!(),
+            _ => todo!(),
         }
     }
 }

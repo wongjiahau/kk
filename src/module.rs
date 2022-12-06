@@ -1,11 +1,9 @@
 use crate::non_empty::NonEmpty;
-use crate::stringify_error::stringify_type;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
 use crate::{raw_ast::*, typ::*};
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 
 type CanonicalizedPath = String;
 #[derive(Debug, Clone)]
@@ -81,19 +79,6 @@ impl Scope {
 
     pub fn get_current_scope_name(&self) -> usize {
         self.current_scope_name
-    }
-
-    pub fn get_children_scope_names(&self, parent_scope_name: usize) -> Vec<usize> {
-        self.scope_graph
-            .iter()
-            .filter_map(|ScopePair { child, parent }| {
-                if *parent == parent_scope_name {
-                    Some(*child)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<usize>>()
     }
 
     pub fn get_parent_scope_name(&self, child_scope_name: usize) -> Option<usize> {
@@ -1029,18 +1014,6 @@ pub struct FunctionSignature {
     pub function_type: FunctionType,
 }
 
-impl FunctionSignature {
-    fn as_type_value(&self) -> Type {
-        match &self.type_variables {
-            Some(type_variables) => Type::TypeScheme(Box::new(TypeScheme {
-                type_variables: type_variables.clone(),
-                type_value: Type::Function(self.function_type.clone()),
-            })),
-            None => Type::Function(self.function_type.clone()),
-        }
-    }
-}
-
 /// To check whether the given pair of types overlapped
 /// This is used to prevent user from overloading a function that is
 /// indistinguishable from some existing function.
@@ -1178,11 +1151,6 @@ pub struct EnumConstructorSymbol {
     pub constructor_name: String,
     pub type_variables: Vec<String>,
     pub payload: Option<Type>,
-}
-
-#[derive(Debug, Clone)]
-pub struct UsageReference {
-    position: Position,
 }
 
 fn built_in_symbols() -> Vec<Symbol> {

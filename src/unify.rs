@@ -1,5 +1,6 @@
 use crate::{
     compile::{CompileError, CompileErrorKind},
+    innate_function::InnateFunction,
     non_empty::NonEmpty,
     parse::Parser,
     tokenize::Tokenizer,
@@ -390,6 +391,9 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::CpsBang { .. }
         | Expression::Keyword(_)
         | Expression::Function(_) => None,
+        Expression::InnateFunctionCall(innate_function_call) => {
+            Some(innate_function_call.position())
+        }
         Expression::TildeClosure(tilde_closure) => Some(tilde_closure.bind_function.position()),
         Expression::FunctionCall(function_call) => Some(function_call.function.position()),
         Expression::InterpolatedString { sections, .. } => {
@@ -420,6 +424,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
             })
         }),
         Expression::Array { elements, .. } => elements.iter().find_map(has_direct_function_call),
+        Expression::Tuple { elements, .. } => elements.find_map(has_direct_function_call),
         Expression::Parenthesized { value, .. } => has_direct_function_call(value),
         Expression::Let { body, .. } => has_direct_function_call(&body),
         Expression::Statements { current, next } => {
@@ -527,6 +532,9 @@ pub enum UnifyErrorKind {
         name: String,
     },
     MissingTildeClosure,
+    UnknownInnateFunction {
+        name: String,
+    },
 }
 
 /// We use IndexMap instead of HashMap for storing imported modules because we need to preserve the insertion order,
@@ -1155,6 +1163,11 @@ impl Positionable for Expression {
             Expression::Unit {
                 left_parenthesis,
                 right_parenthesis,
+            }
+            | Expression::Tuple {
+                left_parenthesis,
+                right_parenthesis,
+                ..
             } => left_parenthesis.position.join(right_parenthesis.position),
 
             Expression::String(string_literal) => string_literal.position(),
@@ -1216,6 +1229,7 @@ impl Positionable for Expression {
                 .tilde
                 .position
                 .join(tilde_closure.expression.position()),
+            Expression::InnateFunctionCall(innate_function_call) => innate_function_call.position(),
         }
     }
 }
@@ -1316,6 +1330,26 @@ pub fn unify_type_(
         (Type::Character, Type::Character) => Ok(Type::Character),
         (Type::Unit, Type::Unit) => Ok(Type::Unit),
         (Type::Keyword(a), Type::Keyword(b)) if a == b => Ok(Type::Keyword(a)),
+        (Type::Tuple(a), Type::Tuple(b)) => Ok(Type::Tuple(Box::new(NonEmpty {
+            head: unify_type(module, &a.head, &b.head, position)?,
+            tail: {
+                if a.tail.len() != b.tail.len() {
+                    Err(UnifyError {
+                        position,
+                        kind: UnifyErrorKind::TypeMismatch {
+                            expected_type: expected.clone(),
+                            actual_type: actual.clone(),
+                        },
+                    })
+                } else {
+                    Ok(a.tail
+                        .iter()
+                        .zip(b.tail.iter())
+                        .map(|(a, b)| unify_type(module, a, b, position))
+                        .collect::<Result<Vec<_>, _>>()?)
+                }?
+            },
+        }))),
         (
             Type::ExplicitTypeVariable(expected_type_variable),
             Type::ExplicitTypeVariable(actual_type_variable),
@@ -2449,6 +2483,56 @@ fn infer_expression_type_(
         }),
         Expression::TildeClosure(tilde_closure) => {
             infer_tilde_closure(module, expected_type, tilde_closure)
+        }
+        Expression::InnateFunctionCall(innate_function_call) => {
+            match innate_function_call.function_name.representation.as_str() {
+                "int_add" => {
+                    let expected_type = Type::Tuple(Box::new(NonEmpty {
+                        head: Type::Integer,
+                        tail: vec![Type::Integer],
+                    }));
+                    let argument = infer_expression_type(
+                        module,
+                        Some(expected_type),
+                        &innate_function_call.argument,
+                    )?;
+                    Ok(InferExpressionResult {
+                        expression: InferredExpression::InnateFunctionCall {
+                            function: InnateFunction::IntAdd,
+                            argument: Box::new(argument.expression),
+                        },
+                        type_value: Type::Integer,
+                    })
+                }
+                other => Err(UnifyError {
+                    position: innate_function_call.function_name.position,
+                    kind: UnifyErrorKind::UnknownInnateFunction {
+                        name: other.to_string(),
+                    },
+                }),
+            }
+        }
+        Expression::Tuple { elements, .. } => {
+            // TODO: pass in expected_type
+            let head = infer_expression_type(module, None, &elements.head)?;
+            let tail = elements
+                .tail
+                .iter()
+                .map(|element| infer_expression_type(module, None, element))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(InferExpressionResult {
+                expression: InferredExpression::Tuple(Box::new(NonEmpty {
+                    head: head.expression,
+                    tail: tail
+                        .iter()
+                        .map(|element| element.expression.clone())
+                        .collect(),
+                })),
+                type_value: Type::Tuple(Box::new(NonEmpty {
+                    head: head.type_value,
+                    tail: tail.into_iter().map(|element| element.type_value).collect(),
+                })),
+            })
         }
     }?;
     Ok(InferExpressionResult {

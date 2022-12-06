@@ -63,10 +63,6 @@ impl TokenizeError {
     }
 }
 
-struct Tokens {
-    characters_iterator: Peekable<IntoIter<Character>>,
-}
-
 pub struct Tokenizer {
     characters_iterator: Peekable<IntoIter<Character>>,
     peeked_tokens: Vec<Token>,
@@ -688,6 +684,7 @@ pub fn get_token_type(s: String) -> TokenType {
         "given" => TokenType::KeywordGiven,
         "as" => TokenType::KeywordAs,
         "class" => TokenType::KeywordClass,
+        "innate" => TokenType::KeywordInnate,
         _ => TokenType::Identifier,
     }
 }

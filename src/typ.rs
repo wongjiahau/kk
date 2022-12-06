@@ -1,5 +1,5 @@
 // This module stores the representation of Type
-use crate::{module::SymbolUid, non_empty::NonEmpty, raw_ast::Token};
+use crate::{module::SymbolUid, non_empty::NonEmpty};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {

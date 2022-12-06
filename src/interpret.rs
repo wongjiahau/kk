@@ -1,3 +1,5 @@
+use crate::innate_function::InnateFunction;
+use crate::non_empty::NonEmpty;
 use crate::raw_ast::Token;
 use crate::transpile::interpretable::{self, *};
 use futures::future::{BoxFuture, FutureExt};
@@ -18,6 +20,7 @@ enum Value {
     Function(ValueFunction),
     Unit,
     Array(Vec<Value>),
+    Tuple(Box<NonEmpty<Value>>),
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +63,7 @@ impl Value {
                     .collect_vec()
                     .join(", ")
             ),
+            Value::Tuple(_) => todo!(),
         }
     }
 }
@@ -211,6 +215,31 @@ impl Eval for interpretable::Statement {
                 }
             }
         }
+    }
+}
+
+impl Eval for NonEmpty<interpretable::Expression> {
+    fn eval(self, env: &mut Environment) -> Result<Evalled, ControlFlow> {
+        let (expression, promises) = self.head.eval(env)?;
+        let expressions = self
+            .tail
+            .into_iter()
+            .map(|expression| expression.eval(env))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let (expressions, promisess): (Vec<Value>, Vec<Vec<Promise>>) =
+            expressions.into_iter().unzip();
+        let promises = promises
+            .into_iter()
+            .chain(promisess.into_iter().flatten())
+            .collect();
+        Ok((
+            Value::Tuple(Box::new(NonEmpty {
+                head: expression,
+                tail: expressions,
+            })),
+            promises,
+        ))
     }
 }
 
@@ -379,7 +408,6 @@ impl Eval for interpretable::Expression {
                     _ => unreachable!(),
                 }
             }
-            interpretable::Expression::UnsafeJavascriptCode(_) => todo!(),
             interpretable::Expression::Assignment(assignment) => {
                 let (value, promises) = assignment.right.eval(env)?;
                 env.set_value(assignment.left.0, value.clone())?;
@@ -416,6 +444,21 @@ impl Eval for interpretable::Expression {
                 }
             }
             Expression::InternalOp(internal_op) => internal_op.eval(env),
+            Expression::Tuple(elements) => elements.eval(env),
+            Expression::InnateFunctionCall { function, argument } => match function {
+                InnateFunction::IntAdd => {
+                    let (value, promises) = argument.eval(env)?;
+                    match value {
+                        Value::Tuple(elements) => match (&elements.head, &elements.tail[0]) {
+                            (Value::Int64(a), Value::Int64(b)) => {
+                                Ok((Value::Int64(a + b), promises))
+                            }
+                            _ => unreachable!(),
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+            },
         }
     }
 }
@@ -511,6 +554,7 @@ impl Eval for Vec<interpretable::Statement> {
     }
 }
 
+// TODO: remove this function in favor of InnateFunction
 fn call_native_function(
     env: &mut Environment,
     function: NativeFunction,

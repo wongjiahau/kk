@@ -2,7 +2,7 @@ use crate::inferred_ast::*;
 use crate::{non_empty::NonEmpty, raw_ast::InfinitePatternKind, unify::UnifyProgramResult};
 
 pub mod interpretable {
-    use crate::non_empty::NonEmpty;
+    use crate::{innate_function::InnateFunction, non_empty::NonEmpty};
 
     #[derive(Debug, Clone)]
     pub enum Statement {
@@ -78,9 +78,13 @@ pub mod interpretable {
             object: Box<Expression>,
             property: String,
         },
-        UnsafeJavascriptCode(String),
         Assignment(Box<Assignment>),
         InternalOp(Box<InternalOp>),
+        Tuple(Box<NonEmpty<Expression>>),
+        InnateFunctionCall {
+            function: InnateFunction,
+            argument: Box<Expression>,
+        },
     }
 
     #[derive(Debug, Clone)]
@@ -207,7 +211,6 @@ pub mod interpretable {
                 Expression::MemberAccess { object, property } => {
                     format!("({})[{}]", object.print(), property)
                 }
-                Expression::UnsafeJavascriptCode(code) => code,
                 Expression::Sequence(expressions) => {
                     format!(
                         "({})",
@@ -217,12 +220,7 @@ pub mod interpretable {
                 Expression::Assignment(assignment) => {
                     format!("({})", assignment.print())
                 }
-                Expression::Float(_) => todo!(),
-                Expression::Int(_) => todo!(),
-                Expression::EnumConstructor { tag, payload } => todo!(),
-                Expression::HasTag { expression, tag } => todo!(),
-                Expression::GetEnumPayload(_) => todo!(),
-                Expression::InternalOp(_) => todo!(),
+                _ => todo!(),
             }
         }
     }
@@ -238,18 +236,9 @@ pub mod interpretable {
     }
 }
 
-const ENUM_TAG_NAME: &str = "$";
-const ENUM_PAYLOAD_NAME: &str = "_";
-
 pub fn transpile_program(
     unify_project_result: UnifyProgramResult,
 ) -> Vec<interpretable::Statement> {
-    // TODO: move this to a file
-    let built_in_library =
-        interpretable::Statement::Expression(interpretable::Expression::UnsafeJavascriptCode(
-            " const print_0 = (x) => console.log(x); ".to_string(),
-        ));
-
     unify_project_result
         .imported_modules
         .clone()
@@ -445,6 +434,15 @@ pub fn transpile_expression(expression: InferredExpression) -> interpretable::Ex
         InferredExpression::Unit => interpretable::Expression::Null,
         InferredExpression::Keyword(keyword) => {
             interpretable::Expression::String(keyword.representation)
+        }
+        InferredExpression::Tuple(elements) => {
+            interpretable::Expression::Tuple(Box::new(elements.map(transpile_expression)))
+        }
+        InferredExpression::InnateFunctionCall { function, argument } => {
+            interpretable::Expression::InnateFunctionCall {
+                function,
+                argument: Box::new(transpile_expression(*argument)),
+            }
         }
     }
 }
