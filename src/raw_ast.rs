@@ -313,9 +313,9 @@ pub enum Expression {
         right_curly_bracket: Token,
     },
     Array {
-        hash_left_parenthesis: Token,
+        left_square_bracket: Token,
         elements: Vec<Expression>,
-        right_parenthesis: Token,
+        right_square_bracket: Token,
     },
     Let {
         keyword_let: Token,

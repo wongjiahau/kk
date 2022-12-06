@@ -1,19 +1,18 @@
+use crate::pattern::ExpandablePattern;
 use crate::tokenize::TokenizeError;
 use crate::{compile::CompileError, raw_ast::*, typ::*};
 use crate::{
     compile::CompileErrorKind,
     parse::{ParseContext, ParseError, ParseErrorKind},
 };
-use crate::{module::ModuleMeta, pattern::ExpandablePattern};
 use crate::{
     pattern::CheckablePatternKind,
     unify::{UnifyError, UnifyErrorKind},
 };
 use colored::*;
 use prettytable::{format::Alignment, Cell, Row, Table};
+use std::fs;
 use std::ops::Range;
-use std::path::PathBuf;
-use std::{env, fs};
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFiles;
@@ -589,22 +588,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 body: table,
             }
         }
-        UnifyErrorKind::InvalidArgumentLength {
-            expected_length,
-            actual_length,
-        } => StringifiedError {
-            summary: "Arguments length mismatch".to_string(),
-            body: format!(
-                "Expected {} {}{}, but {}{} {} {} provided.",
-                expected_length,
-                pluralize("argument".to_string(), expected_length),
-                if expected_length < actual_length {" only"} else {""},
-                if actual_length < expected_length {"only "} else {""},
-                actual_length,
-                pluralize("argument".to_string(), actual_length),
-                if actual_length > 1 {"are"} else {"is"}
-            ),
-        },
         UnifyErrorKind::CannotInvokeNonFunction { .. } => StringifiedError {
             summary: "Cannot call a non-function".to_string(),
             body: "The type of this expression is not function, so you cannot call it.".to_string(),
@@ -706,21 +689,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Duplicated name".to_string(),
             body: format!("This variable `{}` is already declared before in this module.", name)
         },
-        UnifyErrorKind::ConflictingFunctionDefinition {
-            function_name,
-            existing_first_parameter_type,
-            new_first_parameter_type,
-            ..
-        } => StringifiedError {
-            summary: "Conflicting function definition".to_string(),
-            body: format!(
-                "The first parameter type of this `{}`:\n\n{}\n\noverlaps with the first parameter type of another `{}` in this scope:\n\n{}\n\n", 
-                function_name,
-                stringify_type(new_first_parameter_type, 2),
-                function_name,
-                stringify_type(existing_first_parameter_type, 2),
-            )
-        },
         UnifyErrorKind::AmbiguousConstructorUsage {
             constructor_name,
             possible_enum_names
@@ -732,21 +700,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 indent_string(possible_enum_names.clone().into_vector().join("\n"), 2),
                 "You can use type annotation to resolve this problem, for example:",
                 indent_string(format!("let x: {} = {}()", possible_enum_names.first(), constructor_name), 2)
-            )
-        },
-        UnifyErrorKind::AmbiguousFunction { available_function_signatures } => StringifiedError {
-            summary: "Ambiguous Reference".to_string(),
-            body: format!(
-                "This function is overloaded with multiple signatures, but the first argument provided has unknown type.\n{}\n\n{}",
-                "To disambiguate, annotate the type of the first argument of this function call with any of the following types:",
-                indent_string(
-                    available_function_signatures.into_iter().map(|signature| {
-                        todo!()
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n\n"),
-                    2
-                ),
             )
         },
         UnifyErrorKind::ThisEnumConstructorDoesNotRequirePayload => StringifiedError {
@@ -771,12 +724,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 stringify_type(actual_type, 2)
             )
 
-        },
-        UnifyErrorKind::NoMatchingValueSymbol {possible_value_symbols} => StringifiedError {
-            summary: "No matching overload found.".to_string(),
-            body: format!(
-                "todo"
-            )
         },
         UnifyErrorKind::ErrorneousImportPath { extra_information } => StringifiedError {
             summary: "Errorneous Import Path.".to_string(),
@@ -808,17 +755,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 )
             )
         },
-        UnifyErrorKind::WithExpressionBindFunctionConditionNotMet { actual_type } => StringifiedError {
-            summary: "Unsatifactory bind function.".to_string(),
-            body: format!("The bind function must satisfies all of the following conditions:\n{}\n\n{}\n\n{}", 
-                vec![
-                    "  (1) Must be a two-parameter function",
-                    "  (2) The expected second parameter type must be type of function",
-                ].join("\n"), 
-                "But the given bind function has the following type:", 
-                stringify_type(actual_type, 2)
-            )
-        },
         UnifyErrorKind::LetBindingRefutablePattern { missing_patterns } => StringifiedError {
             summary: "Let Binding Refutable Pattern".to_string(),
             body: format!(
@@ -836,32 +772,12 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             summary: "Missing Type Annotation for Record Wildcard".to_string(),
             body: "Without type annotation, the compiler cannot populate the properties automatically.\nConsider adding type annotation on the outer level to fix this problem.".to_string(),
         },
-        UnifyErrorKind::MissingParameterTypeAnnotationForTopLevelFunction => StringifiedError {
-            summary: "Missing Parameter Type Annotation".to_string(),
-            body: "Parameter type annotation is required for top-level function to enable single dispatch disambiguation.".to_string()
-        },
-        UnifyErrorKind::MissingReturnTypeAnnotationForTopLevelFunction => StringifiedError {
-            summary: "Missing Return Type Annotation".to_string(),
-            body: "Return type annotation is required for top-level function.".to_string()
-        },
-        UnifyErrorKind::MissingParameterTypeAnnotationForFunctionTypeAnnotation => StringifiedError {
-            summary: "Missing Parameter Type Annotation".to_string(),
-            body: "Parameter type annotation is required for function type annotation.".to_string()
-        },
-        UnifyErrorKind::NotExpectingFunction { expected_type } => StringifiedError{
-            summary: "Not Expecting Function".to_string(),
-            body: format!("The expected type is:\n\n{}", stringify_type(expected_type, 2))
-        },
         UnifyErrorKind::FunctionCallAtTopLevelIsNotAllowed => StringifiedError {
             summary: "Top level function call is not allowed".to_string(),
             body: "This is to ensure that importing a module does not has side effects".to_string()
         },
         UnifyErrorKind::CannotAccessPropertyOfNonRecord => StringifiedError {
             summary: "Cannot access property of a non-record".to_string(),
-            body: "".to_string()
-        },
-        UnifyErrorKind::NotExpectingTypeVariable => StringifiedError {
-            summary: "Not expecting type variable here".to_string(),
             body: "".to_string()
         },
         UnifyErrorKind::MissingBindings { missing_expected_bindings } => StringifiedError {
@@ -895,24 +811,6 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 stringify_type(missing_constraint.type_value, 0)
             )
         },
-        UnifyErrorKind::ConstraintUnsatisfied { interface_name, for_types } => StringifiedError {
-            summary: "Constraint unsatisfied".to_string(),
-            body: format!(
-                "The following implementation is needed:\n\n{}<{}>",
-                indent_string(interface_name, 4),
-                for_types
-                    .into_vector()
-                    .into_iter()
-                    .map(|for_type| stringify_type(for_type, 0))
-                    .collect::<Vec<String>>().join(",")
-            )
-        },
-        UnifyErrorKind::UnknownTypeVariable { unknown_type_variable_name } => StringifiedError {
-            summary: "Unknown type variable".to_string(),
-            body: format!("No type variable has the name of {} in this scope.", unknown_type_variable_name)
-        },
-        UnifyErrorKind::TopLevelLetStatementCannotBeDestructured => todo!(),
-        UnifyErrorKind::MissingTypeAnnotationForTopLevelBinding => todo!(),
         UnifyErrorKind::CannotBeOverloaded {name} => StringifiedError {
             summary: format!("`{}` cannot be overloaded", name), 
             body: "".to_string() 

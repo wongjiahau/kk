@@ -1,8 +1,7 @@
 use crate::{
     compile::{CompileError, CompileErrorKind},
     non_empty::NonEmpty,
-    parse::{ParseError, Parser},
-    stringify_error::stringify_type,
+    parse::Parser,
     tokenize::Tokenizer,
     utils::to_relative_path,
 };
@@ -14,9 +13,8 @@ use crate::raw_ast::*;
 use crate::typ::*;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use relative_path::RelativePath;
-use std::{any::type_name, ffi::OsStr, fs};
-use std::{collections::HashSet, path::Path};
+use std::collections::HashSet;
+use std::fs;
 use std::{iter, path::PathBuf};
 
 #[derive(Debug)]
@@ -36,26 +34,6 @@ pub struct UnifyProgramResult {
     // From above, we can see that A is being imported twice,
     //  without memoization we will need to compile A twice, which is bad for performance.
     pub imported_modules: ImportedModules,
-}
-
-pub enum ReadModuleFolderName {
-    FromCli {
-        folder_name: String,
-        entry_point_filename: String,
-    },
-    FromCode {
-        folder_name: StringLiteral,
-        filename: PathBuf,
-    },
-}
-
-impl ReadModuleFolderName {
-    fn to_string(&self) -> String {
-        match self {
-            ReadModuleFolderName::FromCli { folder_name, .. } => folder_name.clone(),
-            ReadModuleFolderName::FromCode { folder_name, .. } => folder_name.content.clone(),
-        }
-    }
 }
 
 /// `position` is optional if the `filename` is passed from CLI
@@ -105,9 +83,7 @@ pub fn read_module(
             }
         })
         .map(|dir_entry| {
-            let filename = dir_entry.file_name().to_str().unwrap().to_string();
             Ok(File {
-                name: filename.clone(),
                 path: dir_entry.path(),
                 statements: Parser::parse(&mut Tokenizer::new(
                     fs::read_to_string(dir_entry.path()).expect(
@@ -118,7 +94,6 @@ pub fn read_module(
                     path: dir_entry.path(),
                     kind: CompileErrorKind::ParseError(Box::new(error)),
                 })?,
-                is_entry_point: false,
             })
         })
         .collect::<Result<Vec<_>, CompileError>>()?;
@@ -129,10 +104,8 @@ pub fn read_module(
 
 #[derive(Debug)]
 pub struct File {
-    name: String,
     path: PathBuf,
     statements: Vec<Statement>,
-    is_entry_point: bool,
 }
 
 pub fn unify_statements(
@@ -446,7 +419,6 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
                 RecordUpdate::ValueUpdate { new_value, .. } => has_direct_function_call(new_value),
             })
         }),
-        Expression::RecordAccess { expression, .. } => has_direct_function_call(&expression),
         Expression::Array { elements, .. } => elements.iter().find_map(has_direct_function_call),
         Expression::Parenthesized { value, .. } => has_direct_function_call(value),
         Expression::Let { body, .. } => has_direct_function_call(&body),
@@ -476,15 +448,8 @@ pub enum UnifyErrorKind {
     AmbiguousSymbol {
         matching_value_symbols: Vec<(SymbolUid, ValueSymbol)>,
     },
-    ConstraintUnsatisfied {
-        interface_name: String,
-        for_types: NonEmpty<Type>,
-    },
     UnsatisfiedConstraint {
         missing_constraint: TypeConstraint,
-    },
-    UnknownTypeVariable {
-        unknown_type_variable_name: String,
     },
     ExtraneousBinding {
         extraneous_binding: Binding,
@@ -493,20 +458,10 @@ pub enum UnifyErrorKind {
     MissingBindings {
         missing_expected_bindings: NonEmpty<Binding>,
     },
-    NotExpectingTypeVariable,
     FunctionCallAtTopLevelIsNotAllowed,
-    NotExpectingFunction {
-        expected_type: Type,
-    },
-    MissingParameterTypeAnnotationForFunctionTypeAnnotation,
-    MissingParameterTypeAnnotationForTopLevelFunction,
-    MissingReturnTypeAnnotationForTopLevelFunction,
     MissingTypeAnnotationForRecordWildcard,
     LetBindingRefutablePattern {
         missing_patterns: Vec<ExpandablePattern>,
-    },
-    WithExpressionBindFunctionConditionNotMet {
-        actual_type: Type,
     },
     CyclicDependency {
         import_relations: Vec<ImportRelation>,
@@ -515,22 +470,6 @@ pub enum UnifyErrorKind {
     UnknownImportedName,
     ErrorneousImportPath {
         extra_information: String,
-    },
-    ConflictingFunctionDefinition {
-        function_name: String,
-
-        /// First parameter type of existing function
-        existing_first_parameter_type: Type,
-
-        /// First parameter type of the new function to be created
-        new_first_parameter_type: Type,
-        first_declared_at: Position,
-    },
-    AmbiguousFunction {
-        available_function_signatures: Vec<FunctionSignature>,
-    },
-    NoMatchingValueSymbol {
-        possible_value_symbols: Vec<(SymbolUid, ValueSymbol)>,
     },
     AmbiguousConstructorUsage {
         constructor_name: String,
@@ -575,10 +514,6 @@ pub enum UnifyErrorKind {
         first_declared_at: Position,
         then_declared_at: Position,
     },
-    InvalidArgumentLength {
-        expected_length: usize,
-        actual_length: usize,
-    },
     UnknownTypeSymbol,
     UnknownValueSymbol {
         symbol_name: String,
@@ -588,8 +523,6 @@ pub enum UnifyErrorKind {
         expected_type: Type,
         actual_type: Type,
     },
-    TopLevelLetStatementCannotBeDestructured,
-    MissingTypeAnnotationForTopLevelBinding,
     CannotBeOverloaded {
         name: String,
     },
@@ -1208,8 +1141,8 @@ impl Positionable for Expression {
     fn position(&self) -> Position {
         match self {
             Expression::Array {
-                hash_left_parenthesis: left_square_bracket,
-                right_parenthesis: right_square_bracket,
+                left_square_bracket,
+                right_square_bracket,
                 ..
             } => left_square_bracket
                 .position
@@ -2510,7 +2443,7 @@ fn infer_expression_type_(
                 },
             })
         }
-        Expression::CpsBang { argument, bang } => Err(UnifyError {
+        Expression::CpsBang { bang, .. } => Err(UnifyError {
             position: bang.position,
             kind: UnifyErrorKind::MissingTildeClosure,
         }),
@@ -2527,11 +2460,7 @@ fn infer_expression_type_(
 fn infer_tilde_closure(
     module: &mut Module,
     expected_type: Option<Type>,
-    TildeClosure {
-        bind_function,
-        expression,
-        ..
-    }: &TildeClosure,
+    TildeClosure { expression, .. }: &TildeClosure,
 ) -> Result<InferExpressionResult, UnifyError> {
     // The expected bind function type should be:
     //
@@ -2803,104 +2732,41 @@ fn get_expected_type(module: &mut Module, expression: &Expression) -> Result<Typ
     let implicit_type_variable_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
         name: module.get_next_type_variable_name(),
     });
-    match expression {
-        Expression::Statements { next, .. } => get_expected_type(module, next),
-        Expression::Unit { .. } => Ok(Type::Unit),
-        Expression::Parenthesized { value, .. } => get_expected_type(module, value),
-        Expression::Float(_) => Ok(Type::Float),
-        Expression::Integer(_) => Ok(Type::Integer),
-        Expression::String(_) | Expression::InterpolatedString { .. } => Ok(Type::String),
-        Expression::Character(_) => Ok(Type::Character),
-        Expression::Keyword(keyword) => Ok(Type::Keyword(keyword.representation.clone())),
-        Expression::Identifier(identifier) => {
-            match module.get_value_symbol(identifier, &None, module.current_scope_name()) {
-                Ok(result) => Ok(match result.type_value {
-                    Type::TypeScheme(type_scheme) => instantiate_type_scheme(module, *type_scheme),
-                    _ => result.type_value,
-                }),
-                Err(err) => match err.kind {
-                    // If the symbol is ambiguous, don't throw error, just label its type as an implicit type variable
-                    // And leave the type checking for later phases
-                    UnifyErrorKind::AmbiguousSymbol { .. } => {
-                        Ok(implicit_type_variable_type.clone())
-                    }
+    match infer_expression_type(module, None, expression) {
+        Ok(result) => Ok(result.type_value),
+        Err(_) => match expression {
+            // Expression whose type can be deduced from it's AST are given a "guessed type".
+            // Example of such expressions are record, function, array etc.
+            Expression::Parenthesized { value, .. } => get_expected_type(module, value),
+            Expression::Function(function) => {
+                let first_branch = function.branches.first();
+                Ok(Type::Function(FunctionType {
+                    parameter_type: Box::new(implicit_type_variable_type.clone()),
+                    return_type: Box::new(get_expected_type(module, &first_branch.body)?),
+                    type_constraints: vec![],
+                }))
+            }
+            Expression::Record {
+                key_value_pairs, ..
+            } => Ok(Type::Record {
+                key_type_pairs: key_value_pairs
+                    .iter()
+                    .map(|key_value_pair| {
+                        Ok((
+                            key_value_pair.key.representation.clone(),
+                            get_expected_type(module, &key_value_pair.value)?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            }),
+            Expression::Array { .. } => Ok(Type::BuiltInOneArgumentType {
+                kind: BuiltInOneArgumentTypeKind::Array,
+                type_argument: Box::new(implicit_type_variable_type),
+            }),
 
-                    // If it's other error, just throw the error
-                    _ => Err(err),
-                },
-            }
-        }
-        Expression::EnumConstructor { name, payload } => {
-            unreachable!("EnumConstructor cannot be constructed via user-facing syntax, it is an internal construct")
-        }
-        Expression::Function(function) => {
-            let first_branch = function.branches.first();
-            Ok(Type::Function(FunctionType {
-                parameter_type: Box::new(implicit_type_variable_type.clone()),
-                return_type: Box::new(get_expected_type(module, &first_branch.body)?),
-                type_constraints: vec![],
-            }))
-        }
-        Expression::FunctionCall(function_call) => {
-            match infer_function_call(module, None, function_call) {
-                Ok(result) => Ok(result.type_value),
-                Err(_) => Ok(implicit_type_variable_type.clone()),
-            }
-        }
-        Expression::TildeClosure(tilde_closure) => {
-            match infer_tilde_closure(module, None, tilde_closure) {
-                Ok(result) => Ok(result.type_value),
-                Err(_) => Ok(implicit_type_variable_type.clone()),
-            }
-        }
-        Expression::Record {
-            left_curly_bracket,
-            wildcard,
-            key_value_pairs,
-            right_curly_bracket,
-        } => Ok(Type::Record {
-            key_type_pairs: key_value_pairs
-                .iter()
-                .map(|key_value_pair| {
-                    Ok((
-                        key_value_pair.key.representation.clone(),
-                        get_expected_type(module, &key_value_pair.value)?,
-                    ))
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
-        Expression::RecordAccess {
-            expression,
-            property_name,
-        } => todo!(),
-        Expression::RecordUpdate {
-            expression,
-            left_curly_bracket,
-            updates,
-            right_curly_bracket,
-        } => get_expected_type(module, expression),
-        Expression::Array {
-            hash_left_parenthesis,
-            elements,
-            right_parenthesis,
-        } => todo!(),
-        Expression::Let {
-            keyword_let,
-            left,
-            right,
-            type_annotation,
-            body,
-        } => todo!(),
-        Expression::CpsBang { argument, bang } => todo!(),
-    }
-}
-
-impl Function {
-    fn position(&self) -> Position {
-        self.branches
-            .first()
-            .position()
-            .join(self.branches.last().position())
+            // Other
+            _ => Ok(implicit_type_variable_type),
+        },
     }
 }
 
@@ -4189,19 +4055,6 @@ impl InferredDestructurePattern {
                 .collect(),
         }
     }
-}
-
-/// Apply a list of type variable substitutions to a list of types
-fn apply_type_variable_substitutions_to_types(
-    type_variable_substitutions: &Vec<TypeVariableSubstitution>,
-    type_values: Vec<Type>,
-) -> Vec<Type> {
-    type_values
-        .iter()
-        .map(|type_value| {
-            apply_type_variable_substitutions_to_type(type_variable_substitutions, type_value)
-        })
-        .collect()
 }
 
 /// Apply a list of type variable substitutions to the given type

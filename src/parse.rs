@@ -848,9 +848,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_array(&mut self, hash_left_parenthesis: Token) -> Result<Expression, ParseError> {
+    fn parse_array(&mut self, left_square_bracket: Token) -> Result<Expression, ParseError> {
         let mut elements: Vec<Expression> = Vec::new();
-        let right_parenthesis = loop {
+        let right_square_bracket = loop {
             if let Some(right_square_bracket) = self.try_eat_token(TokenType::RightSquareBracket)? {
                 break right_square_bracket;
             };
@@ -860,9 +860,9 @@ impl<'a> Parser<'a> {
             elements.push(self.parse_low_precedence_expression()?);
         };
         Ok(Expression::Array {
-            hash_left_parenthesis,
+            left_square_bracket,
             elements,
-            right_parenthesis,
+            right_square_bracket,
         })
     }
 
@@ -1652,9 +1652,9 @@ impl Expression {
                 right_curly_bracket,
             } => todo!(),
             Expression::Array {
-                hash_left_parenthesis,
+                left_square_bracket,
                 elements,
-                right_parenthesis: right_square_bracket,
+                right_square_bracket,
             } => todo!(),
             Expression::Let {
                 keyword_let,

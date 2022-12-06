@@ -34,5 +34,5 @@ error:
   = +------------------+--------------------------+
     |  EXPECTED TYPE   |       ACTUAL TYPE        |
     +------------------+--------------------------+
-    | - Option<String> | + Option<Option<@TVAR5>> |
+    | - Option<String> | + Option<Option<@TVAR4>> |
     +------------------+--------------------------+

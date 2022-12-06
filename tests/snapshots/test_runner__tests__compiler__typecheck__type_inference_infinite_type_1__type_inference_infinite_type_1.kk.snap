@@ -28,6 +28,6 @@ error:
 2 │   let f = \x -> x (x);
   │                 ^^^^^ Infinite type
   │
-  = Infinite type expansion will happen when substituting `@TVAR4` into:
+  = Infinite type expansion will happen when substituting `@TVAR3` into:
 
-      (@TVAR4 -> @TVAR5)
+      (@TVAR3 -> @TVAR4)
