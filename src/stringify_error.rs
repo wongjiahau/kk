@@ -473,9 +473,9 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
     }
 }
 
-pub fn print_compile_error(CompileError { kind, path }: CompileError) {
-    let filename = path.to_str().unwrap().to_string();
-    let code = fs::read_to_string(path).unwrap();
+pub fn print_compile_error(CompileError { kind, source }: CompileError) {
+    let filename = source.path.clone();
+    let code = source.code.clone();
     match kind {
         CompileErrorKind::ParseError(parse_error) => {
             print_parse_error(filename, code, *parse_error)

@@ -79,22 +79,10 @@ pub mod interpretable {
             property: String,
         },
         Assignment(Box<Assignment>),
-        InternalOp(Box<InternalOp>),
         Tuple(Box<NonEmpty<Expression>>),
         InnateFunctionCall {
             function: InnateFunction,
             argument: Box<Expression>,
-        },
-    }
-
-    #[derive(Debug, Clone)]
-    pub enum InternalOp {
-        Add(Expression, Expression),
-        Multiply(Expression, Expression),
-        LessThan(Expression, Expression),
-        ReadFile {
-            filename: Expression,
-            callback: Expression,
         },
     }
 

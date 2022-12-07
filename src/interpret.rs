@@ -15,7 +15,6 @@ enum Value {
     String(String),
     TagOnlyVariant(String),
     Variant { tag: String, payload: Box<Value> },
-    NativeFunction(NativeFunction),
     Object(ValueObject),
     Function(ValueFunction),
     Unit,
@@ -43,7 +42,6 @@ impl Value {
             Value::Boolean(boolean) => boolean.to_string(),
             Value::TagOnlyVariant(tag) => tag.clone(),
             Value::Variant { tag, payload } => format!("{}({})", tag, payload.print()),
-            Value::NativeFunction(function) => format!("<native:{:#?}>", function),
             Value::Object(object) => {
                 let mut values = object
                     .pairs
@@ -52,7 +50,7 @@ impl Value {
                     .map(|(name, value)| format!("{} = {}", name, value.print()));
                 format!("{{ {} }}", values.join(", "))
             }
-            Value::Function(function) => format!("<function>:({:#?})", function),
+            Value::Function(_) => format!("<function>"),
             Value::String(string) => format!("\"{}\"", string.to_string()),
             Value::Unit => "()".to_string(),
             Value::Array(values) => format!(
@@ -69,15 +67,6 @@ impl Value {
 }
 
 #[derive(Debug, Clone)]
-enum NativeFunction {
-    Print,
-    Plus,
-    Multiply,
-    LessThan,
-    ReadFile,
-}
-
-#[derive(Debug, Clone)]
 struct Environment {
     parent: Option<Box<Environment>>,
     bindings: HashMap<String, Value>,
@@ -86,7 +75,7 @@ struct Environment {
 #[derive(Debug)]
 struct Promise {
     handle: tokio::task::JoinHandle<Value>,
-    callback: Value,
+    callback: ValueFunction,
 }
 
 impl Environment {
@@ -108,18 +97,7 @@ impl Environment {
     fn global() -> Environment {
         Environment {
             parent: None,
-            bindings: HashMap::from(
-                [
-                    ("print_0", Value::NativeFunction(NativeFunction::Print)),
-                    ("+", Value::NativeFunction(NativeFunction::Plus)),
-                    ("*", Value::NativeFunction(NativeFunction::Multiply)),
-                    ("<", Value::NativeFunction(NativeFunction::LessThan)),
-                    ("readFile", Value::NativeFunction(NativeFunction::ReadFile)),
-                ]
-                .iter()
-                .map(|(name, f)| (name.to_string(), f.clone()))
-                .collect::<HashMap<String, Value>>(),
-            ),
+            bindings: HashMap::new(),
         }
     }
     fn get_value(&self, name: &Token) -> Result<Value, ControlFlow> {
@@ -346,17 +324,23 @@ impl Eval for interpretable::Expression {
                 ))
             }
             interpretable::Expression::FunctionCall { function, argument } => {
-                let mut argument = argument.eval(env)?;
-                let mut function = function.eval(env)?;
+                let (argument, promises1) = argument.eval(env)?;
+                let (function, promises2) = function.eval(env)?;
 
-                let mut result = call_function(env, function.0, argument.0)?;
+                let function = match function {
+                    Value::Function(function) => function,
+                    _ => unreachable!(),
+                };
 
-                let mut promises = vec![];
-                promises.append(&mut argument.1);
-                promises.append(&mut function.1);
-                promises.append(&mut result.1);
+                let (result, promises3) = call_function(env, function, argument)?;
 
-                Ok((result.0, promises))
+                let promises = promises1
+                    .into_iter()
+                    .chain(promises2.into_iter())
+                    .chain(promises3.into_iter())
+                    .collect();
+
+                Ok((result, promises))
             }
             interpretable::Expression::ArrowFunction { parameter, body } => Ok((
                 Value::Function(ValueFunction {
@@ -443,7 +427,6 @@ impl Eval for interpretable::Expression {
                     _ => unreachable!(),
                 }
             }
-            Expression::InternalOp(internal_op) => internal_op.eval(env),
             Expression::Tuple(elements) => elements.eval(env),
             Expression::InnateFunctionCall { function, argument } => match function {
                 InnateFunction::IntAdd => {
@@ -458,88 +441,66 @@ impl Eval for interpretable::Expression {
                         _ => unreachable!(),
                     }
                 }
-            },
-        }
-    }
-}
+                InnateFunction::Print => {
+                    let (value, promises) = argument.eval(env)?;
+                    println!("{}", value.print());
+                    Ok((Value::Unit, promises))
+                }
+                InnateFunction::ReadFile => {
+                    let (value, promises) = argument.eval(env)?;
+                    match value {
+                        Value::Tuple(values) => {
+                            let filename = match values.head {
+                                Value::String(string) => string,
+                                _ => unreachable!(),
+                            };
+                            let callback = match &values.tail[0] {
+                                Value::Function(function) => function,
+                                _ => unreachable!(),
+                            };
+                            let handle = tokio::spawn(async move {
+                                let content = tokio::fs::read_to_string(filename).await.unwrap();
+                                Value::String(content.trim().to_string())
+                            });
 
-impl Eval for InternalOp {
-    fn eval(self, env: &mut Environment) -> Result<Evalled, ControlFlow> {
-        fn eval_native<F>(
-            env: &mut Environment,
-            a: Expression,
-            b: Expression,
-            f: F,
-        ) -> Result<Evalled, ControlFlow>
-        where
-            F: Fn(Value, Value) -> Result<Evalled, ControlFlow>,
-        {
-            let mut a = a.eval(env)?;
-            let mut b = b.eval(env)?;
-            let mut promises = vec![];
-            promises.append(&mut a.1);
-            promises.append(&mut b.1);
-            let mut result = f(a.0, b.0)?;
-            promises.append(&mut result.1);
-            Ok((result.0, promises))
-        }
-        match self {
-            InternalOp::Add(a, b) => eval_native(env, a, b, |a, b| match (a, b) {
-                (Value::Int64(a), Value::Int64(b)) => Ok((Value::Int64(a + b), vec![])),
-                _ => panic!(),
-            }),
-            InternalOp::Multiply(a, b) => eval_native(env, a, b, |a, b| match (a, b) {
-                (Value::Int64(a), Value::Int64(b)) => Ok((Value::Int64(a * b), vec![])),
-                _ => panic!(),
-            }),
-            InternalOp::LessThan(a, b) => eval_native(env, a, b, |a, b| match (a, b) {
-                (Value::Int64(a), Value::Int64(b)) => Ok((Value::Boolean(a < b), vec![])),
-                _ => panic!(),
-            }),
-            InternalOp::ReadFile { filename, callback } => {
-                eval_native(env, callback, filename, |a, b| match (a, b) {
-                    (Value::String(filename), callback) => {
-                        let handle = tokio::spawn(async move {
-                            let content = tokio::fs::read_to_string(filename).await.unwrap();
-                            Value::String(content)
-                        });
-
-                        Ok((unit(), vec![Promise { handle, callback }]))
+                            Ok((
+                                unit(),
+                                vec![Promise {
+                                    handle,
+                                    callback: callback.clone(),
+                                }]
+                                .into_iter()
+                                .chain(promises)
+                                .collect(),
+                            ))
+                        }
+                        _ => unreachable!(),
                     }
-                    other => panic!("{:#?}", other),
-                })
-            }
+                }
+            },
         }
     }
 }
 
 fn call_function(
     env: &mut Environment,
-    function: Value,
+    function: ValueFunction,
     argument: Value,
 ) -> Result<Evalled, ControlFlow> {
-    match function {
-        Value::NativeFunction(native_function) => {
-            call_native_function(env, native_function, argument)
-        }
-        Value::Function(function) => {
-            let mut env = {
-                // TODO: think about how to make this work for both closure and effect handler
-                // Note: if the logic here is wrong, it will cause Effect handler to not work
-                let mut child_env = env.new_child();
-                let closure = function.closure.clone();
-                child_env.combine(closure);
-                child_env
-            };
+    let mut env = {
+        // TODO: think about how to make this work for both closure and effect handler
+        // Note: if the logic here is wrong, it will cause Effect handler to not work
+        let mut child_env = env.new_child();
+        let closure = function.closure.clone();
+        child_env.combine(closure);
+        child_env
+    };
 
-            env.set_value(function.parameter, argument)?;
+    env.set_value(function.parameter, argument)?;
 
-            match function.body.eval(&mut env) {
-                Err(ControlFlow::Return((value, promises))) => return Ok((value, promises)),
-                _ => unreachable!("One of the child statement should be Return statement"),
-            }
-        }
-        _ => unreachable!(),
+    match function.body.eval(&mut env) {
+        Err(ControlFlow::Return((value, promises))) => return Ok((value, promises)),
+        _ => unreachable!("One of the child statement should be Return statement"),
     }
 }
 
@@ -551,72 +512,6 @@ impl Eval for Vec<interpretable::Statement> {
             promises.extend(new_promises);
         }
         Ok((Value::Unit, promises))
-    }
-}
-
-// TODO: remove this function in favor of InnateFunction
-fn call_native_function(
-    env: &mut Environment,
-    function: NativeFunction,
-    argument: Value,
-) -> Result<Evalled, ControlFlow> {
-    fn curry_binary_op(
-        env: &mut Environment,
-        expression: Expression,
-        internal_op: &dyn Fn(Expression, Expression) -> InternalOp,
-    ) -> Value {
-        let dummy = "x".to_string();
-        Value::Function(ValueFunction {
-            closure: env.clone(),
-            parameter: dummy.clone(),
-            body: vec![Statement::Return(Expression::InternalOp(Box::new(
-                internal_op(Expression::Variable(Identifier(dummy)), expression),
-            )))],
-        })
-    }
-    match function {
-        NativeFunction::Print => {
-            println!("{}", argument.print());
-            Ok((unit(), vec![]))
-        }
-        NativeFunction::ReadFile => match argument {
-            Value::String(filename) => Ok((
-                curry_binary_op(env, Expression::String(filename), &|a, b| {
-                    InternalOp::ReadFile {
-                        filename: a,
-                        callback: b,
-                    }
-                }),
-                vec![],
-            )),
-            _ => unreachable!(),
-        },
-        NativeFunction::Plus => match argument {
-            Value::Int64(a) => Ok((
-                curry_binary_op(env, Expression::Int(a), &InternalOp::Add),
-                vec![],
-            )),
-            _ => unreachable!(),
-        },
-        NativeFunction::Multiply => match argument {
-            Value::Int64(a) => Ok((
-                curry_binary_op(env, Expression::Int(a), &InternalOp::Multiply),
-                vec![],
-            )),
-            _ => unreachable!(),
-        },
-        NativeFunction::LessThan => match argument {
-            Value::Int64(a) => Ok((
-                curry_binary_op(
-                    env,
-                    Expression::Int(a),
-                    // Have to invert the arguments position because of currying
-                    &|a, b| InternalOp::LessThan(b, a),
-                ),
-                vec![],
-            )),
-            _ => unreachable!(),
-        },
     }
 }
 

@@ -1,9 +1,12 @@
+use crate::compile::{Source, STDLIB_DIR};
 use crate::non_empty::NonEmpty;
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};
 use crate::{raw_ast::*, typ::*};
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 
 type CanonicalizedPath = String;
 #[derive(Debug, Clone)]
@@ -152,22 +155,104 @@ pub enum Access {
 #[derive(Hash, Debug, Clone, PartialEq, Eq)]
 pub enum ModuleUid {
     /// For example, `https://raw.githubusercontent.com/foo/bar/v0.0.1/spam.kk`
-    Remote { url: String },
+    Remote {
+        url: String,
+    },
 
     /// This should be a folder name, not a file name.
     /// Also it should be relative, not absolute (so that error message will not be horrendously
     /// long)
     /// For example, `./foo/bar`
-    Local { folder_relative_path: String },
+    Local {
+        folder_relative_path: PathBuf,
+    },
+
+    StandardLibrary {
+        path: String,
+    },
+}
+
+pub struct Directory {
+    pub sources: Vec<Source>,
+}
+
+pub fn fs_readdir_to_directory(dir: std::fs::ReadDir) -> Directory {
+    Directory {
+        sources: dir
+            .into_iter()
+            .filter_map(|dir_entry| {
+                let dir_entry = dir_entry.unwrap();
+
+                if fs::metadata(dir_entry.path()).unwrap().is_file()
+                    && dir_entry
+                        .path()
+                        .extension()
+                        .map(|str| str.eq("kk"))
+                        .unwrap_or(false)
+                {
+                    Some(dir_entry)
+                } else {
+                    None
+                }
+            })
+            .map(|dir_entry| {
+                let code = fs::read_to_string(dir_entry.path()).expect(
+                    format!("Unable to read file: {}", dir_entry.path().display()).as_str(),
+                );
+                Source {
+                    code,
+                    path: dir_entry.path().to_str().unwrap().to_string(),
+                }
+            })
+            .collect(),
+    }
+}
+
+fn include_dir_dir_to_directory(dir: &include_dir::Dir<'_>) -> Directory {
+    Directory {
+        sources: dir
+            .files()
+            .map(|file| Source {
+                path: file.path().to_str().unwrap().to_string(),
+                code: std::str::from_utf8(file.contents()).unwrap().to_string(),
+            })
+            .collect(),
+    }
 }
 
 impl ModuleUid {
     pub fn string_value(&self) -> String {
         match self {
-            ModuleUid::Remote { url: s }
-            | ModuleUid::Local {
-                folder_relative_path: s,
-            } => s.clone(),
+            ModuleUid::Remote { url: s } | ModuleUid::StandardLibrary { path: s } => s.clone(),
+            ModuleUid::Local {
+                folder_relative_path,
+            } => folder_relative_path.to_str().unwrap().to_string(),
+        }
+    }
+
+    pub fn read(&self, position: Position) -> Result<Directory, UnifyError> {
+        match self {
+            ModuleUid::Remote { url } => todo!(),
+            ModuleUid::Local {
+                folder_relative_path,
+            } => match fs::read_dir(folder_relative_path.clone()) {
+                Err(error) => Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::ErrorneousImportPath {
+                        extra_information: format!("{}", error),
+                    },
+                }),
+                Ok(dir) => Ok(fs_readdir_to_directory(dir)),
+            },
+            ModuleUid::StandardLibrary { path } => match STDLIB_DIR.get_dir(path) {
+                Some(dir) => Ok(include_dir_dir_to_directory(dir)),
+                None => Err(UnifyError {
+                    position,
+                    kind: UnifyErrorKind::ErrorneousImportPath {
+                        extra_information: "No such standard library".to_string(),
+                    },
+                }),
+            },
         }
     }
 }
@@ -1164,27 +1249,7 @@ fn built_in_symbols() -> Vec<Symbol> {
             },
         }
     }
-    let type_variable = ExplicitTypeVariable {
-        name: "T".to_string(),
-    };
     vec![
-        // build-in values
-        Symbol {
-            meta: meta("print".to_string()),
-            kind: SymbolKind::Value(ValueSymbol {
-                type_value: Type::TypeScheme(Box::new(TypeScheme {
-                    type_variables: NonEmpty {
-                        head: type_variable.clone(),
-                        tail: vec![],
-                    },
-                    type_value: Type::Function(FunctionType {
-                        parameter_type: Box::new(Type::ExplicitTypeVariable(type_variable)),
-                        return_type: Box::new(Type::Unit),
-                        type_constraints: vec![],
-                    }),
-                })),
-            }),
-        },
         // built-in types
         Symbol {
             meta: meta("String".to_string()),

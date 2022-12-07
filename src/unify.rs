@@ -1,9 +1,9 @@
 use crate::{
-    compile::{CompileError, CompileErrorKind},
+    compile::{CompileError, CompileErrorKind, Source},
     innate_function::InnateFunction,
     non_empty::NonEmpty,
     parse::Parser,
-    tokenize::Tokenizer,
+    tokenize::{Character, Tokenizer},
     utils::to_relative_path,
 };
 
@@ -14,8 +14,8 @@ use crate::raw_ast::*;
 use crate::typ::*;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use std::collections::HashSet;
 use std::fs;
+use std::{collections::HashSet, rc::Rc};
 use std::{iter, path::PathBuf};
 
 #[derive(Debug)]
@@ -41,15 +41,12 @@ pub struct UnifyProgramResult {
 pub fn read_module(
     module_meta: &ModuleMeta,
     imported_modules: &ImportedModules,
-    path: PathBuf,
-    dir: fs::ReadDir,
+    uid: ModuleUid,
+    dir: Directory,
     entry_point_filename: Option<&PathBuf>,
 ) -> Result<UnifyProgramResult, CompileError> {
-    let path_string = path.to_str().unwrap().to_string();
     let module_meta = ModuleMeta {
-        uid: ModuleUid::Local {
-            folder_relative_path: path_string.clone(),
-        },
+        uid: uid.clone(),
         import_relations: {
             match entry_point_filename {
                 // If this is the entry point, no need to add import_relations, otherwise
@@ -59,7 +56,7 @@ pub fn read_module(
                     let mut importer_paths = module_meta.import_relations.clone();
                     importer_paths.push(ImportRelation {
                         importer_path: module_meta.uid.string_value(),
-                        importee_path: path_string,
+                        importee_path: uid.string_value(),
                     });
                     importer_paths
                 }
@@ -67,34 +64,49 @@ pub fn read_module(
         },
     };
     let files = dir
+        .sources
         .into_iter()
-        .filter_map(|dir_entry| {
-            let dir_entry = dir_entry.unwrap();
-
-            if fs::metadata(dir_entry.path()).unwrap().is_file()
-                && dir_entry
-                    .path()
-                    .extension()
-                    .map(|str| str.eq("kk"))
-                    .unwrap_or(false)
-            {
-                Some(dir_entry)
-            } else {
-                None
-            }
-        })
-        .map(|dir_entry| {
+        .enumerate()
+        .map(|(index, source)| {
+            let source = Rc::new(source);
             Ok(File {
-                path: dir_entry.path(),
-                statements: Parser::parse(&mut Tokenizer::new(
-                    fs::read_to_string(dir_entry.path()).expect(
-                        format!("Unable to read file: {}", dir_entry.path().display()).as_str(),
-                    ),
-                ))
-                .map_err(|error| CompileError {
-                    path: dir_entry.path(),
-                    kind: CompileErrorKind::ParseError(Box::new(error)),
-                })?,
+                source: source.clone(),
+                statements: {
+                    let dummy_quotes = NonEmpty {
+                        head: Character::dummy(),
+                        tail: vec![],
+                    };
+                    let injected_statements = if source.path.starts_with("prelude/") || index > 0 {
+                        vec![]
+                    } else {
+                        // Only inject `import "std:prelude"`
+                        // if the file is the first file in this directory (module)
+                        // and if the file is not the prelude it self
+                        vec![Statement::Import(ImportStatement {
+                            access: Access::Protected,
+                            keyword_import: Token::dummy(),
+                            url: StringLiteral {
+                                start_quotes: dummy_quotes.clone(),
+                                content: "@prelude".to_string(),
+                                end_quotes: dummy_quotes,
+                            },
+                            specification: None,
+                        })]
+                    };
+
+                    let user_written_statements = Parser::parse(&mut Tokenizer::new(
+                        source.clone().code.clone(),
+                    ))
+                    .map_err(|error| CompileError {
+                        source,
+                        kind: CompileErrorKind::ParseError(Box::new(error)),
+                    })?;
+
+                    injected_statements
+                        .into_iter()
+                        .chain(user_written_statements.into_iter())
+                        .collect_vec()
+                },
             })
         })
         .collect::<Result<Vec<_>, CompileError>>()?;
@@ -105,7 +117,7 @@ pub fn read_module(
 
 #[derive(Debug)]
 pub struct File {
-    path: PathBuf,
+    source: Rc<Source>,
     statements: Vec<Statement>,
 }
 
@@ -132,14 +144,14 @@ pub fn unify_statements(
         let mut doc_string_codes = Vec::new();
 
         for file in files {
-            let path = file.path;
+            let path = file.source.path.clone();
             for statement in file.statements {
                 match statement {
                     Statement::Type(type_statement) => {
-                        type_statements.push((path.clone(), type_statement));
+                        type_statements.push((file.source.clone(), type_statement));
                     }
                     Statement::Enum(enum_statement) => {
-                        enum_statements.push((path.clone(), enum_statement));
+                        enum_statements.push((file.source.clone(), enum_statement));
                     }
                     Statement::Let(let_statement) => {
                         match &let_statement.doc_string {
@@ -148,21 +160,23 @@ pub fn unify_statements(
                                     .extract_codes()
                                     .map_err(|parse_error| CompileError {
                                         kind: CompileErrorKind::ParseError(Box::new(parse_error)),
-                                        path: path.clone(),
+                                        source: file.source.clone(),
                                     })?
                                     .into_iter()
-                                    .map(|code| (path.clone(), code))
-                                    .collect::<Vec<(PathBuf, Expression)>>(),
+                                    .map(|code| (file.source.clone(), code))
+                                    .collect::<Vec<(Rc<Source>, Expression)>>(),
                             ),
                             None => {}
                         }
-                        let_statements.push((path.clone(), let_statement));
+                        let_statements.push((file.source.clone(), let_statement));
                     }
                     Statement::Entry(entry_statement) => {
                         match entry_point_filename {
-                            Some(entry_point_filename) if path.eq(entry_point_filename) => {
+                            Some(entry_point_filename)
+                                if path.eq(&entry_point_filename.to_str().unwrap().to_string()) =>
+                            {
                                 top_level_expressions
-                                    .push((path.clone(), entry_statement.expression))
+                                    .push((file.source.clone(), entry_statement.expression))
                             }
                             _ => {
                                 // do nothing
@@ -170,7 +184,7 @@ pub fn unify_statements(
                         }
                     }
                     Statement::Import(import_statement) => {
-                        import_statements.push((path.clone(), import_statement))
+                        import_statements.push((file.source.clone(), import_statement))
                     }
                 }
             }
@@ -213,19 +227,19 @@ pub fn unify_statements(
     // Insert enum types
     let enum_statements = enum_statements
         .into_iter()
-        .map(|(path, enum_statement)| {
+        .map(|(source, enum_statement)| {
             let (enum_uid, enum_type) = insert_enum_symbol(&mut module, enum_statement.clone())
-                .map_err(|unify_error| unify_error.into_compile_error(path.clone()))?;
-            Ok((path, enum_uid, enum_type, enum_statement))
+                .map_err(|unify_error| unify_error.into_compile_error(source.clone()))?;
+            Ok((source.clone(), enum_uid, enum_type, enum_statement))
         })
         .collect::<Result<Vec<_>, CompileError>>()?;
 
     // Check the definition of type alias statement
     type_statements
         .into_iter()
-        .map(|(path, type_statement)| {
+        .map(|(source, type_statement)| {
             infer_type_alias_statement(&mut module, type_statement)
-                .map_err(|unify_error| unify_error.into_compile_error(path.clone()))
+                .map_err(|unify_error| unify_error.into_compile_error(source))
         })
         .collect::<Result<Vec<()>, CompileError>>()?;
 
@@ -234,7 +248,7 @@ pub fn unify_statements(
         .into_iter()
         .map(|(path, enum_uid, enum_type, enum_statement)| {
             infer_enum_statement(&mut module, &enum_uid, enum_type, enum_statement)
-                .map_err(|unify_error| unify_error.into_compile_error(path.clone()))
+                .map_err(|unify_error| unify_error.into_compile_error(path))
         })
         .collect::<Result<Vec<_>, CompileError>>()?
         .into_iter()
@@ -244,9 +258,10 @@ pub fn unify_statements(
     // 4. Insert the type of top-level let statement (for implementing mutually recursive functions)
     let unchecked_let_statements = let_statements
         .into_iter()
-        .map(|(path, let_statement)| {
-            let type_value = type_annotation_to_type(&mut module, &let_statement.type_annotation)
-                .map_err(|unify_error| unify_error.into_compile_error(path.clone()))?;
+        .map(|(source, let_statement)| {
+            let type_value =
+                type_annotation_to_type(&mut module, &let_statement.type_annotation)
+                    .map_err(|unify_error| unify_error.into_compile_error(source.clone()))?;
             let name = let_statement.name.clone();
             let uid = module
                 .insert_symbol(
@@ -259,18 +274,18 @@ pub fn unify_statements(
                         kind: SymbolKind::Value(ValueSymbol { type_value }),
                     },
                 )
-                .map_err(|unify_error| unify_error.into_compile_error(path.clone()))?;
-            Ok((path, uid, name, let_statement))
+                .map_err(|unify_error| unify_error.into_compile_error(source.clone()))?;
+            Ok((source, uid, name, let_statement))
         })
         .collect::<Result<Vec<_>, CompileError>>()?;
 
     // 5. Insert top-level constant expression (i.e. expressions that does not have direct function call)
     let typechecked_let_statements = unchecked_let_statements
         .into_iter()
-        .map(|(path, uid, name, let_statement)| {
+        .map(|(source, uid, name, let_statement)| {
             if let Some(position) = has_direct_function_call(&let_statement.expression) {
                 Err(CompileError {
-                    path: path.clone(),
+                    source: source.clone(),
                     kind: CompileErrorKind::UnifyError(Box::new(UnifyError {
                         position,
                         kind: UnifyErrorKind::FunctionCallAtTopLevelIsNotAllowed,
@@ -279,13 +294,13 @@ pub fn unify_statements(
             } else {
                 let expected_type =
                     type_annotation_to_type(&mut module, &let_statement.type_annotation)
-                        .map_err(|unify_error| unify_error.into_compile_error(path.clone()))?;
+                        .map_err(|unify_error| unify_error.into_compile_error(source.clone()))?;
                 let right = infer_expression_type(
                     &mut module,
                     Some(expected_type.clone()),
                     &let_statement.expression,
                 )
-                .map_err(|unify_error| unify_error.into_compile_error(path.clone()))?;
+                .map_err(|unify_error| unify_error.into_compile_error(source.clone()))?;
                 Ok(InferredStatement::Let {
                     access: let_statement.access,
                     left: InferredDestructurePattern {
@@ -304,9 +319,9 @@ pub fn unify_statements(
     // 6. Then we will infer expression statements
     let typechecked_top_level_expressions_statements = top_level_expressions
         .into_iter()
-        .map(|(path, expression)| {
+        .map(|(source, expression)| {
             let expression = infer_expression_type(&mut module, Some(Type::Unit), &expression)
-                .map_err(|unify_error| unify_error.into_compile_error(path.clone()))?;
+                .map_err(|unify_error| unify_error.into_compile_error(source))?;
             Ok(InferredStatement::Expression(expression.expression))
         })
         .collect::<Result<Vec<InferredStatement>, CompileError>>()?;
@@ -314,9 +329,9 @@ pub fn unify_statements(
     // 7. Lastly, we typecheck the docstring codes
     doc_string_codes
         .into_iter()
-        .map(|(path, expression)| {
+        .map(|(source, expression)| {
             infer_expression_type(&mut module, None, &expression)
-                .map_err(|unify_error| unify_error.into_compile_error(path.clone()))
+                .map_err(|unify_error| unify_error.into_compile_error(source))
         })
         .collect::<Result<Vec<_>, CompileError>>()?;
     Ok(UnifyProgramResult {
@@ -440,9 +455,9 @@ pub struct UnifyError {
 }
 
 impl UnifyError {
-    pub fn into_compile_error(self, path: PathBuf) -> CompileError {
+    pub fn into_compile_error(self, source: Rc<Source>) -> CompileError {
         CompileError {
-            path,
+            source,
             kind: CompileErrorKind::UnifyError(Box::new(self)),
         }
     }
@@ -556,28 +571,37 @@ pub struct InferImportStatementResult {
 pub fn infer_import_statement(
     module: &mut Module,
     imported_modules: &ImportedModules,
-    (path, import_statement): (PathBuf, ImportStatement),
+    (source, import_statement): (Rc<Source>, ImportStatement),
 ) -> Result<InferImportStatementResult, CompileError> {
     // Look up for memoize imported modules
     let inferred_right = {
         let importer_path = module.uid().string_value();
 
         let import_path = import_statement.url.content.trim_matches('"');
-        let import_path = to_relative_path(
-            PathBuf::from(format!("{}/{}", importer_path, import_path))
-                .canonicalize()
-                .map_err(|error| CompileError {
-                    path: path.clone(),
-                    kind: CompileErrorKind::UnifyError(Box::new(UnifyError {
-                        position: import_statement.url.position(),
-                        kind: UnifyErrorKind::ErrorneousImportPath {
-                            extra_information: error.to_string(),
-                        },
-                    })),
-                })?,
-        )
-        .unwrap();
-        let path_string = import_path.to_str().unwrap().to_string();
+        let uid = if import_path.starts_with("@") {
+            ModuleUid::StandardLibrary {
+                path: import_path.chars().skip(1).collect(),
+            }
+        } else {
+            let path = to_relative_path(
+                PathBuf::from(format!("{}/{}", importer_path, import_path))
+                    .canonicalize()
+                    .map_err(|error| CompileError {
+                        source: source.clone(),
+                        kind: CompileErrorKind::UnifyError(Box::new(UnifyError {
+                            position: import_statement.url.position(),
+                            kind: UnifyErrorKind::ErrorneousImportPath {
+                                extra_information: error.to_string(),
+                            },
+                        })),
+                    })?,
+            )
+            .unwrap();
+            ModuleUid::Local {
+                folder_relative_path: path,
+            }
+        };
+        let path_string = uid.string_value();
         if module
             .meta
             .import_relations
@@ -597,33 +621,26 @@ pub fn infer_import_statement(
                     },
                 },
             }
-            .into_compile_error(path.clone()));
+            .into_compile_error(source.clone()));
         }
-        let uid = ModuleUid::Local {
-            folder_relative_path: import_path.to_str().unwrap().to_string(),
-        };
 
         // Look up for memoize imported modules
         match imported_modules.get(&uid) {
             Some(module) => {
-                println!("Compile cache hit: {}", uid.string_value());
+                if uid.string_value() != "prelude".to_string() {
+                    println!("Compile cache hit: {}", uid.string_value());
+                }
                 Ok(UnifyProgramResult {
                     entrypoint: module.clone(),
                     imported_modules: IndexMap::new(),
                 })
             }
-            None => match fs::read_dir(import_path.clone()) {
-                Err(error) => {
-                    return Err(UnifyError {
-                        position: import_statement.url.position(),
-                        kind: UnifyErrorKind::ErrorneousImportPath {
-                            extra_information: format!("{}", error),
-                        },
-                    }
-                    .into_compile_error(import_path.clone()))
-                }
-                Ok(dir) => read_module(&module.meta, imported_modules, import_path, dir, None),
-            },
+            None => {
+                let dir = uid
+                    .read(import_statement.url.position())
+                    .map_err(|err| err.into_compile_error(source.clone()))?;
+                read_module(&module.meta, imported_modules, uid, dir, None)
+            }
         }
     }?;
 
@@ -663,7 +680,7 @@ pub fn infer_import_statement(
                             position: alias.name.position,
                             kind: UnifyErrorKind::UnknownImportedName,
                         }
-                        .into_compile_error(path.clone()))
+                        .into_compile_error(source.clone()))
                     } else {
                         Ok(matching_symbol_entries
                             .into_iter()
@@ -672,7 +689,7 @@ pub fn infer_import_statement(
                                     position: alias.name.position.clone(),
                                     kind: UnifyErrorKind::CannotImportProtectedSymbol,
                                 }
-                                .into_compile_error(path.clone())),
+                                .into_compile_error(source.clone())),
                                 _ => Ok((
                                     entry,
                                     Some(match &alias.alias {
@@ -721,7 +738,7 @@ pub fn infer_import_statement(
                         _ => Ok(vec![]),
                     }
                 }
-                Err(unify_error) => Err(unify_error.into_compile_error(path.clone())),
+                Err(unify_error) => Err(unify_error.into_compile_error(source.clone())),
             }
         })
         .collect::<Result<Vec<Vec<InferredImportStatement>>, CompileError>>()?
@@ -2502,6 +2519,39 @@ fn infer_expression_type_(
                             argument: Box::new(argument.expression),
                         },
                         type_value: Type::Integer,
+                    })
+                }
+                "print" => Ok(InferExpressionResult {
+                    // No type checking needed, any expression can be printed
+                    expression: InferredExpression::InnateFunctionCall {
+                        function: InnateFunction::Print,
+                        argument: Box::new(
+                            infer_expression_type(module, None, &innate_function_call.argument)?
+                                .expression,
+                        ),
+                    },
+                    type_value: Type::Unit,
+                }),
+                "read_file" => {
+                    let expected_type = Type::Tuple(Box::new(NonEmpty {
+                        head: Type::String,
+                        tail: vec![Type::Function(FunctionType {
+                            parameter_type: Box::new(Type::String),
+                            return_type: Box::new(Type::Unit),
+                            type_constraints: vec![],
+                        })],
+                    }));
+                    let argument = infer_expression_type(
+                        module,
+                        Some(expected_type),
+                        &innate_function_call.argument,
+                    )?;
+                    Ok(InferExpressionResult {
+                        expression: InferredExpression::InnateFunctionCall {
+                            function: InnateFunction::ReadFile,
+                            argument: Box::new(argument.expression),
+                        },
+                        type_value: Type::Unit,
                     })
                 }
                 other => Err(UnifyError {

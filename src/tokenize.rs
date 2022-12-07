@@ -25,6 +25,15 @@ impl Character {
             character_index_end: self.index,
         }
     }
+
+    pub fn dummy() -> Character {
+        Character {
+            index: 0,
+            line_number: 0,
+            column_number: 0,
+            value: ' ',
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

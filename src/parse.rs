@@ -1678,7 +1678,7 @@ impl Expression {
                     },
                 )
             }
-            _ => todo!(),
+            x => todo!("{:#?}", x),
         }
     }
 }
