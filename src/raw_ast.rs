@@ -352,22 +352,6 @@ pub struct TildeClosure {
 }
 
 #[derive(Debug, Clone)]
-pub struct SwitchCase {
-    pub keyword_case: Token,
-    pub pattern: DestructurePattern,
-    pub body: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub struct WithExpression {
-    pub keyword_with: Token,
-    pub left_patterns: Box<NonEmpty<DestructurePattern>>,
-    pub binary_function_name: Token,
-    pub right: Box<Expression>,
-    pub body: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
 pub struct ExpressionEnumConstructorPayload {
     pub left_parenthesis: Token,
     pub expression: Expression,
