@@ -1556,36 +1556,12 @@ impl Expression {
                 ),
             },
             Expression::Function(function) => {
-                // TODO: collect_cps_bangs should not escape function
-                // So the result should be no bangs, and function unchange
-                // add test case
-                let result = function.branches.map(|branch| {
-                    let (bangs, body) = branch.body.collect_cps_bangs(parser, bind_function);
-                    (
-                        bangs,
-                        FunctionBranch {
-                            parameter: branch.parameter,
-                            body: Box::new(body),
-                            right_square_bracket: Token::dummy(),
-                        },
-                    )
-                });
-                let (bang, branch) = result.head;
-                let (bangs, branches): (Vec<Vec<CollectCpsBangResult>>, Vec<FunctionBranch>) =
-                    result.tail.into_iter().unzip();
-                (
-                    vec![bang]
-                        .into_iter()
-                        .chain(bangs.into_iter())
-                        .flatten()
-                        .collect(),
-                    Expression::Function(Box::new(Function {
-                        branches: NonEmpty {
-                            head: branch,
-                            tail: branches,
-                        },
-                    })),
-                )
+                // Don't collect bang for function, because bang should not escape the body of a
+                // function
+                //
+                // This is because the body of a function might be evaluated more than once,
+                // for example, the function passed to Array::map
+                (vec![], Expression::Function(function))
             }
             Expression::FunctionCall(function_call) => {
                 let (bangs1, function) = function_call
