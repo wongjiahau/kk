@@ -8,11 +8,9 @@ INPUT
 class Foo = A {a: Int, b: Int} | B
 
 entry
-  B .(
-
-    \ A {a = x, b = x} -> ()
-       //           ^ Error: duplicated binding `x`
-  )
+  B .
+    ->  A {a = x, b = x} [()]
+       //             ^ Error: duplicated binding `x`
 
 ============
 EXIT CODE
@@ -28,8 +26,8 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/pattern_conflicting_bindings_1/pattern_conflicting_bindings_1.kk:6:21
+  ┌─ tests/compiler/typecheck/pattern_conflicting_bindings_1/pattern_conflicting_bindings_1.kk:5:23
   │
-6 │     \ A {a = x, b = x} -> ()
-  │                     ^ `x` cannot be overloaded
+5 │     ->  A {a = x, b = x} [()]
+  │                       ^ `x` cannot be overloaded
   │

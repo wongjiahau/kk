@@ -8,7 +8,7 @@ INPUT
 let foo: {
   f: { x: Int } -> Int
 } = {
-  f = \options -> options.y
+  f = -> options [ options .y ]
 }
 
 ============
@@ -25,9 +25,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_8/contextual_unification_8.kk:4:27
+  ┌─ tests/compiler/typecheck/contextual_unification_8/contextual_unification_8.kk:4:29
   │
-4 │   f = \options -> options.y
-  │                           ^ Unknown variable `y`
+4 │   f = -> options [ options .y ]
+  │                             ^ Unknown variable `y`
   │
   = Cannot find this value symbol in the current scope

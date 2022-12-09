@@ -478,6 +478,20 @@ impl Eval for interpretable::Expression {
                     }
                 }
             },
+            Expression::TupleAccess { tuple, index } => {
+                let (value, promises) = tuple.eval(env)?;
+                match value {
+                    Value::Tuple(tuple) => {
+                        let value = if index == 0 {
+                            tuple.head
+                        } else {
+                            tuple.tail[index - 1].clone()
+                        };
+                        Ok((value, promises))
+                    }
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 }

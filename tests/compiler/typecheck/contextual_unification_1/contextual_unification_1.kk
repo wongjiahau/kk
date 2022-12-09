@@ -1,3 +1,3 @@
 entry
-  let f : Float -> Float =  \o -> o .bar;
+  let f : Float -> Float  =  -> o [ o .bar ];
   ()

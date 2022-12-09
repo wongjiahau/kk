@@ -7,10 +7,10 @@ INPUT
 ============
 let foo
   : Int -> Int
-  = \0 -> 0
-    \1 -> 1
-    \1 -> 1
-    \_ -> 2
+  = -> 0 [ 0 ]
+    -> 1 [ 1 ]
+    -> 1 [ 1 ]
+    -> _ [ 2 ]
 
 ============
 EXIT CODE
@@ -26,9 +26,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_integer_1/unreachable_case_integer_1.kk:5:6
+  ┌─ tests/compiler/typecheck/unreachable_case_integer_1/unreachable_case_integer_1.kk:5:8
   │
-5 │     \1 -> 1
-  │      ^ Unreachable case
+5 │     -> 1 [ 1 ]
+  │        ^ Unreachable case
   │
   = This case is unreachable as it is already handled by previous cases.

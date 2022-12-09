@@ -9,7 +9,7 @@ class Foo = a (String) | b {hello: String}
 
 let `to string`
   : Foo -> String
-  = \a(x) | b {hello = x} -> x
+  = -> a (x) | b {hello = x} [ x ]
 
 entry
   a "Spongebob". `to string` .print;

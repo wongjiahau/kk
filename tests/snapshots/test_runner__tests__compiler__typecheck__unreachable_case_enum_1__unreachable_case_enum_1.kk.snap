@@ -8,12 +8,11 @@ INPUT
 class Option<T> = some(T) | none
 
 let foo (o: Option<Int>): Option<String> =
-  o .(
-    \some(1) -> some("hi")
-    \some(_) -> some("lol")
-    \some(_) -> none // This is unreachable
-    \none    -> none
-  )
+  o .
+    -> some(1) [ some ("hi") ]
+    -> some(_) [ some ("lol") ]
+    -> some(_) [ none ] // This is unreachable
+    -> none    [ none ]
 
 ============
 EXIT CODE
@@ -29,9 +28,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_enum_1/unreachable_case_enum_1.kk:7:6
+  ┌─ tests/compiler/typecheck/unreachable_case_enum_1/unreachable_case_enum_1.kk:7:8
   │
-7 │     \some(_) -> none // This is unreachable
-  │      ^^^^^^ Unreachable case
+7 │     -> some(_) [ none ] // This is unreachable
+  │        ^^^^^^ Unreachable case
   │
   = This case is unreachable as it is already handled by previous cases.

@@ -10,7 +10,7 @@ let foo (_: String): String = "Hello"
 let foo (): String = "World"
 
 let main (): Int =
-  let f = \x -> x .foo;
+  let f = [ x ] [ x ] .foo;
   //               ^^^ Error: ambiguous symbol
   123
 
@@ -28,10 +28,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/single_dispatch_2/single_dispatch_2.kk:6:20
+  ┌─ tests/compiler/typecheck/single_dispatch_2/single_dispatch_2.kk:6:24
   │
-6 │   let f = \x -> x .foo;
-  │                    ^^^ Ambiguous Symbol
+6 │   let f = [ x ] [ x ] .foo;
+  │                        ^^^ Ambiguous Symbol
   │
   = Matching types:
 

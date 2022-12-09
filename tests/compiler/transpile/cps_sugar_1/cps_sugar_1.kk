@@ -1,10 +1,9 @@
 class Option<T> = some (T) | none
 
 let<T, U> (option: Option<T>) .unwrap (callback: T -> Option<U>) : Option<U> = 
-  option .(
-    \some (t) -> callback (t)
-    \none -> none
-  )
+  option .
+    -> some (t) [ callback (t) ]
+    -> none [ none ]
 
 entry
   let x = ~unwrap (

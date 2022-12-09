@@ -1,4 +1,4 @@
-effect raise : <A> Int -> A
+effect raise : <A> Int [ A ]
 
 let hello (): Int effect (raise) = 
   raise 99;

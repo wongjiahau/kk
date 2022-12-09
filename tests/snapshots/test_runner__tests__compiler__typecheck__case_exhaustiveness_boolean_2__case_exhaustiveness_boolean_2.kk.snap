@@ -9,8 +9,8 @@ class Boolean = true | false
 
 let (x : Boolean) .and (y: Boolean) : Boolean =
   { x, y } .(
-    \{x = true, y = true} -> true
-    \{x = false, y = true} -> false
+    -> {x = true, y = true} [ true ]
+    -> {x = false, y = true} [ false ]
   )
 
 ============
@@ -27,12 +27,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_2/case_exhaustiveness_boolean_2.kk:5:6
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_boolean_2/case_exhaustiveness_boolean_2.kk:5:8
   │
-5 │       \{x = true, y = true} -> true
-  │ ╭──────^
-6 │ │     \{x = false, y = true} -> false
-  │ ╰───────────────────────────────────^ Non-exhaustive cases
+5 │       -> {x = true, y = true} [ true ]
+  │ ╭────────^
+6 │ │     -> {x = false, y = true} [ false ]
+  │ ╰────────────────────────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

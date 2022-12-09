@@ -7,9 +7,9 @@ do `false.not`.should_be(`true`)
 ```
 ###
 export let not
-  : | Boolean -> Boolean
-  = | true -> false
-    | false -> true
+  : | Boolean [ Boolean ]
+  = | true [ false ]
+    | false [ true ]
 
 ###
 ```
@@ -20,9 +20,9 @@ do `false.and(false)`.should_be(`false`)
 ```
 ###
 export let and
-  : | Boolean Boolean -> Boolean
-  = | true true -> true
-    | _ _ -> false
+  : | Boolean Boolean [ Boolean ]
+  = | true true [ true ]
+    | _ _ [ false ]
 
 ###
 ```
@@ -33,9 +33,9 @@ do `false.or(false)`.should_be(`false`)
 ```
 ###
 export let or
-  : | Boolean Boolean -> Boolean
-  = | false false -> false
-    | _ _ -> true
+  : | Boolean Boolean [ Boolean ]
+  = | false false [ false ]
+    | _ _ [ true ]
 
 ###
 ```
@@ -46,9 +46,9 @@ do `false.nand(false)`.should_be(`true`)
 ```
 ###
 export let nand
-  : | Boolean Boolean -> Boolean
-  = | true true -> false
-    | _ _ -> true
+  : | Boolean Boolean [ Boolean ]
+  = | true true [ false ]
+    | _ _ [ true ]
 
 ###
 ```
@@ -59,9 +59,9 @@ do `false.nor(false)`.should_be(`true`)
 ```
 ###
 export let nor
-  : | Boolean Boolean -> Boolean
-  = | false false -> true
-    | _ _ -> false
+  : | Boolean Boolean [ Boolean ]
+  = | false false [ true ]
+    | _ _ [ false ]
 
 ###
 ```
@@ -72,10 +72,10 @@ do `false.xor(false)`.should_be(`false`)
 ```
 ###
 export let xor
-  : | Boolean Boolean -> Boolean
-  = | false false -> false
-    | true true -> false
-    | _ _ -> true
+  : | Boolean Boolean [ Boolean ]
+  = | false false [ false ]
+    | true true [ false ]
+    | _ _ [ true ]
 
 ###
 ```
@@ -86,17 +86,17 @@ do `false.xnor(false)`.should_be(`true`)
 ```
 ###
 export let xnor
-  : | Boolean Boolean -> Boolean
-  = | false false -> true
-    | true true -> true
-    | _ _ -> false
+  : | Boolean Boolean [ Boolean ]
+  = | false false [ true ]
+    | true true [ true ]
+    | _ _ [ false ]
 
 
 ###
 For checking if two expressions are deeply equal.
 ###
 export let equals<A>
-  : | A A -> Boolean
+  : | A A [ Boolean ]
   = @@@
   /*
     MIT License
@@ -170,8 +170,8 @@ do `123.to_json`.should_be(`"123"`)
 ```
 ###
 export let to_json<A>
-  : | A -> String
-  = @@@ (x) -> JSON.stringify(x) @@@
+  : | A [ String ]
+  = @@@ (x) [ JSON ].stringify(x) @@@
 
 ###
 For asserting that two values are deep equal.  
@@ -181,7 +181,7 @@ do `["Hello" " " "world"].join`.should_be(`"Hello world"`)
 ```
 ###
 export let should_be<A>
-  : | `A` `A` -> Null
+  : | `A` `A` [ Null ]
   = | a b -> 
       let source = [
         a.meta.filename
@@ -196,8 +196,8 @@ export let should_be<A>
         | false ->
             let _ = [ 
               source "(ASSERTION FAILED: LEFT does not deeply equals RIGHT)" 
-              "\nLEFT  = " a.value.to_json
-              "\nRIGHT = " b.value.to_json
+               -> nLEFT  = " a.value.to_json
+               -> nRIGHT = " b.value.to_json
             ].join.print
             1.exit
       )
@@ -208,21 +208,21 @@ type Result<A B> = Ok(A) Error(B)
 type Option<A> = Some(A) None
 
 let is_some<A>
-  : | Option<A> -> Boolean
-  = | Some(_) -> true
-    | _ -> false
+  : | Option<A> [ Boolean ]
+  = | Some(_) [ true ]
+    | _ [ false ]
 
 let is_none<A>
-  : | Option<A> -> Boolean
-  = | None -> true
-    | _ -> false
+  : | Option<A> [ Boolean ]
+  = | None [ true ]
+    | _ [ false ]
 
 ###
 Exit a process with a specific code.
 ###
 export let exit
-  : | Int -> Null
-  = @@@ (code) -> process.exit(code) @@@
+  : | Int [ Null ]
+  = @@@ (code) [ process ].exit(code) @@@
 
 # String functions
 
@@ -233,8 +233,8 @@ do `"Hello world".to_uppercase`.should_be(`"HELLO WORLD"`)
 ```
 ###
 export let to_uppercase
-  : | String -> String
-  = @@@ x -> x.toUpperCase() @@@
+  : | String [ String ]
+  = @@@ x [ x ].toUpperCase() @@@
 
 ###
 Check if a string ends with a particular substring.
@@ -244,8 +244,8 @@ do `"Hello world".ends_with("mars")`.should_be(`false`)
 ```
 ###
 export let ends_with
-  : | String String -> Boolean
-  = @@@ (a, b) -> a.endsWith(b) @@@
+  : | String String [ Boolean ]
+  = @@@ (a, b) [ a ].endsWith(b) @@@
 
 ###
 For joining an array of String.  
@@ -254,8 +254,8 @@ do `["Hello" " " "World"].join`.should_be(`"Hello World"`)
 ```
 ###
 export let join
-  : | [String] -> String
-  = @@@ (xs) -> xs.join("") @@@
+  : | [String] [ String ]
+  = @@@ (xs) [ xs ].join("") @@@
 
 ###
 Concatenate two strings.
@@ -264,7 +264,7 @@ do `"Hello".concat(" ").concat("world")`.should_be(`"Hello world"`)
 ```
 ###
 export let concat
-  : | String String -> String
+  : | String String [ String ]
   = @@@ (x,y)->x+y @@@
 
 
@@ -274,8 +274,8 @@ export let concat
 For converting an Int to String.
 ###
 export let to_string
-  : | Int -> String
-  = @@@ x -> x.toString() @@@
+  : | Int [ String ]
+  = @@@ x [ x ].toString() @@@
 
 ###
 Add two Ints.
@@ -284,8 +284,8 @@ do `123.plus(987)`.should_be(`1110`)
 ```
 ###
 export let plus
-  : | Int Int -> Int
-  = @@@ (x, y) -> x + y @@@
+  : | Int Int [ Int ]
+  = @@@ (x, y) [ x ] + y @@@
 
 ###
 Add two floats.
@@ -295,8 +295,8 @@ do `1.23.plus(4.57).round(1)`.should_be(`5.8`)
 ```
 ###
 export let plus
-  : | Float Float -> Float
-  = @@@ (x, y) -> x + y @@@
+  : | Float Float [ Float ]
+  = @@@ (x, y) [ x ] + y @@@
 
 ###
 Round a float to the number of decimals specified.
@@ -307,7 +307,7 @@ do `1.23456789.round(10)`.should_be(`1.23456789`)
 ```
 ###
 export let round
-  : | Float Int -> Float
+  : | Float Int [ Float ]
   = @@@ (number, decimal) -> {
     const tens = Math.pow(10, decimal)
     return Math.round((number + Number.EPSILON) * tens) / tens
@@ -322,8 +322,8 @@ do `100.minus(1)`.should_be(`99`)
 ```
 ###
 export let minus
-  : | Int Int -> Int
-  = @@@ (x, y) -> x - y @@@
+  : | Int Int [ Int ]
+  = @@@ (x, y) [ x ] - y @@@
 
 ###
 Subtracts two floats.  
@@ -333,8 +333,8 @@ do `1.0.minus(0.1)`.should_be(`0.9`)
 ```
 ###
 export let minus
-  : | Float Float -> Float
-  = @@@ (x, y) -> x - y @@@
+  : | Float Float [ Float ]
+  = @@@ (x, y) [ x ] - y @@@
 
 ###
 Multiply two Ints.
@@ -343,8 +343,8 @@ do `9.multiply(8)`.should_be(`72`)
 ```
 ###
 export let multiply
-  : | Int Int -> Int
-  = @@@ (x, y) -> x*y @@@
+  : | Int Int [ Int ]
+  = @@@ (x, y) [ x ]*y @@@
 
 ###
 Multiply two floats.
@@ -353,8 +353,8 @@ do `9.0.multiply(8.0)`.should_be(`72.0`)
 ```
 ###
 export let multiply
-  : | Float Float -> Float
-  = @@@ (x, y) -> x * y @@@
+  : | Float Float [ Float ]
+  = @@@ (x, y) [ x ] * y @@@
 
 ###
 Divide two Ints where the remainder will be truncated.
@@ -364,8 +364,8 @@ do `9.divide(4)`.should_be(`2`)
 ```
 ###
 export let divide
-  : | Int Int -> Int
-  = @@@ (a, b) -> Math.floor(a / b) @@@
+  : | Int Int [ Int ]
+  = @@@ (a, b) [ Math ].floor(a / b) @@@
 
 ###
 Divide two floats.
@@ -374,8 +374,8 @@ do `2.7.divide(3.0)`.should_be(`0.9`)
 ```
 ###
 export let divide
-  : | Float Float -> Float
-  = @@@ (a, b) -> a / b @@@
+  : | Float Float [ Float ]
+  = @@@ (a, b) [ a ] / b @@@
 
 ###
 Compute `base` raised to the `exponent` power.
@@ -384,7 +384,7 @@ do `9.power(2)`.should_be(`81`)
 ```
 ###
 export let power
-  : | Int Int -> Int
+  : | Int Int [ Int ]
   = @@@ Math.pow @@@
 
 ###
@@ -394,7 +394,7 @@ do `9.0.power(2.3).round(3)`.should_be(`156.588`)
 ```
 ###
 export let power
-  : | Float Float -> Float
+  : | Float Float [ Float ]
   = @@@ Math.pow @@@
 
 ###
@@ -404,8 +404,8 @@ do `0.0.is_not_a_number`.should_be(`false`)
 ```
 ###
 export let is_not_a_number
-  : | Float -> Boolean
-  = @@@ n -> Number.isNaN(n) @@@
+  : | Float [ Boolean ]
+  = @@@ n [ Number ].isNaN(n) @@@
 
 ###
 Check if a given Int is not a number (NaN).
@@ -414,8 +414,8 @@ do `0.modulo(0).is_not_a_number`.should_be(`true`)
 ```
 ###
 export let is_not_a_number
-  : | Int -> Boolean
-  = @@@ n -> Number.isNaN(n) @@@
+  : | Int [ Boolean ]
+  = @@@ n [ Number ].isNaN(n) @@@
 
 ###
 Get the remainder of a division between two Ints.  
@@ -426,8 +426,8 @@ do `0.modulo(0).is_not_a_number`.should_be(`true`)
 ```
 ###
 export let modulo
-  : | Int Int -> Int
-  = @@@ (a, n) -> n === 0 ? NaN : ((a % n) + n) % n @@@
+  : | Int Int [ Int ]
+  = @@@ (a, n) [ n ] === 0 ? NaN : ((a % n) + n) % n @@@
 
 ###
 Check if the first Int is less than the second Int.
@@ -438,8 +438,8 @@ do `2.less_than(1)`.should_be(`false`)
 ```
 ###
 export let less_than
-  : | Int Int -> Boolean
-  = @@@ (x,y) -> x < y @@@
+  : | Int Int [ Boolean ]
+  = @@@ (x,y) [ x ] < y @@@
 
 ###
 Check if the first float is less than the second float.
@@ -450,8 +450,8 @@ do `2.0.less_than(1.0)`.should_be(`false`)
 ```
 ###
 export let less_than
-  : | Float Float -> Boolean
-  = @@@ (x,y) -> x < y @@@
+  : | Float Float [ Boolean ]
+  = @@@ (x,y) [ x ] < y @@@
 
 
 ###
@@ -463,8 +463,8 @@ do `2.more_than(1)`.should_be(`true`)
 ```
 ###
 export let more_than
-  : | Int Int -> Boolean
-  = @@@ (x,y) -> x > y @@@
+  : | Int Int [ Boolean ]
+  = @@@ (x,y) [ x ] > y @@@
 
 ###
 Check if the first float is more than the second float.
@@ -475,8 +475,8 @@ do `2.0.more_than(1.0)`.should_be(`true`)
 ```
 ###
 export let more_than
-  : | Float Float -> Boolean
-  = @@@ (x,y) -> x > y @@@
+  : | Float Float [ Boolean ]
+  = @@@ (x,y) [ x ] > y @@@
 
 ###
 Negates a float value.
@@ -485,7 +485,7 @@ do `1.0.negative`.should_be(`-1.0`)
 ```
 ###
 export let negative
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ x -> -x @@@
 
 ###
@@ -583,7 +583,7 @@ do `1.0.absolute`.should_be(`1.0`)
 ```
 ###
 export let absolute
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.abs @@@
 
 ###
@@ -593,7 +593,7 @@ do `0.5.acos.round(4)`.should_be(`1.0472`)
 ```
 ###
 export let acos
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.acos @@@
 
 ###
@@ -603,7 +603,7 @@ do `2.0.acosh.round(4)`.should_be(`1.317`)
 ```
 ###
 export let acosh
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.acosh @@@
 
 ###
@@ -613,7 +613,7 @@ do `0.5.asin.round(4)`.should_be(`0.5236`)
 ```
 ###
 export let asin
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.asin @@@
 
 ###
@@ -623,7 +623,7 @@ do `1.0.asinh.round(4)`.should_be(`0.8814`)
 ```
 ###
 export let asinh
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.asinh @@@
 
 ###
@@ -633,7 +633,7 @@ do `1.0.atan.round(4)`.should_be(`0.7854`)
 ```
 ###
 export let atan
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.atan @@@
 
 ###
@@ -643,7 +643,7 @@ do `1.0.atan2(3.0).round(4)`.should_be(`0.3218`)
 ```
 ###
 export let atan2
-  : | Float Float -> Float
+  : | Float Float [ Float ]
   = @@@ Math.atan2 @@@
 
 ###
@@ -653,7 +653,7 @@ do `0.5.atanh.round(4)`.should_be(`0.5493`)
 ```
 ###
 export let atanh
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.atanh @@@
 
 ###
@@ -663,7 +663,7 @@ do `27.0.cube_root`.should_be(`3.0`)
 ```
 ###
 export let cube_root
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.cbrt @@@
 
 ###
@@ -673,7 +673,7 @@ do `1.0001.ceiling`.should_be(`2`)
 ```
 ###
 export let ceiling
-  : | Float -> Int
+  : | Float [ Int ]
   = @@@ Math.ceil @@@
 
 ###
@@ -683,7 +683,7 @@ do `PI.cos`.should_be(`-1.0`)
 ```
 ###
 export let cos
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.cos @@@
 
 ###
@@ -693,7 +693,7 @@ do `1.0.cosh.round(4)`.should_be(`1.5431`)
 ```
 ###
 export let cosh
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.cosh @@@
 
 ###
@@ -703,7 +703,7 @@ do `E.power(3.0).round(9)`.should_be(`3.0.exp.round(9)`)
 ```
 ###
 export let exp
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.exp @@@
 
 ###
@@ -713,7 +713,7 @@ do `E.power(3.0).minus(1.0).round(9)`.should_be(`3.0.expm1.round(9)`)
 ```
 ###
 export let expm1
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.expm1 @@@
 
 ###
@@ -723,7 +723,7 @@ do `9.9999.floor`.should_be(`9`)
 ```
 ###
 export let floor
-  : | Float -> Int
+  : | Float [ Int ]
   = @@@ Math.floor @@@
 
 ###
@@ -733,7 +733,7 @@ do `E.log`.should_be(`1.0`)
 ```
 ###
 export let log
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.log @@@
 
 ###
@@ -743,7 +743,7 @@ do `10.0.log10`.should_be(`1.0`)
 ```
 ###
 export let log10
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.log10 @@@
 
 ###
@@ -753,7 +753,7 @@ do `2.0.log2`.should_be(`1.0`)
 ```
 ###
 export let log2
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.log2 @@@
 
 ###
@@ -763,8 +763,8 @@ do `[1.2 52.0 3.3 2.3].max`.should_be(`52.0`)
 ```
 ###
 export let max<A>
-  : | [Float] -> Float
-  = @@@ (xs) -> Math.max(...xs) @@@
+  : | [Float] [ Float ]
+  = @@@ (xs) [ Math ].max(...xs) @@@
 
 ###
 Returns the minimum float of array.
@@ -773,8 +773,8 @@ do `[1.2 52.0 3.3 2.3].min`.should_be(`1.2`)
 ```
 ###
 export let min<A>
-  : | [Float] -> Float
-  = @@@ (xs) -> Math.min(...xs) @@@
+  : | [Float] [ Float ]
+  = @@@ (xs) [ Math ].min(...xs) @@@
 
 ###
 Compute the sine of a number.
@@ -783,7 +783,7 @@ do `0.0.sin`.should_be(`0.0`)
 ```
 ###
 export let sin
-  : | Float -> Float
+  : | Float [ Float ]
   = @@@ Math.sin @@@
 
 
@@ -814,8 +814,8 @@ do `[1 2 3].get(1)`.should_be(`Some(2)`)
 ```
 ###
 export let get<A>
-  : | [A] Int -> Option<A>
-  = @@@ (xs, i) -> i < xs.length ? {$:"Some",_:xs[i]} : {$:"None",_:null} @@@
+  : | [A] Int [ Option ]<A>
+  = @@@ (xs, i) [ i ] < xs.length ? {$:"Some",_:xs[i]} : {$:"None",_:null} @@@
 
 ###
 Concatenate two arrays.
@@ -878,7 +878,7 @@ do `[1 2 3 1].drop_while(|.less_than(9))`.should_be(`[]`)
 ```
 ###
 export let drop_while<A>
-  : | [A] | A -> Boolean -> [A]
+  : | [A] | A [ Boolean ] -> [A]
   = @@@
      (xs, p) -> {
       var length = xs.length
@@ -908,9 +908,9 @@ do `[1 2 3].every(|.more_than(1))`.should_be(`false`)
 ```
 ###
 export let every<A>
-  : | [A] | A -> Boolean -> Boolean
-  = | xs predicate -> xs
-      .find_map(|x -> x.predicate.(|false -> Some(null) |_ -> None))
+  : | [A] | A [ Boolean ] [ Boolean ]
+  = | xs predicate [ xs ]
+      .find_map(|x [ x ].predicate.(|false [ Some ](null) |_ [ None ]))
       .is_some.not
 
 ###
@@ -920,8 +920,8 @@ do `[1 2 3].filter(|.more_than(1))`.should_be(`[2 3]`)
 ```
 ###
 export let filter<A>
-  : | [A] | A -> Boolean -> [A]
-  = | xs predicate -> xs.flat_map(|x -> x.predicate.(|true -> [x] |_ -> []))
+  : | [A] | A [ Boolean ] -> [A]
+  = | xs predicate [ xs ].flat_map(|x [ x ].predicate.(|true -> [x] |_ -> []))
 
 ###
 Apply a transform function to each matching elements in an array.  
@@ -935,12 +935,12 @@ let animals
     Fish({fins: 2})
     Bird({wings: 4})
   ]
-do `animals.filter_map(|Bird({wings}) -> Some(wings) |_ -> None)`.should_be(`[2 4]`)
+do `animals.filter_map(|Bird({wings}) [ Some ](wings) |_ [ None ])`.should_be(`[2 4]`)
 ```
 ###
 export let filter_map<A B>
-  : | [A] | A -> Option<B> -> [B]
-  = | xs f -> xs.flat_map(|x -> x.f.(|Some(y) -> [y] |_ -> []))
+  : | [A] | A [ Option ]<B> -> [B]
+  = | xs f [ xs ].flat_map(|x [ x ].f.(|Some(y) -> [y] |_ -> []))
 
 ###
 Find the first element that satisfies the given predicate.
@@ -950,8 +950,8 @@ do `[1 2 3].find(|.more_than(10))`.should_be(`None`)
 ```
 ###
 export let find<A>
-  : | [A] | A -> Boolean -> Option<A>
-  = | xs predicate -> xs.find_map(|x -> x.predicate.(|true -> Some(x) |_ -> None))
+  : | [A] | A [ Boolean ] [ Option ]<A>
+  = | xs predicate [ xs ].find_map(|x [ x ].predicate.(|true [ Some ](x) |_ [ None ]))
 
 
 ### 
@@ -959,12 +959,12 @@ This function is similar to `filter_map` except that the mapping function only
 applies to the first satisfying element.
 ```
 do `[{id: 1 name: "Foo"} {id: 2 name: "Bar"}]
-    .find_map(|x -> x.id.equals(2).(| true -> Some(x.name) | _ -> None))`
+    .find_map(|x [ x ].id.equals(2).(| true [ Some ](x.name) | _ [ None ]))`
     .should_be(`Some("Bar")`)
 ```
 ###
 export let find_map<A B>
-  : | [A] | A -> Option<B> -> Option<B>
+  : | [A] | A [ Option ]<B> [ Option ]<B>
   = 
   @@@
    (xs, f) -> {
@@ -989,7 +989,7 @@ do `[1 2 3].first`.should_be(`Some(1)`)
 ```
 ###
 export let first<A>
-  : | [A] -> Option<A>
+  : | [A] [ Option ]<A>
   = @@@ 
     xs -> {
       var x = xs[0]
@@ -1005,7 +1005,7 @@ do `[[1] [2 3] [4]].flat`.should_be(`[1 2 3 4]`)
 ###
 export let flat<A>
   : | [[A]] -> [A]
-  = @@@ xs -> xs.flat() @@@
+  = @@@ xs [ xs ].flat() @@@
 
 
 ###
@@ -1040,7 +1040,7 @@ do
 ```
 ###
 export let group<A>
-  : | [A] | A -> String -> [{key: String first: A rest: [A]}]
+  : | [A] | A [ String ] -> [{key: String first: A rest: [A]}]
   = @@@  (xs, f) -> {
     var length = xs.length
     var result = {}
@@ -1084,7 +1084,7 @@ do `[1 2 3].last`.should_be(`Some(3)`)
 ```
 ###
 export let last<A>
-  : | [A] -> Option<A>
+  : | [A] [ Option ]<A>
   = @@@ 
     xs -> {
       var x = xs[xs.length - 1]
@@ -1100,8 +1100,8 @@ do `[1 2 3].length`.should_be(`3`)
 ```
 ###
 export let length<A>
-  : | [A] -> Int
-  = @@@ xs -> xs.length @@@
+  : | [A] [ Int ]
+  = @@@ xs [ xs ].length @@@
 
 
 type Continuation<State Answer> = Continue(State) Break(Answer)
@@ -1111,11 +1111,11 @@ Loop with a state.
 For example, the factorial function can be implemented as follows:
 ```
 let factorial
-  : | Int -> Int
+  : | Int [ Int ]
   = | n -> {n result: 1}.loop(|{n result} ->
       n.less_than(2).(
-        | true -> Break(result)
-        | _ -> Continue({n: n.minus(1) result: result.multiply(n) })
+        | true [ Break ](result)
+        | _ [ Continue ]({n: n.minus(1) result: result.multiply(n) })
       )
     )
 
@@ -1124,7 +1124,7 @@ do `10.factorial`.should_be(`3628800`)
 ```
 ###
 export let loop<A B>
-  : | A | A -> Continuation<A B> -> B
+  : | A | A [ Continuation ]<A B> [ B ]
   = @@@ (state, f) -> {
     while(true) {
       let next = f(state)
@@ -1142,8 +1142,8 @@ let naive_map_2<A B>
   : | [A] | A -> B -> [B]
   = | xs f -> {index: 0 result: []}.loop(|state ->
       xs.get(state.index).(
-        | Some(x) -> Continue(state.{index.plus(1) result.append(x.f)})
-        | None -> Break(state.result)
+        | Some(x) [ Continue ](state.{index.plus(1) result.append(x.f)})
+        | None [ Break ](state.result)
       )
     )
 
@@ -1156,7 +1156,7 @@ do `[1 2 3].map(|.plus(1))`.should_be(`[2 3 4]`)
 ###
 export let map<A B>
   : | [A] | A -> B -> [B]
-  = | xs f -> xs.flat_map(| x -> [x.f])
+  = | xs f [ xs ].flat_map(| x -> [x.f])
 
 ###
 Partition an array into two parts based on a test.
@@ -1165,7 +1165,7 @@ do `[1 2 3 4].partition(|.more_than(2))`.should_be(`{passed: [3 4] failed: [1 2]
 ```
 ###
 export let partition<A>
-  : | [A] | A -> Boolean -> {passed: [A] failed: [A]}
+  : | [A] | A [ Boolean ] -> {passed: [A] failed: [A]}
   = @@@  (xs, f) -> {
     var length = xs.length
     var passed = []
@@ -1196,12 +1196,12 @@ do `[
   {name: "Bob" age: 7}
   {name: "Ali" age: 8}
   {name: "Lee" age: 9}
-].reduce({ from: 0 with: | result current -> result.plus(current.age) })`
+].reduce({ from: 0 with: | result current [ result ].plus(current.age) })`
   .should_be(`30`)
 ```
 ###
 export let reduce<A B>
-  : | [A] { from: B with: | B A -> B } -> B
+  : | [A] { from: B with: | B A -> B } [ B ]
   = @@@
    (xs, {$from, $with}) -> {
     let result = $from
@@ -1263,22 +1263,22 @@ do `[1 2 3].some(|.more_than(3))`.should_be(`false`)
 ```
 ###
 export let some<A>
-  : | [A] | A -> Boolean -> Boolean
-  = | xs predicate -> xs.find_map(|x -> x.predicate.(|true -> Some(null) |_ -> None)).is_some
+  : | [A] | A [ Boolean ] [ Boolean ]
+  = | xs predicate [ xs ].find_map(|x [ x ].predicate.(|true [ Some ](null) |_ [ None ])).is_some
 
 type Order = Lesser Equals Greater
 ###
 Sort an array based on a compare function.
 ```
 #do `[1 3 4 2].sort_by(
-#      | a b if a.more_than(b) -> Greater 
-#      | a b if a.less_than(b) -> Lesser 
-#      | _ _                   -> Equals
+#      | a b if a.more_than(b) [ Greater ] 
+#      | a b if a.less_than(b) [ Lesser ] 
+#      | _ _                   [ Equals ]
 #    )`.should_be(`[1 2 3 4]`)
 ```
 ###
 export let sort_by<A>
-  : | [A] | A A -> Order -> [A]
+  : | [A] | A A [ Order ] -> [A]
   = @@@ 
      (xs, f) -> {
       throw new Error("Not implemented yet")
@@ -1321,7 +1321,7 @@ do `[1 2 3 1].take_while(|.more_than(4))`.should_be(`[]`)
 ```
 ###
 export let take_while<A>
-  : | [A] | A -> Boolean -> [A]
+  : | [A] | A [ Boolean ] -> [A]
   = @@@ 
      (xs, p) -> {
       var result = []
@@ -1367,7 +1367,7 @@ do `[{id: 1} {id: 2} {id: 3} {id: 1}].unique(|.id.to_string)`
 ```
 ###
 export let unique<A>
-  : | [A] | A -> String -> [A]
+  : | [A] | A [ String ] -> [A]
   = @@@
    (xs, getKey) -> {
     var result = {}
@@ -1391,7 +1391,7 @@ do `["apple" "banana" "cane"].update_each({ if: |.ends_with("e") then: |.to_uppe
 ```
 ###
 export let update_each<A>
-  : | [A] {if: | A -> Boolean then: | A -> A} -> [A]
+  : | [A] {if: | A [ Boolean ] then: | A [ A ]} -> [A]
   = @@@
    (xs, {$if, $then}) -> {
     var result = []
@@ -1440,8 +1440,8 @@ do `100.0.milliseconds.milliseconds`.should_be(`100.0`)
 ```
 ###
 export let milliseconds
-  : | Float -> Duration
-  = | n -> Duration({milliseconds: n})
+  : | Float [ Duration ]
+  = | n [ Duration ]({milliseconds: n})
 
 ###
 Create a duration given the number of seconds.
@@ -1450,8 +1450,8 @@ do `5.0.seconds.milliseconds`.should_be(`5000.0`)
 ```
 ###
 export let seconds
-  : | Float -> Duration
-  = | n -> n.multiply(1000.0).milliseconds
+  : | Float [ Duration ]
+  = | n [ n ].multiply(1000.0).milliseconds
 
 ###
 Create a duration given the number of minutes.
@@ -1460,8 +1460,8 @@ do `1.0.minutes.milliseconds`.should_be(`60000.0`)
 ```
 ###
 export let minutes
-  : | Float -> Duration
-  = | n -> n.multiply(60.0).seconds
+  : | Float [ Duration ]
+  = | n [ n ].multiply(60.0).seconds
 
 ###
 Create a duration given the number of hours.
@@ -1470,8 +1470,8 @@ do `1.0.hours.milliseconds`.should_be(`3600000.0`)
 ```
 ###
 export let hours
-  : | Float -> Duration
-  = | n -> n.multiply(60.0).minutes
+  : | Float [ Duration ]
+  = | n [ n ].multiply(60.0).minutes
 
 ###
 Create a duration given the number of hours.
@@ -1480,8 +1480,8 @@ do `1.0.days.milliseconds`.should_be(`86400000.0`)
 ```
 ###
 export let days
-  : | Float -> Duration
-  = | n -> n.multiply(24.0).hours
+  : | Float [ Duration ]
+  = | n [ n ].multiply(24.0).hours
 
 ###
 Get the number of milliseconds that this duration represents.
@@ -1490,8 +1490,8 @@ do `Duration({milliseconds: 1000.0}).milliseconds`.should_be(`1000.0`)
 ```
 ###
 export let milliseconds
-  : | Duration -> Float
-  = | Duration({milliseconds}) -> milliseconds
+  : | Duration [ Float ]
+  = | Duration({milliseconds}) [ milliseconds ]
 
 ###
 Wait for a given duration.  
@@ -1500,16 +1500,16 @@ do 0.01.seconds.wait
 ```
 ###
 export let wait
-  : | Duration -> Null
+  : | Duration [ Null ]
   = @@@ (duration) -> 
-    new Promise(resolve -> setTimeout(resolve, duration._.$milliseconds))
+    new Promise(resolve [ setTimeout ](resolve, duration._.$milliseconds))
   @@@
 
 ###
 Benchmark a function.
 ###
 export let benchmark<A>
-  : | Null | Null -> A -> Duration
+  : | Null | Null [ A ] [ Duration ]
   = @@@
    async (_, f) -> {
     var justNow = Date.now()
@@ -1544,11 +1544,11 @@ export let read_file
 
 export let native_map<A B>
   : | [A] | A -> B -> [B]
-  = @@@ (xs, f) -> xs.map(f) @@@
+  = @@@ (xs, f) [ xs ].map(f) @@@
 
 export let native_reduce<A B>
   : | [A] {from: B with: | B A -> B} -> [B]
-  = @@@ (xs, {$from, $with}) -> xs.reduce($with, $from) @@@
+  = @@@ (xs, {$from, $with}) [ xs ].reduce($with, $from) @@@
 
 let native_push<A>
   : | [A] A -> [A]
@@ -1565,23 +1565,23 @@ let naive_map<A B>
     | [x...xs] f -> [x.f].concat(xs.naive_map(f))
 
 
-# do null.benchmark(|_ -> 0.to(100000).naive_map_2(|.plus(2))).print
-# do null.benchmark(|_ -> 0.to(1000000).native_map(|.plus(2))).print
-# do null.benchmark(|_ -> 0.to(1000000).map(|.plus(2))).print
-# do null.benchmark(|_ -> 0.to(100000).reduce({from: [] with: |result x -> result.native_push(x.plus(2))})).print
+# do null.benchmark(|_ [ 0 ].to(100000).naive_map_2(|.plus(2))).print
+# do null.benchmark(|_ [ 0 ].to(1000000).native_map(|.plus(2))).print
+# do null.benchmark(|_ [ 0 ].to(1000000).map(|.plus(2))).print
+# do null.benchmark(|_ [ 0 ].to(100000).reduce({from: [] with: |result x [ result ].native_push(x.plus(2))})).print
 # do null.benchmark(|_ -> [1].repeat(100000).flat).print
-# do null.benchmark(|_ -> 0.to(100000).filter_map(|n -> n.modulo(2).equals(0).(|true -> Some(n.multiply(2)) | _ -> None))).print
+# do null.benchmark(|_ [ 0 ].to(100000).filter_map(|n [ n ].modulo(2).equals(0).(|true [ Some ](n.multiply(2)) | _ [ None ]))).print
 
-# do null.benchmark(|_ -> 0.to(100000).native_reduce({from: 0 with: plus})).print
-# do null.benchmark(|_ -> 0.to(100000).reduce({from: 0 with: plus})).print
-# do null.benchmark(|_ -> 0.to(100000).update_each({if: |.modulo(2).equals(0) then: |.plus(2)})).print
-# do null.benchmark(|_ -> 0.to(10000000).find(|.less_than(-1))).print
-# do null.benchmark(|_ -> 100.factorial).print
+# do null.benchmark(|_ [ 0 ].to(100000).native_reduce({from: 0 with: plus})).print
+# do null.benchmark(|_ [ 0 ].to(100000).reduce({from: 0 with: plus})).print
+# do null.benchmark(|_ [ 0 ].to(100000).update_each({if: |.modulo(2).equals(0) then: |.plus(2)})).print
+# do null.benchmark(|_ [ 0 ].to(10000000).find(|.less_than(-1))).print
+# do null.benchmark(|_ [ 100 ].factorial).print
 
 do 20.factorial.print
 
 let x: !Result<Null String>
   = let! Ok(file) = File({path: "./stdlib/base.kk"}).read_file
-      else | Error(error) -> Error(error)
+      else | Error(error) [ Error ](error)
     let _ = file.print
     !Ok(null)

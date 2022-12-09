@@ -10,8 +10,8 @@ class Foo = a | b
 let foo (x: Foo) (y: Foo): Int =
   {x, y} .(
 
-    \{x = a | b, y = a} -> 1
-    \{x = a | b, y = a | b} -> 1
+    -> {x = a | b, y = a} [ 1 ]
+    -> {x = a | b, y = a | b} [ 1 ]
   // ^^^^^^^^^^^^^^^^^^^^^^
   // Error: this pattern contains a an unreachable subpattern, namely:
   //    {x: A, y: A}
@@ -31,10 +31,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_2/unreachable_case_or_pattern_2.kk:7:6
+  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_2/unreachable_case_or_pattern_2.kk:7:8
   │
-7 │     \{x = a | b, y = a | b} -> 1
-  │      ^^^^^^^^^^^^^^^^^^^^^^ Partially unreachable case
+7 │     -> {x = a | b, y = a | b} [ 1 ]
+  │        ^^^^^^^^^^^^^^^^^^^^^^ Partially unreachable case
   │
   = This case is partially unreachable because it contains a redundant pattern that is already handled by previous cases.
     Namely:

@@ -8,10 +8,9 @@ INPUT
 class Option<T> = Some(T) | None
 
 entry
-  let isSomeSome = \x ->
-    x .(
-      \ Some(Some(_)) -> 1
-    );
+  let isSomeSome = -> x [
+    x . -> Some(Some(_)) [ 1 ]
+  ];
   ()
 
 ============
@@ -28,10 +27,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_3/case_exhaustiveness_enum_3.kk:6:9
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_enum_3/case_exhaustiveness_enum_3.kk:5:12
   │
-6 │       \ Some(Some(_)) -> 1
-  │         ^^^^^^^^^^^^^^^^^^ Non-exhaustive cases
+5 │     x . -> Some(Some(_)) [ 1 ]
+  │            ^^^^^^^^^^^^^^^^^ Non-exhaustive cases
   │
   = Missing case(s):
 

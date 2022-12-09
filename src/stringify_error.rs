@@ -241,7 +241,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
     match token_type {
         TokenType::KeywordLet => "used for defining variables, for example:\n\n\tlet x = 1",
         TokenType::KeywordType => "used for defining type alias, for example:\n\n\ttype People = { name: String }",
-        TokenType::KeywordImport => "only used for importing symbols from other files, for example:\n\n\timport \"./foo.kk\" { bar spam hello: hello2}",
+        TokenType::KeywordImport => "only used for importing symbols from other files, for example:\n\n\timport \"./foo.kk\" { bar, spam, hello = hello2}",
         TokenType::KeywordPublic => "only used for declaring public symbols, for example:\n\n\tpublic let foo = 1",
         TokenType::Whitespace |TokenType::Newline => "meaningless in KK",
         TokenType::LeftCurlyBracket | TokenType::RightCurlyBracket => "used for declaring record type, for example:\n\n\t{ x: String }\n\nand constructing record value, for example: \n\n\t{ x: \"hello\" }",
@@ -267,19 +267,16 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::MultilineComment  => "only used for documentation",
         TokenType::Bang => "used for annotating Promise type, for example: \n\n\t!Integer",
         TokenType::Other(_) => "not used anywhere in the syntax of KK",
-        TokenType::Tag => "used as constructor of enum",
         TokenType::Operator => "used for defining symbolic functions",
         TokenType::KeywordEntry => "used for defining the entry point of a file",
         TokenType::Semicolon => "used for separating statements",
         TokenType::Tilde => "used for declaring the start of a CPS Sugar",
         TokenType::KeywordGiven => "used for declaring constraints",
         TokenType::Backslash => "used for declaring lambda",
-        TokenType::KeywordAs => todo!(),
-        TokenType::KeywordCase => "used for declaring variants, or in pattern matching",
         TokenType::KeywordExport => "used for exporting symbols",
         TokenType::KeywordClass => todo!(),
-        TokenType::KeywordForall => todo!(),
         TokenType::KeywordInnate => todo!(),
+        TokenType::HashLeftSquareBracket => todo!(),
 
     }
 }
@@ -459,17 +456,14 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::String { .. } => "\"Hello \"",
         TokenType::InterpolatedString { .. } => "\"Hello #{my_name}\"",
         TokenType::Other(_) => "unknown character",
-        TokenType::Tag => "tag",
         TokenType::Operator => todo!(),
         TokenType::Semicolon => ";",
         TokenType::Tilde => "~",
         TokenType::Backslash => "\\",
-        TokenType::KeywordAs => "as",
-        TokenType::KeywordCase => "case",
         TokenType::KeywordExport => todo!(),
         TokenType::KeywordClass => todo!(),
-        TokenType::KeywordForall => todo!(),
         TokenType::KeywordInnate => todo!(),
+        TokenType::HashLeftSquareBracket => todo!(),
     }
 }
 

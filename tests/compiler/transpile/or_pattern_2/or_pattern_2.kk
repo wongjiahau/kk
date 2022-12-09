@@ -6,10 +6,9 @@ class Color = white | gold | black
 class Boolean = true | false
 
 let (vehicle: Vehicle) .is shiny car: Boolean =
-  vehicle .(
-    \ car(white | gold) -> true
-    \ _ -> false
-  )
+  vehicle .
+    ->  car(white | gold) [ true ]
+    [ false ]
 
 entry
   white .car .is shiny car .print;

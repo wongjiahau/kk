@@ -7,8 +7,8 @@ INPUT
 ============
 let isFriendly (s: String): Int =
   s .(
-    \"cat" -> 0
-    \"tiger" -> 1
+    -> "cat" [ 0 ]
+    -> "tiger" [ 1 ]
  )
 
 ============
@@ -25,12 +25,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_string_1/case_exhaustiveness_string_1.kk:3:6
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_string_1/case_exhaustiveness_string_1.kk:3:8
   │
-3 │       \"cat" -> 0
-  │ ╭──────^
-4 │ │     \"tiger" -> 1
-  │ ╰─────────────────^ Non-exhaustive cases
+3 │       -> "cat" [ 0 ]
+  │ ╭────────^
+4 │ │     -> "tiger" [ 1 ]
+  │ ╰──────────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

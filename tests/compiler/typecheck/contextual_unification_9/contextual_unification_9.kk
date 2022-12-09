@@ -1,5 +1,5 @@
 let bar:  { o: { f: { n: { x: Int } } -> Int } } -> Int
-  = \props -> (
+  = -> props [
     let { f } = props;
     //    ^ Error: no such property
     //    In Haskell, we would have gotten a longer error message as follows,
@@ -8,4 +8,4 @@ let bar:  { o: { f: { n: { x: Int } } -> Int } } -> Int
     //    Expected { o: { f: { n: { x: Int } } -> Int } } -> Int
     //    But got <A> { f: {x: String} -> A } -> A
     {x = "hi"} .f
-  )
+  ]

@@ -8,10 +8,10 @@ INPUT
 // Expects no error
 class Option<T> = some(T) | none
 
-let<A, B> (o : Option<A>) .map (f : A -> Option<B>) : Option<B> =
+let<A, B> (o : Option<A>) .map (f : A [ Option ]<B>) : Option<B> =
   o .(
-    \some(o) -> o .f
-    \none -> none
+    -> some(o) [ o ] .f
+    -> none [ none ]
   )
 
 let foo (a : Option<{ bar : String }>): Option<String> =
@@ -24,14 +24,24 @@ entry
 ============
 EXIT CODE
 ============
-0
+1
 
 ============
 STDOUT
 ============
-some("hello world")
-none
+
 
 ============
 STDERR
 ============
+error:
+  ┌─ tests/compiler/typecheck/cps_sugar_2/cps_sugar_2.kk:4:39
+  │
+4 │ let<A, B> (o : Option<A>) .map (f : A [ Option ]<B>) : Option<B> =
+  │                                       ^ Syntax error: not expecting `[` here
+  │
+  = The expected token here is `)`.
+
+    Note that `[` is used for creating and destructuring array, for example:
+
+    [1 2 3].

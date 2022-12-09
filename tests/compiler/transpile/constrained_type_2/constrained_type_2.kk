@@ -6,28 +6,26 @@ class Color = red | green
 class Boolean = true | false
 
 let (left : Color) .equals (right : Color) : Boolean = 
-  { left, right } .(     
-    \{ left = red, right = red } -> true
-    \{ left = green, right = green } -> true
-    \_ -> false
- )
+  { left, right } .    
+    -> { left = red, right = red } [ true ]
+    -> { left = green, right = green } [ true ]
+    -> _ [ false ]
 
 let (left : Boolean) .and (right : Boolean) : Boolean = 
-  { left, right } .(
-    \{ left = true, right = true} -> true
-    \_ -> false
-  )
+  { left, right } .
+    -> { left = true, right = true} [ true ]
+    [ false ]
 
 let<T> (left : List<T>) .equals (right : List<T>) : Boolean 
-  given { equals: T -> T -> Boolean }
-  = { left, right } .( 
-    \{ left = nil, right = nil } -> true
+  given { equals: T -> T -> Boolean } 
+  = (left, right) . 
+    -> (nil, nil) [ true ]
 
-    \{ left = cons (left), right = cons (right) } ->
+    -> (cons (left), cons (right)) [
       left .head .equals (right .head) .and (left .tail .equals (right .tail))
+    ]
 
-    \_ -> false
- )
+    [ false ]
 
 
 entry 

@@ -10,8 +10,8 @@ class Foo = A(Foo) | B
 let spam
   : Foo -> String
   =
-  \A(x) | A(A(x) | A(A(x))) -> "test"
-  \ _ -> "Nope"
+  -> A(x) | A(A(x) | A(A(x))) ["test"]
+  ["Nope"]
 
 ============
 EXIT CODE
@@ -27,10 +27,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_4/unreachable_case_or_pattern_4.kk:6:11
+  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_4/unreachable_case_or_pattern_4.kk:6:13
   │
-6 │   \A(x) | A(A(x) | A(A(x))) -> "test"
-  │           ^^^^^ Partially unreachable case
+6 │   -> A(x) | A(A(x) | A(A(x))) ["test"]
+  │             ^^^^^ Partially unreachable case
   │
   = This case is partially unreachable because it contains a redundant pattern that is already handled by previous cases.
     Namely:

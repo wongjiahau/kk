@@ -511,21 +511,23 @@ impl Tokenizer {
                         }
                     }
                 }
-                // Tag
+                // Hash left bracket
                 '#' => match self.characters_iterator.by_ref().peek() {
                     _ => {
                         let characters = self
                             .characters_iterator
                             .by_ref()
-                            .peeking_take_while(|character| {
-                                character.value.is_alphanumeric() || character.value == '_'
-                            })
+                            .peeking_take_while(|character| character.value == '[')
                             .collect::<Vec<Character>>();
+
+                        if characters.len() != 1 {
+                            return Err(todo!("Expected 1 left square bracket after #"));
+                        }
 
                         let representation =
                             format!("{}{}", character.value, stringify(&characters));
                         Ok(Some(Token {
-                            token_type: TokenType::Tag,
+                            token_type: TokenType::HashLeftSquareBracket,
                             representation,
                             position: make_position(character, characters.last()),
                         }))
@@ -691,7 +693,6 @@ pub fn get_token_type(s: String) -> TokenType {
         "public" => TokenType::KeywordPublic,
         "export" => TokenType::KeywordExport,
         "given" => TokenType::KeywordGiven,
-        "as" => TokenType::KeywordAs,
         "class" => TokenType::KeywordClass,
         "innate" => TokenType::KeywordInnate,
         _ => TokenType::Identifier,

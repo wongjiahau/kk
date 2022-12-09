@@ -1,3 +1,3 @@
 let x: Int =
-  let f = \x -> x (x);
+  let f = -> x [ x (x) ];
   123

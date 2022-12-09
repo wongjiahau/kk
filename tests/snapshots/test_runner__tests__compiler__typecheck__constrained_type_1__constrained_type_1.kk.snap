@@ -10,8 +10,8 @@ class Boolean = true | false
 
 let (a : Boolean) .not : Boolean =
   a. (
-    \true -> false
-    \false -> true
+    -> true [ false ]
+    -> false [ true ]
   )
 
 let<T> (left : T) .`!=` (right : T) : Boolean

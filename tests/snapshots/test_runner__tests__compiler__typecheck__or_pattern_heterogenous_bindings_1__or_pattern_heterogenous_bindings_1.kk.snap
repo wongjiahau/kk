@@ -10,7 +10,7 @@ class Foo = A(String) | B(Boolean)
 
 let get (foo: Foo): Boolean =
   foo .(
-    \ A(x) | B(x) -> true
+    ->  A(x) | B(x) [ true ]
         //     ^ Error: expected `String` got `Boolean`
  )
 
@@ -28,10 +28,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/or_pattern_heterogenous_bindings_1/or_pattern_heterogenous_bindings_1.kk:6:16
+  ┌─ tests/compiler/typecheck/or_pattern_heterogenous_bindings_1/or_pattern_heterogenous_bindings_1.kk:6:18
   │
-6 │     \ A(x) | B(x) -> true
-  │                ^ Type mismatch
+6 │     ->  A(x) | B(x) [ true ]
+  │                  ^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

@@ -5,12 +5,11 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-entry {
+entry
   let f
     : {x: { y: Int}} -> Int
-    = \{x = { z }} -> 2;
+    = -> {x = { z }} [ 2 ];
   ()
-}
 
 ============
 EXIT CODE
@@ -26,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_5/contextual_unification_5.kk:4:15
+  ┌─ tests/compiler/typecheck/contextual_unification_5/contextual_unification_5.kk:4:17
   │
-4 │     = \{x = { z }} -> 2;
-  │               ^ No such property
+4 │     = -> {x = { z }} [ 2 ];
+  │                 ^ No such property
   │
   = Available properties:
       y

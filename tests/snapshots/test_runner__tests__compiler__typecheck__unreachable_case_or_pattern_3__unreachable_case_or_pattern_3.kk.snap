@@ -9,8 +9,8 @@ class Nat =  zero | succ(Nat)
 
 let foo (n : Nat) : Int =
   n .(
-    \zero | zero -> 1
-         // ^^^^ Error: unreachable \
+    -> zero | zero [ 1 ]
+         // ^^^^ Error: unreachable ->
  )
 
 ============
@@ -27,10 +27,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_3/unreachable_case_or_pattern_3.kk:5:13
+  ┌─ tests/compiler/typecheck/unreachable_case_or_pattern_3/unreachable_case_or_pattern_3.kk:5:15
   │
-5 │     \zero | zero -> 1
-  │             ^^^^ Partially unreachable case
+5 │     -> zero | zero [ 1 ]
+  │               ^^^^ Partially unreachable case
   │
   = This case is partially unreachable because it contains a redundant pattern that is already handled by previous cases.
     Namely:

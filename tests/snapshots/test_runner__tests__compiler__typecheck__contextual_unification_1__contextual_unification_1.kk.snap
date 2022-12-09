@@ -6,7 +6,7 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 entry
-  let f : Float -> Float =  \o -> o .bar;
+  let f : Float -> Float  =  -> o [ o .bar ];
   ()
 
 ============
@@ -23,9 +23,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_1/contextual_unification_1.kk:2:38
+  ┌─ tests/compiler/typecheck/contextual_unification_1/contextual_unification_1.kk:2:40
   │
-2 │   let f : Float -> Float =  \o -> o .bar;
-  │                                      ^^^ Unknown variable `bar`
+2 │   let f : Float -> Float  =  -> o [ o .bar ];
+  │                                        ^^^ Unknown variable `bar`
   │
   = Cannot find this value symbol in the current scope

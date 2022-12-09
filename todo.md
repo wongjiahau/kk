@@ -1,5 +1,7 @@
 # Todo
 
+- [ ] write a formatter, so that I dont have to manually update the test code everytime.
+      With a formatter, I can just change the parser, parse all the test file using old parser, spit out new code using new syntax, and format them
 - [x] change access to, private (default), export, public-export
 - [x] allow name ambiguity (due to overloading) to propagate until a certain boundary before calling it an error [function_overloading_2 and 3]
 - [x] mechanism for safe native function call
@@ -12,6 +14,7 @@
 - [x] use square braket instead of backtick for quoted identifier (improve readability)
 - [] namespace (without mutually recursive module)
 - [] default can be imported, add public/private identifier
+- [] review parse context
 - [] add code coverage to check for untested branch
 - [] detect module/type/name alias cycles
 - [] new tuple syntax for better DSL creation

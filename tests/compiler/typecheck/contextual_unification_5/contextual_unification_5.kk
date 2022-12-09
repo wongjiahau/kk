@@ -1,6 +1,5 @@
-entry {
+entry
   let f 
     : {x: { y: Int}} -> Int
-    = \{x = { z }} -> 2;
+    = -> {x = { z }} [ 2 ];
   ()
-}

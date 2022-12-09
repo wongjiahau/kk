@@ -9,7 +9,7 @@ class Foo = A { x: String, y: String } | B { x: String, y: String, z: String }
 
 entry
   A { x = "hi", y= "bye" } .(
-    \A { x, y } | B { x, y, z } -> 1
+    -> A { x, y } | B { x, y, z } [ 1 ]
         //                  ^ Error: extraneous binding `z`
  )
 
@@ -27,10 +27,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/or_pattern_extraneous_binding_1/or_pattern_extraneous_binding_1.kk:6:29
+  ┌─ tests/compiler/typecheck/or_pattern_extraneous_binding_1/or_pattern_extraneous_binding_1.kk:6:31
   │
-6 │     \A { x, y } | B { x, y, z } -> 1
-  │                             ^ Extraneous Binding
+6 │     -> A { x, y } | B { x, y, z } [ 1 ]
+  │                               ^ Extraneous Binding
   │
   = All preceding patterns does not have this binding, namely `z`.
     Note that every patterns in an OR pattern must have the same set of bindings.

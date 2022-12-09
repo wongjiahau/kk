@@ -164,7 +164,7 @@ pub enum TypeAnnotation {
         right_curly_bracket: Token,
     },
     Array {
-        left_square_bracket: Token,
+        hash_left_square_bracket: Token,
         element_type: Box<TypeAnnotation>,
         right_square_bracket: Token,
     },
@@ -312,7 +312,7 @@ pub enum Expression {
         right_curly_bracket: Token,
     },
     Array {
-        left_square_bracket: Token,
+        hash_left_square_bracket: Token,
         elements: Vec<Expression>,
         right_square_bracket: Token,
     },
@@ -470,6 +470,7 @@ pub struct FunctionParameter {
 pub struct FunctionBranch {
     pub parameter: Box<DestructurePattern>,
     pub body: Box<Expression>,
+    pub right_square_bracket: Token,
 }
 
 // #[derive(Debug, Clone)]
@@ -520,6 +521,7 @@ impl Token {
 
 #[derive(Debug, Clone)]
 pub enum TokenType {
+    // Keywords
     KeywordEntry,
     KeywordLet,
     KeywordType,
@@ -527,11 +529,15 @@ pub enum TokenType {
     KeywordPublic,
     KeywordExport,
     KeywordGiven,
+    KeywordClass,
+    KeywordInnate,
+
     Whitespace,
     LeftCurlyBracket,
     RightCurlyBracket,
     LeftParenthesis,
     RightParenthesis,
+    HashLeftSquareBracket,
     LeftSquareBracket,
     RightSquareBracket,
     Backslash,
@@ -556,8 +562,6 @@ pub enum TokenType {
     Underscore,
     Identifier,
     Operator,
-    /// Used for construction of tagged union
-    Tag,
     String(StringLiteral),
     InterpolatedString(InterpolatedString),
     Character,
@@ -572,11 +576,6 @@ pub enum TokenType {
     MultilineComment,
 
     Other(char),
-    KeywordAs,
-    KeywordCase,
-    KeywordClass,
-    KeywordForall,
-    KeywordInnate,
 }
 
 #[derive(Debug, Clone)]

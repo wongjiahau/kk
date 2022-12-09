@@ -78,6 +78,10 @@ pub mod interpretable {
             object: Box<Expression>,
             property: String,
         },
+        TupleAccess {
+            tuple: Box<Expression>,
+            index: usize,
+        },
         Assignment(Box<Assignment>),
         Tuple(Box<NonEmpty<Expression>>),
         InnateFunctionCall {
@@ -623,8 +627,25 @@ pub fn transpile_destructure_pattern(
                 )
             },
         ),
-        InferredDestructurePatternKind::Tuple { .. } => {
-            panic!("Compiler error, should not reach here")
+        InferredDestructurePatternKind::Tuple { patterns } => {
+            patterns.into_vector().into_iter().enumerate().fold(
+                TranspiledDestructurePattern {
+                    conditions: vec![],
+                    bindings: vec![],
+                },
+                |result, (index, pattern)| {
+                    join_transpiled_destructure_pattern(
+                        result,
+                        transpile_destructure_pattern(
+                            pattern.kind,
+                            interpretable::Expression::TupleAccess {
+                                tuple: Box::new(from_expression.clone()),
+                                index,
+                            },
+                        ),
+                    )
+                },
+            )
         }
 
         // The current transpilation for OR patterns is a bit hacky as we are abusing assignment expression

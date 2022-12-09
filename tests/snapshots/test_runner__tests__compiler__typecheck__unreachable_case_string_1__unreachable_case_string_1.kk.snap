@@ -6,10 +6,10 @@ expression: stripped_actual_output.trim()
 INPUT
 ============
 let foo : String -> Int =
-  \"hi" -> 0
-  \"hey" -> 1
-  \"hey" -> 1
-  \_ -> 2
+  -> "hi" [ 0 ]
+  -> "hey" [ 1 ]
+  -> "hey" [ 1 ]
+  -> _ [ 2 ]
 
 ============
 EXIT CODE
@@ -25,9 +25,9 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/unreachable_case_string_1/unreachable_case_string_1.kk:4:4
+  ┌─ tests/compiler/typecheck/unreachable_case_string_1/unreachable_case_string_1.kk:4:6
   │
-4 │   \"hey" -> 1
-  │    ^^^^^ Unreachable case
+4 │   -> "hey" [ 1 ]
+  │      ^^^^^ Unreachable case
   │
   = This case is unreachable as it is already handled by previous cases.

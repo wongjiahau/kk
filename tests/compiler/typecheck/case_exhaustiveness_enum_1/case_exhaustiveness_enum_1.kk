@@ -4,7 +4,7 @@ class List<T>
 
 let<T, U> bomb (xs: List<T>) (f: T -> U): Int =
   xs .( 
-    \nil -> 1
-    \cons { current = _, next = nil } -> 0
+    -> nil [ 1 ]
+    -> cons { current = _, next = nil } [ 0 ]
  )
 

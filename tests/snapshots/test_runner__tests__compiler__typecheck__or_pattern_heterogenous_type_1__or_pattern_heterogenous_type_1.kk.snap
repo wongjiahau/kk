@@ -7,7 +7,7 @@ INPUT
 ============
 entry
 0 .(
-  \ 1 | "1" -> true
+  ->  1 | "1" [ true ]
   //    ^^^ Error: expected Int, got String
 )
 
@@ -25,10 +25,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/or_pattern_heterogenous_type_1/or_pattern_heterogenous_type_1.kk:3:9
+  ┌─ tests/compiler/typecheck/or_pattern_heterogenous_type_1/or_pattern_heterogenous_type_1.kk:3:11
   │
-3 │   \ 1 | "1" -> true
-  │         ^^^ Type mismatch
+3 │   ->  1 | "1" [ true ]
+  │           ^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

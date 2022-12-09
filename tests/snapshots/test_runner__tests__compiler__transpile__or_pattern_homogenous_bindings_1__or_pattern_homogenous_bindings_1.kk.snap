@@ -13,7 +13,7 @@ let toString
   : Foo -> String
   =
     // More tha one binding per pattern
-    \A { x, y } | B { a = x, b = y } -> "${x} - ${y}"
+    -> A { x, y } | B { a = x, b = y } ["${x} - ${y}"]
 
 entry
   A { x = "Spongebob", y = "Squarepants" } .toString .print;

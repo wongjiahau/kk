@@ -3,8 +3,8 @@ class Boolean = true | false
 
 let isVowel
   : Character -> Boolean =
-    \'a' | 'e' | 'i' | 'o' | 'u'  -> true
-    \_ -> false
+    -> 'a' | 'e' | 'i' | 'o' | 'u'  [ true ]
+    -> _ [ false ]
 
 entry
   'a' .isVowel .print;

@@ -5,8 +5,8 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let o: [{ x : Int }] = [{ x = "Hi" }]
-// Expected error:            ^^^^ Expected Int
+let o: #[{ x : Int }] = #[{ x = "Hi" }]
+// Expected error:             ^^^^ Expected Int
 // Instead of:          ^^^^^^^^^^^ Expected [{ x : Int }]
 
 ============
@@ -23,10 +23,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/contextual_unification_4/contextual_unification_4.kk:1:31
+  ┌─ tests/compiler/typecheck/contextual_unification_4/contextual_unification_4.kk:1:33
   │
-1 │ let o: [{ x : Int }] = [{ x = "Hi" }]
-  │                               ^^^^ Type mismatch
+1 │ let o: #[{ x : Int }] = #[{ x = "Hi" }]
+  │                                 ^^^^ Type mismatch
   │
   = +---------------+-------------+
     | EXPECTED TYPE | ACTUAL TYPE |

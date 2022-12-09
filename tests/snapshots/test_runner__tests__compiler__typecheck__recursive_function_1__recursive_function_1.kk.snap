@@ -8,11 +8,12 @@ INPUT
 class List<T> = nil | cons {head: T, tail: List<T>}
 
 let <T, U> map (xs: List<T>) (f: T -> U) : List<U> =
-  xs. (
-    \nil -> nil
-    \cons { head, tail } -> cons{ head = head .f, tail = tail .map (\t -> { t = t .f }) }
-                                                     //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Error: expected List<U>, but got List<{t: U}>
-  )
+  xs.
+    -> nil [ nil ]
+    -> cons { head, tail } [
+      cons { head = head .f, tail = tail .map -> t [{ t = t .f }] }
+                                //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Error: expected List<U>, but got List<{t: U}>
+    ]
 
 ============
 EXIT CODE
@@ -28,10 +29,10 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/recursive_function_1/recursive_function_1.kk:6:58
+  ┌─ tests/compiler/typecheck/recursive_function_1/recursive_function_1.kk:7:37
   │
-6 │     \cons { head, tail } -> cons{ head = head .f, tail = tail .map (\t -> { t = t .f }) }
-  │                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
+7 │       cons { head = head .f, tail = tail .map -> t [{ t = t .f }] }
+  │                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Type mismatch
   │
   = +---------------+----------------+
     | EXPECTED TYPE |  ACTUAL TYPE   |

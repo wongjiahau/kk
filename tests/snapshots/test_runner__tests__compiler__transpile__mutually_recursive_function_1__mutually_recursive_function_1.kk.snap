@@ -11,15 +11,14 @@ class Nat = zero | succ(Nat)
 
 let (nat: Nat) .is even: Boolean =
   nat .(
-    \zero -> true
-    \succ(n) -> n .is odd
+    -> zero [ true ]
+    -> succ(n) [ n .is odd ]
   )
 
 let (nat: Nat) .is odd: Boolean =
-  nat .(
-    \ zero -> false
-    \ succ(n) -> n .is even
-  )
+  nat .
+    -> zero [ false ]
+    -> succ(n) [ n .is even ]
 
 entry
   let one = succ(zero);

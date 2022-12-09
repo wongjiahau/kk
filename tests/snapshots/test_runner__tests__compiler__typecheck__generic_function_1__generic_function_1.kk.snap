@@ -13,7 +13,7 @@ let<A, B> map (a: A) (f: A -> B) : B = a .f
 
 entry
   let x: String = "hello" .map (identity);
-  let y: String = "hello" .map (\_ -> "yo");
+  let y: String = "hello" .map ["yo"];
   let z: String = "hello" .map (constant);
                 //^^^^^^^^^^^^^^^^^^^^^^^ Expected String, got Int
   ()

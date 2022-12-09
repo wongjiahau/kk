@@ -7,8 +7,8 @@ INPUT
 ============
 let foo (c: Character): Int =
   c .(
-    \ 'a' -> 0
-    \ 'b' -> 1
+    ->  'a' [ 0 ]
+    ->  'b' [ 1 ]
  )
 
 ============
@@ -25,12 +25,12 @@ STDOUT
 STDERR
 ============
 error:
-  ┌─ tests/compiler/typecheck/case_exhaustiveness_character_1/case_exhaustiveness_character_1.kk:3:7
+  ┌─ tests/compiler/typecheck/case_exhaustiveness_character_1/case_exhaustiveness_character_1.kk:3:9
   │
-3 │       \ 'a' -> 0
-  │ ╭───────^
-4 │ │     \ 'b' -> 1
-  │ ╰──────────────^ Non-exhaustive cases
+3 │       ->  'a' [ 0 ]
+  │ ╭─────────^
+4 │ │     ->  'b' [ 1 ]
+  │ ╰───────────────^ Non-exhaustive cases
   │
   = Missing case(s):
 

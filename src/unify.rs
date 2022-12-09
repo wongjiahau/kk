@@ -1052,7 +1052,7 @@ impl Positionable for TypeAnnotation {
                     None => None,
                 }),
             TypeAnnotation::Array {
-                left_square_bracket,
+                hash_left_square_bracket: left_square_bracket,
                 right_square_bracket,
                 ..
             } => left_square_bracket
@@ -1166,7 +1166,7 @@ impl Positionable for Expression {
     fn position(&self) -> Position {
         match self {
             Expression::Array {
-                left_square_bracket,
+                hash_left_square_bracket: left_square_bracket,
                 right_square_bracket,
                 ..
             } => left_square_bracket
