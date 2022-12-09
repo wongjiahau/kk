@@ -51,10 +51,6 @@ pub enum CheckablePatternKind {
         kind: InfinitePatternKind,
         token: Token,
     },
-    Boolean {
-        token: Token,
-        value: bool,
-    },
     Unit {
         left_parenthesis: Token,
         right_parenthesis: Token,
@@ -84,7 +80,6 @@ impl Positionable for CheckablePatternKind {
     fn position(&self) -> Position {
         match self {
             CheckablePatternKind::Infinite { token, .. }
-            | CheckablePatternKind::Boolean { token, .. }
             | CheckablePatternKind::Underscore(token) => token.position,
             CheckablePatternKind::Unit {
                 left_parenthesis,

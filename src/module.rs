@@ -599,7 +599,6 @@ impl Module {
         variable_name: &Token,
         type_value: Option<Type>,
         access: Access,
-        is_implicit_variable: bool,
     ) -> Result<(SymbolUid, Type), UnifyError> {
         let type_value = match type_value {
             None => Type::ImplicitTypeVariable(ImplicitTypeVariable {

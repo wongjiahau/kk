@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::process;
 use std::rc::Rc;
 
 use include_dir::{include_dir, Dir};
@@ -11,10 +10,8 @@ use crate::module::ModuleMeta;
 use crate::module::ModuleUid;
 use crate::parse::ParseError;
 use crate::stringify_error::print_compile_error;
-use crate::transpile::interpretable::print_statements;
 use crate::transpile::transpile_program;
 use crate::unify::read_module;
-use crate::unify::File;
 use crate::unify::UnifyError;
 use crate::utils::to_relative_path;
 

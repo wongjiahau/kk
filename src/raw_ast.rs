@@ -220,6 +220,7 @@ pub enum DestructurePattern {
     },
     Parenthesized {
         left_parenthesis: Token,
+        type_annotation: Option<TypeAnnotation>,
         pattern: Box<DestructurePattern>,
         right_parenthesis: Token,
     },
@@ -253,6 +254,7 @@ pub struct DestructurePatternArraySpread {
 #[derive(Debug, Clone)]
 pub struct DestructuredRecordKeyValue {
     pub key: Token,
+    pub type_annotation: Option<TypeAnnotation>,
     pub as_value: Option<DestructurePattern>,
 }
 

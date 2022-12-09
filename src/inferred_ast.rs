@@ -143,10 +143,6 @@ pub enum InferredDestructurePatternKind {
         kind: InfinitePatternKind,
         token: Token,
     },
-    Boolean {
-        token: Token,
-        value: bool,
-    },
     Unit {
         left_parenthesis: Token,
         right_parenthesis: Token,
@@ -186,7 +182,6 @@ impl InferredDestructurePatternKind {
     pub fn position(&self) -> Position {
         match self {
             InferredDestructurePatternKind::Infinite { token, .. }
-            | InferredDestructurePatternKind::Boolean { token, .. }
             | InferredDestructurePatternKind::Underscore(token) => token.position,
             InferredDestructurePatternKind::Identifier(identifier) => identifier.token.position,
             InferredDestructurePatternKind::Unit {

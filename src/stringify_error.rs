@@ -11,7 +11,6 @@ use crate::{
 };
 use colored::*;
 use prettytable::{format::Alignment, Cell, Row, Table};
-use std::fs;
 use std::ops::Range;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -999,7 +998,6 @@ impl CheckablePatternKind {
                 InfinitePatternKind::Character => format!("'{}'", token.representation),
                 InfinitePatternKind::Integer => token.representation.clone(),
             },
-            CheckablePatternKind::Boolean { token, .. } => token.representation.clone(),
             CheckablePatternKind::Unit { .. } => "()".to_string(),
             CheckablePatternKind::Underscore(_) => "_".to_string(),
             CheckablePatternKind::Identifier(identifier) => identifier.token.representation.clone(),

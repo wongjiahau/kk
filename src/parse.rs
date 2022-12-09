@@ -966,12 +966,17 @@ impl<'a> Parser<'a> {
                 ) => wildcard = Some(double_period),
                 other => {
                     let key = Parser::validate_token(TokenType::Identifier, other, context)?;
+                    let type_annotation = self.try_parse_type_annotation()?;
                     let as_value = if self.try_eat_token(TokenType::Equals)?.is_some() {
                         Some(self.parse_destructure_pattern()?)
                     } else {
                         None
                     };
-                    key_value_pairs.push(DestructuredRecordKeyValue { key, as_value });
+                    key_value_pairs.push(DestructuredRecordKeyValue {
+                        key,
+                        type_annotation,
+                        as_value,
+                    });
                     if self.try_eat_token(TokenType::Comma)?.is_none() {
                         break self.eat_token(TokenType::RightCurlyBracket, context)?;
                     }
@@ -1342,6 +1347,7 @@ impl<'a> Parser<'a> {
             Ok(DestructurePattern::Parenthesized {
                 left_parenthesis,
                 pattern: Box::new(head),
+                type_annotation: self.try_parse_type_annotation()?,
                 right_parenthesis: self.eat_token(TokenType::RightParenthesis, context)?,
             })
         }

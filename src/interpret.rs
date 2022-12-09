@@ -9,8 +9,8 @@ use itertools::Itertools;
 
 #[derive(Clone, Debug)]
 enum Value {
-    Int64(i64),
-    Float32(f64),
+    Int(i64),
+    Float(f64),
     Boolean(bool),
     String(String),
     TagOnlyVariant(String),
@@ -37,8 +37,8 @@ struct ValueObject {
 impl Value {
     fn print(&self) -> String {
         match self {
-            Value::Int64(integer) => integer.to_string(),
-            Value::Float32(float) => float.to_string(),
+            Value::Int(integer) => integer.to_string(),
+            Value::Float(float) => float.to_string(),
             Value::Boolean(boolean) => boolean.to_string(),
             Value::TagOnlyVariant(tag) => tag.clone(),
             Value::Variant { tag, payload } => format!("{}({})", tag, payload.print()),
@@ -397,8 +397,8 @@ impl Eval for interpretable::Expression {
                 env.set_value(assignment.left.0, value.clone())?;
                 Ok((value, promises))
             }
-            interpretable::Expression::Float(_) => todo!(),
-            interpretable::Expression::Int(int) => Ok((Value::Int64(int), vec![])),
+            interpretable::Expression::Float(float) => Ok((Value::Float(float), vec![])),
+            interpretable::Expression::Int(int) => Ok((Value::Int(int), vec![])),
             interpretable::Expression::EnumConstructor { tag, payload } => match payload {
                 None => Ok((Value::TagOnlyVariant(tag), vec![])),
                 Some(payload) => {
@@ -433,9 +433,7 @@ impl Eval for interpretable::Expression {
                     let (value, promises) = argument.eval(env)?;
                     match value {
                         Value::Tuple(elements) => match (&elements.head, &elements.tail[0]) {
-                            (Value::Int64(a), Value::Int64(b)) => {
-                                Ok((Value::Int64(a + b), promises))
-                            }
+                            (Value::Int(a), Value::Int(b)) => Ok((Value::Int(a + b), promises)),
                             _ => unreachable!(),
                         },
                         _ => unreachable!(),

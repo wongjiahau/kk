@@ -534,13 +534,6 @@ pub fn transpile_destructure_pattern(
             }],
             bindings: vec![],
         },
-        InferredDestructurePatternKind::Boolean { value, .. } => TranspiledDestructurePattern {
-            conditions: vec![interpretable::Expression::Equals {
-                left: Box::new(from_expression),
-                right: Box::new(interpretable::Expression::Boolean(value)),
-            }],
-            bindings: vec![],
-        },
         InferredDestructurePatternKind::Unit { .. } => TranspiledDestructurePattern {
             conditions: vec![interpretable::Expression::Equals {
                 left: Box::new(from_expression),

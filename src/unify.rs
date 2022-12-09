@@ -14,7 +14,6 @@ use crate::raw_ast::*;
 use crate::typ::*;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use std::fs;
 use std::{collections::HashSet, rc::Rc};
 use std::{iter, path::PathBuf};
 
@@ -101,6 +100,8 @@ pub fn read_module(
                         source,
                         kind: CompileErrorKind::ParseError(Box::new(error)),
                     })?;
+
+                    // println!("user_written_statements = {:#?}", user_written_statements);
 
                     injected_statements
                         .into_iter()
@@ -2242,7 +2243,6 @@ fn infer_expression_type_(
                                         &Token::dummy_identifier(type_constraint.name.clone()),
                                         Some(type_constraint.type_value.clone()),
                                         Access::Protected,
-                                        true,
                                     )?,
                                 ))
                             })
@@ -2646,7 +2646,7 @@ fn infer_function_call(
     expected_type: Option<Type>,
     function_call: &FunctionCall,
 ) -> Result<InferExpressionResult, UnifyError> {
-    let expected_parameter_type = get_expected_type(module, function_call.argument.as_ref())?;
+    let expected_parameter_type = guess_expected_type(module, function_call.argument.as_ref())?;
 
     if let Type::Record { key_type_pairs } = &expected_parameter_type {
         if let Expression::Identifier(identifier) = function_call.function.as_ref() {
@@ -2862,7 +2862,9 @@ fn infer_function_call(
     }
 }
 
-fn get_expected_type(module: &mut Module, expression: &Expression) -> Result<Type, UnifyError> {
+/// Use for guessing the type of an expression based on its shape,
+/// and the type is used for function overloading resolution
+fn guess_expected_type(module: &mut Module, expression: &Expression) -> Result<Type, UnifyError> {
     let implicit_type_variable_type = Type::ImplicitTypeVariable(ImplicitTypeVariable {
         name: module.get_next_type_variable_name(),
     });
@@ -2871,12 +2873,12 @@ fn get_expected_type(module: &mut Module, expression: &Expression) -> Result<Typ
         Err(_) => match expression {
             // Expression whose type can be deduced from it's AST are given a "guessed type".
             // Example of such expressions are record, function, array etc.
-            Expression::Parenthesized { value, .. } => get_expected_type(module, value),
+            Expression::Parenthesized { value, .. } => guess_expected_type(module, value),
             Expression::Function(function) => {
                 let first_branch = function.branches.first();
                 Ok(Type::Function(FunctionType {
                     parameter_type: Box::new(implicit_type_variable_type.clone()),
-                    return_type: Box::new(get_expected_type(module, &first_branch.body)?),
+                    return_type: Box::new(guess_expected_type(module, &first_branch.body)?),
                     type_constraints: vec![],
                 }))
             }
@@ -2888,7 +2890,7 @@ fn get_expected_type(module: &mut Module, expression: &Expression) -> Result<Typ
                     .map(|key_value_pair| {
                         Ok((
                             key_value_pair.key.representation.clone(),
-                            get_expected_type(module, &key_value_pair.value)?,
+                            guess_expected_type(module, &key_value_pair.value)?,
                         ))
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -3245,15 +3247,6 @@ pub fn to_checkable_pattern(
                 kind: CheckablePatternKind::Infinite {
                     kind: kind.clone(),
                     token: token.clone(),
-                },
-            }]
-        }
-        InferredDestructurePatternKind::Boolean { token, value } => {
-            vec![CheckablePattern {
-                is_result_of_expansion,
-                kind: CheckablePatternKind::Boolean {
-                    token: token.clone(),
-                    value: *value,
                 },
             }]
         }
@@ -3621,7 +3614,6 @@ fn infer_destructure_pattern_(
                         identifier,
                         expected_type,
                         Access::Protected,
-                        false,
                     )?;
                     Ok(InferredDestructurePattern {
                         type_value,
@@ -3657,7 +3649,6 @@ fn infer_destructure_pattern_(
                                 identifier,
                                 expected_type,
                                 Access::Protected,
-                                false,
                             )?;
                             Ok(InferredDestructurePattern {
                                 type_value,
@@ -3817,6 +3808,7 @@ fn infer_destructure_pattern_(
                                         };
                                         Some(DestructuredRecordKeyValue {
                                             key,
+                                            type_annotation: None,
                                             as_value: None,
                                         })
                                     }
@@ -3827,64 +3819,72 @@ fn infer_destructure_pattern_(
                 }?;
             let typechecked_key_pattern_pairs = key_value_pairs
                 .iter()
-                .map(|DestructuredRecordKeyValue { key, as_value }| {
-                    // Try to find the expected type for this key
-                    // TODO: optimise this section, as the current algorithm is very slow
-                    let actual_key = key.clone();
-                    let expected_type = match &expected_key_type_pairs {
-                        None => Ok(None),
-                        Some(expected_key_type_pairs) => {
-                            let matching_key_type_pair =
-                                expected_key_type_pairs.iter().find(|(expected_key, _)| {
-                                    actual_key.representation.eq(expected_key)
-                                });
-                            match matching_key_type_pair {
-                                None => Err(UnifyError {
-                                    position: key.position,
-                                    kind: UnifyErrorKind::NoSuchProperty {
-                                        expected_keys: expected_key_type_pairs
-                                            .iter()
-                                            .map(|(key, _)| key.clone())
-                                            .collect(),
+                .map(
+                    |DestructuredRecordKeyValue {
+                         key,
+                         type_annotation,
+                         as_value,
+                     }| {
+                        // Try to find the expected type for this key
+                        // TODO: optimise this section, as the current algorithm is very slow
+                        let actual_key = key.clone();
+                        let expected_type = match &expected_key_type_pairs {
+                            None => Ok(None),
+                            Some(expected_key_type_pairs) => {
+                                let matching_key_type_pair =
+                                    expected_key_type_pairs.iter().find(|(expected_key, _)| {
+                                        actual_key.representation.eq(expected_key)
+                                    });
+                                match matching_key_type_pair {
+                                    None => Err(UnifyError {
+                                        position: key.position,
+                                        kind: UnifyErrorKind::NoSuchProperty {
+                                            expected_keys: expected_key_type_pairs
+                                                .iter()
+                                                .map(|(key, _)| key.clone())
+                                                .collect(),
+                                        },
+                                    }),
+                                    Some((_, expected_type)) => Ok(Some(expected_type.clone())),
+                                }
+                            }
+                        }?;
+
+                        let expected_type =
+                            get_expected_type(module, expected_type, type_annotation)?;
+
+                        match as_value {
+                            Some(destructure_pattern) => {
+                                let typechecked_destructure_pattern = infer_destructure_pattern(
+                                    module,
+                                    expected_type,
+                                    destructure_pattern,
+                                )?;
+
+                                Ok((actual_key, typechecked_destructure_pattern))
+                            }
+                            None => {
+                                let (uid, type_value) = module.insert_value_symbol_with_type(
+                                    key,
+                                    expected_type,
+                                    Access::Protected,
+                                )?;
+                                Ok((
+                                    actual_key.clone(),
+                                    InferredDestructurePattern {
+                                        type_value,
+                                        kind: InferredDestructurePatternKind::Identifier(Box::new(
+                                            Identifier {
+                                                uid,
+                                                token: actual_key,
+                                            },
+                                        )),
                                     },
-                                }),
-                                Some((_, expected_type)) => Ok(Some(expected_type.clone())),
+                                ))
                             }
                         }
-                    }?;
-
-                    match as_value {
-                        Some(destructure_pattern) => {
-                            let typechecked_destructure_pattern = infer_destructure_pattern(
-                                module,
-                                expected_type,
-                                destructure_pattern,
-                            )?;
-
-                            Ok((actual_key, typechecked_destructure_pattern))
-                        }
-                        None => {
-                            let (uid, type_value) = module.insert_value_symbol_with_type(
-                                key,
-                                expected_type,
-                                Access::Protected,
-                                false,
-                            )?;
-                            Ok((
-                                actual_key.clone(),
-                                InferredDestructurePattern {
-                                    type_value,
-                                    kind: InferredDestructurePatternKind::Identifier(Box::new(
-                                        Identifier {
-                                            uid,
-                                            token: actual_key,
-                                        },
-                                    )),
-                                },
-                            ))
-                        }
-                    }
-                })
+                    },
+                )
                 .collect::<Result<Vec<(Token, InferredDestructurePattern)>, UnifyError>>()?;
 
             Ok(InferredDestructurePattern {
@@ -3970,8 +3970,38 @@ fn infer_destructure_pattern_(
                 },
             })
         }
-        DestructurePattern::Parenthesized { pattern, .. } => {
+        DestructurePattern::Parenthesized {
+            pattern,
+            type_annotation,
+            ..
+        } => {
+            let expected_type = get_expected_type(module, expected_type, type_annotation)?;
             infer_destructure_pattern(module, expected_type, pattern)
+        }
+    }
+}
+
+/// Used for unifying the expected_type passed down from above,
+/// with the given type_annotation for the corresponding expression/pattern
+fn get_expected_type(
+    module: &mut Module,
+    expected_type: Option<Type>,
+    type_annotation: &Option<TypeAnnotation>,
+) -> Result<Option<Type>, UnifyError> {
+    match type_annotation {
+        None => Ok(expected_type),
+        Some(type_annotation) => {
+            let type_annotation_type = type_annotation_to_type(module, &type_annotation)?;
+
+            Ok(match expected_type {
+                None => Some(type_annotation_type),
+                Some(expected_type) => Some(unify_type_(
+                    module,
+                    &expected_type,
+                    &type_annotation_type,
+                    type_annotation.position(),
+                )?),
+            })
         }
     }
 }
@@ -4003,10 +4033,6 @@ fn match_bindings(
 ) -> Result<MatchingBindingResult, UnifyError> {
     match source.kind {
         kind @ InferredDestructurePatternKind::Infinite { .. } => Ok(MatchingBindingResult {
-            remaining_expected_bindings: expected_bindings,
-            pattern: InferredDestructurePattern { kind, ..source },
-        }),
-        kind @ InferredDestructurePatternKind::Boolean { .. } => Ok(MatchingBindingResult {
             remaining_expected_bindings: expected_bindings,
             pattern: InferredDestructurePattern { kind, ..source },
         }),
@@ -4160,7 +4186,6 @@ impl InferredDestructurePattern {
     fn bindings(&self) -> Vec<Binding> {
         match &self.kind {
             InferredDestructurePatternKind::Infinite { .. }
-            | InferredDestructurePatternKind::Boolean { .. }
             | InferredDestructurePatternKind::Unit { .. }
             | InferredDestructurePatternKind::Underscore(_) => vec![],
             InferredDestructurePatternKind::Identifier(identifier) => vec![Binding {
