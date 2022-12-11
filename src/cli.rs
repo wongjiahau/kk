@@ -1,4 +1,4 @@
-use crate::compile::compile;
+use crate::{compile::compile, formatter::prettify_code};
 use clap::Clap;
 use std::path::PathBuf;
 
@@ -12,10 +12,18 @@ struct Opts {
 enum SubCommand {
     /// Execute a KK script
     Run(Run),
+    /// Format a KK script
+    Format(Format),
 }
 
 #[derive(Clap)]
 struct Run {
+    /// Input filename
+    filename: String,
+}
+
+#[derive(Clap)]
+struct Format {
     /// Input filename
     filename: String,
 }
@@ -30,5 +38,8 @@ pub fn cli() {
             }
             Ok(path) => compile(path),
         },
+        SubCommand::Format(format) => {
+            todo!()
+        }
     }
 }

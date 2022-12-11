@@ -1,0 +1,13 @@
+---
+source: src/formatter.rs
+expression: "prettify_code(\"class Boolean = Hello (WhoLivesInAPineappleUnderTheSea<Foo, Bar, Spam<Yo>, Pineapple<Walao<What<HowardStephen>>>>)\".to_string())"
+---
+class Boolean 
+  = Hello(
+      WhoLivesInAPineappleUnderTheSea<
+        Foo,
+        Bar,
+        Spam<Yo>,
+        Pineapple<Walao<What<HowardStephen>>>
+      >
+    )

@@ -1,0 +1,14 @@
+---
+source: src/formatter.rs
+expression: "prettify_code(\"class Boolean = True | False | Hello | Yo | Wow | Foo | Bar | Spam | WhoLivesInAPineapple\".to_string())"
+---
+class Boolean 
+  = True
+  | False
+  | Hello
+  | Yo
+  | Wow
+  | Foo
+  | Bar
+  | Spam
+  | WhoLivesInAPineapple

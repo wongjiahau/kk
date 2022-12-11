@@ -16,6 +16,7 @@ mod tokenize;
 mod stringify_error;
 
 mod cli;
+mod formatter;
 mod innate_function;
 mod interpret;
 mod solved_ast;
