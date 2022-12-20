@@ -149,11 +149,6 @@ pub enum TypeAnnotation {
         type_variables: TypeVariablesDeclaration,
         type_annotation: Box<TypeAnnotation>,
     },
-    Quoted {
-        opening_backtick: Token,
-        type_annotation: Box<TypeAnnotation>,
-        closing_backtick: Token,
-    },
     Named {
         name: Token,
         type_arguments: Option<TypeArguments>,

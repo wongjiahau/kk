@@ -3,6 +3,7 @@ use crate::{
     innate_function::InnateFunction,
     non_empty::NonEmpty,
     parse::Parser,
+    parse_simple,
     tokenize::{Character, Tokenizer},
     utils::to_relative_path,
 };
@@ -92,6 +93,15 @@ pub fn read_module(
                             specification: None,
                         })]
                     };
+
+                    // TODO: temporary
+                    parse_simple::Parser::parse(&mut Tokenizer::new(source.clone().code.clone()))
+                        .map_err(|error| CompileError {
+                        source: source.clone(),
+                        kind: CompileErrorKind::ParseError(Box::new(error)),
+                    })?;
+
+                    panic!("simple parse succeeded");
 
                     let user_written_statements = Parser::parse(&mut Tokenizer::new(
                         source.clone().code.clone(),
@@ -1076,11 +1086,6 @@ impl Positionable for TypeAnnotation {
                     ..
                 }) => name.position.join(right_angular_bracket.position),
             },
-            TypeAnnotation::Quoted {
-                opening_backtick,
-                closing_backtick,
-                ..
-            } => opening_backtick.position.join(closing_backtick.position),
             TypeAnnotation::Scheme {
                 type_variables,
                 type_annotation,
@@ -3500,12 +3505,6 @@ pub fn type_annotation_to_type(
         TypeAnnotation::Array { element_type, .. } => Ok(Type::BuiltInOneArgumentType {
             kind: BuiltInOneArgumentTypeKind::Array,
             type_argument: Box::new(type_annotation_to_type(module, element_type)?),
-        }),
-        TypeAnnotation::Quoted {
-            type_annotation, ..
-        } => Ok(Type::BuiltInOneArgumentType {
-            kind: BuiltInOneArgumentTypeKind::Quoted,
-            type_argument: Box::new(type_annotation_to_type(module, type_annotation.as_ref())?),
         }),
         TypeAnnotation::Function(FunctionTypeAnnotation {
             parameter,

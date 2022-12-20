@@ -19,6 +19,8 @@ mod cli;
 mod formatter;
 mod innate_function;
 mod interpret;
+mod parse_simple;
+mod simple_ast;
 mod solved_ast;
 mod typ;
 use cli::*;

@@ -421,93 +421,93 @@ impl Tokenizer {
                 }
                 // Number
                 '-' | '0'..='9' => {
-                    if let Some(next_character) =
-                        self.characters_iterator.next_if(|c| c.value == '>')
-                    {
-                        Ok(Some(Token {
-                            token_type: TokenType::ArrowRight,
-                            representation: "->".to_string(),
-                            position: make_position(character, Some(&next_character)),
-                        }))
-                    } else {
-                        let intergral = self
+                    // if let Some(next_character) =
+                    //     self.characters_iterator.next_if(|c| c.value == '>')
+                    // {
+                    //     Ok(Some(Token {
+                    //         token_type: TokenType::ArrowRight,
+                    //         representation: "->".to_string(),
+                    //         position: make_position(character, Some(&next_character)),
+                    //     }))
+                    // } else {
+                    //    // Paste the following code inside here
+                    // }
+
+                    let intergral = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| character.value.is_digit(10))
+                        .collect::<Vec<Character>>();
+
+                    if character.value == '-' && intergral.is_empty() {
+                        let characters = self
                             .characters_iterator
                             .by_ref()
-                            .peeking_take_while(|character| character.value.is_digit(10))
+                            .peeking_take_while(|character| is_symbol(character.value))
                             .collect::<Vec<Character>>();
 
-                        if character.value == '-' && intergral.is_empty() {
-                            let characters = self
-                                .characters_iterator
-                                .by_ref()
-                                .peeking_take_while(|character| is_symbol(character.value))
-                                .collect::<Vec<Character>>();
+                        let representation =
+                            format!("{}{}", character.value, stringify(&characters));
+                        Ok(Some(Token {
+                            token_type: TokenType::Identifier,
+                            representation,
+                            position: make_position(character, characters.last()),
+                        }))
+                    } else {
+                        match self.characters_iterator.peek() {
+                            Some(Character { value: '.', .. }) => {
+                                let period = self.characters_iterator.next().unwrap();
+                                let fractional = self
+                                    .characters_iterator
+                                    .peeking_take_while(|character| character.value.is_digit(10))
+                                    .collect::<Vec<Character>>();
 
-                            let representation =
-                                format!("{}{}", character.value, stringify(&characters));
-                            Ok(Some(Token {
-                                token_type: TokenType::Identifier,
-                                representation,
-                                position: make_position(character, characters.last()),
-                            }))
-                        } else {
-                            match self.characters_iterator.peek() {
-                                Some(Character { value: '.', .. }) => {
-                                    let period = self.characters_iterator.next().unwrap();
-                                    let fractional = self
-                                        .characters_iterator
-                                        .peeking_take_while(|character| {
-                                            character.value.is_digit(10)
-                                        })
-                                        .collect::<Vec<Character>>();
-
-                                    if fractional.is_empty() {
-                                        // means there's no fractional part
-                                        // that means the next token is a Period
-                                        self.peeked_tokens.push(Token {
-                                            token_type: TokenType::Period,
-                                            representation: period.value.to_string(),
-                                            position: Position {
-                                                line_start: period.line_number,
-                                                line_end: period.line_number,
-                                                column_start: period.column_number,
-                                                column_end: period.column_number,
-                                                character_index_start: period.index,
-                                                character_index_end: period.index,
-                                            },
-                                        });
-                                        Ok(Some(Token {
-                                            token_type: TokenType::Integer,
-                                            representation: format!(
-                                                "{}{}",
-                                                character.value,
-                                                stringify(&intergral)
-                                            ),
-                                            position: make_position(character, intergral.last()),
-                                        }))
-                                    } else {
-                                        Ok(Some(Token {
-                                            token_type: TokenType::Float,
-                                            representation: format!(
-                                                "{}{}.{}",
-                                                character.value,
-                                                stringify(&intergral),
-                                                stringify(&fractional)
-                                            ),
-                                            position: make_position(character, fractional.last()),
-                                        }))
-                                    }
+                                if fractional.is_empty() {
+                                    // means there's no fractional part
+                                    // that means the next token is a Period
+                                    self.peeked_tokens.push(Token {
+                                        token_type: TokenType::Period,
+                                        representation: period.value.to_string(),
+                                        position: Position {
+                                            line_start: period.line_number,
+                                            line_end: period.line_number,
+                                            column_start: period.column_number,
+                                            column_end: period.column_number,
+                                            character_index_start: period.index,
+                                            character_index_end: period.index,
+                                        },
+                                    });
+                                    Ok(Some(Token {
+                                        token_type: TokenType::Integer,
+                                        representation: format!(
+                                            "{}{}",
+                                            character.value,
+                                            stringify(&intergral)
+                                        ),
+                                        position: make_position(character, intergral.last()),
+                                    }))
+                                } else {
+                                    Ok(Some(Token {
+                                        token_type: TokenType::Float,
+                                        representation: format!(
+                                            "{}{}.{}",
+                                            character.value,
+                                            stringify(&intergral),
+                                            stringify(&fractional)
+                                        ),
+                                        position: make_position(character, fractional.last()),
+                                    }))
                                 }
-                                _ => Ok(Some(Token {
-                                    token_type: TokenType::Integer,
-                                    representation: format!(
-                                        "{}{}",
-                                        character.value,
-                                        stringify(&intergral)
-                                    ),
-                                    position: make_position(character, intergral.last()),
-                                })),
                             }
+                            _ => Ok(Some(Token {
+                                token_type: TokenType::Integer,
+                                representation: format!(
+                                    "{}{}",
+                                    character.value,
+                                    stringify(&intergral)
+                                ),
+                                position: make_position(character, intergral.last()),
+                            })),
                         }
                     }
                 }
@@ -570,41 +570,41 @@ impl Tokenizer {
                         _ => panic!(),
                     }
                 }
-                ':' => Ok(Some(Token {
-                    token_type: TokenType::Colon,
-                    representation: ":".to_string(),
-                    position: make_position(character, None),
-                })),
-                '=' => Ok(Some(Token {
-                    token_type: TokenType::Equals,
-                    representation: "=".to_string(),
-                    position: make_position(character, None),
-                })),
-                '|' => Ok(Some(Token {
-                    token_type: TokenType::Pipe,
-                    representation: "|".to_string(),
-                    position: make_position(character, None),
-                })),
-                '<' => Ok(Some(Token {
-                    token_type: TokenType::LessThan,
-                    representation: "<".to_string(),
-                    position: make_position(character, None),
-                })),
-                '>' => Ok(Some(Token {
-                    token_type: TokenType::MoreThan,
-                    representation: ">".to_string(),
-                    position: make_position(character, None),
-                })),
-                '_' => Ok(Some(Token {
-                    token_type: TokenType::Underscore,
-                    representation: "_".to_string(),
-                    position: make_position(character, None),
-                })),
-                '!' => Ok(Some(Token {
-                    token_type: TokenType::Bang,
-                    representation: "!".to_string(),
-                    position: make_position(character, None),
-                })),
+                // ':' => Ok(Some(Token {
+                //     token_type: TokenType::Colon,
+                //     representation: ":".to_string(),
+                //     position: make_position(character, None),
+                // })),
+                // '=' => Ok(Some(Token {
+                //     token_type: TokenType::Equals,
+                //     representation: "=".to_string(),
+                //     position: make_position(character, None),
+                // })),
+                // '|' => Ok(Some(Token {
+                //     token_type: TokenType::Pipe,
+                //     representation: "|".to_string(),
+                //     position: make_position(character, None),
+                // })),
+                // '<' => Ok(Some(Token {
+                //     token_type: TokenType::LessThan,
+                //     representation: "<".to_string(),
+                //     position: make_position(character, None),
+                // })),
+                // '>' => Ok(Some(Token {
+                //     token_type: TokenType::MoreThan,
+                //     representation: ">".to_string(),
+                //     position: make_position(character, None),
+                // })),
+                // '_' => Ok(Some(Token {
+                //     token_type: TokenType::Underscore,
+                //     representation: "_".to_string(),
+                //     position: make_position(character, None),
+                // })),
+                // '!' => Ok(Some(Token {
+                //     token_type: TokenType::Bang,
+                //     representation: "!".to_string(),
+                //     position: make_position(character, None),
+                // })),
                 '~' => Ok(Some(Token {
                     token_type: TokenType::Tilde,
                     representation: "~".to_string(),
@@ -658,7 +658,7 @@ impl Tokenizer {
 }
 
 fn is_symbol(c: char) -> bool {
-    "!@#$%^&*_-<>=+/|?~".contains(c)
+    ":!@#$%^&*_-<>=+/|?~".contains(c)
 }
 
 pub fn make_position(first: Character, last: Option<&Character>) -> Position {
@@ -686,15 +686,15 @@ pub fn stringify(characters: &Vec<Character>) -> String {
 
 pub fn get_token_type(s: String) -> TokenType {
     match s.as_str() {
-        "entry" => TokenType::KeywordEntry,
-        "let" => TokenType::KeywordLet,
-        "type" => TokenType::KeywordType,
-        "import" => TokenType::KeywordImport,
-        "public" => TokenType::KeywordPublic,
-        "export" => TokenType::KeywordExport,
-        "given" => TokenType::KeywordGiven,
-        "class" => TokenType::KeywordClass,
-        "innate" => TokenType::KeywordInnate,
+        // "entry" => TokenType::KeywordEntry,
+        // "let" => TokenType::KeywordLet,
+        // "type" => TokenType::KeywordType,
+        // "import" => TokenType::KeywordImport,
+        // "public" => TokenType::KeywordPublic,
+        // "export" => TokenType::KeywordExport,
+        // "given" => TokenType::KeywordGiven,
+        // "class" => TokenType::KeywordClass,
+        // "innate" => TokenType::KeywordInnate,
         _ => TokenType::Identifier,
     }
 }
