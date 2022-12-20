@@ -12,15 +12,15 @@ trait ToDoc {
     }
 }
 
-fn brackets<'a>(opening: &'a str, doc: RcDoc<'a, ()>, closing: &'a str) -> RcDoc<'a, ()> {
+fn brackets<'a>(
+    opening: &'a str,
+    doc: RcDoc<'a, ()>,
+    closing: &'a str,
+    add_space: bool,
+) -> RcDoc<'a, ()> {
+    let line = if add_space { RcDoc::line } else { RcDoc::line_ };
     RcDoc::text(opening)
-        .append(
-            RcDoc::line_()
-                .append(doc)
-                .nest(2)
-                .append(RcDoc::line_())
-                .group(),
-        )
+        .append(line().append(doc).nest(2).append(line()).group())
         .append(RcDoc::text(closing))
 }
 
@@ -73,6 +73,7 @@ impl ToDoc for Option<TypeVariablesDeclaration> {
                 "<",
                 type_variables_declaration.type_variables.intersperse(","),
                 ">",
+                false,
             ),
         }
     }
@@ -91,7 +92,7 @@ impl ToDoc for simple_ast::Expression {
             Expression::Array(array) => array.to_doc(),
             Expression::PrefixFunctionCall(prefix_function_call) => prefix_function_call.to_doc(),
             Expression::InfixFunctionCall(infix_function_call) => infix_function_call.to_doc(),
-            Expression::OperatorCall(_) => todo!(),
+            Expression::OperatorCall(operator_call) => operator_call.to_doc(),
             Expression::String(literal) => RcDoc::text(literal.content.clone()),
             Expression::Integer(token)
             | Expression::Character(token)
@@ -101,14 +102,88 @@ impl ToDoc for simple_ast::Expression {
     }
 }
 
+impl ToDoc for simple_ast::OperatorCall {
+    fn to_doc(&self) -> RcDoc<()> {
+        self.left
+            .to_doc()
+            .append(RcDoc::space())
+            .append(RcDoc::text(self.operator.representation.clone()))
+            .append(
+                RcDoc::line()
+                    .nest(2)
+                    .append(self.right.to_doc().nest(2))
+                    .group(),
+            )
+    }
+}
+
 impl ToDoc for simple_ast::PrefixFunctionCall {
     fn to_doc(&self) -> RcDoc<()> {
-        self.function.to_doc().append(
-            // TODO: each keyword should has its own group
-            RcDoc::concat(
-                self.arguments
-                    .iter()
-                    .map(|element| RcDoc::line().append(element.to_doc())),
+        #[derive(Debug, Clone)]
+        struct State {
+            is_odd_group: bool,
+            previous_argument_is_keyword: bool,
+        }
+
+        // Group each keyword as its onw group
+        // For example:
+        //
+        //   f 0 g 1 2 z 3 4
+        //
+        // Will be grouped as:
+        //
+        //   (f 0) (g 1 2) (z 3 4)
+        //
+        // And formatted like:
+        //
+        //   f 0
+        //     g 1 2
+        //     z 3 4
+        //
+        let groups = self
+            .arguments
+            .iter()
+            .scan(
+                State {
+                    is_odd_group: true,
+                    previous_argument_is_keyword: false,
+                },
+                |state, element| {
+                    let result = match element {
+                        simple_ast::Expression::Identifier(_)
+                            if !state.previous_argument_is_keyword =>
+                        {
+                            (
+                                State {
+                                    previous_argument_is_keyword: true,
+                                    is_odd_group: !state.is_odd_group,
+                                },
+                                element,
+                            )
+                        }
+                        _ => (
+                            State {
+                                previous_argument_is_keyword: false,
+                                is_odd_group: state.is_odd_group,
+                            },
+                            element,
+                        ),
+                    };
+                    *state = result.0.clone();
+
+                    Some(result)
+                },
+            )
+            .group_by(|(state, _)| state.is_odd_group);
+
+        self.function.to_doc().append(RcDoc::space()).append(
+            RcDoc::intersperse(
+                groups.into_iter().map(|(_, group)| {
+                    RcDoc::intersperse(group.map(|(_, element)| element.to_doc()), RcDoc::line())
+                        .nest(2)
+                        .group()
+                }),
+                RcDoc::line(),
             )
             .nest(2)
             .group(),
@@ -133,11 +208,11 @@ impl ToDoc for simple_ast::InfixFunctionCall {
 impl ToDoc for simple_ast::Array {
     fn to_doc(&self) -> RcDoc<()> {
         use simple_ast::*;
-        let (opening, closing) = match self.bracket {
-            Bracket::Round => ("(", ")"),
-            Bracket::Square => ("[", "]"),
-            Bracket::Curly => ("{", "}"),
-            Bracket::None => ("", ""),
+        let (opening, closing, add_space) = match self.bracket {
+            Bracket::Round => ("(", ")", false),
+            Bracket::Square => ("[", "]", true),
+            Bracket::Curly => ("{", "}", true),
+            Bracket::None => ("", "", false),
         };
         brackets(
             opening,
@@ -149,6 +224,7 @@ impl ToDoc for simple_ast::Array {
                 ",",
             ),
             closing,
+            add_space,
         )
     }
 }
@@ -184,12 +260,17 @@ impl ToDoc for TypeAnnotation {
         match self {
             TypeAnnotation::Parenthesized {
                 type_annotation, ..
-            } => brackets("(", type_annotation.to_doc(), ")"),
+            } => brackets("(", type_annotation.to_doc(), ")", false),
             TypeAnnotation::Scheme {
                 type_variables,
                 type_annotation,
-            } => brackets("<", type_variables.type_variables.intersperse(","), ">")
-                .append(RcDoc::space().append(type_annotation.to_doc()).group()),
+            } => brackets(
+                "<",
+                type_variables.type_variables.intersperse(","),
+                ">",
+                false,
+            )
+            .append(RcDoc::space().append(type_annotation.to_doc()).group()),
             TypeAnnotation::Named {
                 name,
                 type_arguments,
@@ -201,6 +282,7 @@ impl ToDoc for TypeAnnotation {
                         "<",
                         type_arguments.type_annotations.as_ref().intersperse(","),
                         ">",
+                        false,
                     ),
                 };
                 RcDoc::text(name).append(doc).group()
@@ -223,6 +305,7 @@ impl ToDoc for TypeAnnotation {
                     ",",
                 ),
                 "}",
+                false,
             ),
             TypeAnnotation::Array { .. } => todo!(),
             TypeAnnotation::Underscore(_) => todo!(),
@@ -259,6 +342,15 @@ mod formatter_test {
 
         insta::assert_snapshot!(prettify_code(
             "hello .replace (x .call me spongebob (yes) you are squarepants) with (y) .to string .between 1 and 3 .who lives in a pineapple under the sea".to_string()
+        ));
+    }
+
+    #[test]
+    fn prefix_function_call_keywords_should_be_grouped_1() {
+        use crate::formatter::prettify_code;
+
+        insta::assert_snapshot!(prettify_code(
+            "if { krabby patty is alive } then { spongebob squarepants + patrick star .replace squidward with hello yo yo  yo yo yo y } else { clarinet }".to_string()
         ));
     }
 }
