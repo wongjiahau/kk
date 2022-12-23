@@ -1649,9 +1649,10 @@ struct CollectCpsBangResult {
     argument: Expression,
 }
 
-impl simple_ast::TopLevelArray {
+impl simple_ast::SemicolonArray {
     pub fn into_statements(self) -> Result<Vec<Statement>, ParseError> {
         self.nodes
+            .into_vector()
             .into_iter()
             .map(|element| element.into_statement())
             .collect::<Result<Vec<_>, _>>()
@@ -1669,6 +1670,23 @@ impl simple_ast::Node {
             }
             Node::OperatorCall(operator_call) => operator_call.into_statement(),
             Node::Literal(_) => todo!(),
+            Node::SemicolonArray(_) => todo!(),
+        }
+    }
+
+    fn to_assignment(&self) -> Result<Assignment, ParseError> {
+        use simple_ast::*;
+        match self {
+            Node::OperatorCall(operator_call) if operator_call.operator.representation == "=" => {
+                Ok(Assignment {
+                    pattern: operator_call.left.to_pattern()?,
+                    expression: operator_call.right.to_expression()?,
+                })
+            }
+            _ => Ok(Assignment {
+                pattern: DestructurePattern::Underscore(Token::dummy()),
+                expression: self.to_expression()?,
+            }),
         }
     }
 
@@ -1735,7 +1753,6 @@ impl simple_ast::Node {
             simple_ast::Node::PrefixFunctionCall(_) => todo!(),
             simple_ast::Node::InfixFunctionCall(_) => todo!(),
             simple_ast::Node::OperatorCall(_) => todo!(),
-
             simple_ast::Node::Literal(literal) => match literal {
                 simple_ast::Literal::Identifier(token) => Ok(EnumConstructorDefinition {
                     name: token.clone(),
@@ -1748,6 +1765,7 @@ impl simple_ast::Node {
                     },
                 }),
             },
+            _ => todo!(),
         }
     }
 
@@ -1808,6 +1826,7 @@ impl simple_ast::Node {
                 }
                 Literal::Keyword(_) => todo!(),
             },
+            Node::SemicolonArray(_) => todo!(),
         }
     }
 
@@ -1826,6 +1845,7 @@ impl simple_ast::Node {
                 Literal::Identifier(token) => Ok(Expression::Identifier(token.clone())),
                 Literal::Keyword(token) => Ok(Expression::Keyword(token.clone())),
             },
+            Node::SemicolonArray(array) => array.to_expression(),
         }
     }
 
@@ -1850,6 +1870,7 @@ impl simple_ast::Node {
                 }),
                 Literal::Keyword(_) => todo!(),
             },
+            Node::SemicolonArray(_) => todo!(),
         }
     }
 
@@ -1913,6 +1934,7 @@ impl simple_ast::Node {
                 Literal::Character(_) => todo!(),
                 Literal::Identifier(token) => todo!("{}", token.to_pretty()),
             },
+            Node::SemicolonArray(_) => todo!(),
         }
     }
 }
@@ -1947,6 +1969,7 @@ impl simple_ast::OperatorCall {
                             Node::InfixFunctionCall(_) => todo!(),
                             Node::OperatorCall(_) => todo!(),
                             Node::Literal(_) => todo!(),
+                            Node::SemicolonArray(_) => todo!(),
                         };
 
                     let (type_annotation, expression) = match self.right.as_ref() {
@@ -1960,6 +1983,7 @@ impl simple_ast::OperatorCall {
                             Ok((type_annotation, expression))
                         }
                         Node::Literal(_) => todo!(),
+                        Node::SemicolonArray(_) => todo!(),
                     }?;
                     let type_annotation = {
                         let type_annotation = match parameters.split_last() {
@@ -2013,6 +2037,7 @@ impl simple_ast::OperatorCall {
                 Node::InfixFunctionCall(_) => todo!(),
                 Node::OperatorCall(_) => todo!(),
                 Node::Literal(_) => todo!(),
+                Node::SemicolonArray(_) => todo!(),
             },
             _ => panic!("{}", self.to_pretty()),
         }
@@ -2329,4 +2354,34 @@ fn curry_function_call(function: Expression, arguments: Vec<Expression>) -> Expr
         ),
         None => function,
     }
+}
+
+impl simple_ast::SemicolonArray {
+    fn to_expression(&self) -> Result<Expression, ParseError> {
+        use simple_ast::*;
+        fn to_let_expression(
+            previous: Assignment,
+            nodes: &[Node],
+        ) -> Result<Expression, ParseError> {
+            match nodes.split_first() {
+                Some(_) => todo!(),
+                None => Ok(Expression::Let {
+                    keyword_let: Token::dummy(),
+                    left: previous.pattern,
+                    right: Box::new(previous.expression),
+                    type_annotation: None,
+                    body: Box::new(Expression::Unit {
+                        left_parenthesis: Token::dummy(),
+                        right_parenthesis: Token::dummy(),
+                    }),
+                }),
+            }
+        }
+        to_let_expression(self.nodes.head.to_assignment()?, self.nodes.tail.as_slice())
+    }
+}
+
+struct Assignment {
+    pattern: DestructurePattern,
+    expression: Expression,
 }

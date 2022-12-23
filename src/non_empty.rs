@@ -95,6 +95,13 @@ impl<T> NonEmpty<T> {
         }
     }
 
+    pub fn to_vector(&self) -> Vec<&T> {
+        vec![&self.head]
+            .into_iter()
+            .chain(self.tail.iter())
+            .collect()
+    }
+
     pub fn into_vector(self) -> Vec<T> {
         iter::once(self.head).chain(self.tail).collect()
     }

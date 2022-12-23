@@ -53,6 +53,7 @@ impl ToDoc for Node {
             Node::InfixFunctionCall(infix_function_call) => infix_function_call.to_doc(),
             Node::OperatorCall(operator_call) => operator_call.to_doc(),
             Node::Literal(literal) => literal.to_doc(),
+            Node::SemicolonArray(array) => todo!(),
         }
     }
 }
@@ -199,9 +200,16 @@ pub fn prettify_code(code: String) -> String {
     array.to_pretty()
 }
 
-impl ToDoc for TopLevelArray {
+impl ToDoc for SemicolonArray {
     fn to_doc(&self) -> RcDoc<()> {
-        intersperse_vec(self.nodes.iter().map(|node| node.to_doc()).collect(), "\n")
+        intersperse_vec(
+            self.nodes
+                .to_vector()
+                .iter()
+                .map(|node| node.to_doc())
+                .collect(),
+            ";",
+        )
     }
 }
 

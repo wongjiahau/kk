@@ -1,4 +1,7 @@
-use crate::raw_ast::{Position, StringLiteral, Token};
+use crate::{
+    non_empty::NonEmpty,
+    raw_ast::{Position, StringLiteral, Token},
+};
 
 #[derive(Debug, Clone)]
 pub enum Node {
@@ -8,6 +11,7 @@ pub enum Node {
     /// Operator call are right-associative
     OperatorCall(OperatorCall),
     Literal(Literal),
+    SemicolonArray(SemicolonArray),
 }
 
 #[derive(Debug, Clone)]
@@ -21,8 +25,16 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone)]
-pub struct TopLevelArray {
-    pub nodes: Vec<Node>,
+pub struct SemicolonArray {
+    pub nodes: Box<NonEmpty<Node>>,
+}
+impl SemicolonArray {
+    fn position(&self) -> Position {
+        self.nodes
+            .first()
+            .position()
+            .join(self.nodes.last().position())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +108,7 @@ impl Node {
             Node::InfixFunctionCall(infix_function_call) => infix_function_call.position(),
             Node::OperatorCall(_) => todo!(),
             Node::Literal(literal) => literal.position(),
+            Node::SemicolonArray(array) => array.position(),
         }
     }
 }

@@ -21,7 +21,7 @@ impl<'a> Parser<'a> {
             temporary_variable_index: 0,
         }
     }
-    pub fn parse(tokenizer: &mut Tokenizer) -> Result<TopLevelArray, ParseError> {
+    pub fn parse(tokenizer: &mut Tokenizer) -> Result<SemicolonArray, ParseError> {
         let mut parser = Parser {
             tokenizer,
             temporary_variable_index: 0,
@@ -29,13 +29,16 @@ impl<'a> Parser<'a> {
         parser.parse_top_level_array()
     }
 
-    fn parse_top_level_array(&mut self) -> Result<TopLevelArray, ParseError> {
-        let mut nodes = vec![self.parse_low_precedence_expression()?];
+    fn parse_top_level_array(&mut self) -> Result<SemicolonArray, ParseError> {
+        let head = self.parse_low_precedence_expression()?;
+        let mut tail = vec![];
         loop {
             if self.try_eat_token(TokenType::Comma)?.is_none() {
-                break Ok(TopLevelArray { nodes });
+                break Ok(SemicolonArray {
+                    nodes: Box::new(NonEmpty { head, tail }),
+                });
             }
-            nodes.push(self.parse_low_precedence_expression()?)
+            tail.push(self.parse_low_precedence_expression()?)
         }
     }
 
