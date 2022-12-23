@@ -1,1 +1,2 @@
-export let <T> print (t: T) : () = innate print (t)
+[T] print (t: T) : () = innate print (t)
+

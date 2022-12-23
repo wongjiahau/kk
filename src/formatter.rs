@@ -1,8 +1,8 @@
-use crate::{non_empty::NonEmpty, raw_ast::*, simple_ast};
+use crate::{non_empty::NonEmpty, raw_ast::Token, simple_ast::*};
 use itertools::Itertools;
 use pretty::RcDoc;
 
-trait ToDoc {
+pub trait ToDoc {
     fn to_doc(&self) -> RcDoc<()>;
     fn to_pretty(&self) -> String {
         let mut vec = Vec::new();
@@ -24,18 +24,6 @@ fn brackets<'a>(
         .append(RcDoc::text(closing))
 }
 
-impl ToDoc for Statement {
-    fn to_doc(&self) -> RcDoc<()> {
-        match self {
-            Statement::Let(_) => todo!(),
-            Statement::Type(type_alias_statement) => type_alias_statement.to_doc(),
-            Statement::Enum(enum_statement) => enum_statement.to_doc(),
-            Statement::Import(_) => todo!(),
-            Statement::Entry(_) => todo!(),
-        }
-    }
-}
-
 impl<T: ToDoc> NonEmpty<T> {
     fn intersperse<'a>(&'a self, separator: &'a str) -> RcDoc<'a, ()> {
         RcDoc::intersperse(
@@ -51,63 +39,43 @@ fn intersperse_vec<'a>(elements: Vec<RcDoc<'a, ()>>, separator: &'a str) -> RcDo
     RcDoc::intersperse(elements, RcDoc::text(separator).append(RcDoc::line()))
 }
 
-impl ToDoc for TypeAliasStatement {
-    fn to_doc(&self) -> pretty::RcDoc {
-        RcDoc::text("type ")
-            .append(RcDoc::text(self.left.representation.as_str()))
-            .append(self.type_variables_declaration.to_doc())
-            .append(
-                RcDoc::space()
-                    .append(RcDoc::text("="))
-                    .append(RcDoc::space())
-                    .append(self.right.to_doc()),
-            )
-    }
-}
-
-impl ToDoc for Option<TypeVariablesDeclaration> {
-    fn to_doc(&self) -> RcDoc<()> {
-        match self {
-            None => RcDoc::nil(),
-            Some(type_variables_declaration) => brackets(
-                "<",
-                type_variables_declaration.type_variables.intersperse(","),
-                ">",
-                false,
-            ),
-        }
-    }
-}
-
 impl ToDoc for Token {
     fn to_doc(&self) -> RcDoc<()> {
         RcDoc::text(self.representation.as_str())
     }
 }
 
-impl ToDoc for simple_ast::Expression {
+impl ToDoc for Node {
     fn to_doc(&self) -> RcDoc<()> {
-        use simple_ast::*;
         match self {
-            Expression::Array(array) => array.to_doc(),
-            Expression::PrefixFunctionCall(prefix_function_call) => prefix_function_call.to_doc(),
-            Expression::InfixFunctionCall(infix_function_call) => infix_function_call.to_doc(),
-            Expression::OperatorCall(operator_call) => operator_call.to_doc(),
-            Expression::String(literal) => RcDoc::text(literal.content.clone()),
-            Expression::Integer(token)
-            | Expression::Character(token)
-            | Expression::Float(token)
-            | Expression::Identifier(token) => RcDoc::text(token.representation.clone()),
+            Node::Array(array) => array.to_doc(),
+            Node::PrefixFunctionCall(prefix_function_call) => prefix_function_call.to_doc(),
+            Node::InfixFunctionCall(infix_function_call) => infix_function_call.to_doc(),
+            Node::OperatorCall(operator_call) => operator_call.to_doc(),
+            Node::Literal(literal) => literal.to_doc(),
         }
     }
 }
 
-impl ToDoc for simple_ast::OperatorCall {
+impl ToDoc for Literal {
+    fn to_doc(&self) -> RcDoc<()> {
+        match self {
+            Literal::String(literal) => RcDoc::text(literal.content.clone()),
+            Literal::Integer(token)
+            | Literal::Character(token)
+            | Literal::Float(token)
+            | Literal::Identifier(token)
+            | Literal::Keyword(token) => token.to_doc(),
+        }
+    }
+}
+
+impl ToDoc for OperatorCall {
     fn to_doc(&self) -> RcDoc<()> {
         self.left
             .to_doc()
             .append(RcDoc::space())
-            .append(RcDoc::text(self.operator.representation.clone()))
+            .append(self.operator.to_doc())
             .append(
                 RcDoc::line()
                     .nest(2)
@@ -117,7 +85,7 @@ impl ToDoc for simple_ast::OperatorCall {
     }
 }
 
-impl ToDoc for simple_ast::PrefixFunctionCall {
+impl ToDoc for PrefixFunctionCall {
     fn to_doc(&self) -> RcDoc<()> {
         #[derive(Debug, Clone)]
         struct State {
@@ -150,7 +118,7 @@ impl ToDoc for simple_ast::PrefixFunctionCall {
                 },
                 |state, element| {
                     let result = match element {
-                        simple_ast::Expression::Identifier(_)
+                        Node::Literal(Literal::Keyword(_))
                             if !state.previous_argument_is_keyword =>
                         {
                             (
@@ -191,7 +159,7 @@ impl ToDoc for simple_ast::PrefixFunctionCall {
     }
 }
 
-impl ToDoc for simple_ast::InfixFunctionCall {
+impl ToDoc for InfixFunctionCall {
     fn to_doc(&self) -> RcDoc<()> {
         self.head.to_doc().append(
             RcDoc::concat(
@@ -205,22 +173,17 @@ impl ToDoc for simple_ast::InfixFunctionCall {
     }
 }
 
-impl ToDoc for simple_ast::Array {
+impl ToDoc for Array {
     fn to_doc(&self) -> RcDoc<()> {
-        use simple_ast::*;
-        let (opening, closing, add_space) = match self.bracket {
-            Bracket::Round => ("(", ")", false),
-            Bracket::Square => ("[", "]", true),
-            Bracket::Curly => ("{", "}", true),
-            Bracket::None => ("", "", false),
+        let (opening, closing, add_space) = match self.bracket.kind {
+            BracketKind::Round => ("(", ")", false),
+            BracketKind::Square => ("[", "]", false),
+            BracketKind::Curly => ("{", "}", true),
         };
         brackets(
             opening,
             intersperse_vec(
-                self.elements
-                    .iter()
-                    .map(|element| element.to_doc())
-                    .collect(),
+                self.nodes.iter().map(|element| element.to_doc()).collect(),
                 ",",
             ),
             closing,
@@ -229,109 +192,17 @@ impl ToDoc for simple_ast::Array {
     }
 }
 
-impl ToDoc for EnumStatement {
-    fn to_doc(&self) -> RcDoc<()> {
-        RcDoc::text(format!("class {} ", self.name.representation)).append(
-            RcDoc::line()
-                .append(RcDoc::text("= "))
-                .append(RcDoc::intersperse(
-                    self.constructors
-                        .iter()
-                        .map(|constructor| constructor.to_doc().nest(2)),
-                    RcDoc::line().append(RcDoc::text("| ")),
-                ))
-                .nest(2)
-                .group(),
-        )
-    }
-}
-
-impl EnumConstructorDefinition {
-    pub fn to_doc(&self) -> RcDoc<()> {
-        RcDoc::text(self.name.representation.clone()).append(match &self.payload {
-            None => RcDoc::nil(),
-            Some(payload) => payload.type_annotation.to_doc(),
-        })
-    }
-}
-
-impl ToDoc for TypeAnnotation {
-    fn to_doc(&self) -> pretty::RcDoc {
-        match self {
-            TypeAnnotation::Parenthesized {
-                type_annotation, ..
-            } => brackets("(", type_annotation.to_doc(), ")", false),
-            TypeAnnotation::Scheme {
-                type_variables,
-                type_annotation,
-            } => brackets(
-                "<",
-                type_variables.type_variables.intersperse(","),
-                ">",
-                false,
-            )
-            .append(RcDoc::space().append(type_annotation.to_doc()).group()),
-            TypeAnnotation::Named {
-                name,
-                type_arguments,
-            } => {
-                let name = name.representation.clone();
-                let doc = match type_arguments {
-                    None => RcDoc::nil(),
-                    Some(type_arguments) => brackets(
-                        "<",
-                        type_arguments.type_annotations.as_ref().intersperse(","),
-                        ">",
-                        false,
-                    ),
-                };
-                RcDoc::text(name).append(doc).group()
-            }
-            TypeAnnotation::Record {
-                key_type_annotation_pairs,
-                ..
-            } => brackets(
-                "{",
-                intersperse_vec(
-                    key_type_annotation_pairs
-                        .into_iter()
-                        .map(|(key, type_annotation)| {
-                            key.to_doc()
-                                .append(RcDoc::text(":"))
-                                .append(RcDoc::space())
-                                .append(type_annotation.to_doc())
-                        })
-                        .collect_vec(),
-                    ",",
-                ),
-                "}",
-                false,
-            ),
-            TypeAnnotation::Array { .. } => todo!(),
-            TypeAnnotation::Underscore(_) => todo!(),
-            TypeAnnotation::Function(function_type_annotation) => {
-                function_type_annotation.parameter.to_doc().append(
-                    RcDoc::line()
-                        .append(RcDoc::text("->"))
-                        .append(RcDoc::space())
-                        .append(function_type_annotation.return_type.to_doc())
-                        .nest(2)
-                        .group(),
-                )
-            }
-            TypeAnnotation::Unit { .. } => RcDoc::text("()"),
-            TypeAnnotation::Keyword { identifier } => {
-                RcDoc::text(format!("#{}", identifier.representation))
-            }
-        }
-    }
-}
-
 pub fn prettify_code(code: String) -> String {
     use crate::{parse_simple::Parser, tokenize::Tokenizer};
     let array = Parser::parse(&mut Tokenizer::new(code)).unwrap();
 
     array.to_pretty()
+}
+
+impl ToDoc for TopLevelArray {
+    fn to_doc(&self) -> RcDoc<()> {
+        intersperse_vec(self.nodes.iter().map(|node| node.to_doc()).collect(), "\n")
+    }
 }
 
 #[cfg(test)]

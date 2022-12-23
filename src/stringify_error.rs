@@ -227,6 +227,30 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
             (range, error)
         }
         ParseErrorKind::TokenizeError(tokenize_error) => get_tokenize_error(tokenize_error),
+        ParseErrorKind::ExpectedNone { position } => {
+
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            let error = StringifiedError {
+                summary: "Expected nothing here".to_string(),
+                body: "Consider removing it.".to_string(),
+            };
+            (range, error)
+
+        },
+        ParseErrorKind::UnexpectedNode { position } => {
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            let error = StringifiedError {
+                summary: "Unexpected node".to_string(),
+                body: "".to_string()
+            };
+            (range, error)
+        },
     };
     print_error(filename, code, range, error)
 }
@@ -415,6 +439,9 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             name: "Block Level Statement",
             examples: vec!["x = 123", "'Hello world' print"],
         },
+        ParseContext::FunctionParameter => todo!(),
+        ParseContext::NodeIdentifier => ParseContextDescription { name: "Node Identifier", examples: vec![] },
+        ParseContext::NodeArray => todo!(),
     }
 }
 

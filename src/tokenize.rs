@@ -449,7 +449,7 @@ impl Tokenizer {
                         let representation =
                             format!("{}{}", character.value, stringify(&characters));
                         Ok(Some(Token {
-                            token_type: TokenType::Identifier,
+                            token_type: TokenType::Operator,
                             representation,
                             position: make_position(character, characters.last()),
                         }))

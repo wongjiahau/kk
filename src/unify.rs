@@ -1,5 +1,6 @@
 use crate::{
     compile::{CompileError, CompileErrorKind, Source},
+    formatter::ToDoc,
     innate_function::InnateFunction,
     non_empty::NonEmpty,
     parse::Parser,
@@ -94,24 +95,33 @@ pub fn read_module(
                         })]
                     };
 
-                    // TODO: temporary
-                    parse_simple::Parser::parse(&mut Tokenizer::new(source.clone().code.clone()))
-                        .map_err(|error| CompileError {
+                    // let user_written_statements = Parser::parse(&mut Tokenizer::new(
+                    //     source.clone().code.clone(),
+                    // ))
+                    // .map_err(|error| CompileError {
+                    //     source,
+                    //     kind: CompileErrorKind::ParseError(Box::new(error)),
+                    // })?;
+                    //
+
+                    let simple_ast = parse_simple::Parser::parse(&mut Tokenizer::new(
+                        source.clone().code.clone(),
+                    ))
+                    .map_err(|error| CompileError {
                         source: source.clone(),
                         kind: CompileErrorKind::ParseError(Box::new(error)),
                     })?;
 
-                    panic!("simple parse succeeded");
+                    // println!("prettified = {}", simple_ast.to_pretty());
 
-                    let user_written_statements = Parser::parse(&mut Tokenizer::new(
-                        source.clone().code.clone(),
-                    ))
-                    .map_err(|error| CompileError {
-                        source,
-                        kind: CompileErrorKind::ParseError(Box::new(error)),
-                    })?;
+                    let user_written_statements =
+                        simple_ast.into_statements().map_err(|error| CompileError {
+                            source: source.clone(),
+                            kind: CompileErrorKind::ParseError(Box::new(error)),
+                        })?;
 
                     // println!("user_written_statements = {:#?}", user_written_statements);
+                    // println!("injected_statements = {:#?}", injected_statements);
 
                     injected_statements
                         .into_iter()
@@ -1282,7 +1292,7 @@ impl Positionable for Statement {
                 .keyword_type
                 .position
                 .join(type_statement.right.position()),
-            Statement::Enum(enum_statement) => enum_statement.keyword_class.position.join_maybe(
+            Statement::Enum(enum_statement) => enum_statement.keyword_enum.position.join_maybe(
                 enum_statement
                     .constructors
                     .last()

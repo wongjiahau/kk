@@ -1,10 +1,10 @@
-class Bool = True | False
+enum Boolean {
+  True,
+  False
+},
 
-let <A> if (condition: Bool) then (t: () -> A) else (f: () -> A) : A =
-  condition .     
-    -> True [ t () ]
-    -> False [ f () ]
 
-entry
-  if (True) then [ "Hello world" .print ] else [ "Bye" .print ]; // Hello world
-  if (False) then [ "Hello world" .print ] else [ "Bye" .print ] // Bye
+[A] if (condition : Boolean) (t : () -> A) else (f : () -> A) : A = condition .{ True -> t (), False -> f () },
+
+if (True) { "Hello world" .print } else { "Bye" .print },
+if (False) { "Hello world" .print } else { "Bye" .print }
