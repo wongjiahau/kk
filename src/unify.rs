@@ -112,7 +112,7 @@ pub fn read_module(
                         kind: CompileErrorKind::ParseError(Box::new(error)),
                     })?;
 
-                    // println!("prettified = {}", simple_ast.to_pretty());
+                    // println!("prettified =\n\n{}", simple_ast.to_pretty());
 
                     let user_written_statements =
                         simple_ast.into_statements().map_err(|error| CompileError {

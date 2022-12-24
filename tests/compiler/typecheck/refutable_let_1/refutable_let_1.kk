@@ -1,5 +1,9 @@
-class Option<T> = some(T) | none
+enum Option [T] {
+  some(T),
+  none
+};
 
-let foo (x: Option<Int>): Int =
-  let some(x) = x;
+foo (x: Option [Int]): Int = (
+  some(x) = x;
   x
+)

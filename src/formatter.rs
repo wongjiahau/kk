@@ -53,15 +53,36 @@ impl ToDoc for Node {
             Node::InfixFunctionCall(infix_function_call) => infix_function_call.to_doc(),
             Node::OperatorCall(operator_call) => operator_call.to_doc(),
             Node::Literal(literal) => literal.to_doc(),
-            Node::SemicolonArray(array) => todo!(),
+            Node::SemicolonArray(array) => array.nodes.intersperse(";"),
         }
+    }
+}
+
+impl ToDoc for TopLevelArray {
+    fn to_doc(&self) -> RcDoc<()> {
+        RcDoc::intersperse(
+            self.nodes
+                .to_vector()
+                .into_iter()
+                .map(|node| node.to_pretty()),
+            RcDoc::concat(vec![RcDoc::text(";"), RcDoc::hardline(), RcDoc::hardline()]),
+        )
     }
 }
 
 impl ToDoc for Literal {
     fn to_doc(&self) -> RcDoc<()> {
         match self {
-            Literal::String(literal) => RcDoc::text(literal.content.clone()),
+            Literal::String(literal) => RcDoc::text(format!(
+                "{quote}{content}{quote}",
+                quote = literal
+                    .start_quotes
+                    .to_vector()
+                    .into_iter()
+                    .map(|character| character.value)
+                    .join(""),
+                content = literal.content.clone()
+            )),
             Literal::Integer(token)
             | Literal::Character(token)
             | Literal::Float(token)

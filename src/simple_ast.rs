@@ -28,6 +28,11 @@ pub enum Literal {
 pub struct SemicolonArray {
     pub nodes: Box<NonEmpty<Node>>,
 }
+
+pub struct TopLevelArray {
+    pub nodes: NonEmpty<Node>,
+}
+
 impl SemicolonArray {
     fn position(&self) -> Position {
         self.nodes

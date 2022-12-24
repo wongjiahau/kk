@@ -1,8 +1,7 @@
-use crate::module::Access;
 use crate::parse::{ParseContext, ParseError, ParseErrorKind};
-use crate::raw_ast::{Position, StringLiteral, Token, TokenType};
-use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
-use crate::{simple_ast::*, tokenize::TokenizeError};
+use crate::raw_ast::{Token, TokenType};
+use crate::simple_ast::*;
+use crate::{non_empty::NonEmpty, tokenize::Tokenizer};
 
 pub struct Parser<'a> {
     temporary_variable_index: usize,
@@ -15,13 +14,7 @@ struct ParseArrayArgument {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(tokenizer: &mut Tokenizer) -> Parser {
-        Parser {
-            tokenizer,
-            temporary_variable_index: 0,
-        }
-    }
-    pub fn parse(tokenizer: &mut Tokenizer) -> Result<SemicolonArray, ParseError> {
+    pub fn parse(tokenizer: &mut Tokenizer) -> Result<TopLevelArray, ParseError> {
         let mut parser = Parser {
             tokenizer,
             temporary_variable_index: 0,
@@ -29,16 +22,18 @@ impl<'a> Parser<'a> {
         parser.parse_top_level_array()
     }
 
-    fn parse_top_level_array(&mut self) -> Result<SemicolonArray, ParseError> {
+    fn parse_top_level_array(&mut self) -> Result<TopLevelArray, ParseError> {
         let head = self.parse_low_precedence_expression()?;
         let mut tail = vec![];
         loop {
-            if self.try_eat_token(TokenType::Comma)?.is_none() {
-                break Ok(SemicolonArray {
-                    nodes: Box::new(NonEmpty { head, tail }),
+            if self.peek_next_meaningful_token()?.is_none() {
+                break Ok(TopLevelArray {
+                    nodes: NonEmpty { head, tail },
                 });
+            } else {
+                self.eat_token(TokenType::Semicolon, None)?;
+                tail.push(self.parse_low_precedence_expression()?)
             }
-            tail.push(self.parse_low_precedence_expression()?)
         }
     }
 
@@ -52,7 +47,7 @@ impl<'a> Parser<'a> {
             });
         }
         let (elements, bracket, has_trailing_comma) = loop {
-            nodes.push(self.parse_low_precedence_expression()?);
+            nodes.push(self.parse_lowest_precedence_expression()?);
             if self.try_eat_token(TokenType::Comma)?.is_none() {
                 let bracket = self.eat_array_closing_bracket(argument)?;
                 break (nodes, bracket, false);
@@ -106,6 +101,28 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Semicolon array
+    fn parse_lowest_precedence_expression(&mut self) -> Result<Node, ParseError> {
+        let head = self.parse_low_precedence_expression()?;
+        let mut tail = vec![];
+        let tail = loop {
+            if self.next_token_is_terminating_for_semicolon_array()? {
+                break tail;
+            } else {
+                self.eat_token(TokenType::Semicolon, None)?;
+                tail.push(self.parse_low_precedence_expression()?)
+            }
+        };
+        if tail.is_empty() {
+            Ok(head)
+        } else {
+            Ok(Node::SemicolonArray(SemicolonArray {
+                nodes: Box::new(NonEmpty { head, tail }),
+            }))
+        }
+    }
+
+    /// Operator call
     fn parse_low_precedence_expression(&mut self) -> Result<Node, ParseError> {
         let expression = self.parse_mid_precedence_expression()?;
 
@@ -125,6 +142,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Infix function call
     fn parse_mid_precedence_expression(&mut self) -> Result<Node, ParseError> {
         let expression = self.parse_high_precedence_expression(false)?;
         self.try_parse_infix_function_call(expression)
@@ -327,7 +345,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn next_token_is_terminating_for_operator_call(&mut self) -> Result<bool, ParseError> {
+    fn next_token_is_terminating_for_semicolon_array(&mut self) -> Result<bool, ParseError> {
         match self.peek_next_meaningful_token()? {
             None => Ok(true),
             Some(token) => Ok(matches!(
@@ -338,6 +356,21 @@ impl<'a> Parser<'a> {
                     | TokenType::RightSquareBracket
             )),
         }
+    }
+
+    fn next_token_is_terminating_for_operator_call(&mut self) -> Result<bool, ParseError> {
+        Ok(self.next_token_is_terminating_for_semicolon_array()?
+            || match self.peek_next_meaningful_token()? {
+                None => true,
+                Some(token) => matches!(
+                    token.token_type,
+                    TokenType::Comma
+                        | TokenType::Semicolon
+                        | TokenType::RightParenthesis
+                        | TokenType::RightCurlyBracket
+                        | TokenType::RightSquareBracket
+                ),
+            })
     }
 
     fn next_token_is_terminating_for_infix_function_call(&mut self) -> Result<bool, ParseError> {
@@ -354,35 +387,6 @@ impl<'a> Parser<'a> {
                 None => true,
                 Some(token) => matches!(token.token_type, TokenType::Period),
             })
-    }
-
-    fn try_eat_string_literal(&mut self) -> Result<Option<StringLiteral>, ParseError> {
-        Ok(match self.peek_next_meaningful_token()? {
-            None => None,
-            Some(token) => match token.token_type {
-                TokenType::String(string_literal) => {
-                    self.next_meaningful_token()?;
-                    Some(string_literal)
-                }
-                _ => None,
-            },
-        })
-    }
-
-    fn eat_string_literal(&mut self) -> Result<StringLiteral, ParseError> {
-        match self.next_meaningful_token()? {
-            None => Err(Parser::unexpected_eof(None)),
-            Some(token) => match token.token_type {
-                TokenType::String(string_literal) => Ok(string_literal),
-                _ => Err(Parser::invalid_token(token, None)),
-            },
-        }
-    }
-
-    fn get_next_temporary_variable_index(&mut self) -> usize {
-        let result = self.temporary_variable_index;
-        self.temporary_variable_index += 1;
-        result
     }
 }
 
