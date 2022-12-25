@@ -566,6 +566,8 @@ pub enum UnifyErrorKind {
     },
     CannotBeOverloaded {
         name: String,
+        existing_symbol_position: Position,
+        existing_symbol_type: Type,
     },
     MissingTildeClosure,
     UnknownInnateFunction {

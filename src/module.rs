@@ -700,6 +700,15 @@ impl Module {
                                             position: new_symbol.meta.name.position,
                                             kind: UnifyErrorKind::CannotBeOverloaded {
                                                 name: new_symbol.meta.name.representation.clone(),
+                                                existing_symbol_type: existing_value_symbol
+                                                    .type_value
+                                                    .clone(),
+                                                existing_symbol_position: entry
+                                                    .symbol
+                                                    .meta
+                                                    .name
+                                                    .position
+                                                    .clone(),
                                             },
                                         })
                                     } else {

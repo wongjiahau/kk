@@ -12,6 +12,13 @@ pub enum Node {
     OperatorCall(OperatorCall),
     Literal(Literal),
     SemicolonArray(SemicolonArray),
+    CommentedNode(CommentedNode),
+}
+
+#[derive(Debug, Clone)]
+pub struct CommentedNode {
+    pub comment: StringLiteral,
+    pub node: Box<Node>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,13 +95,13 @@ impl InfixFunctionCall {
 #[derive(Debug, Clone)]
 pub struct PrefixFunctionCall {
     pub function: Box<Node>,
-    pub arguments: Vec<Node>,
+    pub arguments: Box<NonEmpty<Node>>,
 }
 impl PrefixFunctionCall {
     fn position(&self) -> Position {
         self.function
             .position()
-            .join_maybe(self.arguments.last().map(|argument| argument.position()))
+            .join(self.arguments.last().position())
     }
 }
 
@@ -114,7 +121,14 @@ impl Node {
             Node::OperatorCall(_) => todo!(),
             Node::Literal(literal) => literal.position(),
             Node::SemicolonArray(array) => array.position(),
+            Node::CommentedNode(commented_node) => commented_node.position(),
         }
+    }
+}
+
+impl CommentedNode {
+    pub fn position(&self) -> Position {
+        self.comment.position().join(self.node.position())
     }
 }
 

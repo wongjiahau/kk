@@ -114,4 +114,12 @@ impl<T> NonEmpty<T> {
             NonEmpty { head: y, tail: bs },
         )
     }
+
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if index == 0 {
+            Some(&self.head)
+        } else {
+            self.tail.get(index - 1)
+        }
+    }
 }

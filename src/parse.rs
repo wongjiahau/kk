@@ -29,6 +29,9 @@ pub enum ParseErrorKind {
     ExpectedNone {
         position: Position,
     },
+    ExpectedNode {
+        previous_position: Position,
+    },
     UnexpectedNode {
         position: Position,
     },
@@ -1849,6 +1852,7 @@ impl simple_ast::Node {
                 Literal::Keyword(_) => todo!(),
             },
             Node::SemicolonArray(_) => todo!(),
+            Node::CommentedNode(_) => todo!(),
         }
     }
 
@@ -1868,6 +1872,7 @@ impl simple_ast::Node {
                 Literal::Keyword(token) => Ok(Expression::Keyword(token.clone())),
             },
             Node::SemicolonArray(array) => array.to_expression(),
+            Node::CommentedNode(commented_node) => commented_node.node.to_expression(),
         }
     }
 
@@ -1876,11 +1881,12 @@ impl simple_ast::Node {
         match self {
             Node::Array(array) => array.to_type_annotation(),
             Node::PrefixFunctionCall(prefix_function_call) => {
-                let node = prefix_function_call
+                let node = prefix_function_call.arguments.head.clone();
+                prefix_function_call
                     .arguments
+                    .tail
                     .get(0)
-                    .into_node(prefix_function_call.function.position())?;
-                prefix_function_call.arguments.get(1).should_be_none()?;
+                    .should_be_none()?;
                 match node {
                     Node::Array(array) => match array.bracket.kind {
                         BracketKind::Round => todo!(),
@@ -1912,6 +1918,7 @@ impl simple_ast::Node {
                     Node::OperatorCall(_) => todo!(),
                     Node::Literal(_) => todo!(),
                     Node::SemicolonArray(_) => todo!(),
+                    Node::CommentedNode(_) => todo!(),
                 }
             }
             Node::InfixFunctionCall(_) => todo!(),
@@ -1928,6 +1935,7 @@ impl simple_ast::Node {
                 Literal::Keyword(_) => todo!(),
             },
             Node::SemicolonArray(_) => todo!(),
+            Node::CommentedNode(_) => todo!(),
         }
     }
 
@@ -1956,6 +1964,7 @@ impl simple_ast::Node {
                 Literal::Identifier(token) => todo!("{}", token.to_pretty()),
             },
             Node::SemicolonArray(_) => todo!(),
+            Node::CommentedNode(_) => todo!(),
         }
     }
 }
@@ -1972,15 +1981,13 @@ impl simple_ast::OperatorCall {
                             Node::Array(array) => {
                                 let type_variables_declaration =
                                     array.to_type_variables_declaration()?;
-                                let name = prefix_function_call
-                                    .arguments
-                                    .get(0)
-                                    .into_node(type_variables_declaration.position())?
-                                    .to_identifier(None)?;
+                                let name =
+                                    prefix_function_call.arguments.head.to_identifier(None)?;
                                 let parameters = prefix_function_call
                                     .arguments
+                                    .tail()
+                                    .to_vec()
                                     .iter()
-                                    .skip(1)
                                     .map(|node| node.to_function_parameter())
                                     .collect::<Result<Vec<_>, _>>()?;
 
@@ -1997,6 +2004,7 @@ impl simple_ast::OperatorCall {
                                 Literal::Identifier(name) => {
                                     let parameters = prefix_function_call
                                         .arguments
+                                        .to_vector()
                                         .iter()
                                         .map(|node| node.to_function_parameter())
                                         .collect::<Result<Vec<_>, _>>()?;
@@ -2005,6 +2013,7 @@ impl simple_ast::OperatorCall {
                                 Literal::Keyword(_) => todo!(),
                             },
                             Node::SemicolonArray(_) => todo!(),
+                            Node::CommentedNode(_) => todo!(),
                         }
                     }
                     Node::InfixFunctionCall(infix_function_call) => {
@@ -2024,8 +2033,7 @@ impl simple_ast::OperatorCall {
                                                     array.to_type_variables_declaration()?;
                                                 let parameter = prefix_function_call
                                                     .arguments
-                                                    .get(0)
-                                                    .into_node(array.position())?
+                                                    .head
                                                     .to_function_parameter()?;
                                                 prefix_function_call
                                                     .arguments
@@ -2040,26 +2048,28 @@ impl simple_ast::OperatorCall {
                                         Node::OperatorCall(_) => todo!(),
                                         Node::Literal(_) => todo!(),
                                         Node::SemicolonArray(_) => todo!(),
+                                        Node::CommentedNode(_) => todo!(),
                                     }
                                 }
                                 Node::InfixFunctionCall(_) => todo!(),
                                 Node::OperatorCall(_) => todo!(),
                                 Node::Literal(_) => todo!(),
                                 Node::SemicolonArray(_) => todo!(),
+                                Node::CommentedNode(_) => todo!(),
                             };
-                        let right = infix_function_call
-                            .tail
-                            .get(0)
-                            .into_node(infix_function_call.head.position())?;
-
                         infix_function_call.tail.get(1).should_be_none()?;
 
-                        match right {
+                        match infix_function_call
+                            .tail
+                            .get(0)
+                            .into_node(infix_function_call.head.position())?
+                        {
                             Node::Array(_) => todo!(),
                             Node::PrefixFunctionCall(prefix_function_call) => {
                                 let name = prefix_function_call.function.to_identifier(None)?;
                                 let tail_arguments = prefix_function_call
                                     .arguments
+                                    .to_vector()
                                     .iter()
                                     .map(|node| node.to_function_parameter())
                                     .collect::<Result<Vec<_>, _>>()?;
@@ -2076,11 +2086,13 @@ impl simple_ast::OperatorCall {
                             Node::OperatorCall(_) => todo!(),
                             Node::Literal(_) => todo!(),
                             Node::SemicolonArray(_) => todo!(),
+                            Node::CommentedNode(_) => todo!(),
                         }
                     }
                     Node::OperatorCall(_) => todo!(),
                     Node::Literal(_) => todo!(),
                     Node::SemicolonArray(_) => todo!(),
+                    Node::CommentedNode(_) => todo!(),
                 };
 
                 let (type_annotation, expression) = match self.right.as_ref() {
@@ -2095,6 +2107,7 @@ impl simple_ast::OperatorCall {
                     }
                     Node::Literal(_) => todo!(),
                     Node::SemicolonArray(_) => todo!(),
+                    Node::CommentedNode(_) => todo!(),
                 }?;
                 let type_annotation = {
                     let type_annotation = match parameters.split_last() {
@@ -2156,11 +2169,7 @@ impl simple_ast::PrefixFunctionCall {
         //
         // Therefore, the following code is still quite procedural
         if let Ok(keyword_enum) = self.function.to_identifier(Some("enum")) {
-            let name = self
-                .arguments
-                .get(0)
-                .into_node(self.function.position())?
-                .to_identifier(None)?;
+            let name = self.arguments.head.to_identifier(None)?;
             let array = self
                 .arguments
                 .get(1)
@@ -2288,6 +2297,7 @@ impl simple_ast::PrefixFunctionCall {
             _ => Ok(curry_function_call(
                 self.function.to_expression()?,
                 self.arguments
+                    .to_vector()
                     .iter()
                     .map(|argument| argument.to_expression())
                     .collect::<Result<Vec<_>, _>>()?,
@@ -2493,8 +2503,8 @@ impl Parsable for Option<&simple_ast::Node> {
     fn into_node(self, previous_position: Position) -> Result<simple_ast::Node, ParseError> {
         match self {
             None => Err(ParseError {
-                context: todo!(),
-                kind: todo!("Expected some node, but got nothing"),
+                context: None,
+                kind: ParseErrorKind::ExpectedNode { previous_position },
             }),
             Some(node) => Ok(node.clone()),
         }
@@ -2561,10 +2571,10 @@ impl simple_ast::InfixFunctionCall {
                         to_prefix_function_call(&InfixFunctionCall {
                             head: Box::new(Node::PrefixFunctionCall(PrefixFunctionCall {
                                 function: function.clone(),
-                                arguments: vec![*infix_function_call.head.clone()]
-                                    .into_iter()
-                                    .chain(prefix_function_call.arguments.clone().into_iter())
-                                    .collect(),
+                                arguments: Box::new(NonEmpty {
+                                    head: *infix_function_call.head.clone(),
+                                    tail: prefix_function_call.arguments.clone().into_vector(),
+                                }),
                             })),
                             tail: tail.to_vec(),
                         })
@@ -2575,7 +2585,10 @@ impl simple_ast::InfixFunctionCall {
                     _ => to_prefix_function_call(&InfixFunctionCall {
                         head: Box::new(Node::PrefixFunctionCall(PrefixFunctionCall {
                             function: Box::new(second_node.clone()),
-                            arguments: vec![*infix_function_call.head.clone()],
+                            arguments: Box::new(NonEmpty {
+                                head: *infix_function_call.head.clone(),
+                                tail: vec![],
+                            }),
                         })),
                         tail: tail.to_vec(),
                     }),

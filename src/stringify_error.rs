@@ -251,6 +251,18 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
             };
             (range, error)
         },
+        ParseErrorKind::ExpectedNode { previous_position } => {
+            let range = ErrorRange {
+                character_index_start: previous_position.character_index_start,
+                character_index_end: previous_position.character_index_end,
+            };
+            let error = StringifiedError {
+                summary: "Expected a node after this position".to_string(),
+                body: "".to_string()
+            };
+            (range, error)
+
+        }
     };
     print_error(filename, code, range, error)
 }
@@ -610,9 +622,12 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 body: table,
             }
         }
-        UnifyErrorKind::CannotInvokeNonFunction { .. } => StringifiedError {
+        UnifyErrorKind::CannotInvokeNonFunction { actual_type } => StringifiedError {
             summary: "Cannot call a non-function".to_string(),
-            body: "The type of this expression is not function, so you cannot call it.".to_string(),
+            body: format!(
+                "The type of this expression is {}, which is not function, so you cannot call it.", 
+                stringify_type(actual_type, 0)
+            )
         },
         UnifyErrorKind::UnknownValueSymbol {symbol_name} => StringifiedError {
             summary: format!("Unknown variable `{}`", symbol_name),
@@ -833,8 +848,8 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
                 stringify_type(missing_constraint.type_value, 0)
             )
         },
-        UnifyErrorKind::CannotBeOverloaded {name} => StringifiedError {
-            summary: format!("`{}` cannot be overloaded", name), 
+        UnifyErrorKind::CannotBeOverloaded {name, existing_symbol_position, existing_symbol_type} => StringifiedError {
+            summary: format!("`{}` cannot be overloaded. It it defined before at {:#?} with type {}", name, existing_symbol_position, stringify_type(existing_symbol_type, 0)), 
             body: "".to_string() 
         },
         UnifyErrorKind::AmbiguousSymbol { matching_value_symbols } => StringifiedError {

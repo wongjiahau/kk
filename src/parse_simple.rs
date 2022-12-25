@@ -1,3 +1,4 @@
+use crate::formatter::ToDoc;
 use crate::parse::{ParseContext, ParseError, ParseErrorKind};
 use crate::raw_ast::{Token, TokenType};
 use crate::simple_ast::*;
@@ -157,19 +158,38 @@ impl<'a> Parser<'a> {
         if self.next_token_is_terminating_for_prefix_function_call()? {
             return Ok(previous);
         }
+
         // This is a prefix function call
-        let mut arguments = vec![];
-        let arguments = loop {
-            if self.next_token_is_terminating_for_prefix_function_call()? {
-                break arguments;
-            } else {
-                arguments.push(self.parse_high_precedence_expression(true)?)
+        match previous {
+            Node::Literal(Literal::String(string_literal)) => {
+                Ok(Node::CommentedNode(CommentedNode {
+                    comment: string_literal,
+                    node: Box::new({
+                        let previous = self.parse_high_precedence_expression(false)?;
+                        self.try_parse_prefix_function_call(previous)?
+                    }),
+                }))
             }
-        };
-        Ok(Node::PrefixFunctionCall(PrefixFunctionCall {
-            function: Box::new(previous),
-            arguments,
-        }))
+            _ => {
+                let head_argument = self.parse_high_precedence_expression(true)?;
+                // println!("head_argument = {:#?}", head_argument);
+                let mut tail_arguments = vec![];
+                let tail_arguments = loop {
+                    if self.next_token_is_terminating_for_prefix_function_call()? {
+                        break tail_arguments;
+                    } else {
+                        tail_arguments.push(self.parse_high_precedence_expression(true)?)
+                    }
+                };
+                Ok(Node::PrefixFunctionCall(PrefixFunctionCall {
+                    function: Box::new(previous),
+                    arguments: Box::new(NonEmpty {
+                        head: head_argument,
+                        tail: tail_arguments,
+                    }),
+                }))
+            }
+        }
     }
 
     fn try_parse_infix_function_call(&mut self, previous: Node) -> Result<Node, ParseError> {

@@ -1,4 +1,8 @@
-use crate::{non_empty::NonEmpty, raw_ast::Token, simple_ast::*};
+use crate::{
+    non_empty::NonEmpty,
+    raw_ast::{StringLiteral, Token},
+    simple_ast::*,
+};
 use itertools::Itertools;
 use pretty::RcDoc;
 
@@ -54,7 +58,17 @@ impl ToDoc for Node {
             Node::OperatorCall(operator_call) => operator_call.to_doc(),
             Node::Literal(literal) => literal.to_doc(),
             Node::SemicolonArray(array) => array.nodes.intersperse(";"),
+            Node::CommentedNode(commented_node) => commented_node.to_doc(),
         }
+    }
+}
+
+impl ToDoc for CommentedNode {
+    fn to_doc(&self) -> RcDoc<()> {
+        self.comment
+            .to_doc()
+            .append(RcDoc::hardline())
+            .append(self.node.to_doc())
     }
 }
 
@@ -70,19 +84,25 @@ impl ToDoc for TopLevelArray {
     }
 }
 
+impl ToDoc for StringLiteral {
+    fn to_doc(&self) -> RcDoc<()> {
+        RcDoc::text(format!(
+            "{quote}{content}{quote}",
+            quote = self
+                .start_quotes
+                .to_vector()
+                .into_iter()
+                .map(|character| character.value)
+                .join(""),
+            content = self.content.clone()
+        ))
+    }
+}
+
 impl ToDoc for Literal {
     fn to_doc(&self) -> RcDoc<()> {
         match self {
-            Literal::String(literal) => RcDoc::text(format!(
-                "{quote}{content}{quote}",
-                quote = literal
-                    .start_quotes
-                    .to_vector()
-                    .into_iter()
-                    .map(|character| character.value)
-                    .join(""),
-                content = literal.content.clone()
-            )),
+            Literal::String(literal) => literal.to_doc(),
             Literal::Integer(token)
             | Literal::Character(token)
             | Literal::Float(token)
@@ -130,8 +150,8 @@ impl ToDoc for PrefixFunctionCall {
         //     g 1 2
         //     z 3 4
         //
-        let groups = self
-            .arguments
+        let arguments = self.arguments.to_vector();
+        let groups = arguments
             .iter()
             .scan(
                 State {
@@ -254,80 +274,3 @@ mod formatter_test {
         ));
     }
 }
-
-// #[cfg(test)]
-// mod formatter_test {
-
-//     #[cfg(test)]
-//     mod enum_statement {
-//         use crate::formatter::prettify_code;
-
-//         #[test]
-//         fn constructors_1() {
-//             insta::assert_snapshot!(prettify_code(
-//                 "class Boolean = True | False | Hello | Yo | Wow | Foo | Bar | Spam | WhoLivesInAPineapple".to_string()
-//             ));
-//         }
-
-//         #[test]
-//         fn payload_parenthesized_1() {
-//             insta::assert_snapshot!(prettify_code(
-//                 "class Boolean = Hello (WhoLivesInAPineappleUnderTheSea<Foo, Bar, Spam<Yo>, Pineapple<Walao<What<HowardStephen>>>>)"
-//                     .to_string()
-//             ));
-//         }
-//     }
-
-//     #[cfg(test)]
-//     mod type_annotation {
-//         use crate::formatter::prettify_code;
-
-//         #[test]
-//         fn record_1() {
-//             insta::assert_snapshot!(prettify_code(
-//                 "type People ={name:String,age:List<T>}".to_string()
-//             ));
-//         }
-
-//         #[test]
-//         fn record_2() {
-//             insta::assert_snapshot!(prettify_code(
-//                 "type People ={name:String,age:List<T>,foo:Foo,bar:Bar,life:Life,spam:Spam}"
-//                     .to_string()
-//             ));
-//         }
-
-//         #[test]
-//         fn type_scheme_1() {
-//             insta::assert_snapshot!(prettify_code("type People = <A> Hello<A>".to_string()));
-//         }
-
-//         #[test]
-//         fn type_scheme_2() {
-//             insta::assert_snapshot!(prettify_code(
-//                 "type People = <WhoLivesInAPineappleUnderTheSea, SpongebobSquarepants,
-//                 AbsorbentAndYellowAndPorousIsHe, SpongebobSquarepants> {name:String,age:List<T>,foo:Foo,bar:Bar,
-//                 life:Life,spam:Spam,bottle:Bottle} "
-//                     .to_string()
-//             ));
-//         }
-
-//         #[test]
-//         fn unit_1() {
-//             insta::assert_snapshot!(prettify_code("type People = ()".to_string()));
-//         }
-
-//         #[test]
-//         fn function_1() {
-//             insta::assert_snapshot!(prettify_code("type People = A->B".to_string()));
-//         }
-
-//         #[test]
-//         fn function_2() {
-//             insta::assert_snapshot!(prettify_code(
-//                 "type People = Foo->Bar->Spam->Spongebob->Squarepants->Patrick->Star->Crab"
-//                     .to_string()
-//             ));
-//         }
-//     }
-// }
