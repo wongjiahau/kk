@@ -23,6 +23,13 @@ impl<T> NonEmpty<T> {
         }
     }
 
+    pub fn last_mut(&mut self) -> &mut T {
+        match self.tail.last_mut() {
+            None => &mut self.head,
+            Some(e) => e,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.tail.len() + 1
     }

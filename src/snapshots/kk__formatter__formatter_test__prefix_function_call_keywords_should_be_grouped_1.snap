@@ -1,11 +1,11 @@
 ---
 source: src/formatter.rs
-expression: "prettify_code(\"if { krabby patty is alive } then { spongebob squarepants + patrick star .replace squidward with hello yo yo  yo yo yo y } else { clarinet }\".to_string())"
+expression: "prettify_code(\"if { krabby patty is alive } then { spongebob squarepants + patrick star .replace squidward with hello yo yo  yo yo yo y } else { clarinet }\")"
 ---
 if { krabby patty is alive }
-  then
-    {
-      spongebob squarepants +
-        patrick star .replace squidward with hello yo yo yo yo yo y
-    }
-  else { clarinet }
+then
+  {
+    spongebob squarepants +
+      patrick star .replace squidward with hello yo yo yo yo yo y
+  }
+else { clarinet }

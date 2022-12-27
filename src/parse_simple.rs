@@ -258,6 +258,7 @@ impl<'a> Parser<'a> {
                 } else {
                     Literal::Identifier(token.clone())
                 })),
+                TokenType::Operator => Ok(Node::Literal(Literal::Identifier(token.clone()))),
                 TokenType::InterpolatedString(interpolated_string) => Ok(Node::Literal(
                     Literal::InterpolatedString(interpolated_string),
                 )),

@@ -1,0 +1,10 @@
+---
+source: src/formatter.rs
+expression: "prettify_code(\"who + lives + in + a + pineapple + under + the + sea ? spongebob squarepants ! absorbent - and - yellow \")"
+---
+who +
+  lives +
+    in +
+      a +
+        pineapple +
+          under + the + sea ? spongebob squarepants ! absorbent - and - yellow

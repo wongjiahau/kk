@@ -1,5 +1,5 @@
 use crate::pattern::ExpandablePattern;
-use crate::tokenize::{TokenizeError, TokenType};
+use crate::tokenize::{TokenType, TokenizeError};
 use crate::{compile::CompileError, raw_ast::*, typ::*};
 use crate::{
     compile::CompileErrorKind,
@@ -228,7 +228,6 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
         }
         ParseErrorKind::TokenizeError(tokenize_error) => get_tokenize_error(tokenize_error),
         ParseErrorKind::ExpectedNone { position } => {
-
             let range = ErrorRange {
                 character_index_start: position.character_index_start,
                 character_index_end: position.character_index_end,
@@ -238,8 +237,7 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
                 body: "Consider removing it.".to_string(),
             };
             (range, error)
-
-        },
+        }
         ParseErrorKind::UnexpectedNode { position } => {
             let range = ErrorRange {
                 character_index_start: position.character_index_start,
@@ -247,10 +245,10 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
             };
             let error = StringifiedError {
                 summary: "Unexpected node".to_string(),
-                body: "".to_string()
+                body: "".to_string(),
             };
             (range, error)
-        },
+        }
         ParseErrorKind::ExpectedNode { previous_position } => {
             let range = ErrorRange {
                 character_index_start: previous_position.character_index_start,
@@ -258,10 +256,9 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
             };
             let error = StringifiedError {
                 summary: "Expected a node after this position".to_string(),
-                body: "".to_string()
+                body: "".to_string(),
             };
             (range, error)
-
         }
     };
     print_error(filename, code, range, error)
@@ -452,7 +449,10 @@ fn get_parse_context_description(parse_context: ParseContext) -> ParseContextDes
             examples: vec!["x = 123", "'Hello world' print"],
         },
         ParseContext::FunctionParameter => todo!(),
-        ParseContext::NodeIdentifier => ParseContextDescription { name: "Node Identifier", examples: vec![] },
+        ParseContext::NodeIdentifier => ParseContextDescription {
+            name: "Node Identifier",
+            examples: vec![],
+        },
         ParseContext::NodeArray => todo!(),
     }
 }
@@ -910,7 +910,6 @@ pub fn stringify_expandable_pattern(expandable_pattern: ExpandablePattern) -> St
         },
     }
 }
-
 
 pub fn indent_string(string: String, number_of_spaces: usize) -> String {
     string

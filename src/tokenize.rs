@@ -615,11 +615,11 @@ impl Tokenizer {
                 //     representation: "!".to_string(),
                 //     position: make_position(character, None),
                 // })),
-                '~' => Ok(Some(Token {
-                    token_type: TokenType::Tilde,
-                    representation: "~".to_string(),
-                    position: make_position(character, None),
-                })),
+                // '~' => Ok(Some(Token {
+                //     token_type: TokenType::Tilde,
+                //     representation: "~".to_string(),
+                //     position: make_position(character, None),
+                // })),
                 '\\' => Ok(Some(Token {
                     token_type: TokenType::Backslash,
                     representation: "\\".to_string(),

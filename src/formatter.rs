@@ -4,165 +4,187 @@ use crate::{
     tokenize::{StringLiteral, Token},
 };
 use itertools::Itertools;
-use pretty::RcDoc;
+use pretty::{Arena, DocAllocator, DocBuilder};
 
 pub trait ToDoc {
-    fn to_doc(&self) -> RcDoc<()>;
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>;
     fn to_pretty(&self) -> String {
+        let arena = Arena::<()>::new();
         let mut vec = Vec::new();
         let width = 80;
-        self.to_doc().render(width, &mut vec).unwrap();
+        self.to_doc(&arena).render(width, &mut vec).unwrap();
         String::from_utf8(vec).unwrap()
     }
 }
 
 fn brackets<'a>(
     opening: &'a str,
-    doc: RcDoc<'a, ()>,
+    doc: DocBuilder<'a, Arena<'a, ()>>,
     closing: &'a str,
     add_space: bool,
-) -> RcDoc<'a, ()> {
-    let line = if add_space { RcDoc::line } else { RcDoc::line_ };
-    RcDoc::text(opening)
-        .append(line().append(doc).nest(2).append(line()).group())
-        .append(RcDoc::text(closing))
+    arena: &'a Arena<'a>,
+) -> DocBuilder<'a, Arena<'a, ()>> {
+    let line = if add_space {
+        arena.line()
+    } else {
+        arena.line_()
+    };
+    arena
+        .text(opening)
+        .append(line.clone().append(doc).nest(2))
+        .append(line)
+        .append(arena.text(closing))
+        .group()
 }
 
 impl<T: ToDoc> NonEmpty<T> {
-    fn intersperse<'a>(&'a self, separator: &'a str) -> RcDoc<'a, ()> {
-        RcDoc::intersperse(
-            vec![self.head.to_doc()]
+    fn intersperse<'a>(
+        &'a self,
+        separator: &'a str,
+        arena: &'a Arena<'a>,
+    ) -> DocBuilder<'a, Arena<'a, ()>> {
+        arena.intersperse(
+            vec![self.head.to_doc(arena)]
                 .into_iter()
-                .chain(self.tail.iter().map(|element| element.to_doc())),
-            RcDoc::text(separator).append(RcDoc::line()),
+                .chain(self.tail.iter().map(|element| element.to_doc(arena))),
+            arena.text(separator).append(arena.line()),
         )
     }
 }
 
-fn intersperse_vec<'a>(elements: Vec<RcDoc<'a, ()>>, separator: &'a str) -> RcDoc<'a, ()> {
-    RcDoc::intersperse(elements, RcDoc::text(separator).append(RcDoc::line()))
+fn intersperse_vec<'a>(
+    elements: Vec<DocBuilder<'a, Arena<'a, ()>>>,
+    separator: &'a str,
+    arena: &'a Arena<'a>,
+) -> DocBuilder<'a, Arena<'a, ()>> {
+    arena.intersperse(elements, arena.text(separator).append(arena.line()))
 }
 
 impl ToDoc for Token {
-    fn to_doc(&self) -> RcDoc<()> {
-        RcDoc::text(self.representation.as_str())
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
+        arena.text(self.representation.as_str())
     }
 }
 
 impl ToDoc for Node {
-    fn to_doc(&self) -> RcDoc<()> {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         match self {
-            Node::Array(array) => array.to_doc(),
-            Node::PrefixFunctionCall(prefix_function_call) => prefix_function_call.to_doc(),
-            Node::InfixFunctionCall(infix_function_call) => infix_function_call.to_doc(),
-            Node::OperatorCall(operator_call) => operator_call.to_doc(),
-            Node::Literal(literal) => literal.to_doc(),
-            Node::SemicolonArray(array) => array.nodes.intersperse(";"),
-            Node::CommentedNode(commented_node) => commented_node.to_doc(),
+            Node::Array(array) => array.to_doc(arena),
+            Node::PrefixFunctionCall(prefix_function_call) => prefix_function_call.to_doc(arena),
+            Node::InfixFunctionCall(infix_function_call) => infix_function_call.to_doc(arena),
+            Node::OperatorCall(operator_call) => operator_call.to_doc(arena),
+            Node::Literal(literal) => literal.to_doc(arena),
+            Node::SemicolonArray(array) => array.nodes.intersperse(";", arena),
+            Node::CommentedNode(commented_node) => commented_node.to_doc(arena),
         }
     }
 }
 
 impl ToDoc for CommentedNode {
-    fn to_doc(&self) -> RcDoc<()> {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         self.comment
-            .to_doc()
-            .append(RcDoc::hardline())
-            .append(self.node.to_doc())
+            .to_doc(arena)
+            .append(arena.line())
+            .append(self.node.to_doc(arena))
+            .group()
     }
 }
 
 impl ToDoc for TopLevelArray {
-    fn to_doc(&self) -> RcDoc<()> {
-        RcDoc::intersperse(
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
+        arena.intersperse(
             self.nodes
                 .to_vector()
                 .into_iter()
                 .map(|node| node.to_pretty()),
-            RcDoc::concat(vec![RcDoc::text(";"), RcDoc::hardline(), RcDoc::hardline()]),
+            arena.concat(vec![arena.text(";"), arena.hardline(), arena.hardline()]),
         )
     }
 }
 
 impl ToDoc for StringLiteral {
-    fn to_doc(&self) -> RcDoc<()> {
-        RcDoc::text(format!(
-            "{quote}{content}{quote}",
-            quote = self
-                .start_quotes
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
+        let quotes = arena.text(
+            self.start_quotes
                 .to_vector()
                 .into_iter()
                 .map(|character| character.value)
                 .join(""),
-            content = self.content.clone()
-        ))
+        );
+        let comment = arena.reflow(&self.content);
+        quotes.clone().append(comment).append(quotes)
     }
 }
 
 impl ToDoc for Literal {
-    fn to_doc(&self) -> RcDoc<()> {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         match self {
-            Literal::String(literal) => literal.to_doc(),
+            Literal::String(literal) => literal.to_doc(arena),
             Literal::Integer(token)
             | Literal::Character(token)
             | Literal::Float(token)
             | Literal::Identifier(token)
-            | Literal::Keyword(token) => token.to_doc(),
-            Literal::InterpolatedString(literal) => literal.to_doc(),
+            | Literal::Keyword(token) => token.to_doc(arena),
+            Literal::InterpolatedString(literal) => literal.to_doc(arena),
         }
     }
 }
 
 impl ToDoc for InterpolatedString {
-    fn to_doc(&self) -> RcDoc<()> {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         let quotes = self
             .start_quotes
             .to_vector()
             .iter()
             .map(|quote| quote.value)
             .join(",");
-        RcDoc::text(quotes.clone())
-            .append(RcDoc::concat(
-                self.sections
-                    .to_vector()
-                    .iter()
-                    .map(|section| section.to_doc()),
-            ))
-            .append(RcDoc::text(quotes))
+        arena
+            .text(quotes.clone())
+            .append(
+                arena.concat(
+                    self.sections
+                        .to_vector()
+                        .iter()
+                        .map(|section| section.to_doc(arena)),
+                ),
+            )
+            .append(arena.text(quotes))
     }
 }
 
 impl ToDoc for InterpolatedStringSection {
-    fn to_doc(&self) -> RcDoc<()> {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         match self {
-            InterpolatedStringSection::String(string) => RcDoc::text(string),
-            InterpolatedStringSection::Expression(expression) => RcDoc::text("${")
-                .append(RcDoc::line())
-                .append(expression.to_doc())
-                .append(RcDoc::line())
-                .append(RcDoc::text("}"))
+            InterpolatedStringSection::String(string) => arena.text(string),
+            InterpolatedStringSection::Expression(expression) => arena
+                .text("${")
+                .append(arena.line())
+                .append(expression.to_doc(arena))
+                .append(arena.line())
+                .append(arena.text("}"))
                 .group(),
         }
     }
 }
 
 impl ToDoc for OperatorCall {
-    fn to_doc(&self) -> RcDoc<()> {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         self.left
-            .to_doc()
-            .append(RcDoc::space())
-            .append(self.operator.to_doc())
-            .append(RcDoc::line().nest(2).append(self.right.to_doc().nest(2)))
+            .to_doc(arena)
+            .append(arena.space())
+            .append(self.operator.to_doc(arena))
+            .append(arena.line().append(self.right.to_doc(arena)).nest(2))
             .group()
     }
 }
 
 impl ToDoc for PrefixFunctionCall {
-    fn to_doc(&self) -> RcDoc<()> {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         #[derive(Debug, Clone)]
-        struct State {
-            is_odd_group: bool,
-            previous_argument_is_keyword: bool,
+
+        struct KeywordGroup<'a> {
+            function: &'a Node,
+            arguments: Vec<&'a Node>,
         }
 
         // Group each keyword as its onw group
@@ -180,73 +202,65 @@ impl ToDoc for PrefixFunctionCall {
         //     g 1 2
         //     z 3 4
         //
-        let arguments = self.arguments.to_vector();
-        let groups = arguments
-            .iter()
-            .scan(
-                State {
-                    is_odd_group: true,
-                    previous_argument_is_keyword: false,
-                },
-                |state, element| {
-                    let result = match element {
-                        Node::Literal(Literal::Keyword(_))
-                            if !state.previous_argument_is_keyword =>
-                        {
-                            (
-                                State {
-                                    previous_argument_is_keyword: true,
-                                    is_odd_group: !state.is_odd_group,
-                                },
-                                element,
-                            )
-                        }
-                        _ => (
-                            State {
-                                previous_argument_is_keyword: false,
-                                is_odd_group: state.is_odd_group,
-                            },
-                            element,
-                        ),
-                    };
-                    *state = result.0.clone();
+        let mut groups = NonEmpty {
+            head: KeywordGroup {
+                function: self.function.as_ref(),
+                arguments: vec![],
+            },
+            tail: vec![],
+        };
+        let mut previous_argument_is_keyword = true;
+        for argument in self.arguments.to_vector() {
+            match argument {
+                Node::Literal(Literal::Keyword(_)) if !previous_argument_is_keyword => {
+                    previous_argument_is_keyword = true;
+                    groups.tail.push(KeywordGroup {
+                        function: argument,
+                        arguments: vec![],
+                    })
+                }
+                _ => {
+                    previous_argument_is_keyword = false;
+                    groups.last_mut().arguments.push(argument)
+                }
+            }
+        }
 
-                    Some(result)
-                },
-            )
-            .group_by(|(state, _)| state.is_odd_group);
-
-        self.function.to_doc().append(RcDoc::space()).append(
-            RcDoc::intersperse(
-                groups.into_iter().map(|(_, group)| {
-                    RcDoc::intersperse(group.map(|(_, element)| element.to_doc()), RcDoc::line())
-                        .nest(2)
-                        .group()
+        let groups = groups.into_vector();
+        arena
+            .intersperse(
+                groups.into_iter().map(|group| {
+                    group.function.to_doc(arena).append(
+                        arena
+                            .concat(group.arguments.iter().map(|argument| {
+                                arena.line().append(argument.to_doc(arena)).nest(2)
+                            }))
+                            .group(),
+                    )
                 }),
-                RcDoc::line(),
+                arena.line(),
             )
-            .nest(2)
-            .group(),
-        )
+            .group()
     }
 }
 
 impl ToDoc for InfixFunctionCall {
-    fn to_doc(&self) -> RcDoc<()> {
-        self.head.to_doc().append(
-            RcDoc::concat(
-                self.tail
-                    .iter()
-                    .map(|element| RcDoc::line().append(RcDoc::text(".").append(element.to_doc()))),
-            )
-            .nest(2)
-            .group(),
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
+        self.head.to_doc(arena).append(
+            arena
+                .concat(self.tail.iter().map(|element| {
+                    arena
+                        .line()
+                        .append(arena.text(".").append(element.to_doc(arena)))
+                        .nest(2)
+                }))
+                .group(),
         )
     }
 }
 
 impl ToDoc for Array {
-    fn to_doc(&self) -> RcDoc<()> {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         let (opening, closing, add_space) = match self.bracket.kind {
             BracketKind::Round => ("(", ")", false),
             BracketKind::Square => ("[", "]", false),
@@ -255,31 +269,37 @@ impl ToDoc for Array {
         brackets(
             opening,
             intersperse_vec(
-                self.nodes.iter().map(|element| element.to_doc()).collect(),
+                self.nodes
+                    .iter()
+                    .map(|element| element.to_doc(arena))
+                    .collect(),
                 ",",
+                arena,
             ),
             closing,
             add_space,
+            arena,
         )
     }
 }
 
-pub fn prettify_code(code: String) -> String {
+pub fn prettify_code<'a>(code: &'a str) -> String {
     use crate::{parse_simple::Parser, tokenize::Tokenizer};
-    let array = Parser::parse(&mut Tokenizer::new(code)).unwrap();
+    let array = Parser::parse(&mut Tokenizer::new(code.to_string())).unwrap();
 
     array.to_pretty()
 }
 
 impl ToDoc for SemicolonArray {
-    fn to_doc(&self) -> RcDoc<()> {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         intersperse_vec(
             self.nodes
                 .to_vector()
                 .iter()
-                .map(|node| node.to_doc())
+                .map(|node| node.to_doc(arena))
                 .collect(),
             ";",
+            arena,
         )
     }
 }
@@ -291,7 +311,7 @@ mod formatter_test {
         use crate::formatter::prettify_code;
 
         insta::assert_snapshot!(prettify_code(
-            "hello .replace (x .call me spongebob (yes) you are squarepants) with (y) .to string .between 1 and 3 .who lives in a pineapple under the sea".to_string()
+            "hello .replace (x .call me spongebob (yes) you are squarepants) with (y) .to string .between 1 and 3 .who lives in a pineapple under the sea"
         ));
     }
 
@@ -300,7 +320,24 @@ mod formatter_test {
         use crate::formatter::prettify_code;
 
         insta::assert_snapshot!(prettify_code(
-            "if { krabby patty is alive } then { spongebob squarepants + patrick star .replace squidward with hello yo yo  yo yo yo y } else { clarinet }".to_string()
+            "if { krabby patty is alive } then { spongebob squarepants + patrick star .replace squidward with hello yo yo  yo yo yo y } else { clarinet }"
+        ));
+    }
+
+    #[test]
+    fn prefix_function_call_multiple_arguments_1() {
+        use crate::formatter::prettify_code;
+        insta::assert_snapshot!(prettify_code(
+                "x = unwrap ~ some { x = some \"hi\" .!, y = some 2 .!, z = unwrap ~ some { x = none .!, y = some 2 .! } }"
+        ))
+    }
+
+    #[test]
+    fn operator_1() {
+        use crate::formatter::prettify_code;
+
+        insta::assert_snapshot!(prettify_code(
+            "who + lives + in + a + pineapple + under + the + sea ? spongebob squarepants ! absorbent - and - yellow "
         ));
     }
 }

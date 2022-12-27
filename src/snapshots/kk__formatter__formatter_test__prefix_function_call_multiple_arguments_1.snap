@@ -1,0 +1,12 @@
+---
+source: src/formatter.rs
+expression: "prettify_code(\"x = unwrap ~ some { x = some \\\"hi\\\" .!, y = some 2 .!, z = unwrap ~ some { x = none .!, y = some 2 .! } }\")"
+---
+x =
+  unwrap ~
+    some
+      {
+        x = some "hi" .!,
+        y = some 2 .!,
+        z = unwrap ~ some { x = none .!, y = some 2 .! }
+      }

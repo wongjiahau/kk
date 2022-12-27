@@ -1858,6 +1858,9 @@ impl simple_ast::Node {
             Node::Array(array) => array.to_expression(),
             Node::PrefixFunctionCall(prefix_function_call) => prefix_function_call.to_expression(),
             Node::InfixFunctionCall(infix_function_call) => infix_function_call.to_expression(),
+            Node::OperatorCall(operator_call) if operator_call.operator.representation == "~" => {
+                todo!("{}", operator_call.to_pretty())
+            }
             Node::OperatorCall(operator_call) => todo!("{}", operator_call.to_pretty()),
             Node::Literal(literal) => match literal {
                 Literal::String(string_literal) => Ok(Expression::String(string_literal.clone())),
@@ -2080,7 +2083,7 @@ impl simple_ast::OperatorCall {
                                         Node::PrefixFunctionCall(_) => todo!(),
                                         Node::InfixFunctionCall(_) => todo!(),
                                         Node::OperatorCall(_) => todo!(),
-                                        Node::Literal(_) => todo!(),
+                                        Node::Literal(literal) => todo!("{}", literal.to_pretty()),
                                         Node::SemicolonArray(_) => todo!(),
                                         Node::CommentedNode(_) => todo!(),
                                     }
@@ -2348,24 +2351,28 @@ impl simple_ast::Array {
         use simple_ast::*;
         match self.bracket.kind {
             // Parenthesized or Tuple
-            BracketKind::Round => {
-                if let Some(first) = self.nodes.get(0) {
-                    if self.nodes.len() == 1 && !self.has_trailing_comma {
-                        Ok(Expression::Parenthesized {
-                            left_parenthesis: self.bracket.opening.clone(),
-                            right_parenthesis: self.bracket.closing.clone(),
-                            value: Box::new(first.to_expression()?),
-                        })
-                    } else {
-                        todo!("tuple = {}", self.to_pretty())
-                    }
-                } else {
-                    Ok(Expression::Unit {
-                        left_parenthesis: self.bracket.opening.clone(),
-                        right_parenthesis: self.bracket.closing.clone(),
-                    })
-                }
-            }
+            BracketKind::Round => match self.nodes.split_first() {
+                None => Ok(Expression::Unit {
+                    left_parenthesis: self.bracket.opening.clone(),
+                    right_parenthesis: self.bracket.closing.clone(),
+                }),
+                Some((head, [])) => Ok(Expression::Parenthesized {
+                    left_parenthesis: self.bracket.opening.clone(),
+                    right_parenthesis: self.bracket.closing.clone(),
+                    value: Box::new(head.to_expression()?),
+                }),
+                Some((head, tail)) => Ok(Expression::Tuple {
+                    left_parenthesis: self.bracket.opening.clone(),
+                    right_parenthesis: self.bracket.closing.clone(),
+                    elements: Box::new(NonEmpty {
+                        head: head.to_expression()?,
+                        tail: tail
+                            .iter()
+                            .map(|node| node.to_expression())
+                            .collect::<Result<_, _>>()?,
+                    }),
+                }),
+            },
 
             // Record
             BracketKind::Curly => Ok(Expression::Record {
