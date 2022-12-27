@@ -1,4 +1,9 @@
-use crate::{module::Access, non_empty::NonEmpty, tokenize::Character, unify::Positionable};
+use crate::{
+    module::Access,
+    non_empty::NonEmpty,
+    tokenize::{Character, StringLiteral, Token},
+    unify::Positionable,
+};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -489,99 +494,6 @@ pub struct FunctionBranchRestArguments {
 }
 
 #[derive(Debug, Clone)]
-pub struct Token {
-    pub token_type: TokenType,
-    pub position: Position,
-    pub representation: String,
-}
-
-impl Token {
-    pub fn dummy() -> Token {
-        Token::dummy_identifier("".to_string())
-    }
-    pub fn dummy_identifier(representation: String) -> Token {
-        Token {
-            token_type: TokenType::Identifier,
-            position: Position {
-                line_start: 0,
-                line_end: 0,
-                character_index_start: 0,
-                character_index_end: 0,
-                column_start: 0,
-                column_end: 0,
-            },
-            representation,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum TokenType {
-    // Keywords
-    KeywordEntry,
-    KeywordLet,
-    KeywordType,
-    KeywordImport,
-    KeywordPublic,
-    KeywordExport,
-    KeywordGiven,
-    KeywordClass,
-    KeywordInnate,
-
-    Whitespace,
-    LeftCurlyBracket,
-    RightCurlyBracket,
-    LeftParenthesis,
-    RightParenthesis,
-    HashLeftSquareBracket,
-    LeftSquareBracket,
-    RightSquareBracket,
-    Backslash,
-    Newline,
-    /// Also known as Exclamation Mark (!)
-    Bang,
-    Tilde,
-    Colon,
-
-    /// Also known as Left Angular Bracket (<)
-    LessThan,
-
-    /// Also known as Right Angular Bracket (>)
-    MoreThan,
-    Equals,
-    Period,
-    DoublePeriod,
-    Comma,
-    Semicolon,
-    ArrowRight,
-    Pipe,
-    Underscore,
-    Identifier,
-    Operator,
-    String(StringLiteral),
-    InterpolatedString(InterpolatedString),
-    Character,
-    Integer,
-    Float,
-    DoubleColon,
-
-    /// Comments starts with double slash
-    Comment,
-
-    /// Multiline comment starts with (/*) and ends with (*/)
-    MultilineComment,
-
-    Other(char),
-}
-
-#[derive(Debug, Clone)]
-pub struct StringLiteral {
-    pub start_quotes: NonEmpty<Character>,
-    pub content: String,
-    pub end_quotes: NonEmpty<Character>,
-}
-
-#[derive(Debug, Clone)]
 pub struct InterpolatedString {
     pub start_quotes: NonEmpty<Character>,
     pub sections: NonEmpty<InterpolatedStringSection>,
@@ -635,14 +547,6 @@ impl ImportStatementSpecification {
     }
 }
 
-impl StringLiteral {
-    pub fn position(&self) -> Position {
-        self.start_quotes
-            .first()
-            .position()
-            .join(self.end_quotes.last().position())
-    }
-}
 impl TypeVariablesDeclaration {
     pub fn position(&self) -> Position {
         self.type_variables

@@ -2,8 +2,12 @@ use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::non_empty::NonEmpty;
-use crate::parse::{ParseErrorKind, Parser};
-use crate::{parse::ParseError, raw_ast::*};
+use crate::parse::ParseError;
+use crate::parse::ParseErrorKind;
+use crate::parse_simple::Parser;
+use crate::raw_ast::Position;
+use crate::simple_ast;
+use crate::simple_ast::InterpolatedString;
 use itertools::Itertools;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -297,7 +301,9 @@ impl Tokenizer {
                         Escape,
                         StringInterpolation,
                     }
-                    let mut interpolated_string_sections: Vec<InterpolatedStringSection> = vec![];
+                    let mut interpolated_string_sections: Vec<
+                        simple_ast::InterpolatedStringSection,
+                    > = vec![];
                     let (end_quotes, characters): (NonEmpty<Character>, Vec<Character>) = {
                         let mut characters: Vec<Character> = vec![];
                         let mut start_of = StartOf::Nothing;
@@ -340,16 +346,18 @@ impl Tokenizer {
                                     '{' => {
                                         if let StartOf::StringInterpolation = start_of {
                                             interpolated_string_sections.push(
-                                                InterpolatedStringSection::String(stringify(
-                                                    &characters,
-                                                )),
+                                                simple_ast::InterpolatedStringSection::String(
+                                                    stringify(&characters),
+                                                ),
                                             );
                                             characters.clear();
                                             let mut parser = Parser::new(self);
                                             interpolated_string_sections.push(
-                                                InterpolatedStringSection::Expression(Box::new(
-                                                    parser.parse_low_precedence_expression()?,
-                                                )),
+                                                simple_ast::InterpolatedStringSection::Expression(
+                                                    Box::new(
+                                                        parser.parse_low_precedence_expression()?,
+                                                    ),
+                                                ),
                                             );
                                             parser.eat_token(TokenType::RightCurlyBracket, None)?;
                                             (None, StartOf::Nothing)
@@ -383,7 +391,9 @@ impl Tokenizer {
                                 let mut interpolated_string_sections =
                                     interpolated_string_sections.to_vec();
                                 interpolated_string_sections.push(
-                                    InterpolatedStringSection::String(stringify(&characters)),
+                                    simple_ast::InterpolatedStringSection::String(stringify(
+                                        &characters,
+                                    )),
                                 );
                                 interpolated_string_sections
                             };
@@ -696,5 +706,107 @@ pub fn get_token_type(s: String) -> TokenType {
         // "class" => TokenType::KeywordClass,
         // "innate" => TokenType::KeywordInnate,
         _ => TokenType::Identifier,
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Token {
+    pub token_type: TokenType,
+    pub position: Position,
+    pub representation: String,
+}
+
+impl Token {
+    pub fn dummy() -> Token {
+        Token::dummy_identifier("".to_string())
+    }
+    pub fn dummy_identifier(representation: String) -> Token {
+        Token {
+            token_type: TokenType::Identifier,
+            position: Position {
+                line_start: 0,
+                line_end: 0,
+                character_index_start: 0,
+                character_index_end: 0,
+                column_start: 0,
+                column_end: 0,
+            },
+            representation,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TokenType {
+    // Keywords
+    KeywordEntry,
+    KeywordLet,
+    KeywordType,
+    KeywordImport,
+    KeywordPublic,
+    KeywordExport,
+    KeywordGiven,
+    KeywordClass,
+    KeywordInnate,
+
+    Whitespace,
+    LeftCurlyBracket,
+    RightCurlyBracket,
+    LeftParenthesis,
+    RightParenthesis,
+    HashLeftSquareBracket,
+    LeftSquareBracket,
+    RightSquareBracket,
+    Backslash,
+    Newline,
+    /// Also known as Exclamation Mark (!)
+    Bang,
+    Tilde,
+    Colon,
+
+    /// Also known as Left Angular Bracket (<)
+    LessThan,
+
+    /// Also known as Right Angular Bracket (>)
+    MoreThan,
+    Equals,
+    Period,
+    DoublePeriod,
+    Comma,
+    Semicolon,
+    ArrowRight,
+    Pipe,
+    Underscore,
+    Identifier,
+    Operator,
+    String(StringLiteral),
+    InterpolatedString(simple_ast::InterpolatedString),
+    Character,
+    Integer,
+    Float,
+    DoubleColon,
+
+    /// Comments starts with double slash
+    Comment,
+
+    /// Multiline comment starts with (/*) and ends with (*/)
+    MultilineComment,
+
+    Other(char),
+}
+
+#[derive(Debug, Clone)]
+pub struct StringLiteral {
+    pub start_quotes: NonEmpty<Character>,
+    pub content: String,
+    pub end_quotes: NonEmpty<Character>,
+}
+
+impl StringLiteral {
+    pub fn position(&self) -> Position {
+        self.start_quotes
+            .first()
+            .position()
+            .join(self.end_quotes.last().position())
     }
 }

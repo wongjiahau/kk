@@ -1,6 +1,7 @@
 use crate::formatter::ToDoc;
 use crate::module::Access;
 use crate::simple_ast;
+use crate::tokenize::{StringLiteral, Token, TokenType};
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
 use crate::{raw_ast::*, tokenize::TokenizeError};
 
@@ -796,15 +797,9 @@ impl<'a> Parser<'a> {
         if let Some(token) = self.next_meaningful_token()? {
             match token.token_type {
                 TokenType::String(string_literal) => Ok(Expression::String(string_literal)),
-                TokenType::InterpolatedString(InterpolatedString {
-                    start_quotes,
-                    sections,
-                    end_quotes,
-                }) => Ok(Expression::InterpolatedString {
-                    start_quotes,
-                    sections,
-                    end_quotes,
-                }),
+                TokenType::InterpolatedString(interpolated_string) => {
+                    interpolated_string.to_expression()
+                }
                 TokenType::Character => Ok(Expression::Character(token.clone())),
                 TokenType::HashLeftSquareBracket => self.parse_array(token.clone()),
                 TokenType::LeftSquareBracket => Ok(Expression::Function(Box::new(Function {
@@ -1850,6 +1845,7 @@ impl simple_ast::Node {
                     Ok(DestructurePattern::Identifier(identifier.clone()))
                 }
                 Literal::Keyword(_) => todo!(),
+                Literal::InterpolatedString(_) => todo!(),
             },
             Node::SemicolonArray(_) => todo!(),
             Node::CommentedNode(_) => todo!(),
@@ -1870,6 +1866,9 @@ impl simple_ast::Node {
                 Literal::Character(token) => Ok(Expression::Character(token.clone())),
                 Literal::Identifier(token) => Ok(Expression::Identifier(token.clone())),
                 Literal::Keyword(token) => Ok(Expression::Keyword(token.clone())),
+                Literal::InterpolatedString(interpolated_string) => {
+                    interpolated_string.to_expression()
+                }
             },
             Node::SemicolonArray(array) => array.to_expression(),
             Node::CommentedNode(commented_node) => commented_node.node.to_expression(),
@@ -1933,6 +1932,7 @@ impl simple_ast::Node {
                     type_arguments: None,
                 }),
                 Literal::Keyword(_) => todo!(),
+                Literal::InterpolatedString(_) => todo!(),
             },
             Node::SemicolonArray(_) => todo!(),
             Node::CommentedNode(_) => todo!(),
@@ -1962,9 +1962,42 @@ impl simple_ast::Node {
                 Literal::Float(_) => todo!(),
                 Literal::Character(_) => todo!(),
                 Literal::Identifier(token) => todo!("{}", token.to_pretty()),
+                Literal::InterpolatedString(_) => todo!(),
             },
             Node::SemicolonArray(_) => todo!(),
             Node::CommentedNode(_) => todo!(),
+        }
+    }
+
+    fn to_key_type_annotation_pair(&self) -> Result<(Token, TypeAnnotation), ParseError> {
+        match self {
+            simple_ast::Node::OperatorCall(operator_call)
+                if operator_call.operator.representation == ":" =>
+            {
+                let left = operator_call.left.to_identifier(None)?;
+                let right = operator_call.right.to_type_annotation()?;
+                Ok((left, right))
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn to_desctuctured_record_key_value(&self) -> Result<DestructuredRecordKeyValue, ParseError> {
+        use simple_ast::*;
+        match self {
+            Node::OperatorCall(operator_call) if operator_call.operator.representation == "=" => {
+                Ok(DestructuredRecordKeyValue {
+                    key: operator_call.left.to_identifier(None)?,
+                    type_annotation: None,
+                    as_value: Some(operator_call.right.to_pattern()?),
+                })
+            }
+            Node::Literal(Literal::Identifier(identifier)) => Ok(DestructuredRecordKeyValue {
+                key: identifier.clone(),
+                type_annotation: None,
+                as_value: None,
+            }),
+            _ => todo!(),
         }
     }
 }
@@ -2011,6 +2044,7 @@ impl simple_ast::OperatorCall {
                                     (None, name.clone(), parameters)
                                 }
                                 Literal::Keyword(_) => todo!(),
+                                Literal::InterpolatedString(_) => todo!(),
                             },
                             Node::SemicolonArray(_) => todo!(),
                             Node::CommentedNode(_) => todo!(),
@@ -2090,7 +2124,10 @@ impl simple_ast::OperatorCall {
                         }
                     }
                     Node::OperatorCall(_) => todo!(),
-                    Node::Literal(_) => todo!(),
+                    Node::Literal(literal) => match literal {
+                        Literal::Identifier(name) => (None, name.clone(), vec![]),
+                        _ => todo!(),
+                    },
                     Node::SemicolonArray(_) => todo!(),
                     Node::CommentedNode(_) => todo!(),
                 };
@@ -2439,8 +2476,29 @@ impl simple_ast::Array {
                     }),
                 })),
             },
-            simple_ast::BracketKind::Square => todo!(),
-            simple_ast::BracketKind::Curly => todo!(),
+            simple_ast::BracketKind::Square => Ok(DestructurePattern::Or(Box::new(NonEmpty {
+                head: self
+                    .nodes
+                    .get(0)
+                    .into_node(self.bracket.opening.position)?
+                    .to_pattern()?,
+                tail: self
+                    .nodes
+                    .iter()
+                    .skip(1)
+                    .map(|node| node.to_pattern())
+                    .collect::<Result<_, _>>()?,
+            }))),
+            simple_ast::BracketKind::Curly => Ok(DestructurePattern::Record {
+                left_curly_bracket: self.bracket.opening.clone(),
+                wildcard: None,
+                key_value_pairs: self
+                    .nodes
+                    .iter()
+                    .map(|node| node.to_desctuctured_record_key_value())
+                    .collect::<Result<_, _>>()?,
+                right_curly_bracket: self.bracket.closing.clone(),
+            }),
         }
     }
 
@@ -2488,7 +2546,15 @@ impl simple_ast::Array {
                 Some((head, tail)) => todo!("tuple type annotation"),
             },
             simple_ast::BracketKind::Square => todo!(),
-            simple_ast::BracketKind::Curly => todo!(),
+            simple_ast::BracketKind::Curly => Ok(TypeAnnotation::Record {
+                left_curly_bracket: self.bracket.opening.clone(),
+                key_type_annotation_pairs: self
+                    .nodes
+                    .iter()
+                    .map(|node| node.to_key_type_annotation_pair())
+                    .collect::<Result<_, _>>()?,
+                right_curly_bracket: self.bracket.closing.clone(),
+            }),
         }
     }
 }
@@ -2654,4 +2720,35 @@ impl simple_ast::SemicolonArray {
 struct Assignment {
     pattern: DestructurePattern,
     expression: Expression,
+}
+
+impl simple_ast::InterpolatedStringSection {
+    fn to_interpolated_string_section(&self) -> Result<InterpolatedStringSection, ParseError> {
+        match self {
+            simple_ast::InterpolatedStringSection::String(string) => {
+                Ok(InterpolatedStringSection::String(string.to_string()))
+            }
+            simple_ast::InterpolatedStringSection::Expression(node) => Ok(
+                InterpolatedStringSection::Expression(Box::new(node.to_expression()?)),
+            ),
+        }
+    }
+}
+
+impl simple_ast::InterpolatedString {
+    pub fn to_expression(&self) -> Result<Expression, ParseError> {
+        Ok(Expression::InterpolatedString {
+            start_quotes: self.start_quotes.clone(),
+            sections: NonEmpty {
+                head: self.sections.head.to_interpolated_string_section()?,
+                tail: self
+                    .sections
+                    .tail
+                    .iter()
+                    .map(|section| section.to_interpolated_string_section())
+                    .collect::<Result<_, _>>()?,
+            },
+            end_quotes: self.end_quotes.clone(),
+        })
+    }
 }

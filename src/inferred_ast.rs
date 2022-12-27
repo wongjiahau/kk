@@ -2,7 +2,8 @@ use crate::{
     innate_function::InnateFunction,
     module::{Access, ModuleUid, SymbolUid},
     non_empty::NonEmpty,
-    raw_ast::{InfinitePatternKind, Position, StringLiteral, Token},
+    raw_ast::{InfinitePatternKind, Position},
+    tokenize::{StringLiteral, Token},
     typ::Type,
     unify::InferExpressionResult,
 };

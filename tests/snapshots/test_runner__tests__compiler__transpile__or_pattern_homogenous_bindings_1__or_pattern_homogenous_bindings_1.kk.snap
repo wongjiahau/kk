@@ -5,19 +5,22 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-class Foo
-  = A { x: String, y: String }
-  | B { a: String, b: String }
+enum Foo {
+  A { x: String, y: String },
+  B { a: String, b: String }
+};
 
-let toString
-  : Foo -> String
+toString
+  : (Foo -> String)
   =
-    // More tha one binding per pattern
-    -> A { x, y } | B { a = x, b = y } ["${x} - ${y}"]
+    "More than one binding per pattern"
+    [
+      [ A { x, y }, B { a = x, b = y } ] -> "${x} - ${y}"
+    ];
 
-entry
-  A { x = "Spongebob", y = "Squarepants" } .toString .print;
-  B { a = "Squiward", b = "Patrick" } .toString .print
+
+A { x = "Spongebob", y = "Squarepants" } .toString .print;
+B { a = "Squiward", b = "Patrick" } .toString .print
 
 ============
 EXIT CODE

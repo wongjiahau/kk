@@ -26,7 +26,7 @@ fn run_all_tests() {
                     .to_string();
 
                 if (filename.contains("transpile") || filename.contains("typecheck"))
-                    && filename.ends_with(".kk")
+                    && filename.ends_with("or_pattern_homogenous_bindings_1.kk")
                 {
                     let input_filename = filename;
                     print!("{}", input_filename);

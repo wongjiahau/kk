@@ -1,7 +1,6 @@
-use crate::formatter::ToDoc;
 use crate::parse::{ParseContext, ParseError, ParseErrorKind};
-use crate::raw_ast::{Token, TokenType};
 use crate::simple_ast::*;
+use crate::tokenize::{Token, TokenType};
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer};
 
 pub struct Parser<'a> {
@@ -15,6 +14,12 @@ struct ParseArrayArgument {
 }
 
 impl<'a> Parser<'a> {
+    pub fn new(tokenizer: &mut Tokenizer) -> Parser {
+        Parser {
+            tokenizer,
+            temporary_variable_index: 0,
+        }
+    }
     pub fn parse(tokenizer: &mut Tokenizer) -> Result<TopLevelArray, ParseError> {
         let mut parser = Parser {
             tokenizer,
@@ -124,7 +129,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Operator call
-    fn parse_low_precedence_expression(&mut self) -> Result<Node, ParseError> {
+    pub fn parse_low_precedence_expression(&mut self) -> Result<Node, ParseError> {
         let expression = self.parse_mid_precedence_expression()?;
 
         self.try_parse_operator_call(expression)
@@ -253,6 +258,9 @@ impl<'a> Parser<'a> {
                 } else {
                     Literal::Identifier(token.clone())
                 })),
+                TokenType::InterpolatedString(interpolated_string) => Ok(Node::Literal(
+                    Literal::InterpolatedString(interpolated_string),
+                )),
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             }
         } else {

@@ -1,6 +1,7 @@
 use crate::{
     non_empty::NonEmpty,
-    raw_ast::{Position, StringLiteral, Token},
+    raw_ast::Position,
+    tokenize::{Character, StringLiteral, Token},
 };
 
 #[derive(Debug, Clone)]
@@ -22,8 +23,31 @@ pub struct CommentedNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct InterpolatedString {
+    pub start_quotes: NonEmpty<Character>,
+    pub sections: NonEmpty<InterpolatedStringSection>,
+    pub end_quotes: NonEmpty<Character>,
+}
+
+impl InterpolatedString {
+    pub fn position(&self) -> Position {
+        self.start_quotes
+            .first()
+            .position()
+            .join(self.end_quotes.last().position())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum InterpolatedStringSection {
+    String(String),
+    Expression(Box<Node>),
+}
+
+#[derive(Debug, Clone)]
 pub enum Literal {
     String(StringLiteral),
+    InterpolatedString(InterpolatedString),
     Integer(Token),
     Float(Token),
     Character(Token),
@@ -136,6 +160,7 @@ impl Literal {
     pub fn position(&self) -> Position {
         match self {
             Literal::String(string_literal) => string_literal.position(),
+            Literal::InterpolatedString(literal) => literal.position(),
             Literal::Integer(token)
             | Literal::Float(token)
             | Literal::Character(token)

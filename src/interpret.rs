@@ -1,6 +1,6 @@
 use crate::innate_function::InnateFunction;
 use crate::non_empty::NonEmpty;
-use crate::raw_ast::Token;
+use crate::tokenize::Token;
 use crate::transpile::interpretable::{self, *};
 use futures::future::{BoxFuture, FutureExt};
 use std::collections::HashMap;

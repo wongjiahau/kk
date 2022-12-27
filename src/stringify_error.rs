@@ -1,5 +1,5 @@
 use crate::pattern::ExpandablePattern;
-use crate::tokenize::TokenizeError;
+use crate::tokenize::{TokenizeError, TokenType};
 use crate::{compile::CompileError, raw_ast::*, typ::*};
 use crate::{
     compile::CompileErrorKind,

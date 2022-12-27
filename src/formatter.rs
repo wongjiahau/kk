@@ -1,7 +1,7 @@
 use crate::{
     non_empty::NonEmpty,
-    raw_ast::{StringLiteral, Token},
     simple_ast::*,
+    tokenize::{StringLiteral, Token},
 };
 use itertools::Itertools;
 use pretty::RcDoc;
@@ -108,6 +108,40 @@ impl ToDoc for Literal {
             | Literal::Float(token)
             | Literal::Identifier(token)
             | Literal::Keyword(token) => token.to_doc(),
+            Literal::InterpolatedString(literal) => literal.to_doc(),
+        }
+    }
+}
+
+impl ToDoc for InterpolatedString {
+    fn to_doc(&self) -> RcDoc<()> {
+        let quotes = self
+            .start_quotes
+            .to_vector()
+            .iter()
+            .map(|quote| quote.value)
+            .join(",");
+        RcDoc::text(quotes.clone())
+            .append(RcDoc::concat(
+                self.sections
+                    .to_vector()
+                    .iter()
+                    .map(|section| section.to_doc()),
+            ))
+            .append(RcDoc::text(quotes))
+    }
+}
+
+impl ToDoc for InterpolatedStringSection {
+    fn to_doc(&self) -> RcDoc<()> {
+        match self {
+            InterpolatedStringSection::String(string) => RcDoc::text(string),
+            InterpolatedStringSection::Expression(expression) => RcDoc::text("${")
+                .append(RcDoc::line())
+                .append(expression.to_doc())
+                .append(RcDoc::line())
+                .append(RcDoc::text("}"))
+                .group(),
         }
     }
 }
@@ -118,12 +152,8 @@ impl ToDoc for OperatorCall {
             .to_doc()
             .append(RcDoc::space())
             .append(self.operator.to_doc())
-            .append(
-                RcDoc::line()
-                    .nest(2)
-                    .append(self.right.to_doc().nest(2))
-                    .group(),
-            )
+            .append(RcDoc::line().nest(2).append(self.right.to_doc().nest(2)))
+            .group()
     }
 }
 
