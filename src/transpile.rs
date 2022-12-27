@@ -212,7 +212,27 @@ pub mod interpretable {
                 Expression::Assignment(assignment) => {
                     format!("({})", assignment.print())
                 }
-                _ => todo!(),
+                Expression::Float(float) => format!("{}", float),
+                Expression::Int(int) => format!("{}", int),
+                Expression::EnumConstructor { tag, payload } => match payload {
+                    Some(payload) => {
+                        format!("#{} ({})", tag, payload.print())
+                    }
+                    None => {
+                        format!("#{}", tag)
+                    }
+                },
+                Expression::HasTag { expression, tag } => todo!(),
+                Expression::GetEnumPayload(_) => todo!(),
+                Expression::TupleAccess { tuple, index } => todo!(),
+                Expression::Tuple(_) => todo!(),
+                Expression::InnateFunctionCall { function, argument } => {
+                    format!(
+                        "INNATE_FUNCTION_CALL({:#?}, {})",
+                        function,
+                        argument.print()
+                    )
+                }
             }
         }
     }
@@ -543,7 +563,10 @@ pub fn transpile_destructure_pattern(
         },
         InferredDestructurePatternKind::Underscore { .. } => TranspiledDestructurePattern {
             conditions: vec![],
-            bindings: vec![],
+            bindings: vec![interpretable::Assignment {
+                left: interpretable::Identifier("<UNDERSCORE>".to_string()),
+                right: from_expression,
+            }],
         },
         InferredDestructurePatternKind::Array { .. } => {
             panic!();

@@ -2622,20 +2622,7 @@ impl simple_ast::SemicolonArray {
         ) -> Result<Expression, ParseError> {
             match nodes.split_first() {
                 Some((head, tail)) => {
-                    let assignment = match head {
-                        Node::OperatorCall(operator_call)
-                            if operator_call.operator.representation == "=" =>
-                        {
-                            Assignment {
-                                pattern: operator_call.left.to_pattern()?,
-                                expression: operator_call.right.to_expression()?,
-                            }
-                        }
-                        _ => Assignment {
-                            pattern: DestructurePattern::Underscore(Token::dummy()),
-                            expression: head.to_expression()?,
-                        },
-                    };
+                    let assignment = head.to_assignment()?;
                     Ok(Expression::Let {
                         keyword_let: Token::dummy(),
                         left: previous.pattern,
@@ -2659,6 +2646,7 @@ impl simple_ast::SemicolonArray {
                 }),
             }
         }
+
         to_let_expression(self.nodes.head.to_assignment()?, self.nodes.tail.as_slice())
     }
 }

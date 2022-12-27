@@ -1,4 +1,7 @@
-entry
-  let x = "hello";
-  let y = "bye";
-  "${x} and ${y}" .print
+(
+  x = "hello";
+  y = "bye";
+  x .print;
+  y .print;
+  "what" .print
+)

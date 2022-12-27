@@ -10,6 +10,7 @@ use crate::module::ModuleMeta;
 use crate::module::ModuleUid;
 use crate::parse::ParseError;
 use crate::stringify_error::print_compile_error;
+use crate::transpile::interpretable::print_statements;
 use crate::transpile::transpile_program;
 use crate::unify::read_module;
 use crate::unify::UnifyError;
@@ -58,7 +59,9 @@ pub fn compile(path: PathBuf) {
         ) {
             Err(compile_error) => print_compile_error(compile_error),
             Ok(result) => {
+                // println!("result = {:#?}", result);
                 let ast = transpile_program(result);
+                // println!("ast = {}", print_statements(ast.clone()));
                 interpret_statements(ast);
             }
         },

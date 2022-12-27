@@ -594,7 +594,7 @@ pub enum InterpolatedStringSection {
     Expression(Box<Expression>),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub struct Position {
     /// First line is zero.
     pub line_start: usize,
@@ -607,6 +607,12 @@ pub struct Position {
     /// First character is zero.
     pub character_index_start: usize,
     pub character_index_end: usize,
+}
+
+impl std::fmt::Debug for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Position ({}:{})", self.line_start, self.column_start)
+    }
 }
 
 impl Position {
