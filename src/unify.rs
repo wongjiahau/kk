@@ -1,10 +1,11 @@
 use crate::{
     compile::{CompileError, CompileErrorKind, Source},
     formatter::ToDoc,
-    innate_function::InnateFunction,
+    intrinsic::IntrinsicFunction,
     non_empty::NonEmpty,
     parse::Parser,
     parse_simple,
+    stringify_error::stringify_type,
     tokenize::{Character, StringLiteral, Token, TokenType, Tokenizer},
     utils::to_relative_path,
 };
@@ -94,15 +95,6 @@ pub fn read_module(
                             specification: None,
                         })]
                     };
-
-                    // let user_written_statements = Parser::parse(&mut Tokenizer::new(
-                    //     source.clone().code.clone(),
-                    // ))
-                    // .map_err(|error| CompileError {
-                    //     source,
-                    //     kind: CompileErrorKind::ParseError(Box::new(error)),
-                    // })?;
-                    //
 
                     let simple_ast = parse_simple::Parser::parse(&mut Tokenizer::new(
                         source.clone().code.clone(),
@@ -427,7 +419,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::CpsBang { .. }
         | Expression::Keyword(_)
         | Expression::Function(_) => None,
-        Expression::InnateFunctionCall(innate_function_call) => {
+        Expression::IntrinsicFunctionCall(innate_function_call) => {
             Some(innate_function_call.position())
         }
         Expression::TildeClosure(tilde_closure) => Some(tilde_closure.bind_function.position()),
@@ -1264,7 +1256,9 @@ impl Positionable for Expression {
                 .tilde
                 .position
                 .join(tilde_closure.expression.position()),
-            Expression::InnateFunctionCall(innate_function_call) => innate_function_call.position(),
+            Expression::IntrinsicFunctionCall(innate_function_call) => {
+                innate_function_call.position()
+            }
         }
     }
 }
@@ -2456,7 +2450,32 @@ fn infer_expression_type_(
             body,
             ..
         } => module.run_in_new_child_scope(|module| {
-            let expected_right_type = optional_type_annotation_to_type(module, type_annotation)?;
+            // Expected type should be the unification between the inferred pattern type, and the
+            // type annotation type (whenever possible)
+            let expected_right_type = {
+                let pattern_type = module.run_in_new_child_scope(|module| {
+                    match infer_destructure_pattern(module, None, left) {
+                        Ok(result) => Ok(Some(result.type_value)),
+                        Err(_) => Ok(None),
+                    }
+                })?;
+
+                let type_annotation_type =
+                    optional_type_annotation_to_type(module, type_annotation)?;
+
+                match (pattern_type, type_annotation_type) {
+                    (None, None) => None,
+                    (None, Some(expected_type)) | (Some(expected_type), None) => {
+                        Some(expected_type)
+                    }
+                    (Some(pattern_type), Some(type_annotation_type)) => Some(unify_type(
+                        module,
+                        &pattern_type,
+                        &type_annotation_type,
+                        left.position(),
+                    )?),
+                }
+            };
             let typechecked_right = infer_expression_type(module, expected_right_type, right)?;
             let typechecked_left = infer_destructure_pattern(
                 module,
@@ -2518,7 +2537,7 @@ fn infer_expression_type_(
         Expression::TildeClosure(tilde_closure) => {
             infer_tilde_closure(module, expected_type, tilde_closure)
         }
-        Expression::InnateFunctionCall(innate_function_call) => {
+        Expression::IntrinsicFunctionCall(innate_function_call) => {
             match innate_function_call.function_name.representation.as_str() {
                 "int_add" => {
                     let expected_type = Type::Tuple(Box::new(NonEmpty {
@@ -2531,8 +2550,8 @@ fn infer_expression_type_(
                         &innate_function_call.argument,
                     )?;
                     Ok(InferExpressionResult {
-                        expression: InferredExpression::InnateFunctionCall {
-                            function: InnateFunction::IntAdd,
+                        expression: InferredExpression::IntrinsicFunctionCall {
+                            function: IntrinsicFunction::IntAdd,
                             argument: Box::new(argument.expression),
                         },
                         type_value: Type::Integer,
@@ -2540,8 +2559,8 @@ fn infer_expression_type_(
                 }
                 "print" => Ok(InferExpressionResult {
                     // No type checking needed, any expression can be printed
-                    expression: InferredExpression::InnateFunctionCall {
-                        function: InnateFunction::Print,
+                    expression: InferredExpression::IntrinsicFunctionCall {
+                        function: IntrinsicFunction::Print,
                         argument: Box::new(
                             infer_expression_type(module, None, &innate_function_call.argument)?
                                 .expression,
@@ -2564,8 +2583,8 @@ fn infer_expression_type_(
                         &innate_function_call.argument,
                     )?;
                     Ok(InferExpressionResult {
-                        expression: InferredExpression::InnateFunctionCall {
-                            function: InnateFunction::ReadFile,
+                        expression: InferredExpression::IntrinsicFunctionCall {
+                            function: IntrinsicFunction::ReadFile,
                             argument: Box::new(argument.expression),
                         },
                         type_value: Type::Unit,

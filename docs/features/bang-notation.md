@@ -17,7 +17,7 @@ boundary is defined properly.
 For example, say we want to emulate Rust `?` operator.
 
 ```kk
-class Option<T> = some (T) | none
+enum Option [T] { some (T), none }
 
 let<T, U> (option: Option<T>) .unwrap (callback: T -> Option<U>): Option<U> =
   option .(

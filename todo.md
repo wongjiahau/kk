@@ -1,6 +1,7 @@
 # Todo
 
-- [ ] write a formatter, so that I dont have to manually update the test code everytime.
+- use the formatter to print type
+- [x] write a formatter, so that I dont have to manually update the test code everytime.
       With a formatter, I can just change the parser, parse all the test file using old parser, spit out new code using new syntax, and format them
 - [] write a markdown-code snippet checker, to ensure that examples in doc are up to date
 - [x] change access to, private (default), export, public-export

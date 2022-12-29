@@ -17,8 +17,8 @@ mod stringify_error;
 
 mod cli;
 mod formatter;
-mod innate_function;
 mod interpret;
+mod intrinsic;
 mod parse_simple;
 mod simple_ast;
 mod solved_ast;

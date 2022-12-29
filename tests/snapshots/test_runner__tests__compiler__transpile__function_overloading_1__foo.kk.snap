@@ -5,15 +5,19 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-(s: String) .replace first (old: String) with (new: String) : Int = 1;
-(s: String) .replace each (old: String) with (new: String) : Int = 2;
+let ((s : String).replace first (old : String) with (new : String) : Int) = 1;
 
-[A, B] (a: A) .map (f: A -> B) : B = f (a);
+let ((s : String).replace each (old : String) with (new : String) : Int) = 2;
 
-"Hello" .replace first "l" with "k" .print; // 1
-"Hello" .map(replace) first "l" with "k" .print; // 1
-"Hello" .replace each "l" with "k" .print; // 2
-"Hello" .map(replace) each "l" with "k" .print // 2
+let (A B => (a : A).map (f : A -> B) : B) = f (a);
+
+"Hello".replace first "l" with "k".print;
+
+"Hello".map (replace) first "l" with "k".print;
+
+"Hello".replace each "l" with "k".print;
+
+"Hello".map (replace) each "l" with "k".print
 
 ============
 EXIT CODE

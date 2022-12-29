@@ -1,4 +1,4 @@
-class Boolean = true | false
+enum Boolean {true, false};
 class Foo = A(String) | B(Boolean)
 
 let get (foo: Foo): Boolean =

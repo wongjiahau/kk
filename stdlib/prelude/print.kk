@@ -1,2 +1,1 @@
-[T] print (t: T) : () = innate print (t)
-
+export let (T => print (t : T) : ()) = intrinsic print (t)

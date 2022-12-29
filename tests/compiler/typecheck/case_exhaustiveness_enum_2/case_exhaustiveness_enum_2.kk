@@ -1,4 +1,4 @@
-class Boolean = True | False
+enum Boolean {true, false};
 class List<T> = Nil | Cons {head: T, tail: List<T>}
 
 entry

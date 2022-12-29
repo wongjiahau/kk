@@ -2,7 +2,7 @@ use crate::inferred_ast::*;
 use crate::{non_empty::NonEmpty, raw_ast::InfinitePatternKind, unify::UnifyProgramResult};
 
 pub mod interpretable {
-    use crate::{innate_function::InnateFunction, non_empty::NonEmpty};
+    use crate::{intrinsic::IntrinsicFunction, non_empty::NonEmpty};
 
     #[derive(Debug, Clone)]
     pub enum Statement {
@@ -85,7 +85,7 @@ pub mod interpretable {
         Assignment(Box<Assignment>),
         Tuple(Box<NonEmpty<Expression>>),
         InnateFunctionCall {
-            function: InnateFunction,
+            function: IntrinsicFunction,
             argument: Box<Expression>,
         },
     }
@@ -450,7 +450,7 @@ pub fn transpile_expression(expression: InferredExpression) -> interpretable::Ex
         InferredExpression::Tuple(elements) => {
             interpretable::Expression::Tuple(Box::new(elements.map(transpile_expression)))
         }
-        InferredExpression::InnateFunctionCall { function, argument } => {
+        InferredExpression::IntrinsicFunctionCall { function, argument } => {
             interpretable::Expression::InnateFunctionCall {
                 function,
                 argument: Box::new(transpile_expression(*argument)),

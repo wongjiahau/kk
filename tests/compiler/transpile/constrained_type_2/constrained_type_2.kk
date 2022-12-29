@@ -3,7 +3,7 @@ class List<T> = nil | cons { head : T, tail : List<T> }
 
 class Color = red | green
 
-class Boolean = true | false
+enum Boolean {true, false};
 
 let (left : Color) .equals (right : Color) : Boolean = 
   { left, right } .    

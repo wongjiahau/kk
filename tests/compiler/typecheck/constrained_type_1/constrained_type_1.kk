@@ -1,5 +1,5 @@
 class Grade = A | B | C
-class Boolean = true | false
+enum Boolean {true, false};
 
 let (a : Boolean) .not : Boolean = 
   a. (

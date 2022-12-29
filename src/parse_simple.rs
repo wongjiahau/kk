@@ -168,10 +168,19 @@ impl<'a> Parser<'a> {
         match previous {
             Node::Literal(Literal::String(string_literal)) => {
                 Ok(Node::CommentedNode(CommentedNode {
-                    comment: string_literal,
+                    comment: Comment(string_literal),
                     node: Box::new({
                         let previous = self.parse_high_precedence_expression(false)?;
                         self.try_parse_prefix_function_call(previous)?
+                    }),
+                }))
+            }
+            Node::Literal(Literal::Operator(_)) => {
+                Ok(Node::PrefixFunctionCall(PrefixFunctionCall {
+                    function: Box::new(previous),
+                    arguments: Box::new(NonEmpty {
+                        head: self.parse_low_precedence_expression()?,
+                        tail: vec![],
                     }),
                 }))
             }
@@ -258,7 +267,7 @@ impl<'a> Parser<'a> {
                 } else {
                     Literal::Identifier(token.clone())
                 })),
-                TokenType::Operator => Ok(Node::Literal(Literal::Identifier(token.clone()))),
+                TokenType::Operator => Ok(Node::Literal(Literal::Operator(token.clone()))),
                 TokenType::InterpolatedString(interpolated_string) => Ok(Node::Literal(
                     Literal::InterpolatedString(interpolated_string),
                 )),

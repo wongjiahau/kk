@@ -1,4 +1,4 @@
-use crate::innate_function::InnateFunction;
+use crate::intrinsic::IntrinsicFunction;
 use crate::non_empty::NonEmpty;
 use crate::tokenize::Token;
 use crate::transpile::interpretable::{self, *};
@@ -429,7 +429,7 @@ impl Eval for interpretable::Expression {
             }
             Expression::Tuple(elements) => elements.eval(env),
             Expression::InnateFunctionCall { function, argument } => match function {
-                InnateFunction::IntAdd => {
+                IntrinsicFunction::IntAdd => {
                     let (value, promises) = argument.eval(env)?;
                     match value {
                         Value::Tuple(elements) => match (&elements.head, &elements.tail[0]) {
@@ -439,12 +439,12 @@ impl Eval for interpretable::Expression {
                         _ => unreachable!(),
                     }
                 }
-                InnateFunction::Print => {
+                IntrinsicFunction::Print => {
                     let (value, promises) = argument.eval(env)?;
                     println!("{}", value.print());
                     Ok((Value::Unit, promises))
                 }
-                InnateFunction::ReadFile => {
+                IntrinsicFunction::ReadFile => {
                     let (value, promises) = argument.eval(env)?;
                     match value {
                         Value::Tuple(values) => {

@@ -3,7 +3,7 @@ class Vehicle = car(Color) | motor
 
 class Color = white | gold | black
 
-class Boolean = true | false
+enum Boolean {true, false};
 
 let (vehicle: Vehicle) .is shiny car: Boolean =
   vehicle .

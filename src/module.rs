@@ -1,5 +1,6 @@
 use crate::compile::{Source, STDLIB_DIR};
 use crate::non_empty::NonEmpty;
+use crate::stringify_error::stringify_type;
 use crate::tokenize::{Token, TokenType};
 use crate::unify::unify_type;
 use crate::unify::{UnifyError, UnifyErrorKind};

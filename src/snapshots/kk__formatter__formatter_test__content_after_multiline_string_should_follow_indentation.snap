@@ -1,0 +1,13 @@
+---
+source: src/formatter.rs
+expression: "prettify_code(\"who lives in a pineapple under the sea (\\\"\\\"\\\"Hello world\\\"\\\"\\\" 234) (123) (456)\")"
+---
+who lives in a pineapple under the sea
+  (
+    """
+    Hello world
+    """
+    234
+  )
+  (123)
+  (456)

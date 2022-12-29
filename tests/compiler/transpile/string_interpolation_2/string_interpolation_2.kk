@@ -1,3 +1,5 @@
-// Nested interpolations
-entry
-  "I am ${"Hello ${"World"}"} years old".print
+"""
+Nested interpolations
+"""
+"I am ${ "Hello ${ "World" }" } years old".print
+

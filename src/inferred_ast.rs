@@ -1,5 +1,5 @@
 use crate::{
-    innate_function::InnateFunction,
+    intrinsic::IntrinsicFunction,
     module::{Access, ModuleUid, SymbolUid},
     non_empty::NonEmpty,
     raw_ast::{InfinitePatternKind, Position},
@@ -87,8 +87,8 @@ pub enum InferredExpression {
         return_value: Box<InferredExpression>,
     },
     Keyword(Token),
-    InnateFunctionCall {
-        function: InnateFunction,
+    IntrinsicFunctionCall {
+        function: IntrinsicFunction,
         argument: Box<InferredExpression>,
     },
     Tuple(Box<NonEmpty<InferredExpression>>),

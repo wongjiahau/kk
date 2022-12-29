@@ -1,0 +1,6 @@
+---
+source: src/formatter.rs
+expression: "prettify_code(\"export let (a b => if (condition : Boolean) (t : () -> A) else (f : () -> A) : A)\")"
+---
+export let
+  (a b => if (condition : Boolean) (t : () -> A) else (f : () -> A) : A)

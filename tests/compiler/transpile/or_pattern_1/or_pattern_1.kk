@@ -1,5 +1,5 @@
 // Subpatterns
-class Boolean = true | false
+enum Boolean {true, false};
 
 let isVowel
   : Character -> Boolean =

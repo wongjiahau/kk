@@ -1,22 +1,28 @@
-class Boolean = true | false
-class Grade = a | b
+enum Boolean { true, false };
 
-let (left : Grade) .equals (right : Grade) : Boolean =
-  { left, right } .
-    -> { left = a, right = a } [ true ] 
-    -> { left = b, right = b } [ true ]
-    [ false ]
+enum Grade { a, b };
 
-let (g : Boolean) .not : Boolean = 
-  g .     
-    -> true [ false ] 
-    -> false [ true ]
+let ((left : Grade).equals (right : Grade) : Boolean) =
+  (left, right).[(a, a) -> true, (b, b) -> true, false];
 
-let<T> (left : T) .not equals (right : T) : Boolean 
-  given { equals: T -> T -> Boolean }
-  = left .equals (right) .not
+let ((g : Boolean).not : Boolean) = g.[true -> false, true];
 
-entry
-  a .equals (a) .print; // true
-  a .not equals (b) .print; // true
-  a .equals (b) .print // false
+type Eq = T -> T -> Boolean;
+
+let (T => { equals : Eq } | (left : T).not equals (right : T) : Boolean) =
+  left.equals (right).not;
+
+"""
+true
+"""
+a.equals (a).print;
+
+"""
+true
+"""
+a.not equals (b).print;
+
+"""
+false
+"""
+a.equals (b).print

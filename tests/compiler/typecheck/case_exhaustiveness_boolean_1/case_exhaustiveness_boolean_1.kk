@@ -1,4 +1,4 @@
-class Boolean = true | false
+enum Boolean {true, false};
 let and (x: Boolean) (y: Boolean): Boolean =
   {x, y} .(
     -> { x = true, y = true } [ true ]

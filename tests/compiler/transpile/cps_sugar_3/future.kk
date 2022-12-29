@@ -1,6 +1,6 @@
 class Future<T> = Future((T -> ()) -> ())
 
-let (filename: String) .read: Future<String> = Future -> callback [ innate read_file (filename, callback) ]
+let (filename: String) .read: Future<String> = Future -> callback [ intrinsic read_file (filename, callback) ]
 
 let <T, U> (Future(future): Future<T>) .await (f: T -> Future<U>): Future<U> =
   Future -> c [

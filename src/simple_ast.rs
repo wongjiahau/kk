@@ -18,8 +18,17 @@ pub enum Node {
 
 #[derive(Debug, Clone)]
 pub struct CommentedNode {
-    pub comment: StringLiteral,
+    pub comment: Comment,
     pub node: Box<Node>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Comment(pub StringLiteral);
+
+impl Comment {
+    fn position(&self) -> Position {
+        self.0.position()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +62,7 @@ pub enum Literal {
     Character(Token),
     Identifier(Token),
     Keyword(Token),
+    Operator(Token),
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +175,7 @@ impl Literal {
             | Literal::Float(token)
             | Literal::Character(token)
             | Literal::Identifier(token)
+            | Literal::Operator(token)
             | Literal::Keyword(token) => token.position,
         }
     }

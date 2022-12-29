@@ -1,9 +1,9 @@
 ---
 source: src/formatter.rs
-expression: "prettify_code(\"hello .replace (x .call me spongebob (yes) you are squarepants) with (y) .to string .between 1 and 3 .who lives in a pineapple under the sea\".to_string())"
+expression: "prettify_code(\"hello .replace (x .call me spongebob (yes) you are squarepants) with (y) .to string .between 1 and 3 .who lives in a pineapple under the sea\")"
 ---
 hello
-  .replace (x .call me spongebob (yes) you are squarepants) with (y)
+  .replace (x.call me spongebob (yes) you are squarepants) with (y)
   .to string
   .between 1 and 3
   .who lives in a pineapple under the sea

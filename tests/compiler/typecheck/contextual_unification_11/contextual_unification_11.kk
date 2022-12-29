@@ -1,5 +1,5 @@
 // Contextual unification for If-expression
-class Boolean = true | false
+enum Boolean {true, false};
 
 let <A> if (condition: Boolean) then (success: () -> A) else (failure: () -> A) : A =
   condition .

@@ -1,5 +1,5 @@
 #[derive(Debug, Clone)]
-pub enum InnateFunction {
+pub enum IntrinsicFunction {
     IntAdd,
     Print,
     ReadFile,

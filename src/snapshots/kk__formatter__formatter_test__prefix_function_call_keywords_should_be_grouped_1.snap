@@ -6,6 +6,6 @@ if { krabby patty is alive }
 then
   {
     spongebob squarepants +
-      patrick star .replace squidward with hello yo yo yo yo yo y
+      patrick star.replace squidward with hello yo yo yo yo yo y
   }
 else { clarinet }

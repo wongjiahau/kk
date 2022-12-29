@@ -90,6 +90,31 @@ impl ToDoc for CommentedNode {
     }
 }
 
+impl ToDoc for Comment {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
+        let quotes = self
+            .0
+            .start_quotes
+            .to_vector()
+            .into_iter()
+            .map(|character| character.value)
+            .join("");
+        let quotes_len = quotes.len();
+        let quotes_doc = arena.text(quotes);
+        let comment = arena.reflow(&self.0.content.trim());
+        if quotes_len > 2 {
+            quotes_doc
+                .clone()
+                .append(arena.hardline())
+                .append(comment)
+                .append(arena.hardline())
+                .append(quotes_doc)
+        } else {
+            quotes_doc.clone().append(comment).append(quotes_doc)
+        }
+    }
+}
+
 impl ToDoc for TopLevelArray {
     fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         arena.intersperse(
@@ -104,15 +129,16 @@ impl ToDoc for TopLevelArray {
 
 impl ToDoc for StringLiteral {
     fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        let quotes = arena.text(
-            self.start_quotes
-                .to_vector()
-                .into_iter()
-                .map(|character| character.value)
-                .join(""),
-        );
-        let comment = arena.reflow(&self.content);
-        quotes.clone().append(comment).append(quotes)
+        let quotes = self
+            .start_quotes
+            .to_vector()
+            .into_iter()
+            .map(|character| character.value)
+            .join("");
+        let quotes_len = quotes.len();
+        let quotes_doc = arena.text(quotes);
+        let comment = arena.text(&self.content);
+        quotes_doc.clone().append(comment).append(quotes_doc)
     }
 }
 
@@ -124,7 +150,8 @@ impl ToDoc for Literal {
             | Literal::Character(token)
             | Literal::Float(token)
             | Literal::Identifier(token)
-            | Literal::Keyword(token) => token.to_doc(arena),
+            | Literal::Keyword(token)
+            | Literal::Operator(token) => token.to_doc(arena),
             Literal::InterpolatedString(literal) => literal.to_doc(arena),
         }
     }
@@ -184,6 +211,7 @@ impl ToDoc for PrefixFunctionCall {
 
         struct KeywordGroup<'a> {
             function: &'a Node,
+            continuous_keywords: Vec<&'a Token>,
             arguments: Vec<&'a Node>,
         }
 
@@ -205,6 +233,7 @@ impl ToDoc for PrefixFunctionCall {
         let mut groups = NonEmpty {
             head: KeywordGroup {
                 function: self.function.as_ref(),
+                continuous_keywords: vec![],
                 arguments: vec![],
             },
             tail: vec![],
@@ -212,12 +241,17 @@ impl ToDoc for PrefixFunctionCall {
         let mut previous_argument_is_keyword = true;
         for argument in self.arguments.to_vector() {
             match argument {
-                Node::Literal(Literal::Keyword(_)) if !previous_argument_is_keyword => {
-                    previous_argument_is_keyword = true;
-                    groups.tail.push(KeywordGroup {
-                        function: argument,
-                        arguments: vec![],
-                    })
+                Node::Literal(Literal::Keyword(keyword)) => {
+                    if !previous_argument_is_keyword {
+                        previous_argument_is_keyword = true;
+                        groups.tail.push(KeywordGroup {
+                            function: argument,
+                            continuous_keywords: vec![],
+                            arguments: vec![],
+                        })
+                    } else {
+                        groups.last_mut().continuous_keywords.push(keyword)
+                    }
                 }
                 _ => {
                     previous_argument_is_keyword = false;
@@ -229,14 +263,25 @@ impl ToDoc for PrefixFunctionCall {
         let groups = groups.into_vector();
         arena
             .intersperse(
-                groups.into_iter().map(|group| {
-                    group.function.to_doc(arena).append(
-                        arena
-                            .concat(group.arguments.iter().map(|argument| {
-                                arena.line().append(argument.to_doc(arena)).nest(2)
-                            }))
-                            .group(),
-                    )
+                groups.into_iter().map(|keyword_group| {
+                    keyword_group
+                        .function
+                        .to_doc(arena)
+                        .append(
+                            arena.concat(
+                                keyword_group
+                                    .continuous_keywords
+                                    .iter()
+                                    .map(|token| arena.softline().append(token.to_doc(arena))),
+                            ),
+                        )
+                        .append(
+                            arena
+                                .concat(keyword_group.arguments.iter().map(|argument| {
+                                    arena.line().append(argument.to_doc(arena)).nest(2)
+                                }))
+                                .group(),
+                        )
                 }),
                 arena.line(),
             )
@@ -250,7 +295,7 @@ impl ToDoc for InfixFunctionCall {
             arena
                 .concat(self.tail.iter().map(|element| {
                     arena
-                        .line()
+                        .line_()
                         .append(arena.text(".").append(element.to_doc(arena)))
                         .nest(2)
                 }))
@@ -333,11 +378,44 @@ mod formatter_test {
     }
 
     #[test]
+    fn prefix_function_call_continuous_keywords_should_be_in_one_line() {
+        use crate::formatter::prettify_code;
+        insta::assert_snapshot!(prettify_code(
+            "export let (a b => if (condition : Boolean) (t : () -> A) else (f : () -> A) : A)"
+        ))
+    }
+
+    #[test]
     fn operator_1() {
         use crate::formatter::prettify_code;
 
         insta::assert_snapshot!(prettify_code(
             "who + lives + in + a + pineapple + under + the + sea ? spongebob squarepants ! absorbent - and - yellow "
+        ));
+    }
+
+    #[test]
+    fn comments_more_than_two_quotes_should_be_forced_newline() {
+        use crate::formatter::prettify_code;
+
+        insta::assert_snapshot!(prettify_code("\"\"\"This is a comment \"\"\" hello world"));
+    }
+
+    #[test]
+    fn content_after_multiline_string_should_follow_indentation() {
+        use crate::formatter::prettify_code;
+
+        insta::assert_snapshot!(prettify_code(
+            "who lives in a pineapple under the sea (\"\"\"Hello world\"\"\" 234) (123) (456)"
+        ));
+    }
+
+    #[test]
+    fn comment_surrounding_whitespace_should_be_trimmed() {
+        use crate::formatter::prettify_code;
+
+        insta::assert_snapshot!(prettify_code(
+            "\"\"\"   This is a    comment   \"\"\" hello world"
         ));
     }
 }

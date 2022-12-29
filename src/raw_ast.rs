@@ -330,15 +330,15 @@ pub enum Expression {
         bang: Token,
     },
     TildeClosure(TildeClosure),
-    InnateFunctionCall(InnateFunctionCall),
+    IntrinsicFunctionCall(IntrinsicFunctionCall),
 }
 
 #[derive(Debug, Clone)]
-pub struct InnateFunctionCall {
+pub struct IntrinsicFunctionCall {
     pub function_name: Token,
     pub argument: Box<Expression>,
 }
-impl InnateFunctionCall {
+impl IntrinsicFunctionCall {
     pub fn position(&self) -> Position {
         self.function_name.position.join(self.argument.position())
     }
