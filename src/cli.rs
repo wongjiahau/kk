@@ -5,16 +5,17 @@ use crate::{
     stringify_error::print_compile_error,
     tokenize::Tokenizer,
 };
-use clap::Clap;
+use clap::Parser;
 use std::{path::PathBuf, rc::Rc};
 
-#[derive(Clap)]
-struct Opts {
-    #[clap(subcommand)]
+#[derive(clap::Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[command(subcommand)]
     subcmd: SubCommand,
 }
 
-#[derive(Clap)]
+#[derive(clap::Subcommand)]
 enum SubCommand {
     /// Execute a KK script
     Run(Run),
@@ -22,20 +23,20 @@ enum SubCommand {
     Format(Format),
 }
 
-#[derive(Clap)]
+#[derive(clap::Args)]
 struct Run {
     /// Input filename
     filename: String,
 }
 
-#[derive(Clap)]
+#[derive(clap::Args)]
 struct Format {
     /// Input filename
     filename: Option<String>,
 }
 
 pub fn cli() {
-    let opts: Opts = Opts::parse();
+    let opts: Args = Args::parse();
 
     match opts.subcmd {
         SubCommand::Run(run) => compile(find_file(&run.filename)),
