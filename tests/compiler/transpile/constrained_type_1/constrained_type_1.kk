@@ -7,9 +7,9 @@ let ((left : Grade).equals (right : Grade) : Boolean) =
 
 let ((g : Boolean).not : Boolean) = g.[true -> false, true];
 
-type Eq = T -> T -> Boolean;
+type (Eq T) = T -> T -> Boolean;
 
-let (T => { equals : Eq } | (left : T).not equals (right : T) : Boolean) =
+let (T => { equals : Eq T } | (left : T).not equals (right : T) : Boolean) =
   left.equals (right).not;
 
 """

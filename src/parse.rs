@@ -2044,16 +2044,57 @@ impl simple_ast::Node {
         }
     }
 
+    fn to_type_constraints_annotation(&self) -> Result<TypeConstraintsAnnotation, ParseError> {
+        use simple_ast::*;
+        match self {
+            Node::Array(Array {
+                nodes,
+                bracket:
+                    Bracket {
+                        kind: BracketKind::Curly,
+                        opening,
+                        closing,
+                    },
+                ..
+            }) => Ok(TypeConstraintsAnnotation {
+                left_curly_bracket: opening.clone(),
+                right_curly_bracket: closing.clone(),
+                type_constraints: nodes
+                    .to_vec()
+                    .iter()
+                    .map(|node| node.to_type_constraint_annotation())
+                    .collect::<Result<_, _>>()?,
+            }),
+            _ => todo!(),
+        }
+    }
+
+    fn to_type_constraint_annotation(&self) -> Result<TypeConstraintAnnotation, ParseError> {
+        use simple_ast::*;
+        match self {
+            Node::OperatorCall(operator_call) if operator_call.operator.representation == ":" => {
+                Ok(TypeConstraintAnnotation {
+                    identifier: operator_call.left.to_identifier(None)?,
+                    type_annotation: operator_call.right.to_type_annotation()?,
+                })
+            }
+            _ => todo!(),
+        }
+    }
+
     fn to_value_declaration(
         &self,
         type_variables_declaration: Option<TypeVariablesDeclaration>,
+        type_constraints: Option<TypeConstraintsAnnotation>,
     ) -> Result<ValueDeclaration, ParseError> {
         use simple_ast::*;
         match self {
-            Node::OperatorCall(operator_call) if operator_call.operator.representation == "=>" => {
-                operator_call
-                    .right
-                    .to_value_declaration(Some(TypeVariablesDeclaration {
+            Node::OperatorCall(operator_call)
+                if operator_call.operator.representation == "=>"
+                    && type_variables_declaration.is_none() =>
+            {
+                operator_call.right.to_value_declaration(
+                    Some(TypeVariablesDeclaration {
                         type_variables: {
                             match operator_call.left.as_ref() {
                                 Node::PrefixFunctionCall(prefix_function_call) => NonEmpty {
@@ -2072,14 +2113,25 @@ impl simple_ast::Node {
                                 _ => todo!(),
                             }
                         },
-                    }))
+                    }),
+                    None,
+                )
+            }
+            Node::OperatorCall(operator_call)
+                if operator_call.operator.representation == "|" && type_constraints.is_none() =>
+            {
+                let type_constraints = operator_call.left.to_type_constraints_annotation()?;
+                operator_call
+                    .right
+                    .to_value_declaration(type_variables_declaration, Some(type_constraints))
+                //
             }
             Node::OperatorCall(operator_call) if operator_call.operator.representation == ":" => {
                 let (name, parameters) = match operator_call.left.as_ref() {
                     Node::PrefixFunctionCall(prefix_function_call) => {
                         match prefix_function_call.function.as_ref() {
                             Node::Literal(literal) => match literal {
-                                Literal::Identifier(name) => {
+                                Literal::Identifier(name) | Literal::Operator(name) => {
                                     let parameters = prefix_function_call
                                         .arguments
                                         .to_vector()
@@ -2141,6 +2193,7 @@ impl simple_ast::Node {
                 };
                 Ok(ValueDeclaration {
                     type_variables_declaration,
+                    type_constraints,
                     name,
                     parameters,
                     type_annotation: operator_call.right.to_type_annotation()?,
@@ -2160,7 +2213,7 @@ impl simple_ast::Node {
                 nodes
                     .get(0)
                     .into_node(opening.position)?
-                    .to_value_declaration(None)
+                    .to_value_declaration(None, None)
             }
             other => todo!("{}", other.to_pretty()),
         }
@@ -2169,6 +2222,7 @@ impl simple_ast::Node {
 
 struct ValueDeclaration {
     type_variables_declaration: Option<TypeVariablesDeclaration>,
+    type_constraints: Option<TypeConstraintsAnnotation>,
     name: Token,
     parameters: Vec<Parameter>,
     type_annotation: TypeAnnotation,
@@ -2200,8 +2254,7 @@ impl ValueDeclaration {
                             //
                             // Therefore, we will get A -> ((B -> C) | X)
                             // instead of (A -> (B -> C)) | X
-                            type_constraints: None, // TODO: put in
-                                                    // type_constraints
+                            type_constraints: self.type_constraints,
                         },
                     ))
                 }
@@ -2249,6 +2302,21 @@ impl simple_ast::OperatorCall {
                             type_variables_declaration: type_declaration.type_variables_declaration,
                         }))
                     }
+
+                    Node::Literal(Literal::Identifier(token))
+                        if token.representation == "import" =>
+                    {
+                        let url = match arguments.get(0).into_node(token.position)? {
+                            Node::Literal(Literal::String(s)) => s,
+                            _ => todo!(),
+                        };
+                        Ok(Statement::Import(ImportStatement {
+                            access: todo!(),
+                            keyword_import: token.clone(),
+                            url,
+                            specification: todo!(),
+                        }))
+                    }
                     Node::Literal(Literal::Identifier(token))
                         if token.representation == "export" =>
                     {
@@ -2259,7 +2327,7 @@ impl simple_ast::OperatorCall {
                         let value_declaration = arguments
                             .get(1)
                             .into_node(token.position)?
-                            .to_value_declaration(None)?;
+                            .to_value_declaration(None, None)?;
                         arguments.get(2).should_be_none()?;
 
                         value_declaration.into_let_statement(
@@ -2274,7 +2342,7 @@ impl simple_ast::OperatorCall {
                         let value_declaration = arguments
                             .get(0)
                             .into_node(token.position)?
-                            .to_value_declaration(None)?;
+                            .to_value_declaration(None, None)?;
                         arguments.get(1).should_be_none()?;
 
                         value_declaration.into_let_statement(
