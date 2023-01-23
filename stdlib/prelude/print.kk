@@ -1,1 +1,1 @@
-export let (T => print (t : T) : ()) = intrinsic print (t)
+(export def print (forall (a) {-> a ()}) (-> t (intrinsic print t)))

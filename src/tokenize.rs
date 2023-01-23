@@ -38,6 +38,13 @@ impl Character {
             value: ' ',
         }
     }
+
+    fn is_special(&self) -> bool {
+        match self.value {
+            ' ' | '\n' | '\'' | '"' | '`' | '(' | ')' | '[' | ']' | '{' | '}' => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -355,7 +362,8 @@ impl Tokenizer {
                                             interpolated_string_sections.push(
                                                 simple_ast::InterpolatedStringSection::Expression(
                                                     Box::new(
-                                                        parser.parse_low_precedence_expression()?,
+                                                        parser
+                                                            .parse_high_precedence_expression()?,
                                                     ),
                                                 ),
                                             );
@@ -459,7 +467,7 @@ impl Tokenizer {
                         let representation =
                             format!("{}{}", character.value, stringify(&characters));
                         Ok(Some(Token {
-                            token_type: TokenType::Operator,
+                            token_type: TokenType::Identifier,
                             representation,
                             position: make_position(character, characters.last()),
                         }))
@@ -476,7 +484,7 @@ impl Tokenizer {
                                     // means there's no fractional part
                                     // that means the next token is a Period
                                     self.peeked_tokens.push(Token {
-                                        token_type: TokenType::Period,
+                                        token_type: TokenType::Identifier,
                                         representation: period.value.to_string(),
                                         position: Position {
                                             line_start: period.line_number,
@@ -521,28 +529,82 @@ impl Tokenizer {
                         }
                     }
                 }
-                // Hash left bracket
-                '#' => match self.characters_iterator.by_ref().peek() {
-                    _ => {
-                        let characters = self
-                            .characters_iterator
-                            .by_ref()
-                            .peeking_take_while(|character| character.value == '[')
-                            .collect::<Vec<Character>>();
+                // // Hash left bracket
+                // '#' => match self.characters_iterator.by_ref().peek() {
+                //     _ => {
+                //         let characters = self
+                //             .characters_iterator
+                //             .by_ref()
+                //             .peeking_take_while(|character| character.value == '[')
+                //             .collect::<Vec<Character>>();
 
-                        if characters.len() != 1 {
-                            return Err(todo!("Expected 1 left square bracket after #"));
-                        }
+                //         if characters.len() != 1 {
+                //             return Err(todo!("Expected 1 left square bracket after #"));
+                //         }
 
-                        let representation =
-                            format!("{}{}", character.value, stringify(&characters));
-                        Ok(Some(Token {
-                            token_type: TokenType::HashLeftSquareBracket,
-                            representation,
-                            position: make_position(character, characters.last()),
-                        }))
-                    }
-                },
+                //         let representation =
+                //             format!("{}{}", character.value, stringify(&characters));
+                //         Ok(Some(Token {
+                //             token_type: TokenType::HashLeftSquareBracket,
+                //             representation,
+                //             position: make_position(character, characters.last()),
+                //         }))
+                //     }
+                // },
+                '(' => Ok(Some(Token {
+                    token_type: TokenType::LeftParenthesis,
+                    representation: "(".to_string(),
+                    position: make_position(character, None),
+                })),
+                ')' => Ok(Some(Token {
+                    token_type: TokenType::RightParenthesis,
+                    representation: ")".to_string(),
+                    position: make_position(character, None),
+                })),
+                '[' => Ok(Some(Token {
+                    token_type: TokenType::LeftSquareBracket,
+                    representation: "[".to_string(),
+                    position: make_position(character, None),
+                })),
+                ']' => Ok(Some(Token {
+                    token_type: TokenType::RightSquareBracket,
+                    representation: "]".to_string(),
+                    position: make_position(character, None),
+                })),
+                '{' => Ok(Some(Token {
+                    token_type: TokenType::LeftCurlyBracket,
+                    representation: "{".to_string(),
+                    position: make_position(character, None),
+                })),
+                '}' => Ok(Some(Token {
+                    token_type: TokenType::RightCurlyBracket,
+                    representation: "}".to_string(),
+                    position: make_position(character, None),
+                })),
+                ' ' => Ok(Some(Token {
+                    token_type: TokenType::Whitespace,
+                    representation: " ".to_string(),
+                    position: make_position(character, None),
+                })),
+                '\n' => Ok(Some(Token {
+                    token_type: TokenType::Newline,
+                    representation: "\n".to_string(),
+                    position: make_position(character, None),
+                })),
+                _ => {
+                    let characters = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| !character.is_special())
+                        .collect::<Vec<Character>>();
+
+                    let representation = format!("{}{}", character.value, stringify(&characters));
+                    Ok(Some(Token {
+                        token_type: get_token_type(representation.clone()),
+                        representation,
+                        position: make_position(character, characters.last()),
+                    }))
+                }
                 // Identifier
                 'A'..='Z' | 'a'..='z' => {
                     let characters = self
@@ -635,7 +697,7 @@ impl Tokenizer {
 
                     let representation = format!("{}{}", character.value, stringify(&characters));
                     Ok(Some(Token {
-                        token_type: TokenType::Operator,
+                        token_type: TokenType::Identifier,
                         representation,
                         position: make_position(character, characters.last()),
                     }))

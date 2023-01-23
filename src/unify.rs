@@ -530,6 +530,7 @@ pub enum UnifyErrorKind {
         redundant_expanded_pattern: CheckablePatternKind,
     },
     TypeArgumentsLengthMismatch {
+        type_name: String,
         actual_length: usize,
         expected_type_parameter_names: Vec<String>,
     },
@@ -3457,6 +3458,7 @@ pub fn type_annotation_to_type(
                                     .position
                                     .join(actual_type_arguments.right_angular_bracket.position),
                                 kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
+                                    type_name: name.representation.clone(),
                                     actual_length: actual_type_arguments.type_annotations.len(),
                                     expected_type_parameter_names: expected_type_scheme
                                         .type_variables
@@ -3494,6 +3496,7 @@ pub fn type_annotation_to_type(
                     (Type::TypeScheme(expected_type_scheme), _) => Err(UnifyError {
                         position: name.position,
                         kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
+                            type_name: name.representation.clone(),
                             actual_length: 0,
                             expected_type_parameter_names: expected_type_scheme
                                 .type_variables
@@ -3507,6 +3510,7 @@ pub fn type_annotation_to_type(
                             .position
                             .join(actual_type_arguments.right_angular_bracket.position),
                         kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
+                            type_name: name.representation.clone(),
                             actual_length: actual_type_arguments.type_annotations.len(),
                             expected_type_parameter_names: vec![],
                         },

@@ -1285,5 +1285,30 @@ fn built_in_symbols() -> Vec<Symbol> {
                 type_value: Type::Float,
             }),
         },
+        Symbol {
+            meta: meta("->".to_string()),
+            kind: SymbolKind::Type({
+                let parameter_type = ExplicitTypeVariable {
+                    name: "paramater".to_string(),
+                };
+                let return_type = ExplicitTypeVariable {
+                    name: "return".to_string(),
+                };
+
+                TypeSymbol {
+                    type_value: Type::TypeScheme(Box::new(TypeScheme {
+                        type_variables: NonEmpty {
+                            head: parameter_type.clone(),
+                            tail: vec![return_type.clone()],
+                        },
+                        type_value: Type::Function(FunctionType {
+                            parameter_type: Box::new(Type::ExplicitTypeVariable(parameter_type)),
+                            return_type: Box::new(Type::ExplicitTypeVariable(return_type)),
+                            type_constraints: vec![],
+                        }),
+                    })),
+                }
+            }),
+        },
     ]
 }

@@ -6,14 +6,8 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum Node {
-    Array(Array),
-    PrefixFunctionCall(PrefixFunctionCall),
-    InfixFunctionCall(InfixFunctionCall),
-    /// Operator call are right-associative
-    OperatorCall(OperatorCall),
+    List(List),
     Literal(Literal),
-    SemicolonArray(SemicolonArray),
-    CommentedNode(CommentedNode),
 }
 
 #[derive(Debug, Clone)]
@@ -62,7 +56,6 @@ pub enum Literal {
     Character(Token),
     Identifier(Token),
     Keyword(Token),
-    Operator(Token),
 }
 
 #[derive(Debug, Clone)]
@@ -84,18 +77,29 @@ impl SemicolonArray {
 }
 
 #[derive(Debug, Clone)]
-pub struct Array {
+pub struct List {
     pub nodes: Vec<Node>,
     pub bracket: Bracket,
-    pub has_trailing_comma: bool,
 }
 
-impl Array {
+impl List {
+    pub fn new(nodes: Vec<Node>) -> List {
+        List {
+            nodes,
+            bracket: Bracket::dummy(),
+        }
+    }
     pub fn position(&self) -> Position {
-        self.bracket
-            .opening
-            .position
-            .join(self.bracket.closing.position)
+        match self.nodes.split_first() {
+            None => self
+                .bracket
+                .opening
+                .position
+                .join(self.bracket.closing.position),
+            Some((head, tail)) => head
+                .position()
+                .join_maybe(tail.get(0).map(|node| node.position())),
+        }
     }
 }
 
@@ -104,6 +108,16 @@ pub struct Bracket {
     pub kind: BracketKind,
     pub opening: Token,
     pub closing: Token,
+}
+
+impl Bracket {
+    pub fn dummy() -> Self {
+        Self {
+            kind: BracketKind::Round,
+            opening: Token::dummy(),
+            closing: Token::dummy(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -149,13 +163,8 @@ pub struct OperatorCall {
 impl Node {
     pub fn position(&self) -> Position {
         match self {
-            Node::Array(array) => array.position(),
-            Node::PrefixFunctionCall(prefix_function_call) => prefix_function_call.position(),
-            Node::InfixFunctionCall(infix_function_call) => infix_function_call.position(),
-            Node::OperatorCall(_) => todo!(),
+            Node::List(array) => array.position(),
             Node::Literal(literal) => literal.position(),
-            Node::SemicolonArray(array) => array.position(),
-            Node::CommentedNode(commented_node) => commented_node.position(),
         }
     }
 }
@@ -175,7 +184,6 @@ impl Literal {
             | Literal::Float(token)
             | Literal::Character(token)
             | Literal::Identifier(token)
-            | Literal::Operator(token)
             | Literal::Keyword(token) => token.position,
         }
     }

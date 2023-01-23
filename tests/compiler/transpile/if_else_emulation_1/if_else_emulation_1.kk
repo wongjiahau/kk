@@ -1,8 +1,10 @@
-enum Boolean { True, False };
+(enum Boolean (True False))
 
-let (a b => if (condition : Boolean) (t : () -> A) else (f : () -> A) : A) =
-  condition.[True -> t (), False -> f ()];
+(def
+  if
+  (forall (a) {-> Boolean :then (-> () a) :else (-> () a) a})
+  {-> condition :then t :else f (match condition (True (t ())) (_ (f ())))})
 
-if (True) ["Hello world".print] else ["Bye".print];
+(if True :then (-> _ (print "Hello world")) :else (-> _ (print "Bye")))
 
-if (False) ["Hello world".print] else ["Bye".print]
+(if False :then (-> _ (print "Hello world")) :else (-> _ (print "Bye")))

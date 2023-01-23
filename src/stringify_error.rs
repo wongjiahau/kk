@@ -688,13 +688,15 @@ pub fn stringify_unify_error_kind(unify_error_kind: UnifyErrorKind) -> Stringifi
             body: "This key is already declared before in this record. Consider removing or renaming it.".to_string()
         },
         UnifyErrorKind::TypeArgumentsLengthMismatch {
+            type_name,
             expected_type_parameter_names,
             actual_length
         } => StringifiedError {
             summary: "Type arguments length mismatch".to_string(),
             body:
                 format!(
-                "{} type arguments are given, but expected {}:\n{}",
+                "For type `{}`, {} type arguments are given, but expected {}:\n{}",
+                type_name,
                 actual_length,
                 expected_type_parameter_names.len(),
                 indent_string(expected_type_parameter_names.join("\n"), 2 )

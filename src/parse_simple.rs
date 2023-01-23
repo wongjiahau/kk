@@ -29,7 +29,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_top_level_array(&mut self) -> Result<TopLevelArray, ParseError> {
-        let head = self.parse_low_precedence_expression()?;
+        let head = self.parse_high_precedence_expression()?;
         let mut tail = vec![];
         loop {
             if self.peek_next_meaningful_token()?.is_none() {
@@ -37,37 +37,24 @@ impl<'a> Parser<'a> {
                     nodes: NonEmpty { head, tail },
                 });
             } else {
-                self.eat_token(TokenType::Semicolon, None)?;
-                tail.push(self.parse_low_precedence_expression()?)
+                tail.push(self.parse_high_precedence_expression()?)
             }
         }
     }
 
-    fn parse_array(&mut self, argument: ParseArrayArgument) -> Result<Array, ParseError> {
+    fn parse_list(&mut self, argument: ParseArrayArgument) -> Result<List, ParseError> {
         let mut nodes = vec![];
         if let Some(bracket) = self.try_eat_array_closing_bracket(&argument)? {
-            return Ok(Array {
-                nodes,
-                bracket,
-                has_trailing_comma: false,
-            });
+            return Ok(List { bracket, nodes });
         }
-        let (elements, bracket, has_trailing_comma) = loop {
-            nodes.push(self.parse_lowest_precedence_expression()?);
-            if self.try_eat_token(TokenType::Comma)?.is_none() {
-                let bracket = self.eat_array_closing_bracket(argument)?;
-                break (nodes, bracket, false);
-            }
+        let (nodes, bracket) = loop {
+            nodes.push(self.parse_high_precedence_expression()?);
 
             if let Some(bracket) = self.try_eat_array_closing_bracket(&argument)? {
-                break (nodes, bracket, true);
+                break (nodes, bracket);
             }
         };
-        Ok(Array {
-            nodes: elements,
-            bracket,
-            has_trailing_comma,
-        })
+        Ok(List { bracket, nodes })
     }
 
     fn eat_array_closing_bracket(
@@ -107,134 +94,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Semicolon array
-    fn parse_lowest_precedence_expression(&mut self) -> Result<Node, ParseError> {
-        let head = self.parse_low_precedence_expression()?;
-        let mut tail = vec![];
-        let tail = loop {
-            if self.next_token_is_terminating_for_semicolon_array()? {
-                break tail;
-            } else {
-                self.eat_token(TokenType::Semicolon, None)?;
-                tail.push(self.parse_low_precedence_expression()?)
-            }
-        };
-        if tail.is_empty() {
-            Ok(head)
-        } else {
-            Ok(Node::SemicolonArray(SemicolonArray {
-                nodes: Box::new(NonEmpty { head, tail }),
-            }))
-        }
-    }
-
-    /// Operator call
-    pub fn parse_low_precedence_expression(&mut self) -> Result<Node, ParseError> {
-        let expression = self.parse_mid_precedence_expression()?;
-
-        self.try_parse_operator_call(expression)
-    }
-
-    fn try_parse_operator_call(&mut self, expression: Node) -> Result<Node, ParseError> {
-        if let Some(operator) = self.try_eat_token(TokenType::Operator)? {
-            let right = self.parse_low_precedence_expression()?;
-            Ok(Node::OperatorCall(OperatorCall {
-                left: Box::new(expression),
-                operator,
-                right: Box::new(right),
-            }))
-        } else {
-            Ok(expression)
-        }
-    }
-
-    /// Infix function call
-    fn parse_mid_precedence_expression(&mut self) -> Result<Node, ParseError> {
-        let expression = self.parse_high_precedence_expression(false)?;
-        self.try_parse_infix_function_call(expression)
-    }
-
-    fn parse_prefix_function_call(&mut self) -> Result<Node, ParseError> {
-        let previous = self.parse_high_precedence_expression(false)?;
-        self.try_parse_prefix_function_call(previous)
-    }
-
-    fn try_parse_prefix_function_call(&mut self, previous: Node) -> Result<Node, ParseError> {
-        if self.next_token_is_terminating_for_prefix_function_call()? {
-            return Ok(previous);
-        }
-
-        // This is a prefix function call
-        match previous {
-            Node::Literal(Literal::String(string_literal)) => {
-                Ok(Node::CommentedNode(CommentedNode {
-                    comment: Comment(string_literal),
-                    node: Box::new({
-                        let previous = self.parse_high_precedence_expression(false)?;
-                        self.try_parse_prefix_function_call(previous)?
-                    }),
-                }))
-            }
-            Node::Literal(Literal::Operator(_)) => {
-                Ok(Node::PrefixFunctionCall(PrefixFunctionCall {
-                    function: Box::new(previous),
-                    arguments: Box::new(NonEmpty {
-                        head: self.parse_low_precedence_expression()?,
-                        tail: vec![],
-                    }),
-                }))
-            }
-            _ => {
-                let head_argument = self.parse_high_precedence_expression(true)?;
-                // println!("head_argument = {:#?}", head_argument);
-                let mut tail_arguments = vec![];
-                let tail_arguments = loop {
-                    if self.next_token_is_terminating_for_prefix_function_call()? {
-                        break tail_arguments;
-                    } else {
-                        tail_arguments.push(self.parse_high_precedence_expression(true)?)
-                    }
-                };
-                Ok(Node::PrefixFunctionCall(PrefixFunctionCall {
-                    function: Box::new(previous),
-                    arguments: Box::new(NonEmpty {
-                        head: head_argument,
-                        tail: tail_arguments,
-                    }),
-                }))
-            }
-        }
-    }
-
-    fn try_parse_infix_function_call(&mut self, previous: Node) -> Result<Node, ParseError> {
-        if self.next_token_is_terminating_for_infix_function_call()? {
-            return Ok(previous);
-        }
-
-        let head = self.try_parse_prefix_function_call(previous)?;
-
-        let mut function_calls = vec![];
-        let function_calls = loop {
-            if self.try_eat_token(TokenType::Period)?.is_some() {
-                function_calls.push(self.parse_prefix_function_call()?)
-            } else {
-                break function_calls;
-            }
-        };
-        if function_calls.is_empty() {
-            Ok(head)
-        } else {
-            Ok(Node::InfixFunctionCall(InfixFunctionCall {
-                head: Box::new(head),
-                tail: function_calls,
-            }))
-        }
-    }
-
-    fn parse_high_precedence_expression(
-        &mut self,
-        treat_identifier_as_keyword: bool,
-    ) -> Result<Node, ParseError> {
+    pub fn parse_high_precedence_expression(&mut self) -> Result<Node, ParseError> {
         let context = Some(ParseContext::Expression);
         if let Some(token) = self.next_meaningful_token()? {
             match token.token_type {
@@ -242,32 +102,33 @@ impl<'a> Parser<'a> {
                     Ok(Node::Literal(Literal::String(string_literal)))
                 }
                 TokenType::Character => Ok(Node::Literal(Literal::Character(token.clone()))),
-                TokenType::HashLeftSquareBracket | TokenType::LeftSquareBracket => {
-                    Ok(Node::Array(self.parse_array(ParseArrayArgument {
+                TokenType::LeftSquareBracket => {
+                    Ok(Node::List(self.parse_list(ParseArrayArgument {
                         opening_bracket: token,
                         kind: BracketKind::Square,
                     })?))
                 }
                 TokenType::LeftCurlyBracket => {
-                    Ok(Node::Array(self.parse_array(ParseArrayArgument {
+                    Ok(Node::List(self.parse_list(ParseArrayArgument {
                         opening_bracket: token,
                         kind: BracketKind::Curly,
                     })?))
                 }
                 TokenType::LeftParenthesis => {
-                    Ok(Node::Array(self.parse_array(ParseArrayArgument {
+                    Ok(Node::List(self.parse_list(ParseArrayArgument {
                         opening_bracket: token,
                         kind: BracketKind::Round,
                     })?))
                 }
                 TokenType::Float => Ok(Node::Literal(Literal::Float(token.clone()))),
                 TokenType::Integer => Ok(Node::Literal(Literal::Integer(token.clone()))),
-                TokenType::Identifier => Ok(Node::Literal(if treat_identifier_as_keyword {
-                    Literal::Keyword(token.clone())
-                } else {
-                    Literal::Identifier(token.clone())
-                })),
-                TokenType::Operator => Ok(Node::Literal(Literal::Operator(token.clone()))),
+                TokenType::Identifier => {
+                    Ok(Node::Literal(if token.representation.starts_with(":") {
+                        Literal::Keyword(token.clone())
+                    } else {
+                        Literal::Identifier(token.clone())
+                    }))
+                }
                 TokenType::InterpolatedString(interpolated_string) => Ok(Node::Literal(
                     Literal::InterpolatedString(interpolated_string),
                 )),
