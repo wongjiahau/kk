@@ -7,10 +7,9 @@ INPUT
 ============
 (enum Boolean (True False))
 
-(def
-  if
-  (forall (a) {-> Boolean :then (-> () a) :else (-> () a) a})
-  {-> condition :then t :else f (match condition (True (t ())) (_ (f ())))})
+(defn if
+  (forall (a) (condition Boolean) :then (t (-> () a)) :else (f (-> () a)) a)
+  (match condition (case True -> (t ())) (case False -> (f ()))))
 
 (if True :then (-> _ (print "Hello world")) :else (-> _ (print "Bye")))
 

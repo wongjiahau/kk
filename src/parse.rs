@@ -1,6 +1,7 @@
 use crate::formatter::ToDoc;
 use crate::module::Access;
 use crate::simple_ast;
+use crate::stringify_error::stringify_type;
 use crate::tokenize::{StringLiteral, Token, TokenType};
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
 use crate::{raw_ast::*, tokenize::TokenizeError};
@@ -1674,6 +1675,17 @@ impl simple_ast::Literal {
 }
 
 impl simple_ast::List {
+    fn skip(&self, count: usize) -> simple_ast::List {
+        Self {
+            bracket: self.bracket.clone(),
+            nodes: self
+                .nodes
+                .iter()
+                .skip(count)
+                .map(|node| node.clone())
+                .collect(),
+        }
+    }
     fn to_statement(
         &self,
         state: &mut ParserState,
@@ -1699,6 +1711,20 @@ impl simple_ast::List {
                     name,
                     type_variables_declaration: None,
                     constructors,
+                }))
+            }
+            "defn" => {
+                let name = self.get(1)?.to_identifier(None)?;
+                let signature = self.get(2)?.into_list()?.to_function_signature()?;
+                let body = self.get(3)?.to_expression(state)?;
+                self.nodes.get(4).should_be_none()?;
+                Ok(Statement::Let(LetStatement {
+                    access,
+                    keyword_let: first,
+                    name,
+                    doc_string: None,
+                    type_annotation: signature.to_function_type_annotation(),
+                    expression: Expression::Function(Box::new(signature.to_function(body))),
                 }))
             }
             "def" => {
@@ -1755,7 +1781,6 @@ impl simple_ast::List {
                 Some((Node::Literal(Literal::Identifier(id)), [head, tail @ ..]))
                     if id.representation == "." =>
                 {
-                    println!("id.representation = {}", id.representation);
                     // Say `left` is `a` and `tail` is `[b c]`.
                     //
                     fn chain(left: Node, tail: &[Node]) -> List {
@@ -1879,7 +1904,6 @@ impl simple_ast::Node {
                 keyword_entry: Token::dummy(),
                 expression: {
                     let expression = self.to_expression(state)?;
-                    println!("expression = {:#?}", expression);
                     expression
                 },
             })),
@@ -1970,11 +1994,22 @@ impl simple_ast::Node {
         use simple_ast::*;
         match self {
             Node::List(List { nodes, bracket }) => {
-                let first = nodes.get(0).into_node(bracket.opening.position)?;
-                let second = nodes.get(1).into_node(first.position())?;
+                let first = nodes
+                    .get(0)
+                    .into_node(bracket.opening.position)?
+                    .to_identifier(Some("case"))?;
+                let pattern = nodes.get(1).into_node(first.position)?.to_pattern()?;
+                let third = nodes
+                    .get(2)
+                    .into_node(pattern.position())?
+                    .to_identifier(Some("->"))?;
+                let expression = nodes
+                    .get(3)
+                    .into_node(third.position)?
+                    .to_expression(state)?;
                 Ok(FunctionBranch {
-                    parameter: Box::new(first.to_pattern()?),
-                    body: Box::new(second.to_expression(state)?),
+                    parameter: Box::new(pattern),
+                    body: Box::new(expression),
                 })
             }
             _ => {
@@ -2647,6 +2682,54 @@ impl simple_ast::List {
             }
         }
     }
+
+    fn to_function_signature(&self) -> Result<FunctionSignature, ParseError> {
+        use simple_ast::*;
+        match self.nodes.split_last() {
+            None => {
+                panic!("Error")
+            }
+            Some((last, init)) => {
+                let return_type = last.to_type_annotation()?;
+                let list = List {
+                    nodes: init.to_vec(),
+                    bracket: self.bracket.clone(),
+                };
+                match list.get(0)? {
+                    Node::Literal(Literal::Identifier(id)) if id.representation == "forall" => {
+                        Ok(FunctionSignature {
+                            type_variables_declaration: Some(
+                                list.get(1)?.into_type_variables_declaration()?,
+                            ),
+                            parameters: NonEmpty {
+                                head: list.get(2)?.to_function_parameter()?,
+                                tail: list
+                                    .skip(3)
+                                    .nodes
+                                    .into_iter()
+                                    .map(|node| node.to_function_parameter())
+                                    .collect::<Result<_, _>>()?,
+                            },
+                            return_type,
+                        })
+                    }
+                    _ => Ok(FunctionSignature {
+                        type_variables_declaration: None,
+                        parameters: NonEmpty {
+                            head: list.get(0)?.to_function_parameter()?,
+                            tail: list
+                                .nodes
+                                .iter()
+                                .skip(1)
+                                .map(|node| node.to_function_parameter())
+                                .collect::<Result<_, _>>()?,
+                        },
+                        return_type,
+                    }),
+                }
+            }
+        }
+    }
     fn to_expression(&self, state: &mut ParserState) -> Result<Expression, ParseError> {
         use simple_ast::*;
         match self.bracket.kind {
@@ -2812,18 +2895,14 @@ impl simple_ast::List {
     }
 
     fn to_function_parameter(&self) -> Result<Parameter, ParseError> {
-        use simple_ast::*;
         match self.nodes.get(0) {
             Some(node) => {
-                self.nodes.get(1).should_be_none()?;
-                match node {
-                    _ => Err(ParseError {
-                        context: Some(ParseContext::FunctionParameter),
-                        kind: ParseErrorKind::UnexpectedNode {
-                            position: node.position(),
-                        },
-                    }),
-                }
+                let pattern = node.to_pattern()?;
+                let type_annotation = self.get(1)?.to_type_annotation()?;
+                Ok(Parameter {
+                    pattern,
+                    type_annotation,
+                })
             }
             None => {
                 let left_parenthesis = self.bracket.opening.clone();
@@ -3073,5 +3152,80 @@ impl simple_ast::InterpolatedString {
             },
             end_quotes: self.end_quotes.clone(),
         })
+    }
+}
+
+impl FunctionSignature {
+    fn to_function(&self, body: Expression) -> Function {
+        fn to_function(parameters: Vec<DestructurePattern>, body: Function) -> Function {
+            match parameters.split_last() {
+                None => body,
+                Some((last, init)) => to_function(
+                    init.to_vec(),
+                    Function {
+                        branches: NonEmpty {
+                            head: FunctionBranch {
+                                parameter: Box::new(last.clone()),
+                                body: Box::new(Expression::Function(Box::new(body))),
+                            },
+                            tail: vec![],
+                        },
+                    },
+                ),
+            }
+        }
+        to_function(
+            self.parameters
+                .init()
+                .iter()
+                .map(|parameter| parameter.pattern.clone())
+                .collect(),
+            Function {
+                branches: NonEmpty {
+                    head: FunctionBranch {
+                        parameter: Box::new(self.parameters.last().pattern.clone()),
+                        body: Box::new(body),
+                    },
+                    tail: vec![],
+                },
+            },
+        )
+    }
+    fn to_function_type_annotation(&self) -> TypeAnnotation {
+        fn to_function_type_annotation(
+            parameter_types: Vec<TypeAnnotation>,
+            return_type: FunctionTypeAnnotation,
+        ) -> FunctionTypeAnnotation {
+            match parameter_types.split_last() {
+                Some((last, init)) => to_function_type_annotation(
+                    init.to_vec(),
+                    FunctionTypeAnnotation {
+                        parameter: Box::new(last.clone()),
+                        return_type: Box::new(TypeAnnotation::Function(return_type)),
+                        type_constraints: None,
+                    },
+                ),
+                None => return_type,
+            }
+        }
+        let function_type_annotation = to_function_type_annotation(
+            self.parameters
+                .init()
+                .into_iter()
+                .map(|parameter| parameter.type_annotation.clone())
+                .collect(),
+            FunctionTypeAnnotation {
+                parameter: Box::new(self.parameters.last().type_annotation.clone()),
+                return_type: Box::new(self.return_type.clone()),
+                type_constraints: None,
+            },
+        );
+        match &self.type_variables_declaration {
+            None => TypeAnnotation::Function(function_type_annotation),
+            Some(type_variables) => TypeAnnotation::Scheme {
+                type_variables: type_variables.clone(),
+                type_annotation: Box::new(TypeAnnotation::Function(function_type_annotation)),
+            },
+        }
     }
 }

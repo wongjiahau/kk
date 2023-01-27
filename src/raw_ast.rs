@@ -72,6 +72,13 @@ pub struct Parameter {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionSignature {
+    pub type_variables_declaration: Option<TypeVariablesDeclaration>,
+    pub parameters: NonEmpty<Parameter>,
+    pub return_type: TypeAnnotation,
+}
+
+#[derive(Debug, Clone)]
 pub struct TypeAliasStatement {
     pub access: Access,
     pub keyword_type: Token,

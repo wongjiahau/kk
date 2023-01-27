@@ -129,4 +129,11 @@ impl<T> NonEmpty<T> {
             self.tail.get(index - 1)
         }
     }
+
+    pub fn init(&self) -> Vec<&T> {
+        vec![&self.head]
+            .into_iter()
+            .chain(self.tail.iter().take(self.tail.len() - 1))
+            .collect()
+    }
 }

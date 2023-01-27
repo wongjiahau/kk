@@ -106,7 +106,9 @@ impl ToDoc for Node {
                         let mut previous_argument_is_keyword = true;
                         for argument in tail {
                             match argument {
-                                Node::Literal(Literal::Keyword(keyword)) => {
+                                Node::Literal(
+                                    Literal::Keyword(keyword) | Literal::Identifier(keyword),
+                                ) => {
                                     if !previous_argument_is_keyword {
                                         previous_argument_is_keyword = true;
                                         groups.tail.push(KeywordGroup {
