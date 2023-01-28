@@ -169,21 +169,21 @@ impl Tokenizer {
             match character.value {
                 // Comments
                 '/' => match self.characters_iterator.next() {
-                    Some(Character { value: '/', .. }) => {
-                        let comment = self
-                            .characters_iterator
-                            .by_ref()
-                            .peeking_take_while(|character| character.value != '\n')
-                            .collect::<Vec<Character>>();
+                    // Some(Character { value: '/', .. }) => {
+                    //     let comment = self
+                    //         .characters_iterator
+                    //         .by_ref()
+                    //         .peeking_take_while(|character| character.value != '\n')
+                    //         .collect::<Vec<Character>>();
 
-                        Ok(Some(Token {
-                            token_type: TokenType::Comment,
-                            position: make_position(character, comment.last()),
-                            representation: stringify(&comment),
-                        }))
-                    }
-                    Some(Character { value: '*', .. }) => {
-                        let mut comment = vec![character.clone()];
+                    //     Ok(Some(Token {
+                    //         token_type: TokenType::Comment,
+                    //         position: make_position(character, comment.last()),
+                    //         representation: stringify(&comment),
+                    //     }))
+                    // }
+                    Some(asterisk @ Character { value: '*', .. }) => {
+                        let mut comment = vec![character.clone(), asterisk];
                         let mut found_asterisk = false;
                         let comment = loop {
                             match self.characters_iterator.next() {
@@ -361,10 +361,7 @@ impl Tokenizer {
                                             let mut parser = Parser::new(self);
                                             interpolated_string_sections.push(
                                                 simple_ast::InterpolatedStringSection::Expression(
-                                                    Box::new(
-                                                        parser
-                                                            .parse_high_precedence_expression()?,
-                                                    ),
+                                                    Box::new(parser.parse_high_precedence_node()?),
                                                 ),
                                             );
                                             parser.eat_token(TokenType::RightCurlyBracket, None)?;

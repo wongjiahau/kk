@@ -1,4 +1,3 @@
-""" 
-Who lives in a pineapple under the sea?
-""" 
-print "Hello"
+/* Who lives in a pineapple under the sea? */
+
+(print "Hello")

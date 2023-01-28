@@ -2,26 +2,59 @@ use crate::{
     non_empty::NonEmpty,
     raw_ast::Position,
     tokenize::{Character, StringLiteral, Token},
+    unify::Positionable,
 };
 
 #[derive(Debug, Clone)]
 pub enum Node {
     List(List),
     Literal(Literal),
+    Comment(Token),
 }
 
 #[derive(Debug, Clone)]
-pub struct CommentedNode {
-    pub comment: Comment,
-    pub node: Box<Node>,
+pub enum MacroExpandedNode {
+    List(MacroExpandedList),
+    Literal(Literal),
+    Unit { bracket: Bracket },
 }
-
-#[derive(Debug, Clone)]
-pub struct Comment(pub StringLiteral);
-
-impl Comment {
+impl Positionable for MacroExpandedNode {
     fn position(&self) -> Position {
-        self.0.position()
+        match self {
+            MacroExpandedNode::List(list) => list.position(),
+            MacroExpandedNode::Literal(literal) => literal.position(),
+            MacroExpandedNode::Unit { bracket } => bracket.position(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MacroExpandedList {
+    pub nodes: Box<NonEmpty<MacroExpandedNode>>,
+}
+impl MacroExpandedList {
+    pub fn position(&self) -> Position {
+        self.nodes.position()
+    }
+
+    pub fn head(&self) -> &MacroExpandedNode {
+        &self.nodes.head
+    }
+
+    pub fn tail(&self) -> Vec<MacroExpandedNode> {
+        self.nodes.tail().to_vec()
+    }
+
+    pub fn init(&self) -> Vec<&MacroExpandedNode> {
+        self.nodes.init()
+    }
+
+    pub fn last(&self) -> &MacroExpandedNode {
+        self.nodes.last()
+    }
+
+    pub fn first(&self) -> &MacroExpandedNode {
+        self.nodes.first()
     }
 }
 
@@ -58,22 +91,8 @@ pub enum Literal {
     Keyword(Token),
 }
 
-#[derive(Debug, Clone)]
-pub struct SemicolonArray {
-    pub nodes: Box<NonEmpty<Node>>,
-}
-
 pub struct TopLevelArray {
     pub nodes: NonEmpty<Node>,
-}
-
-impl SemicolonArray {
-    fn position(&self) -> Position {
-        self.nodes
-            .first()
-            .position()
-            .join(self.nodes.last().position())
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +137,10 @@ impl Bracket {
             closing: Token::dummy(),
         }
     }
+
+    fn position(&self) -> Position {
+        self.opening.position.join(self.closing.position)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -127,51 +150,13 @@ pub enum BracketKind {
     Curly,
 }
 
-#[derive(Debug, Clone)]
-pub struct InfixFunctionCall {
-    pub head: Box<Node>,
-    pub tail: Vec<Node>,
-}
-impl InfixFunctionCall {
-    fn position(&self) -> Position {
-        self.head
-            .position()
-            .join_maybe(self.tail.last().map(|node| node.position()))
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PrefixFunctionCall {
-    pub function: Box<Node>,
-    pub arguments: Box<NonEmpty<Node>>,
-}
-impl PrefixFunctionCall {
-    fn position(&self) -> Position {
-        self.function
-            .position()
-            .join(self.arguments.last().position())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct OperatorCall {
-    pub left: Box<Node>,
-    pub operator: Token,
-    pub right: Box<Node>,
-}
-
 impl Node {
     pub fn position(&self) -> Position {
         match self {
             Node::List(array) => array.position(),
             Node::Literal(literal) => literal.position(),
+            Node::Comment(comment) => comment.position,
         }
-    }
-}
-
-impl CommentedNode {
-    pub fn position(&self) -> Position {
-        self.comment.position().join(self.node.position())
     }
 }
 

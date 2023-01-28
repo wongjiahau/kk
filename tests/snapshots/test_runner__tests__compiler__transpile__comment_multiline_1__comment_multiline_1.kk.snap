@@ -5,10 +5,9 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-"""
-Who lives in a pineapple under the sea?
-"""
-print "Hello"
+/* Who lives in a pineapple under the sea? */
+
+(print "Hello")
 
 ============
 EXIT CODE

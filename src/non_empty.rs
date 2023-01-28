@@ -131,9 +131,12 @@ impl<T> NonEmpty<T> {
     }
 
     pub fn init(&self) -> Vec<&T> {
-        vec![&self.head]
-            .into_iter()
-            .chain(self.tail.iter().take(self.tail.len() - 1))
-            .collect()
+        match self.tail.split_last() {
+            None => vec![&self.head],
+            Some((_, init)) => vec![&self.head]
+                .into_iter()
+                .chain(init.into_iter())
+                .collect(),
+        }
     }
 }

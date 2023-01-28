@@ -29,7 +29,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_top_level_array(&mut self) -> Result<TopLevelArray, ParseError> {
-        let head = self.parse_high_precedence_expression()?;
+        let head = self.parse_high_precedence_node()?;
         let mut tail = vec![];
         loop {
             if self.peek_next_meaningful_token()?.is_none() {
@@ -37,7 +37,7 @@ impl<'a> Parser<'a> {
                     nodes: NonEmpty { head, tail },
                 });
             } else {
-                tail.push(self.parse_high_precedence_expression()?)
+                tail.push(self.parse_high_precedence_node()?)
             }
         }
     }
@@ -48,7 +48,7 @@ impl<'a> Parser<'a> {
             return Ok(List { bracket, nodes });
         }
         let (nodes, bracket) = loop {
-            nodes.push(self.parse_high_precedence_expression()?);
+            nodes.push(self.parse_high_precedence_node()?);
 
             if let Some(bracket) = self.try_eat_array_closing_bracket(&argument)? {
                 break (nodes, bracket);
@@ -94,7 +94,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_high_precedence_expression(&mut self) -> Result<Node, ParseError> {
+    pub fn parse_high_precedence_node(&mut self) -> Result<Node, ParseError> {
         let context = Some(ParseContext::Expression);
         if let Some(token) = self.next_meaningful_token()? {
             match token.token_type {
@@ -132,6 +132,7 @@ impl<'a> Parser<'a> {
                 TokenType::InterpolatedString(interpolated_string) => Ok(Node::Literal(
                     Literal::InterpolatedString(interpolated_string),
                 )),
+                TokenType::MultilineComment => Ok(Node::Comment(token)),
                 _ => Err(Parser::invalid_token(token.clone(), context)),
             }
         } else {
@@ -290,13 +291,7 @@ impl<'a> Parser<'a> {
 }
 
 fn is_token_meaningless(token: &Token) -> bool {
-    matches!(
-        token.token_type,
-        TokenType::Whitespace
-            | TokenType::Newline
-            | TokenType::Comment
-            | TokenType::MultilineComment
-    )
+    matches!(token.token_type, TokenType::Whitespace | TokenType::Newline)
 }
 
 /// Compare the variants of two enum, while ignoring the payload

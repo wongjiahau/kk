@@ -396,9 +396,7 @@ impl FunctionCall {
 
 #[derive(Debug, Clone)]
 pub struct TypeArguments {
-    pub left_angular_bracket: Token,
     pub type_annotations: Box<NonEmpty<TypeAnnotation>>,
-    pub right_angular_bracket: Token,
 }
 
 #[derive(Debug, Clone)]

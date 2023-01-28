@@ -5,7 +5,7 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-"World" .print
+(. "World" print)
 
 ============
 EXIT CODE

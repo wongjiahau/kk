@@ -5,19 +5,19 @@ expression: stripped_actual_output.trim()
 ============
 INPUT
 ============
-let ((s : String).replace first (old : String) with (new : String) : Int) = 1;
+(defn replace ((s String) :first (old String) :with (new String) Int) 1)
 
-let ((s : String).replace each (old : String) with (new : String) : Int) = 2;
+(defn replace ((s String) :each (old String) :with (new String) Int) 2)
 
-let (A B => (a : A).map (f : A -> B) : B) = f (a);
+(defn map (forall (A B) (a A) (f (-> A B)) B) (f a))
 
-"Hello".replace first "l" with "k".print;
+(. "Hello" (replace :first "l" :with "k") print)
 
-"Hello".map (replace) first "l" with "k".print;
+(. "Hello" (map replace :first "l" :with "k") print)
 
-"Hello".replace each "l" with "k".print;
+(. "Hello" (replace :each "l" :with "k") print)
 
-"Hello".map (replace) each "l" with "k".print
+(. "Hello" (map replace :each "l" :with "k") print)
 
 ============
 EXIT CODE

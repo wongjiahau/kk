@@ -65,6 +65,34 @@ impl ToDoc for Token {
     }
 }
 
+impl ToDoc for MacroExpandedNode {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
+        match self {
+            MacroExpandedNode::List(list) => list.to_doc(arena),
+            MacroExpandedNode::Literal(literal) => literal.to_doc(arena),
+            MacroExpandedNode::Unit { .. } => arena.text("()"),
+        }
+    }
+}
+
+impl ToDoc for MacroExpandedList {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
+        arena
+            .text("(")
+            .append(
+                arena.intersperse(
+                    self.nodes
+                        .to_vector()
+                        .into_iter()
+                        .map(|node| node.to_doc(arena)),
+                    arena.line(),
+                ),
+            )
+            .append(arena.text(")"))
+            .group()
+    }
+}
+
 impl ToDoc for Node {
     fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         match self {
@@ -169,41 +197,7 @@ impl ToDoc for Node {
                 }
             }
             Node::Literal(literal) => literal.to_doc(arena),
-        }
-    }
-}
-
-impl ToDoc for CommentedNode {
-    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        self.comment
-            .to_doc(arena)
-            .append(arena.line())
-            .append(self.node.to_doc(arena))
-            .group()
-    }
-}
-
-impl ToDoc for Comment {
-    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        let quotes = self
-            .0
-            .start_quotes
-            .to_vector()
-            .into_iter()
-            .map(|character| character.value)
-            .join("");
-        let quotes_len = quotes.len();
-        let quotes_doc = arena.text(quotes);
-        let comment = arena.reflow(&self.0.content.trim());
-        if quotes_len > 2 {
-            quotes_doc
-                .clone()
-                .append(arena.hardline())
-                .append(comment)
-                .append(arena.hardline())
-                .append(quotes_doc)
-        } else {
-            quotes_doc.clone().append(comment).append(quotes_doc)
+            Node::Comment(comment) => arena.reflow(comment.representation.as_str()),
         }
     }
 }
@@ -286,117 +280,6 @@ impl ToDoc for InterpolatedStringSection {
     }
 }
 
-impl ToDoc for OperatorCall {
-    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        self.left
-            .to_doc(arena)
-            .append(arena.space())
-            .append(self.operator.to_doc(arena))
-            .append(arena.line().append(self.right.to_doc(arena)).nest(2))
-            .group()
-    }
-}
-
-impl ToDoc for PrefixFunctionCall {
-    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        #[derive(Debug, Clone)]
-
-        struct KeywordGroup<'a> {
-            function: &'a Node,
-            continuous_keywords: Vec<&'a Token>,
-            arguments: Vec<&'a Node>,
-        }
-
-        // Group each keyword as its onw group
-        // For example:
-        //
-        //   f 0 g 1 2 z 3 4
-        //
-        // Will be grouped as:
-        //
-        //   (f 0) (g 1 2) (z 3 4)
-        //
-        // And formatted like:
-        //
-        //   f 0
-        //     g 1 2
-        //     z 3 4
-        //
-        let mut groups = NonEmpty {
-            head: KeywordGroup {
-                function: self.function.as_ref(),
-                continuous_keywords: vec![],
-                arguments: vec![],
-            },
-            tail: vec![],
-        };
-        let mut previous_argument_is_keyword = true;
-        for argument in self.arguments.to_vector() {
-            match argument {
-                Node::Literal(Literal::Keyword(keyword)) => {
-                    if !previous_argument_is_keyword {
-                        previous_argument_is_keyword = true;
-                        groups.tail.push(KeywordGroup {
-                            function: argument,
-                            continuous_keywords: vec![],
-                            arguments: vec![],
-                        })
-                    } else {
-                        groups.last_mut().continuous_keywords.push(keyword)
-                    }
-                }
-                _ => {
-                    previous_argument_is_keyword = false;
-                    groups.last_mut().arguments.push(argument)
-                }
-            }
-        }
-
-        let groups = groups.into_vector();
-        arena
-            .intersperse(
-                groups.into_iter().map(|keyword_group| {
-                    keyword_group
-                        .function
-                        .to_doc(arena)
-                        .append(
-                            arena.concat(
-                                keyword_group
-                                    .continuous_keywords
-                                    .iter()
-                                    .map(|token| arena.softline().append(token.to_doc(arena))),
-                            ),
-                        )
-                        .append(
-                            arena
-                                .concat(keyword_group.arguments.iter().map(|argument| {
-                                    arena.line().append(argument.to_doc(arena)).nest(2)
-                                }))
-                                .group(),
-                        )
-                }),
-                arena.line().nest(2),
-            )
-            .group()
-    }
-}
-
-impl ToDoc for InfixFunctionCall {
-    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        self.head.to_doc(arena).append(
-            arena
-                .concat(self.tail.iter().map(|element| {
-                    arena
-                        .line()
-                        .append(arena.text("."))
-                        .append(element.to_doc(arena))
-                        .nest(2)
-                }))
-                .group(),
-        )
-    }
-}
-
 impl ToDoc for List {
     fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         let (opening, closing, add_space) = match self.bracket.kind {
@@ -426,20 +309,6 @@ pub fn prettify_code<'a>(code: &'a str) -> String {
     let array = Parser::parse(&mut Tokenizer::new(code.to_string())).unwrap();
 
     array.to_pretty()
-}
-
-impl ToDoc for SemicolonArray {
-    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        intersperse_vec(
-            self.nodes
-                .to_vector()
-                .iter()
-                .map(|node| node.to_doc(arena))
-                .collect(),
-            ";",
-            arena,
-        )
-    }
 }
 
 // #[cfg(test)]

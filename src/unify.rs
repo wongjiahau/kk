@@ -1086,10 +1086,9 @@ impl Positionable for TypeAnnotation {
                 type_arguments,
             } => match type_arguments {
                 None => name.position.join(name.position),
-                Some(TypeArguments {
-                    right_angular_bracket,
-                    ..
-                }) => name.position.join(right_angular_bracket.position),
+                Some(TypeArguments { type_annotations }) => {
+                    name.position.join(type_annotations.last().position())
+                }
             },
             TypeAnnotation::Scheme {
                 type_variables,
@@ -1269,9 +1268,9 @@ pub trait Positionable {
 }
 
 impl<T: Positionable> NonEmpty<T> {
-    pub fn position(self) -> Position {
+    pub fn position(&self) -> Position {
         let init = self.first().position();
-        self.into_vector()
+        self.to_vector()
             .into_iter()
             .fold(init, |result, current| result.join(current.position()))
     }
@@ -3453,10 +3452,9 @@ pub fn type_annotation_to_type(
                             != actual_type_arguments.type_annotations.len()
                         {
                             Err(UnifyError {
-                                position: actual_type_arguments
-                                    .left_angular_bracket
+                                position: name
                                     .position
-                                    .join(actual_type_arguments.right_angular_bracket.position),
+                                    .join(actual_type_arguments.type_annotations.last().position()),
                                 kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
                                     type_name: name.representation.clone(),
                                     actual_length: actual_type_arguments.type_annotations.len(),
@@ -3505,10 +3503,9 @@ pub fn type_annotation_to_type(
                         },
                     }),
                     (_, Some(actual_type_arguments)) => Err(UnifyError {
-                        position: actual_type_arguments
-                            .left_angular_bracket
+                        position: name
                             .position
-                            .join(actual_type_arguments.right_angular_bracket.position),
+                            .join(actual_type_arguments.type_annotations.last().position()),
                         kind: UnifyErrorKind::TypeArgumentsLengthMismatch {
                             type_name: name.representation.clone(),
                             actual_length: actual_type_arguments.type_annotations.len(),

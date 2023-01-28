@@ -1,6 +1,6 @@
 use crate::formatter::ToDoc;
 use crate::module::Access;
-use crate::simple_ast;
+use crate::simple_ast::{self, MacroExpandedList, MacroExpandedNode};
 use crate::stringify_error::stringify_type;
 use crate::tokenize::{StringLiteral, Token, TokenType};
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
@@ -545,9 +545,7 @@ impl<'a> Parser<'a> {
             }
         };
         Ok(TypeArguments {
-            left_angular_bracket,
             type_annotations: Box::new(NonEmpty { head, tail }),
-            right_angular_bracket,
         })
     }
 
@@ -1650,17 +1648,22 @@ impl simple_ast::TopLevelArray {
             temporary_variable_index: 0,
         };
         self.expand_macro()
-            .nodes
-            .into_vector()
             .into_iter()
-            .map(|element| element.into_statement(&mut state))
+            .map(|node| {
+                // println!("{}", node.to_pretty());
+                let result = node.into_statement(&mut state)?;
+                // println!("{:#?}", result);
+                Ok(result)
+            })
             .collect::<Result<Vec<_>, _>>()
     }
 
-    fn expand_macro(self) -> Self {
-        Self {
-            nodes: self.nodes.map(|node| node.expand_macro()),
-        }
+    fn expand_macro(self) -> Vec<MacroExpandedNode> {
+        self.nodes
+            .into_vector()
+            .into_iter()
+            .filter_map(|node| node.expand_macro())
+            .collect()
     }
 }
 
@@ -1674,17 +1677,31 @@ impl simple_ast::Literal {
     }
 }
 
-impl simple_ast::List {
-    fn skip(&self, count: usize) -> simple_ast::List {
-        Self {
-            bracket: self.bracket.clone(),
-            nodes: self
-                .nodes
-                .iter()
-                .skip(count)
-                .map(|node| node.clone())
-                .collect(),
-        }
+impl MacroExpandedList {
+    fn skip(&self, count: usize) -> Result<Self, ParseError> {
+        let nodes = self
+            .nodes
+            .to_vector()
+            .into_iter()
+            .skip(count)
+            .map(|node| node.clone())
+            .collect::<Vec<_>>();
+
+        let nodes = match nodes.split_first() {
+            Some((head, tail)) => Ok(NonEmpty {
+                head: head.clone(),
+                tail: tail.to_vec(),
+            }),
+            None => Err(ParseError {
+                context: None,
+                kind: ParseErrorKind::UnexpectedNode {
+                    position: self.nodes.first().position(),
+                },
+            }),
+        }?;
+        Ok(Self {
+            nodes: Box::new(nodes),
+        })
     }
     fn to_statement(
         &self,
@@ -1692,11 +1709,7 @@ impl simple_ast::List {
         access: Access,
     ) -> Result<Statement, ParseError> {
         use simple_ast::*;
-        let first = self
-            .nodes
-            .get(0)
-            .into_node(self.bracket.opening.position)?
-            .to_identifier(None)?;
+        let first = self.nodes.first().to_identifier(None)?;
         match first.representation.as_str() {
             "enum" => {
                 let name = self.get(1)?.to_identifier(None)?;
@@ -1740,11 +1753,7 @@ impl simple_ast::List {
                     expression,
                 }))
             }
-            "export" => List {
-                bracket: self.bracket.clone(),
-                nodes: self.nodes.clone().into_iter().skip(1).collect(),
-            }
-            .to_statement(
+            "export" => self.skip(1)?.to_statement(
                 state,
                 Access::Exported {
                     keyword_export: first,
@@ -1757,149 +1766,34 @@ impl simple_ast::List {
         }
     }
 
-    fn get(&self, index: usize) -> Result<simple_ast::Node, ParseError> {
+    fn get(&self, index: usize) -> Result<MacroExpandedNode, ParseError> {
         let position = if index == 0 {
-            self.bracket.opening.position
+            self.nodes.first().position()
         } else {
             self.get(index - 1)?.position()
         };
         self.nodes.get(index).into_node(position)
     }
+}
 
-    fn expand_macro(self) -> Self {
+impl simple_ast::Node {
+    fn expand_macro(&self) -> Option<MacroExpandedNode> {
         use simple_ast::*;
-        match self.bracket.kind {
-            BracketKind::Round => match self.nodes.split_first() {
-                // Dot chaining
-                // For example: (. a (b c) d) is the same as:
-                // Infix: a.b(c).d
-                // Prefix: (d (b a c))
-                //
-                // Example 2: (. a b) same as (b a)
-                // Example 3: (. a (b c)) same as (b a c)
-                // Example 4: (. a b c) same as (c (b a))
-                Some((Node::Literal(Literal::Identifier(id)), [head, tail @ ..]))
-                    if id.representation == "." =>
-                {
-                    // Say `left` is `a` and `tail` is `[b c]`.
-                    //
-                    fn chain(left: Node, tail: &[Node]) -> List {
-                        match tail.split_first() {
-                            Some((head, tail)) => match head {
-                                Node::List(list) => match list.nodes.split_first() {
-                                    Some((first, [second, rest @ ..])) => List::new(
-                                        vec![first.clone(), left, second.clone()]
-                                            .into_iter()
-                                            .chain(rest.into_iter().map(|node| node.clone()))
-                                            .collect(),
-                                    ),
-                                    _ => List::new(vec![head.clone(), left]),
-                                },
-
-                                // Literal
-                                Node::Literal(_) => List::new(vec![head.clone(), left]),
-                            },
-                            None => List::new(vec![left]),
-                        }
-                    }
-                    chain(head.clone(), tail)
-                }
-
-                // others
-                _ => List {
-                    bracket: self.bracket,
-                    nodes: self
-                        .nodes
-                        .into_iter()
-                        .map(|node| node.expand_macro())
-                        .collect(),
-                },
-            },
-
-            // Right-associative macro
-            // Example: {-> a b c} means:
-            // Infix: (a -> (b -> c))
-            // Prefix: (-> (a (-> b c)))
-            BracketKind::Curly => match self
-                .nodes
-                .iter()
-                .map(|node| node.clone().expand_macro())
-                .collect::<Vec<_>>()
-                .split_first()
-            {
-                Some((operator, [first_argument, second_argument, tail @ ..])) => {
-                    fn right_associativitify(
-                        operator: Node,
-                        bracket: Bracket,
-                        first_argument: Node,
-                        second_argument: Node,
-                        tail: &[Node],
-                    ) -> List {
-                        match tail.split_first() {
-                            None => {
-                                // TODO: we should use another bracket?
-                                List {
-                                    bracket: Bracket {
-                                        opening: bracket.opening,
-                                        closing: bracket.closing,
-                                        kind: BracketKind::Round,
-                                    },
-                                    nodes: vec![operator, first_argument, second_argument],
-                                }
-                            }
-                            Some((third_argument, tail)) => List {
-                                bracket: Bracket {
-                                    opening: bracket.opening.clone(),
-                                    closing: bracket.closing.clone(),
-                                    kind: BracketKind::Round,
-                                },
-                                nodes: vec![
-                                    operator.clone(),
-                                    first_argument,
-                                    Node::List(right_associativitify(
-                                        operator,
-                                        bracket,
-                                        second_argument,
-                                        third_argument.clone(),
-                                        tail,
-                                    )),
-                                ],
-                            },
-                        }
-                    }
-                    right_associativitify(
-                        operator.clone(),
-                        self.bracket.clone(),
-                        first_argument.clone(),
-                        second_argument.clone(),
-                        tail,
-                    )
-                }
-                _ => List {
-                    bracket: Bracket {
-                        kind: BracketKind::Round,
-                        ..self.bracket
-                    },
-                    nodes: self.nodes,
-                },
-            },
-
-            // Left-associative macro
-            // Example: [+ a b c] means:
-            // Infix: ((a + b) + c)
-            // Prefix: (+ (+ a b) c)
-            BracketKind::Square => {
-                todo!()
+        match self {
+            Node::List(list) => Some(list.expand_macro()),
+            Node::Literal(literal) => {
+                Some(MacroExpandedNode::Literal(literal.clone().expand_macro()))
             }
+            Node::Comment(_) => None,
         }
     }
 }
 
-impl simple_ast::Node {
+impl MacroExpandedNode {
     fn into_statement(&self, state: &mut ParserState) -> Result<Statement, ParseError> {
         use simple_ast::*;
         match self {
-            Node::List(list) => list.to_statement(state, Access::Protected),
+            MacroExpandedNode::List(list) => list.to_statement(state, Access::Protected),
             _ => Ok(Statement::Entry(EntryStatement {
                 keyword_entry: Token::dummy(),
                 expression: {
@@ -1910,58 +1804,15 @@ impl simple_ast::Node {
         }
     }
 
-    fn expand_macro(self) -> Self {
-        use simple_ast::*;
-        match self {
-            Node::List(list) => Node::List(list.expand_macro()),
-            Node::Literal(literal) => Node::Literal(literal.expand_macro()),
-        }
-    }
-
     fn to_record_key_value(&self, state: &mut ParserState) -> Result<RecordKeyValue, ParseError> {
         use simple_ast::*;
         match self {
-            Node::Literal(Literal::Identifier(token)) => Ok(RecordKeyValue {
+            MacroExpandedNode::Literal(Literal::Identifier(token)) => Ok(RecordKeyValue {
                 key: token.clone(),
                 value: Expression::Identifier(token.clone()),
             }),
             _ => Err(ParseError {
                 context: None,
-                kind: ParseErrorKind::UnexpectedNode {
-                    position: self.position(),
-                },
-            }),
-        }
-    }
-
-    fn to_assignment(&self, state: &mut ParserState) -> Result<Assignment, ParseError> {
-        use simple_ast::*;
-        match self {
-            _ => Ok(Assignment {
-                pattern: DestructurePattern::Underscore(Token::dummy()),
-                expression: self.to_expression(state)?,
-            }),
-        }
-    }
-
-    fn to_branched_function(&self, state: &mut ParserState) -> Result<Function, ParseError> {
-        use simple_ast::*;
-        match self {
-            Node::List(List { nodes, bracket }) => Ok(Function {
-                branches: NonEmpty {
-                    head: nodes
-                        .get(0)
-                        .into_node(bracket.opening.position)?
-                        .to_function_branch(state)?,
-                    tail: nodes
-                        .into_iter()
-                        .skip(1)
-                        .map(|node| node.to_function_branch(state))
-                        .collect::<Result<Vec<_>, _>>()?,
-                },
-            }),
-            _ => Err(ParseError {
-                context: Some(ParseContext::ExpressionFunction),
                 kind: ParseErrorKind::UnexpectedNode {
                     position: self.position(),
                 },
@@ -1976,15 +1827,11 @@ impl simple_ast::Node {
         let position = self.position();
         let list = self.into_list()?;
         Ok(NonEmpty {
-            head: list
-                .nodes
-                .get(0)
-                .into_node(position)?
-                .to_function_branch(state)?,
+            head: list.nodes.head.to_function_branch(state)?,
             tail: list
                 .nodes
+                .tail()
                 .into_iter()
-                .skip(1)
                 .map(|node| node.to_function_branch(state))
                 .collect::<Result<Vec<_>, _>>()?,
         })
@@ -1993,20 +1840,20 @@ impl simple_ast::Node {
     fn to_function_branch(&self, state: &mut ParserState) -> Result<FunctionBranch, ParseError> {
         use simple_ast::*;
         match self {
-            Node::List(List { nodes, bracket }) => {
-                let first = nodes
-                    .get(0)
-                    .into_node(bracket.opening.position)?
-                    .to_identifier(Some("case"))?;
-                let pattern = nodes.get(1).into_node(first.position)?.to_pattern()?;
+            MacroExpandedNode::List(MacroExpandedList { nodes }) => {
+                let first = nodes.head.to_identifier(Some("case"))?;
+                let pattern = nodes.tail.get(0).into_node(first.position)?.to_pattern()?;
                 let third = nodes
-                    .get(2)
+                    .tail
+                    .get(1)
                     .into_node(pattern.position())?
                     .to_identifier(Some("->"))?;
                 let expression = nodes
-                    .get(3)
+                    .tail
+                    .get(2)
                     .into_node(third.position)?
                     .to_expression(state)?;
+                nodes.tail.get(3).should_be_none()?;
                 Ok(FunctionBranch {
                     parameter: Box::new(pattern),
                     body: Box::new(expression),
@@ -2028,8 +1875,8 @@ impl simple_ast::Node {
 
     fn to_enum_constructor_definition(&self) -> Result<EnumConstructorDefinition, ParseError> {
         match &self {
-            simple_ast::Node::List(_) => todo!(),
-            simple_ast::Node::Literal(literal) => match literal {
+            simple_ast::MacroExpandedNode::List(_) => todo!(),
+            simple_ast::MacroExpandedNode::Literal(literal) => match literal {
                 simple_ast::Literal::Identifier(token) => Ok(EnumConstructorDefinition {
                     name: token.clone(),
                     payload: None,
@@ -2045,11 +1892,11 @@ impl simple_ast::Node {
         }
     }
 
-    fn into_list(self) -> Result<simple_ast::List, ParseError> {
+    fn into_list(self) -> Result<MacroExpandedList, ParseError> {
         use simple_ast::*;
         match self {
-            Node::List(list) => Ok(list),
-            Node::Literal(_) => Err(ParseError {
+            MacroExpandedNode::List(list) => Ok(list),
+            _ => Err(ParseError {
                 context: None,
                 kind: ParseErrorKind::UnexpectedNode {
                     position: self.position(),
@@ -2061,7 +1908,7 @@ impl simple_ast::Node {
     fn to_identifier<'a>(&self, name: Option<&'a str>) -> Result<Token, ParseError> {
         use simple_ast::*;
         match self {
-            Node::Literal(Literal::Identifier(token) | Literal::Keyword(token)) => {
+            MacroExpandedNode::Literal(Literal::Identifier(token) | Literal::Keyword(token)) => {
                 if match name {
                     Some(name) => token.representation.eq(name),
                     None => true,
@@ -2085,9 +1932,9 @@ impl simple_ast::Node {
         }
     }
 
-    fn into_array(self) -> Result<simple_ast::List, ParseError> {
+    fn into_array(self) -> Result<MacroExpandedList, ParseError> {
         match self {
-            simple_ast::Node::List(array) => Ok(array),
+            MacroExpandedNode::List(array) => Ok(array),
             _ => Err(ParseError {
                 context: Some(ParseContext::NodeArray),
                 kind: ParseErrorKind::UnexpectedNode {
@@ -2100,21 +1947,25 @@ impl simple_ast::Node {
     fn to_pattern(&self) -> Result<DestructurePattern, ParseError> {
         use simple_ast::*;
         match self {
-            Node::List(array) => array.to_pattern(),
-            Node::Literal(literal) => match literal {
+            MacroExpandedNode::List(array) => array.to_pattern(),
+            MacroExpandedNode::Literal(literal) => match literal {
                 Literal::Identifier(token) | Literal::Keyword(token) => {
                     Ok(DestructurePattern::Identifier(token.clone()))
                 }
                 other => todo!("{}", other.to_pretty()),
             },
+            MacroExpandedNode::Unit { bracket } => Ok(DestructurePattern::Unit {
+                left_parenthesis: bracket.opening.clone(),
+                right_parenthesis: bracket.closing.clone(),
+            }),
         }
     }
 
     fn to_expression(&self, state: &mut ParserState) -> Result<Expression, ParseError> {
         use simple_ast::*;
         match self {
-            Node::List(array) => array.to_expression(state),
-            Node::Literal(literal) => match literal {
+            MacroExpandedNode::List(array) => array.to_expression(state),
+            MacroExpandedNode::Literal(literal) => match literal {
                 Literal::String(string_literal) => Ok(Expression::String(string_literal.clone())),
                 Literal::Integer(token) => Ok(Expression::Integer(token.clone())),
                 Literal::Float(token) => Ok(Expression::Float(token.clone())),
@@ -2124,7 +1975,12 @@ impl simple_ast::Node {
                 Literal::InterpolatedString(interpolated_string) => {
                     interpolated_string.to_expression(state)
                 }
+                _ => panic!(),
             },
+            MacroExpandedNode::Unit { bracket } => Ok(Expression::Unit {
+                left_parenthesis: bracket.opening.clone(),
+                right_parenthesis: bracket.closing.clone(),
+            }),
         }
     }
 
@@ -2135,56 +1991,51 @@ impl simple_ast::Node {
     fn to_type_annotation(&self) -> Result<TypeAnnotation, ParseError> {
         use simple_ast::*;
         match self {
-            Node::List(list) => match list.nodes.split_first() {
-                None => Ok(TypeAnnotation::Unit {
-                    left_parenthesis: list.bracket.opening.clone(),
-                    right_parenthesis: list.bracket.closing.clone(),
-                }),
-                Some((head, tail)) => match head {
-                    Node::Literal(literal) => match literal {
-                        Literal::String(_) => todo!(),
-                        Literal::InterpolatedString(_) => todo!(),
-                        Literal::Integer(_) => todo!(),
-                        Literal::Float(_) => todo!(),
-                        Literal::Character(_) => todo!(),
-                        Literal::Identifier(identifier) => match identifier.representation.as_str()
-                        {
-                            "forall" => {
-                                let type_variables =
-                                    list.get(1)?.into_type_variables_declaration()?;
-                                let type_annotation = list.get(2)?.to_type_annotation()?;
-                                list.nodes.get(3).should_be_none()?;
-                                Ok(TypeAnnotation::Scheme {
-                                    type_variables,
-                                    type_annotation: Box::new(type_annotation),
-                                })
-                            }
-                            _ => Ok(TypeAnnotation::Named {
-                                name: identifier.clone(),
-                                type_arguments: {
-                                    match list.nodes[1..].split_first() {
-                                        None => None,
-                                        Some((head, tail)) => Some(TypeArguments {
-                                            left_angular_bracket: Token::dummy(),
-                                            type_annotations: Box::new(NonEmpty {
-                                                head: head.to_type_annotation()?,
-                                                tail: tail
-                                                    .into_iter()
-                                                    .map(|node| node.to_type_annotation())
-                                                    .collect::<Result<Vec<_>, _>>()?,
-                                            }),
-                                            right_angular_bracket: Token::dummy(),
+            MacroExpandedNode::Unit { bracket } => Ok(TypeAnnotation::Unit {
+                left_parenthesis: bracket.opening.clone(),
+                right_parenthesis: bracket.closing.clone(),
+            }),
+            MacroExpandedNode::List(list) => match list.head() {
+                MacroExpandedNode::Literal(literal) => match literal {
+                    Literal::String(_) => todo!(),
+                    Literal::InterpolatedString(_) => todo!(),
+                    Literal::Integer(_) => todo!(),
+                    Literal::Float(_) => todo!(),
+                    Literal::Character(_) => todo!(),
+
+                    Literal::Keyword(_) => todo!(),
+                    Literal::Identifier(identifier) => match identifier.representation.as_str() {
+                        "forall" => {
+                            let type_variables = list.get(1)?.into_type_variables_declaration()?;
+                            let type_annotation = list.get(2)?.to_type_annotation()?;
+                            list.nodes.get(3).should_be_none()?;
+                            Ok(TypeAnnotation::Scheme {
+                                type_variables,
+                                type_annotation: Box::new(type_annotation),
+                            })
+                        }
+                        _ => Ok(TypeAnnotation::Named {
+                            name: identifier.clone(),
+                            type_arguments: {
+                                match list.tail().split_first() {
+                                    None => None,
+                                    Some((head, tail)) => Some(TypeArguments {
+                                        type_annotations: Box::new(NonEmpty {
+                                            head: head.to_type_annotation()?,
+                                            tail: tail
+                                                .into_iter()
+                                                .map(|node| node.to_type_annotation())
+                                                .collect::<Result<Vec<_>, _>>()?,
                                         }),
-                                    }
-                                },
-                            }),
-                        },
-                        Literal::Keyword(_) => todo!(),
+                                    }),
+                                }
+                            },
+                        }),
                     },
-                    _ => todo!(),
                 },
+                _ => todo!(),
             },
-            Node::Literal(literal) => match literal {
+            MacroExpandedNode::Literal(literal) => match literal {
                 Literal::Identifier(token) => Ok(TypeAnnotation::Named {
                     name: token.clone(),
                     type_arguments: None,
@@ -2198,18 +2049,18 @@ impl simple_ast::Node {
                 Literal::Character(_) => todo!(),
                 Literal::InterpolatedString(_) => todo!(),
             },
+            MacroExpandedNode::Unit { bracket } => Ok(TypeAnnotation::Unit {
+                left_parenthesis: bracket.opening.clone(),
+                right_parenthesis: bracket.closing.clone(),
+            }),
         }
     }
 
     fn to_function_parameter(&self) -> Result<Parameter, ParseError> {
         use simple_ast::*;
         match self {
-            Node::List(array) => match array.bracket.kind {
-                BracketKind::Round => array.to_function_parameter(),
-                BracketKind::Square => todo!(),
-                BracketKind::Curly => todo!(),
-            },
-            Node::Literal(literal) => match literal {
+            MacroExpandedNode::List(list) => list.to_function_parameter(),
+            MacroExpandedNode::Literal(literal) => match literal {
                 Literal::Keyword(identifier) => Ok(Parameter {
                     pattern: DestructurePattern::Identifier(identifier.clone()),
                     type_annotation: TypeAnnotation::Keyword {
@@ -2223,6 +2074,16 @@ impl simple_ast::Node {
                 Literal::Identifier(token) => todo!("{}", token.to_pretty()),
                 Literal::InterpolatedString(_) => todo!(),
             },
+            MacroExpandedNode::Unit { bracket } => Ok(Parameter {
+                pattern: DestructurePattern::Unit {
+                    left_parenthesis: bracket.opening.clone(),
+                    right_parenthesis: bracket.closing.clone(),
+                },
+                type_annotation: TypeAnnotation::Unit {
+                    left_parenthesis: bracket.opening.clone(),
+                    right_parenthesis: bracket.closing.clone(),
+                },
+            }),
         }
     }
 
@@ -2235,111 +2096,27 @@ impl simple_ast::Node {
     fn to_desctuctured_record_key_value(&self) -> Result<DestructuredRecordKeyValue, ParseError> {
         use simple_ast::*;
         match self {
-            Node::Literal(Literal::Identifier(identifier)) => Ok(DestructuredRecordKeyValue {
-                key: identifier.clone(),
-                type_annotation: None,
-                as_value: None,
-            }),
-            _ => todo!(),
-        }
-    }
-
-    fn to_type_declaration(&self) -> Result<TypeDeclaration, ParseError> {
-        use simple_ast::*;
-        match self {
-            Node::Literal(Literal::Identifier(token) | Literal::Keyword(token)) => {
-                Ok(TypeDeclaration {
-                    name: token.clone(),
-                    type_variables_declaration: None,
+            MacroExpandedNode::Literal(Literal::Identifier(identifier)) => {
+                Ok(DestructuredRecordKeyValue {
+                    key: identifier.clone(),
+                    type_annotation: None,
+                    as_value: None,
                 })
             }
-            Node::List(List {
-                nodes,
-                bracket:
-                    Bracket {
-                        kind: BracketKind::Round,
-                        opening,
-                        ..
-                    },
-                ..
-            }) => {
-                nodes.get(1).should_be_none()?;
-                nodes
-                    .get(0)
-                    .into_node(opening.position)?
-                    .to_type_declaration()
-            }
-            _ => todo!("{:#?}", self),
+            _ => todo!(),
         }
     }
 
     fn to_record_update(&self, state: &mut ParserState) -> Result<RecordUpdate, ParseError> {
         use simple_ast::*;
         match self {
-            Node::Literal(Literal::Identifier(token)) => Ok(RecordUpdate::ValueUpdate {
-                property_name: token.clone(),
-                new_value: Expression::Identifier(token.clone()),
-            }),
-            _ => todo!(),
-        }
-    }
-
-    fn to_type_constraints_annotation(&self) -> Result<TypeConstraintsAnnotation, ParseError> {
-        use simple_ast::*;
-        match self {
-            Node::List(List {
-                nodes,
-                bracket:
-                    Bracket {
-                        kind: BracketKind::Curly,
-                        opening,
-                        closing,
-                    },
-                ..
-            }) => Ok(TypeConstraintsAnnotation {
-                left_curly_bracket: opening.clone(),
-                right_curly_bracket: closing.clone(),
-                type_constraints: nodes
-                    .to_vec()
-                    .iter()
-                    .map(|node| node.to_type_constraint_annotation())
-                    .collect::<Result<_, _>>()?,
-            }),
-            _ => todo!(),
-        }
-    }
-
-    fn to_type_constraint_annotation(&self) -> Result<TypeConstraintAnnotation, ParseError> {
-        use simple_ast::*;
-        match self {
-            _ => todo!(),
-        }
-    }
-
-    fn to_value_declaration(
-        &self,
-        type_variables_declaration: Option<TypeVariablesDeclaration>,
-        type_constraints: Option<TypeConstraintsAnnotation>,
-    ) -> Result<ValueDeclaration, ParseError> {
-        use simple_ast::*;
-        match self {
-            Node::List(List {
-                nodes,
-                bracket:
-                    Bracket {
-                        kind: BracketKind::Round,
-                        opening,
-                        ..
-                    },
-                ..
-            }) => {
-                nodes.get(1).should_be_none()?;
-                nodes
-                    .get(0)
-                    .into_node(opening.position)?
-                    .to_value_declaration(None, None)
+            MacroExpandedNode::Literal(Literal::Identifier(token)) => {
+                Ok(RecordUpdate::ValueUpdate {
+                    property_name: token.clone(),
+                    new_value: Expression::Identifier(token.clone()),
+                })
             }
-            other => todo!("{}", other.to_pretty()),
+            _ => todo!(),
         }
     }
 }
@@ -2403,68 +2180,6 @@ impl ValueDeclaration {
     }
 }
 
-impl simple_ast::OperatorCall {
-    fn into_statement(&self, state: &mut ParserState) -> Result<Statement, ParseError> {
-        use simple_ast::*;
-        match self.operator.representation.as_str() {
-            "=" => match self.left.as_ref() {
-                _ => todo!(),
-            },
-            _ => panic!("{}", self.to_pretty()),
-        }
-    }
-
-    fn to_tilde_closure(&self, state: &mut ParserState) -> Result<TildeClosure, ParseError> {
-        let bind_function = self.left.to_expression(state)?;
-        let expression = Box::new(self.right.to_expression(state)?);
-
-        // Collect CpsBangs
-        let (bangs, expression) = expression.clone().collect_cps_bangs(state, &bind_function);
-
-        let expression = bangs.into_iter().fold(expression, |expression, bang| {
-            Expression::FunctionCall(Box::new(FunctionCall {
-                function: Box::new(Expression::FunctionCall(Box::new(FunctionCall {
-                    function: Box::new(bang.function),
-                    argument: Box::new(bang.argument),
-                    type_arguments: None,
-                }))),
-                argument: Box::new(Expression::Function(Box::new(Function {
-                    branches: NonEmpty {
-                        head: FunctionBranch {
-                            parameter: Box::new(bang.temporary_variable),
-                            body: Box::new(expression),
-                        },
-                        tail: vec![],
-                    },
-                }))),
-                type_arguments: None,
-            }))
-        });
-        Ok(TildeClosure {
-            tilde: self.operator.clone(),
-            bind_function: Box::new(bind_function),
-            expression: Box::new(expression),
-        })
-    }
-
-    fn operator_should_be(&self, representation: &str) -> Result<(), ParseError> {
-        if self.operator.representation == representation {
-            Ok(())
-        } else {
-            todo!()
-        }
-    }
-
-    fn to_type_annotation(&self) -> Result<TypeAnnotation, ParseError> {
-        self.operator_should_be("->")?;
-        Ok(TypeAnnotation::Function(FunctionTypeAnnotation {
-            parameter: Box::new(self.left.to_type_annotation()?),
-            return_type: Box::new(self.right.to_type_annotation()?),
-            type_constraints: None,
-        }))
-    }
-}
-
 struct TypeDeclaration {
     name: Token,
     type_variables_declaration: Option<TypeVariablesDeclaration>,
@@ -2479,130 +2194,130 @@ impl Positionable for TypeDeclaration {
     }
 }
 
-impl simple_ast::PrefixFunctionCall {
-    fn into_statement(&self, state: &mut ParserState) -> Result<Statement, ParseError> {
+impl MacroExpandedList {
+    fn to_function_signature(&self) -> Result<FunctionSignature, ParseError> {
         use simple_ast::*;
-        // Note: I could've used nested pattern matching to simplify the code here
-        // But doing so makes parse error worse.
-        //
-        // Therefore, the following code is still quite procedural
-        if let Ok(keyword_enum) = self.function.to_identifier(Some("enum")) {
-            let type_declaration = self.arguments.head.to_type_declaration()?;
-            let list = self
-                .arguments
-                .get(1)
-                .into_node(type_declaration.position())?
-                .into_array()?;
-
-            match list.bracket.kind {
-                BracketKind::Round => todo!(),
-                BracketKind::Curly => {
-                    self.arguments.get(2).should_be_none()?;
-
-                    Ok(Statement::Enum(EnumStatement {
-                        access: Access::Protected,
-                        keyword_enum,
-                        name: type_declaration.name,
-                        type_variables_declaration: type_declaration.type_variables_declaration,
-                        constructors: list.into_enum_constructor_definitions(state)?,
-                    }))
-                }
-                BracketKind::Square => {
-                    let constructors = self
-                        .arguments
-                        .get(2)
-                        .into_node(list.position())?
-                        .into_array()?
-                        .into_enum_constructor_definitions(state)?;
-
-                    self.arguments.get(3).should_be_none()?;
-
-                    Ok(Statement::Enum(EnumStatement {
-                        access: Access::Protected,
-                        keyword_enum,
-                        name: type_declaration.name,
-                        type_variables_declaration: Some(list.to_type_variables_declaration()?),
-                        constructors,
-                    }))
-                }
+        let last = self.last();
+        let init = self.init();
+        let return_type = last.to_type_annotation()?;
+        let list = init;
+        let first = self.first();
+        match list.get(0).cloned().into_node(first.position())? {
+            MacroExpandedNode::Literal(Literal::Identifier(id))
+                if id.representation == "forall" =>
+            {
+                let type_variables_declaration = list
+                    .get(1)
+                    .cloned()
+                    .into_node(id.position)?
+                    .into_type_variables_declaration()?;
+                let position = type_variables_declaration.position();
+                Ok(FunctionSignature {
+                    type_variables_declaration: Some(type_variables_declaration),
+                    parameters: NonEmpty {
+                        head: list
+                            .get(2)
+                            .cloned()
+                            .into_node(position)?
+                            .to_function_parameter()?,
+                        tail: list
+                            .into_iter()
+                            .skip(3)
+                            .map(|node| node.to_function_parameter())
+                            .collect::<Result<_, _>>()?,
+                    },
+                    return_type,
+                })
             }
-        } else {
-            Ok(Statement::Entry(EntryStatement {
-                keyword_entry: Token::dummy(),
-                expression: self.to_expression(state)?,
-            }))
+            _ => Ok(FunctionSignature {
+                type_variables_declaration: None,
+                parameters: NonEmpty {
+                    head: list
+                        .get(0)
+                        .cloned()
+                        .into_node(first.position())?
+                        .to_function_parameter()?,
+                    tail: list
+                        .iter()
+                        .skip(1)
+                        .map(|node| node.to_function_parameter())
+                        .collect::<Result<_, _>>()?,
+                },
+                return_type,
+            }),
         }
     }
-
-    fn to_pattern(&self) -> Result<DestructurePattern, ParseError> {
-        let name = self.function.to_identifier(None)?;
-        let payload = self
-            .arguments
-            .get(0)
-            .into_node(name.position)?
-            .to_pattern()?;
-        Ok(DestructurePattern::EnumConstructor {
-            name,
-            payload: Some(Box::new(payload)),
-        })
-    }
-
-    fn to_enum_constructor_definition(&self) -> Result<EnumConstructorDefinition, ParseError> {
-        let type_annotation = self
-            .arguments
-            .get(0)
-            .into_node(self.function.position())?
-            .to_type_annotation()?;
-
-        // TODO: allow enum constructor definition to be defined like function.
-        // For example:
-        //
-        // enum Ast {
-        //   Ast + Ast,
-        //   Ast - Ast,
-        //   (Ast) .print,
-        //   (Ast) .between (Ast) and (Ast)
-        // }
-        //
-        // let (debug (ast : Ast)) = ast.[
-        //   (x).print -> "do something",
-        //   (x + y) -> "do something",
-        //   (x - y) -> "do something",
-        //   (x).between (y) and (z) -> "hello"
-        // ]
-        //
-        // enum (List a) {
-        //   Nil,
-        //   T : List a
-        // }
-        //
-        // let (a b => (xs : List a) .map (f : a -> b) : List b) = xs.[
-        //   Nil -> Nil,
-        //   (x : xs) -> x .f : xs .map (f)
-        // ]
-        //
-        Ok(EnumConstructorDefinition {
-            name: self.function.to_identifier(None)?,
-            payload: Some(Box::new(EnumConstructorDefinitionPayload {
-                type_annotation,
-            })),
-        })
-    }
-
     fn to_expression(&self, state: &mut ParserState) -> Result<Expression, ParseError> {
         use simple_ast::*;
-        match self.function.as_ref() {
-            Node::Literal(Literal::Identifier(token)) if token.representation == "intrinsic" => {
-                let function_name = self
-                    .arguments
-                    .get(0)
-                    .into_node(token.position)?
-                    .to_identifier(None)?;
+        let tail = self.tail();
+        match self.nodes.first() {
+            // Match expression
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "match" => {
+                Ok(Expression::FunctionCall(Box::new(FunctionCall {
+                    type_arguments: None,
+                    argument: Box::new(tail.get(0).into_node(id.position)?.to_expression(state)?),
+                    function: Box::new(Expression::Function(Box::new(Function {
+                        branches: NonEmpty {
+                            head: tail
+                                .get(1)
+                                .into_node(id.position)?
+                                .to_function_branch(state)?,
+                            tail: tail
+                                .into_iter()
+                                .skip(2)
+                                .map(|node| node.to_function_branch(state))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        },
+                    }))),
+                })))
+            }
+            // Lambda
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "->" => {
+                let pattern = tail.get(0).into_node(id.position)?.to_pattern()?;
+                let body = tail
+                    .get(1)
+                    .into_node(pattern.position())?
+                    .to_expression(state)?;
+                tail.get(2).should_be_none()?;
+                Ok(Expression::Function(Box::new(Function {
+                    branches: NonEmpty {
+                        head: FunctionBranch {
+                            parameter: Box::new(pattern),
+                            body: Box::new(body),
+                        },
+                        tail: vec![],
+                    },
+                })))
+            }
 
-                self.arguments.get(2).should_be_none()?;
+            // Function
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "->" => {
+                let pattern = tail.get(0).into_node(id.position)?.to_pattern()?;
+                let body = tail
+                    .get(1)
+                    .into_node(pattern.position())?
+                    .to_expression(state)?;
+                tail.get(2).should_be_none()?;
+                Ok(Expression::Function(Box::new(Function {
+                    branches: NonEmpty {
+                        head: FunctionBranch {
+                            parameter: Box::new(pattern),
+                            body: Box::new(body),
+                        },
+                        tail: vec![],
+                    },
+                })))
+            }
+
+            // Intrinsic functions
+            MacroExpandedNode::Literal(Literal::Identifier(id))
+                if id.representation == "intrinsic" =>
+            {
+                let function_name = tail.get(0).into_node(id.position)?.to_identifier(None)?;
+
+                tail.get(2).should_be_none()?;
                 let argument = Box::new(
-                    self.arguments
-                        .get(1)
+                    tail.get(1)
                         .into_node(function_name.position)?
                         .to_expression(state)?,
                 );
@@ -2612,368 +2327,57 @@ impl simple_ast::PrefixFunctionCall {
                 }))
             }
 
-            Node::List(List {
-                nodes,
-                bracket:
-                    Bracket {
-                        kind: BracketKind::Curly,
-                        opening,
-                        closing,
-                    },
-            }) => Ok(Expression::RecordUpdate {
-                expression: {
-                    self.arguments.get(1).should_be_none()?;
-                    Box::new(
-                        self.arguments
-                            .get(0)
-                            .into_node(opening.position)?
-                            .to_expression(state)?,
-                    )
-                },
-                left_curly_bracket: opening.clone(),
-                updates: {
-                    nodes
-                        .into_iter()
-                        .map(|node| node.to_record_update(state))
-                        .collect::<Result<_, _>>()?
-                },
-                right_curly_bracket: closing.clone(),
-            }),
-
-            _ => Ok(curry_function_call(
-                self.function.to_expression(state)?,
-                self.arguments
-                    .to_vector()
-                    .iter()
-                    .map(|argument| argument.to_expression(state))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )),
-        }
-    }
-    fn to_type_annotation(&self) -> Result<TypeAnnotation, ParseError> {
-        Ok(TypeAnnotation::Named {
-            name: self.function.to_identifier(None)?,
-            type_arguments: Some(TypeArguments {
-                left_angular_bracket: Token::dummy(),
-                type_annotations: Box::new(NonEmpty {
-                    head: self.arguments.head.to_type_annotation()?,
-                    tail: self
-                        .arguments
-                        .tail
-                        .iter()
-                        .map(|argument| argument.to_type_annotation())
-                        .collect::<Result<_, _>>()?,
-                }),
-                right_angular_bracket: Token::dummy(),
-            }),
-        })
-    }
-}
-
-impl simple_ast::List {
-    fn into_statement(&self, state: &mut ParserState) -> Result<Statement, ParseError> {
-        use simple_ast::*;
-        match self.nodes.split_first() {
-            None => {
-                panic!("Parse Error")
-            }
-            Some(other) => {
-                panic!("parse error = {:#?}", other)
-            }
-        }
-    }
-
-    fn to_function_signature(&self) -> Result<FunctionSignature, ParseError> {
-        use simple_ast::*;
-        match self.nodes.split_last() {
-            None => {
-                panic!("Error")
-            }
-            Some((last, init)) => {
-                let return_type = last.to_type_annotation()?;
-                let list = List {
-                    nodes: init.to_vec(),
-                    bracket: self.bracket.clone(),
-                };
-                match list.get(0)? {
-                    Node::Literal(Literal::Identifier(id)) if id.representation == "forall" => {
-                        Ok(FunctionSignature {
-                            type_variables_declaration: Some(
-                                list.get(1)?.into_type_variables_declaration()?,
-                            ),
-                            parameters: NonEmpty {
-                                head: list.get(2)?.to_function_parameter()?,
-                                tail: list
-                                    .skip(3)
-                                    .nodes
-                                    .into_iter()
-                                    .map(|node| node.to_function_parameter())
-                                    .collect::<Result<_, _>>()?,
-                            },
-                            return_type,
-                        })
-                    }
-                    _ => Ok(FunctionSignature {
-                        type_variables_declaration: None,
-                        parameters: NonEmpty {
-                            head: list.get(0)?.to_function_parameter()?,
-                            tail: list
-                                .nodes
-                                .iter()
-                                .skip(1)
-                                .map(|node| node.to_function_parameter())
-                                .collect::<Result<_, _>>()?,
-                        },
-                        return_type,
-                    }),
-                }
-            }
-        }
-    }
-    fn to_expression(&self, state: &mut ParserState) -> Result<Expression, ParseError> {
-        use simple_ast::*;
-        match self.bracket.kind {
-            BracketKind::Round => match self.nodes.split_first() {
-                // Match expression
-                Some((Node::Literal(Literal::Identifier(id)), tail))
-                    if id.representation == "match" =>
-                {
-                    Ok(Expression::FunctionCall(Box::new(FunctionCall {
-                        type_arguments: None,
-                        argument: Box::new(
-                            tail.get(0).into_node(id.position)?.to_expression(state)?,
-                        ),
-                        function: Box::new(Expression::Function(Box::new(Function {
-                            branches: NonEmpty {
-                                head: tail
-                                    .get(1)
-                                    .into_node(id.position)?
-                                    .to_function_branch(state)?,
-                                tail: tail
-                                    .into_iter()
-                                    .skip(2)
-                                    .map(|node| node.to_function_branch(state))
-                                    .collect::<Result<Vec<_>, _>>()?,
-                            },
-                        }))),
-                    })))
-                }
-                // Lambda
-                Some((Node::Literal(Literal::Identifier(id)), tail))
-                    if id.representation == "->" =>
-                {
-                    let pattern = tail.get(0).into_node(id.position)?.to_pattern()?;
-                    let body = tail
-                        .get(1)
-                        .into_node(pattern.position())?
-                        .to_expression(state)?;
-                    tail.get(2).should_be_none()?;
-                    Ok(Expression::Function(Box::new(Function {
-                        branches: NonEmpty {
-                            head: FunctionBranch {
-                                parameter: Box::new(pattern),
-                                body: Box::new(body),
-                            },
-                            tail: vec![],
-                        },
-                    })))
-                }
-
-                // Lambda
-                Some((Node::Literal(Literal::Identifier(id)), tail))
-                    if id.representation == "->" =>
-                {
-                    let pattern = tail.get(0).into_node(id.position)?.to_pattern()?;
-                    let body = tail
-                        .get(1)
-                        .into_node(pattern.position())?
-                        .to_expression(state)?;
-                    tail.get(2).should_be_none()?;
-                    Ok(Expression::Function(Box::new(Function {
-                        branches: NonEmpty {
-                            head: FunctionBranch {
-                                parameter: Box::new(pattern),
-                                body: Box::new(body),
-                            },
-                            tail: vec![],
-                        },
-                    })))
-                }
-
-                // Lambda
-                Some((Node::Literal(Literal::Identifier(id)), tail))
-                    if id.representation == "intrinsic" =>
-                {
-                    let function_name = tail.get(0).into_node(id.position)?.to_identifier(None)?;
-
-                    tail.get(2).should_be_none()?;
-                    let argument = Box::new(
-                        tail.get(1)
-                            .into_node(function_name.position)?
-                            .to_expression(state)?,
-                    );
-                    Ok(Expression::IntrinsicFunctionCall(IntrinsicFunctionCall {
-                        function_name,
-                        argument,
-                    }))
-                }
-
-                // Function call
-                //
-                // For example: (a b c) means ((a b) c)
-                _ => match self.nodes.split_last() {
-                    None => Ok(Expression::Unit {
-                        left_parenthesis: self.bracket.opening.clone(),
-                        right_parenthesis: self.bracket.closing.clone(),
-                    }),
-                    Some((last, [])) => Ok(Expression::Parenthesized {
-                        left_parenthesis: self.bracket.opening.clone(),
-                        right_parenthesis: self.bracket.closing.clone(),
-                        value: Box::new(last.to_expression(state)?),
-                    }),
-                    Some((last, [init @ .., second_last])) => {
-                        fn make_function(
-                            last_node: &Node,
-                            initial_nodes: &[Node],
-                            state: &mut ParserState,
-                        ) -> Result<Expression, ParseError> {
-                            if let Some((second_last, init)) = initial_nodes.split_last() {
-                                Ok(Expression::FunctionCall(Box::new(FunctionCall {
-                                    type_arguments: None,
-                                    function: Box::new(make_function(second_last, init, state)?),
-                                    argument: Box::new(last_node.to_expression(state)?),
-                                })))
-                            } else {
-                                last_node.to_expression(state)
-                            }
+            // Function call
+            //
+            // For example: (a b c) means ((a b) c)
+            _ => {
+                if self.nodes.len() == 1 {
+                    self.nodes.first().to_expression(state)
+                } else {
+                    fn make_function(
+                        last_node: &MacroExpandedNode,
+                        initial_nodes: &[&MacroExpandedNode],
+                        state: &mut ParserState,
+                    ) -> Result<Expression, ParseError> {
+                        if let Some((second_last, init)) = initial_nodes.split_last() {
+                            Ok(Expression::FunctionCall(Box::new(FunctionCall {
+                                type_arguments: None,
+                                function: Box::new(make_function(second_last, init, state)?),
+                                argument: Box::new(last_node.to_expression(state)?),
+                            })))
+                        } else {
+                            last_node.to_expression(state)
                         }
-                        let result = Expression::FunctionCall(Box::new(FunctionCall {
-                            type_arguments: None,
-                            function: Box::new(make_function(second_last, init, state)?),
-                            argument: Box::new(last.to_expression(state)?),
-                        }));
-                        Ok(result)
                     }
-                },
-            },
 
-            BracketKind::Curly => panic!("Should not happen after macro expansion"),
-
-            // Left-associative macro
-            // Example: [+ a b c] means:
-            // Infix: ((a + b) + c)
-            // Prefix: (+ (+ a b) c)
-            BracketKind::Square => {
-                let head = match self.nodes.get(0) {
-                    Some(node) => node.to_function_branch(state)?,
-                    None => FunctionBranch {
-                        parameter: Box::new(DestructurePattern::Underscore(Token {
-                            position: self.position(),
-                            token_type: TokenType::Underscore,
-                            representation: "_".to_string(),
-                        })),
-                        body: Box::new(Expression::Unit {
-                            left_parenthesis: self.bracket.opening.clone(),
-                            right_parenthesis: self.bracket.closing.clone(),
-                        }),
-                    },
-                };
-
-                Ok(Expression::Function(Box::new(Function {
-                    branches: NonEmpty {
-                        head,
-                        tail: self
-                            .nodes
-                            .iter()
-                            .skip(1)
-                            .map(|node| node.to_function_branch(state))
-                            .collect::<Result<Vec<_>, _>>()?,
-                    },
-                })))
+                    make_function(self.nodes.last(), self.nodes.init().as_slice(), state)
+                }
             }
         }
     }
 
     fn to_function_parameter(&self) -> Result<Parameter, ParseError> {
-        match self.nodes.get(0) {
-            Some(node) => {
-                let pattern = node.to_pattern()?;
-                let type_annotation = self.get(1)?.to_type_annotation()?;
-                Ok(Parameter {
-                    pattern,
-                    type_annotation,
-                })
-            }
-            None => {
-                let left_parenthesis = self.bracket.opening.clone();
-                let right_parenthesis = self.bracket.closing.clone();
-                Ok(Parameter {
-                    pattern: DestructurePattern::Unit {
-                        left_parenthesis: left_parenthesis.clone(),
-                        right_parenthesis: right_parenthesis.clone(),
-                    },
-                    type_annotation: TypeAnnotation::Unit {
-                        left_parenthesis,
-                        right_parenthesis,
-                    },
-                })
-            }
-        }
+        let pattern = self.first().to_pattern()?;
+        let type_annotation = self.get(1)?.to_type_annotation()?;
+        self.nodes.get(2).should_be_none()?;
+        Ok(Parameter {
+            pattern,
+            type_annotation,
+        })
     }
 
     fn to_pattern(&self) -> Result<DestructurePattern, ParseError> {
-        match self.bracket.kind {
-            simple_ast::BracketKind::Round => match self.nodes.split_first() {
-                None => Ok(DestructurePattern::Unit {
-                    left_parenthesis: self.bracket.opening.clone(),
-                    right_parenthesis: self.bracket.closing.clone(),
-                }),
-                Some((node, [])) => Ok(DestructurePattern::Parenthesized {
-                    type_annotation: None,
-                    left_parenthesis: self.bracket.opening.clone(),
-                    right_parenthesis: self.bracket.closing.clone(),
-                    pattern: Box::new(node.to_pattern()?),
-                }),
-                Some((head, tail)) => Ok(DestructurePattern::Tuple(DestructurePatternTuple {
-                    parentheses: Some((self.bracket.opening.clone(), self.bracket.closing.clone())),
-                    values: Box::new(NonEmpty {
-                        head: head.to_pattern()?,
-                        tail: tail
-                            .into_iter()
-                            .map(|node| node.to_pattern())
-                            .collect::<Result<_, _>>()?,
-                    }),
-                })),
-            },
-            simple_ast::BracketKind::Square => Ok(DestructurePattern::Or(Box::new(NonEmpty {
-                head: self
-                    .nodes
-                    .get(0)
-                    .into_node(self.bracket.opening.position)?
-                    .to_pattern()?,
-                tail: self
-                    .nodes
-                    .iter()
-                    .skip(1)
-                    .map(|node| node.to_pattern())
-                    .collect::<Result<_, _>>()?,
-            }))),
-            simple_ast::BracketKind::Curly => Ok(DestructurePattern::Record {
-                left_curly_bracket: self.bracket.opening.clone(),
-                wildcard: None,
-                key_value_pairs: self
-                    .nodes
-                    .iter()
-                    .map(|node| node.to_desctuctured_record_key_value())
-                    .collect::<Result<_, _>>()?,
-                right_curly_bracket: self.bracket.closing.clone(),
-            }),
+        match self.tail().split_first() {
+            None => self.head().to_pattern(),
+            Some((second, [])) => todo!(),
+            Some((second, tail)) => todo!(),
         }
     }
 
     fn to_type_variables_declaration(&self) -> Result<TypeVariablesDeclaration, ParseError> {
         let tokens = self
             .nodes
+            .to_vector()
             .iter()
             .map(|element| element.to_identifier(None))
             .collect::<Result<Vec<_>, _>>()?;
@@ -2996,47 +2400,208 @@ impl simple_ast::List {
         state: &mut ParserState,
     ) -> Result<Vec<EnumConstructorDefinition>, ParseError> {
         self.nodes
+            .to_vector()
             .into_iter()
             .map(|element| element.to_enum_constructor_definition())
             .collect::<Result<Vec<_>, _>>()
     }
 
     fn to_type_annotation(&self) -> Result<TypeAnnotation, ParseError> {
-        match self.bracket.kind {
-            simple_ast::BracketKind::Round => match self.nodes.split_first() {
-                None => Ok(TypeAnnotation::Unit {
-                    left_parenthesis: self.bracket.opening.clone(),
-                    right_parenthesis: self.bracket.closing.clone(),
+        match self.tail().split_first() {
+            None => self.head().to_type_annotation(),
+            Some((second, tail)) => Ok(TypeAnnotation::Named {
+                name: self.head().to_identifier(None)?,
+                type_arguments: Some(TypeArguments {
+                    type_annotations: Box::new(NonEmpty {
+                        head: second.to_type_annotation()?,
+                        tail: tail
+                            .to_vec()
+                            .into_iter()
+                            .map(|node| node.to_type_annotation())
+                            .collect::<Result<_, _>>()?,
+                    }),
                 }),
-                Some((node, [])) => Ok(TypeAnnotation::Parenthesized {
-                    left_parenthesis: self.bracket.opening.clone(),
-                    right_parenthesis: self.bracket.closing.clone(),
-                    type_annotation: Box::new(node.to_type_annotation()?),
-                }),
-                Some((head, tail)) => todo!("tuple type annotation"),
-            },
-            simple_ast::BracketKind::Square => todo!(),
-            simple_ast::BracketKind::Curly => Ok(TypeAnnotation::Record {
-                left_curly_bracket: self.bracket.opening.clone(),
-                key_type_annotation_pairs: self
-                    .nodes
-                    .iter()
-                    .map(|node| node.to_key_type_annotation_pair())
-                    .collect::<Result<_, _>>()?,
-                right_curly_bracket: self.bracket.closing.clone(),
             }),
         }
     }
 }
 
+impl simple_ast::List {
+    fn expand_macro(&self) -> MacroExpandedNode {
+        use simple_ast::*;
+        let nodes = self
+            .nodes
+            .iter()
+            .filter_map(Node::expand_macro)
+            .collect::<Vec<_>>();
+        match self.bracket.kind {
+            BracketKind::Round => match nodes.split_first() {
+                // Dot chaining
+                // For example: (. a (b c) d) is the same as:
+                // Infix: a.b(c).d
+                // Prefix: (d (b a c))
+                //
+                // Example 2: (. a b) same as (b a)
+                // Example 3: (. a (b c)) same as (b a c)
+                // Example 4: (. a b c) same as (c (b a))
+                Some((MacroExpandedNode::Literal(Literal::Identifier(id)), [head, tail @ ..]))
+                    if id.representation == "." =>
+                {
+                    // Say `left` is `a` and `tail` is `[b c]`.
+                    //
+                    fn chain(
+                        left: MacroExpandedNode,
+                        tail: &[MacroExpandedNode],
+                    ) -> MacroExpandedNode {
+                        match tail.split_first() {
+                            Some((head, tail)) => match head {
+                                MacroExpandedNode::List(list) => {
+                                    let left = match list.nodes.tail.split_first() {
+                                        Some((second, rest)) => {
+                                            let first = list.nodes.first();
+                                            MacroExpandedNode::List(MacroExpandedList {
+                                                nodes: Box::new(NonEmpty {
+                                                    head: first.clone(),
+                                                    tail: vec![left, second.clone()]
+                                                        .into_iter()
+                                                        .chain(
+                                                            rest.into_iter()
+                                                                .map(|node| node.clone()),
+                                                        )
+                                                        .collect(),
+                                                }),
+                                            })
+                                        }
+                                        _ => MacroExpandedNode::List(MacroExpandedList {
+                                            nodes: Box::new(NonEmpty {
+                                                head: head.clone(),
+                                                tail: vec![left],
+                                            }),
+                                        }),
+                                    };
+                                    chain(
+                                        MacroExpandedNode::List(MacroExpandedList {
+                                            nodes: Box::new(NonEmpty {
+                                                head: left,
+                                                tail: vec![],
+                                            }),
+                                        }),
+                                        tail,
+                                    )
+                                }
+
+                                // Literal or Unit
+                                _ => MacroExpandedNode::List(MacroExpandedList {
+                                    nodes: Box::new(NonEmpty {
+                                        head: head.clone(),
+                                        tail: vec![left],
+                                    }),
+                                }),
+                            },
+                            None => MacroExpandedNode::List(MacroExpandedList {
+                                nodes: Box::new(NonEmpty {
+                                    head: left,
+                                    tail: vec![],
+                                }),
+                            }),
+                        }
+                    }
+                    chain(head.clone(), tail)
+                }
+
+                // others
+                Some((head, tail)) => MacroExpandedNode::List(MacroExpandedList {
+                    nodes: Box::new(NonEmpty {
+                        head: head.clone(),
+                        tail: tail.to_vec(),
+                    }),
+                }),
+
+                None => MacroExpandedNode::Unit {
+                    bracket: self.bracket.clone(),
+                },
+            },
+
+            // Right-associative macro
+            // Example: {-> a b c} means:
+            // Infix: (a -> (b -> c))
+            // Prefix: (-> (a (-> b c)))
+            BracketKind::Curly => match nodes.split_first() {
+                Some((operator, [first_argument, second_argument, tail @ ..])) => {
+                    fn right_associativitify(
+                        operator: MacroExpandedNode,
+                        bracket: Bracket,
+                        first_argument: MacroExpandedNode,
+                        second_argument: MacroExpandedNode,
+                        tail: &[MacroExpandedNode],
+                    ) -> MacroExpandedNode {
+                        match tail.split_first() {
+                            None => {
+                                // TODO: we should use another bracket?
+                                MacroExpandedNode::List(MacroExpandedList {
+                                    nodes: Box::new(NonEmpty {
+                                        head: operator,
+                                        tail: vec![first_argument, second_argument],
+                                    }),
+                                })
+                            }
+                            Some((third_argument, tail)) => {
+                                MacroExpandedNode::List(MacroExpandedList {
+                                    nodes: Box::new(NonEmpty {
+                                        head: operator.clone(),
+                                        tail: vec![
+                                            first_argument,
+                                            right_associativitify(
+                                                operator,
+                                                bracket,
+                                                second_argument,
+                                                third_argument.clone(),
+                                                tail,
+                                            ),
+                                        ],
+                                    }),
+                                })
+                            }
+                        }
+                    }
+                    right_associativitify(
+                        operator.clone(),
+                        self.bracket.clone(),
+                        first_argument.clone(),
+                        second_argument.clone(),
+                        tail,
+                    )
+                }
+                Some((head, tail)) => MacroExpandedNode::List(MacroExpandedList {
+                    nodes: Box::new(NonEmpty {
+                        head: head.clone(),
+                        tail: tail.to_vec(),
+                    }),
+                }),
+                None => MacroExpandedNode::Unit {
+                    bracket: self.bracket.clone(),
+                },
+            },
+
+            // Left-associative macro
+            // Example: [+ a b c] means:
+            // Infix: ((a + b) + c)
+            // Prefix: (+ (+ a b) c)
+            BracketKind::Square => {
+                todo!()
+            }
+        }
+    }
+}
+
 trait Parsable {
-    fn into_node(self, previous_position: Position) -> Result<simple_ast::Node, ParseError>;
+    fn into_node(self, previous_position: Position) -> Result<MacroExpandedNode, ParseError>;
 
     fn should_be_none(self) -> Result<(), ParseError>;
 }
 
-impl Parsable for Option<&simple_ast::Node> {
-    fn into_node(self, previous_position: Position) -> Result<simple_ast::Node, ParseError> {
+impl Parsable for Option<&MacroExpandedNode> {
+    fn into_node(self, previous_position: Position) -> Result<MacroExpandedNode, ParseError> {
         match self {
             None => Err(ParseError {
                 context: None,
@@ -3073,54 +2638,6 @@ fn curry_function_call(function: Expression, arguments: Vec<Expression>) -> Expr
     }
 }
 
-impl simple_ast::SemicolonArray {
-    fn to_expression(&self, state: &mut ParserState) -> Result<Expression, ParseError> {
-        use simple_ast::*;
-        fn to_let_expression(
-            previous: Assignment,
-            nodes: &[Node],
-            state: &mut ParserState,
-        ) -> Result<Expression, ParseError> {
-            match nodes.split_first() {
-                Some((head, tail)) => {
-                    let assignment = head.to_assignment(state)?;
-                    Ok(Expression::Let {
-                        keyword_let: Token::dummy(),
-                        left: previous.pattern,
-                        right: Box::new(previous.expression),
-                        type_annotation: None,
-                        body: Box::new(to_let_expression(assignment, tail, state)?),
-                    })
-                }
-                None => Ok(match previous.pattern {
-                    DestructurePattern::Underscore(_) => previous.expression,
-                    _ => Expression::Let {
-                        keyword_let: Token::dummy(),
-                        left: previous.pattern,
-                        right: Box::new(previous.expression),
-                        type_annotation: None,
-                        body: Box::new(Expression::Unit {
-                            left_parenthesis: Token::dummy(),
-                            right_parenthesis: Token::dummy(),
-                        }),
-                    },
-                }),
-            }
-        }
-
-        to_let_expression(
-            self.nodes.head.to_assignment(state)?,
-            self.nodes.tail.as_slice(),
-            state,
-        )
-    }
-}
-
-struct Assignment {
-    pattern: DestructurePattern,
-    expression: Expression,
-}
-
 impl simple_ast::InterpolatedStringSection {
     fn to_interpolated_string_section(
         &self,
@@ -3130,9 +2647,17 @@ impl simple_ast::InterpolatedStringSection {
             simple_ast::InterpolatedStringSection::String(string) => {
                 Ok(InterpolatedStringSection::String(string.to_string()))
             }
-            simple_ast::InterpolatedStringSection::Expression(node) => Ok(
-                InterpolatedStringSection::Expression(Box::new(node.to_expression(state)?)),
-            ),
+            simple_ast::InterpolatedStringSection::Expression(node) => match node.expand_macro() {
+                None => Err(ParseError {
+                    context: None,
+                    kind: ParseErrorKind::UnexpectedNode {
+                        position: node.position(),
+                    },
+                }),
+                Some(node) => Ok(InterpolatedStringSection::Expression(Box::new(
+                    node.to_expression(state)?,
+                ))),
+            },
         }
     }
 }
