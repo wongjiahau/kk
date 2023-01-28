@@ -333,7 +333,10 @@ pub fn unify_statements(
     let typechecked_top_level_expressions_statements = top_level_expressions
         .into_iter()
         .map(|(source, expression)| {
-            let expression = infer_expression_type(&mut module, Some(Type::Unit), &expression)
+            let position = expression.position();
+            let expression = infer_expression_type(&mut module, None, &expression)
+                .map_err(|unify_error| unify_error.into_compile_error(source.clone()))?;
+            unify_type(&mut module, &Type::Unit, &expression.type_value, position)
                 .map_err(|unify_error| unify_error.into_compile_error(source))?;
             Ok(InferredStatement::Expression(expression.expression))
         })

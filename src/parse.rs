@@ -1811,6 +1811,13 @@ impl MacroExpandedNode {
                 key: token.clone(),
                 value: Expression::Identifier(token.clone()),
             }),
+            MacroExpandedNode::List(list) => {
+                let key = list.get(0)?.to_identifier(None)?;
+                list.get(1)?.to_identifier(Some("="))?;
+                let value = list.get(2)?.to_expression(state)?;
+                list.nodes.get(3).should_be_none()?;
+                Ok(RecordKeyValue { key, value })
+            }
             _ => Err(ParseError {
                 context: None,
                 kind: ParseErrorKind::UnexpectedNode {
@@ -2271,24 +2278,6 @@ impl MacroExpandedList {
                     }))),
                 })))
             }
-            // Lambda
-            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "->" => {
-                let pattern = tail.get(0).into_node(id.position)?.to_pattern()?;
-                let body = tail
-                    .get(1)
-                    .into_node(pattern.position())?
-                    .to_expression(state)?;
-                tail.get(2).should_be_none()?;
-                Ok(Expression::Function(Box::new(Function {
-                    branches: NonEmpty {
-                        head: FunctionBranch {
-                            parameter: Box::new(pattern),
-                            body: Box::new(body),
-                        },
-                        tail: vec![],
-                    },
-                })))
-            }
 
             // Function
             MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "->" => {
@@ -2307,6 +2296,67 @@ impl MacroExpandedList {
                         tail: vec![],
                     },
                 })))
+            }
+
+            // Record
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "#" => {
+                Ok(Expression::Record {
+                    left_curly_bracket: Token::dummy(),
+                    right_curly_bracket: Token::dummy(),
+                    wildcard: None,
+                    key_value_pairs: self
+                        .tail()
+                        .into_iter()
+                        .map(|node| node.to_record_key_value(state))
+                        .collect::<Result<_, _>>()?,
+                })
+            }
+
+            // Do
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "do" => {
+                fn make_let_statement(
+                    state: &mut ParserState,
+                    current: &MacroExpandedNode,
+                    next: &[&MacroExpandedNode],
+                ) -> Result<Expression, ParseError> {
+                    if let Some((head, tail)) = next.split_first() {
+                        let (left, right) = match current {
+                            MacroExpandedNode::List(list)
+                                if list.first().to_identifier(Some("let")).is_ok() =>
+                            {
+                                let left = list.get(1)?.to_pattern()?;
+                                list.get(2)?.to_identifier(Some("="))?;
+                                let right = list.get(3)?.to_expression(state)?;
+                                list.nodes.get(4).should_be_none()?;
+                                (left, right)
+                            }
+                            _ => {
+                                let left = DestructurePattern::Underscore(Token::dummy());
+                                let right = current.to_expression(state)?;
+                                (left, right)
+                            }
+                        };
+                        Ok(Expression::Let {
+                            keyword_let: Token::dummy(),
+                            type_annotation: None,
+                            left,
+                            right: Box::new(right),
+                            body: Box::new(make_let_statement(state, *head, tail)?),
+                        })
+                    } else {
+                        current.to_expression(state)
+                    }
+                }
+                make_let_statement(
+                    state,
+                    &self.nodes.tail().get(0).into_node(id.position)?,
+                    self.nodes
+                        .tail()
+                        .into_iter()
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                )
             }
 
             // Intrinsic functions

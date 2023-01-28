@@ -11,7 +11,7 @@ pub trait ToDoc {
     fn to_pretty(&self) -> String {
         let arena = Arena::<()>::new();
         let mut vec = Vec::new();
-        let width = 80;
+        let width = 70;
         self.to_doc(&arena).render(width, &mut vec).unwrap();
         String::from_utf8(vec).unwrap()
     }
