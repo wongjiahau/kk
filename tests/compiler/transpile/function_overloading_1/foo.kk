@@ -1,8 +1,12 @@
-(defn replace ((s String) :first (old String) :with (new String) Int) 1)
+(defn
+  ((s String) replace :first (old String) :with (new String) Int)
+  1)
 
-(defn replace ((s String) :each (old String) :with (new String) Int) 2)
+(defn
+  ((s String) replace :each (old String) :with (new String) Int)
+  2)
 
-(defn map (forall (A B) (a A) (f (-> A B)) B) (f a))
+(defn (forall (A B) (a A) map (f (-> A B)) B) (f a))
 
 [. "Hello" (replace :first "l" :with "k") print]
 

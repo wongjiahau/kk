@@ -1667,17 +1667,17 @@ impl simple_ast::TopLevelArray {
     }
 }
 
-impl simple_ast::Literal {
-    fn expand_macro(self) -> Self {
-        use simple_ast::*;
-        match self {
-            Literal::InterpolatedString(interpolated_string) => todo!(),
-            _ => self,
-        }
-    }
-}
-
 impl MacroExpandedList {
+    fn to_desctuctured_record_key_value(&self) -> Result<DestructuredRecordKeyValue, ParseError> {
+        let key = self.head().to_identifier(None)?;
+        let pattern = self.tail().get(0).into_node(key.position)?.to_pattern()?;
+        self.tail().get(1).should_be_none()?;
+        Ok(DestructuredRecordKeyValue {
+            key,
+            type_annotation: None,
+            as_value: Some(pattern),
+        })
+    }
     fn skip(&self, count: usize) -> Result<Self, ParseError> {
         let nodes = self
             .nodes
@@ -1713,11 +1713,7 @@ impl MacroExpandedList {
         match first.representation.as_str() {
             "enum" => {
                 let name = self.get(1)?.to_identifier(None)?;
-                let constructors = self
-                    .get(2)?
-                    .into_list()?
-                    .into_enum_constructor_definitions(state)?;
-                self.nodes.get(3).should_be_none()?;
+                let constructors = self.skip(2)?.into_enum_constructor_definitions(state)?;
                 Ok(Statement::Enum(EnumStatement {
                     access: Access::Protected,
                     keyword_enum: first,
@@ -1727,14 +1723,13 @@ impl MacroExpandedList {
                 }))
             }
             "defn" => {
-                let name = self.get(1)?.to_identifier(None)?;
-                let signature = self.get(2)?.into_list()?.to_function_signature()?;
-                let body = self.get(3)?.to_expression(state)?;
-                self.nodes.get(4).should_be_none()?;
+                let signature = self.get(1)?.into_list()?.to_function_signature(None)?;
+                let body = self.get(2)?.to_expression(state)?;
+                self.nodes.get(3).should_be_none()?;
                 Ok(Statement::Let(LetStatement {
                     access,
                     keyword_let: first,
-                    name,
+                    name: signature.name.clone(),
                     doc_string: None,
                     type_annotation: signature.to_function_type_annotation(),
                     expression: Expression::Function(Box::new(signature.to_function(body))),
@@ -1781,9 +1776,7 @@ impl simple_ast::Node {
         use simple_ast::*;
         match self {
             Node::List(list) => Some(list.expand_macro()),
-            Node::Literal(literal) => {
-                Some(MacroExpandedNode::Literal(literal.clone().expand_macro()))
-            }
+            Node::Literal(literal) => Some(MacroExpandedNode::Literal(literal.clone())),
             Node::Comment(_) => None,
         }
     }
@@ -1813,9 +1806,9 @@ impl MacroExpandedNode {
             }),
             MacroExpandedNode::List(list) => {
                 let key = list.get(0)?.to_identifier(None)?;
-                list.get(1)?.to_identifier(Some("="))?;
-                let value = list.get(2)?.to_expression(state)?;
-                list.nodes.get(3).should_be_none()?;
+                // list.get(1)?.to_identifier(Some("="))?;
+                let value = list.get(1)?.to_expression(state)?;
+                list.nodes.get(2).should_be_none()?;
                 Ok(RecordKeyValue { key, value })
             }
             _ => Err(ParseError {
@@ -1848,19 +1841,13 @@ impl MacroExpandedNode {
         use simple_ast::*;
         match self {
             MacroExpandedNode::List(MacroExpandedList { nodes }) => {
-                let first = nodes.head.to_identifier(Some("case"))?;
-                let pattern = nodes.tail.get(0).into_node(first.position)?.to_pattern()?;
-                let third = nodes
-                    .tail
-                    .get(1)
-                    .into_node(pattern.position())?
-                    .to_identifier(Some("->"))?;
+                let pattern = nodes.head.to_pattern()?;
                 let expression = nodes
                     .tail
-                    .get(2)
-                    .into_node(third.position)?
+                    .get(0)
+                    .into_node(pattern.position())?
                     .to_expression(state)?;
-                nodes.tail.get(3).should_be_none()?;
+                nodes.tail.get(1).should_be_none()?;
                 Ok(FunctionBranch {
                     parameter: Box::new(pattern),
                     body: Box::new(expression),
@@ -1882,7 +1869,7 @@ impl MacroExpandedNode {
 
     fn to_enum_constructor_definition(&self) -> Result<EnumConstructorDefinition, ParseError> {
         match &self {
-            simple_ast::MacroExpandedNode::List(_) => todo!(),
+            simple_ast::MacroExpandedNode::List(list) => list.to_enum_constructor_definition(),
             simple_ast::MacroExpandedNode::Literal(literal) => match literal {
                 simple_ast::Literal::Identifier(token) => Ok(EnumConstructorDefinition {
                     name: token.clone(),
@@ -2021,6 +2008,24 @@ impl MacroExpandedNode {
                                 type_annotation: Box::new(type_annotation),
                             })
                         }
+                        "%" => Ok(TypeAnnotation::Record {
+                            left_curly_bracket: Token::dummy(),
+                            right_curly_bracket: Token::dummy(),
+                            key_type_annotation_pairs: list
+                                .tail()
+                                .into_iter()
+                                .map(|node| {
+                                    let list = node.into_list()?;
+                                    let key = list.head().to_identifier(None)?;
+                                    let type_annotation = list
+                                        .tail()
+                                        .get(0)
+                                        .into_node(key.position)?
+                                        .to_type_annotation()?;
+                                    Ok((key, type_annotation))
+                                })
+                                .collect::<Result<Vec<_>, _>>()?,
+                        }),
                         _ => Ok(TypeAnnotation::Named {
                             name: identifier.clone(),
                             type_arguments: {
@@ -2110,6 +2115,7 @@ impl MacroExpandedNode {
                     as_value: None,
                 })
             }
+            MacroExpandedNode::List(list) => list.to_desctuctured_record_key_value(),
             _ => todo!(),
         }
     }
@@ -2202,7 +2208,24 @@ impl Positionable for TypeDeclaration {
 }
 
 impl MacroExpandedList {
-    fn to_function_signature(&self) -> Result<FunctionSignature, ParseError> {
+    fn to_enum_constructor_definition(&self) -> Result<EnumConstructorDefinition, ParseError> {
+        let name = self.head().to_identifier(None)?;
+        Ok(EnumConstructorDefinition {
+            name,
+            payload: match self.nodes.get(1) {
+                None => None,
+                // TODO: auto-wrap payload as tuple type annotations
+                // So that we can have multi-argument constructor
+                Some(node) => Some(Box::new(EnumConstructorDefinitionPayload {
+                    type_annotation: node.to_type_annotation()?,
+                })),
+            },
+        })
+    }
+    fn to_function_signature(
+        &self,
+        type_variables_declaration: Option<TypeVariablesDeclaration>,
+    ) -> Result<FunctionSignature, ParseError> {
         use simple_ast::*;
         let last = self.last();
         let init = self.init();
@@ -2218,35 +2241,52 @@ impl MacroExpandedList {
                     .cloned()
                     .into_node(id.position)?
                     .into_type_variables_declaration()?;
-                let position = type_variables_declaration.position();
+                self.skip(2)?
+                    .to_function_signature(Some(type_variables_declaration))
+            }
+
+            // Infix-style function signature
+            MacroExpandedNode::List(another_list) => {
+                let first_parameter = another_list.to_function_parameter()?;
+                let name = list
+                    .get(1)
+                    .cloned()
+                    .into_node(first_parameter.position())?
+                    .to_identifier(None)?;
+                let parameters_tail = list
+                    .into_iter()
+                    .skip(2)
+                    .map(|node| node.to_function_parameter())
+                    .collect::<Result<Vec<_>, _>>()?;
+
                 Ok(FunctionSignature {
-                    type_variables_declaration: Some(type_variables_declaration),
+                    name,
+                    type_variables_declaration,
                     parameters: NonEmpty {
-                        head: list
-                            .get(2)
-                            .cloned()
-                            .into_node(position)?
-                            .to_function_parameter()?,
-                        tail: list
-                            .into_iter()
-                            .skip(3)
-                            .map(|node| node.to_function_parameter())
-                            .collect::<Result<_, _>>()?,
+                        head: first_parameter,
+                        tail: parameters_tail,
                     },
                     return_type,
                 })
             }
+
+            // Prefix-style function signature
             _ => Ok(FunctionSignature {
-                type_variables_declaration: None,
+                type_variables_declaration,
+                name: list
+                    .get(0)
+                    .cloned()
+                    .into_node(first.position())?
+                    .to_identifier(None)?,
                 parameters: NonEmpty {
                     head: list
-                        .get(0)
+                        .get(1)
                         .cloned()
                         .into_node(first.position())?
                         .to_function_parameter()?,
                     tail: list
                         .iter()
-                        .skip(1)
+                        .skip(2)
                         .map(|node| node.to_function_parameter())
                         .collect::<Result<_, _>>()?,
                 },
@@ -2329,7 +2369,7 @@ impl MacroExpandedList {
             }
 
             // Record
-            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "#" => {
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "%" => {
                 Ok(Expression::Record {
                     left_curly_bracket: Token::dummy(),
                     right_curly_bracket: Token::dummy(),
@@ -2355,9 +2395,9 @@ impl MacroExpandedList {
                                 if list.first().to_identifier(Some("let")).is_ok() =>
                             {
                                 let left = list.get(1)?.to_pattern()?;
-                                list.get(2)?.to_identifier(Some("="))?;
-                                let right = list.get(3)?.to_expression(state)?;
-                                list.nodes.get(4).should_be_none()?;
+                                // list.get(2)?.to_identifier(Some("="))?;
+                                let right = list.get(2)?.to_expression(state)?;
+                                list.nodes.get(3).should_be_none()?;
                                 (left, right)
                             }
                             _ => {
@@ -2447,10 +2487,42 @@ impl MacroExpandedList {
     }
 
     fn to_pattern(&self) -> Result<DestructurePattern, ParseError> {
-        match self.tail().split_first() {
-            None => self.head().to_pattern(),
-            Some((second, [])) => todo!(),
-            Some((second, tail)) => todo!(),
+        use simple_ast::Literal;
+        match self.head() {
+            // Or pattern
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "|" => Ok(
+                DestructurePattern::Or(Box::new(match self.tail().split_first() {
+                    None => todo!("parse error"),
+                    Some((head, tail)) => NonEmpty {
+                        head: head.to_pattern()?,
+                        tail: tail
+                            .into_iter()
+                            .map(|node| node.to_pattern())
+                            .collect::<Result<Vec<_>, _>>()?,
+                    },
+                })),
+            ),
+            // Record
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "%" => {
+                Ok(DestructurePattern::Record {
+                    left_curly_bracket: Token::dummy(),
+                    wildcard: None,
+                    right_curly_bracket: Token::dummy(),
+                    key_value_pairs: self
+                        .tail()
+                        .into_iter()
+                        .map(|node| node.to_desctuctured_record_key_value())
+                        .collect::<Result<Vec<_>, _>>()?,
+                })
+            }
+            _ => match self.tail().split_first() {
+                None => self.head().to_pattern(),
+                Some((second, [])) => Ok(DestructurePattern::EnumConstructor {
+                    name: self.head().to_identifier(None)?,
+                    payload: Some(Box::new(second.to_pattern()?)),
+                }),
+                Some((second, tail)) => todo!("{}", self.to_pretty()),
+            },
         }
     }
 

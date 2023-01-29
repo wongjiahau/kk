@@ -70,10 +70,18 @@ pub struct Parameter {
     pub pattern: DestructurePattern,
     pub type_annotation: TypeAnnotation,
 }
+impl Parameter {
+    pub fn position(&self) -> Position {
+        self.pattern
+            .position()
+            .join(self.type_annotation.position())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
     pub type_variables_declaration: Option<TypeVariablesDeclaration>,
+    pub name: Token,
     pub parameters: NonEmpty<Parameter>,
     pub return_type: TypeAnnotation,
 }
