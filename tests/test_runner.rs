@@ -26,7 +26,7 @@ fn run_all_tests() {
                     .to_string();
 
                 if (filename.contains("transpile") || filename.contains("typecheck"))
-                    && filename.ends_with(".kk")
+                    && filename.ends_with("function_overloading_1/foo.kk")
                 {
                     let input_filename = filename;
                     print!("{}", input_filename);

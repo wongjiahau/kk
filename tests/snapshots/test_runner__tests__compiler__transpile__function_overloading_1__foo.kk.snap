@@ -11,13 +11,13 @@ INPUT
 
 (defn map (forall (A B) (a A) (f (-> A B)) B) (f a))
 
-(. "Hello" (replace :first "l" :with "k") print)
+[. "Hello" (replace :first "l" :with "k") print]
 
-(. "Hello" (map replace :first "l" :with "k") print)
+[. "Hello" (map replace :first "l" :with "k") print]
 
-(. "Hello" (replace :each "l" :with "k") print)
+[. "Hello" (replace :each "l" :with "k") print]
 
-(. "Hello" (map replace :each "l" :with "k") print)
+[. "Hello" (map replace :each "l" :with "k") print]
 
 ============
 EXIT CODE

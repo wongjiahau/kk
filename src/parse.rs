@@ -2298,6 +2298,36 @@ impl MacroExpandedList {
                 })))
             }
 
+            // Dot chaining
+            // 2 cases:
+            //
+            //   (. a b) = (b a)
+            //   (. a (b c)) = (b a c)
+            //
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "." => {
+                let first = tail.get(0).into_node(self.head().position())?;
+                let second = tail.get(1).into_node(self.head().position())?;
+                tail.get(2).should_be_none()?;
+                let node = match second {
+                    MacroExpandedNode::List(list) => MacroExpandedNode::List(MacroExpandedList {
+                        nodes: Box::new(NonEmpty {
+                            head: list.head().clone(),
+                            tail: vec![first]
+                                .into_iter()
+                                .chain(list.tail().into_iter())
+                                .collect(),
+                        }),
+                    }),
+                    _ => MacroExpandedNode::List(MacroExpandedList {
+                        nodes: Box::new(NonEmpty {
+                            head: second,
+                            tail: vec![first],
+                        }),
+                    }),
+                };
+                node.to_expression(state)
+            }
+
             // Record
             MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "#" => {
                 Ok(Expression::Record {
@@ -2486,80 +2516,6 @@ impl simple_ast::List {
             .collect::<Vec<_>>();
         match self.bracket.kind {
             BracketKind::Round => match nodes.split_first() {
-                // Dot chaining
-                // For example: (. a (b c) d) is the same as:
-                // Infix: a.b(c).d
-                // Prefix: (d (b a c))
-                //
-                // Example 2: (. a b) same as (b a)
-                // Example 3: (. a (b c)) same as (b a c)
-                // Example 4: (. a b c) same as (c (b a))
-                Some((MacroExpandedNode::Literal(Literal::Identifier(id)), [head, tail @ ..]))
-                    if id.representation == "." =>
-                {
-                    // Say `left` is `a` and `tail` is `[b c]`.
-                    //
-                    fn chain(
-                        left: MacroExpandedNode,
-                        tail: &[MacroExpandedNode],
-                    ) -> MacroExpandedNode {
-                        match tail.split_first() {
-                            Some((head, tail)) => match head {
-                                MacroExpandedNode::List(list) => {
-                                    let left = match list.nodes.tail.split_first() {
-                                        Some((second, rest)) => {
-                                            let first = list.nodes.first();
-                                            MacroExpandedNode::List(MacroExpandedList {
-                                                nodes: Box::new(NonEmpty {
-                                                    head: first.clone(),
-                                                    tail: vec![left, second.clone()]
-                                                        .into_iter()
-                                                        .chain(
-                                                            rest.into_iter()
-                                                                .map(|node| node.clone()),
-                                                        )
-                                                        .collect(),
-                                                }),
-                                            })
-                                        }
-                                        _ => MacroExpandedNode::List(MacroExpandedList {
-                                            nodes: Box::new(NonEmpty {
-                                                head: head.clone(),
-                                                tail: vec![left],
-                                            }),
-                                        }),
-                                    };
-                                    chain(
-                                        MacroExpandedNode::List(MacroExpandedList {
-                                            nodes: Box::new(NonEmpty {
-                                                head: left,
-                                                tail: vec![],
-                                            }),
-                                        }),
-                                        tail,
-                                    )
-                                }
-
-                                // Literal or Unit
-                                _ => MacroExpandedNode::List(MacroExpandedList {
-                                    nodes: Box::new(NonEmpty {
-                                        head: head.clone(),
-                                        tail: vec![left],
-                                    }),
-                                }),
-                            },
-                            None => MacroExpandedNode::List(MacroExpandedList {
-                                nodes: Box::new(NonEmpty {
-                                    head: left,
-                                    tail: vec![],
-                                }),
-                            }),
-                        }
-                    }
-                    chain(head.clone(), tail)
-                }
-
-                // others
                 Some((head, tail)) => MacroExpandedNode::List(MacroExpandedList {
                     nodes: Box::new(NonEmpty {
                         head: head.clone(),
@@ -2580,21 +2536,17 @@ impl simple_ast::List {
                 Some((operator, [first_argument, second_argument, tail @ ..])) => {
                     fn right_associativitify(
                         operator: MacroExpandedNode,
-                        bracket: Bracket,
                         first_argument: MacroExpandedNode,
                         second_argument: MacroExpandedNode,
                         tail: &[MacroExpandedNode],
                     ) -> MacroExpandedNode {
                         match tail.split_first() {
-                            None => {
-                                // TODO: we should use another bracket?
-                                MacroExpandedNode::List(MacroExpandedList {
-                                    nodes: Box::new(NonEmpty {
-                                        head: operator,
-                                        tail: vec![first_argument, second_argument],
-                                    }),
-                                })
-                            }
+                            None => MacroExpandedNode::List(MacroExpandedList {
+                                nodes: Box::new(NonEmpty {
+                                    head: operator,
+                                    tail: vec![first_argument, second_argument],
+                                }),
+                            }),
                             Some((third_argument, tail)) => {
                                 MacroExpandedNode::List(MacroExpandedList {
                                     nodes: Box::new(NonEmpty {
@@ -2603,7 +2555,6 @@ impl simple_ast::List {
                                             first_argument,
                                             right_associativitify(
                                                 operator,
-                                                bracket,
                                                 second_argument,
                                                 third_argument.clone(),
                                                 tail,
@@ -2616,7 +2567,6 @@ impl simple_ast::List {
                     }
                     right_associativitify(
                         operator.clone(),
-                        self.bracket.clone(),
                         first_argument.clone(),
                         second_argument.clone(),
                         tail,
@@ -2637,9 +2587,57 @@ impl simple_ast::List {
             // Example: [+ a b c] means:
             // Infix: ((a + b) + c)
             // Prefix: (+ (+ a b) c)
-            BracketKind::Square => {
-                todo!()
-            }
+            BracketKind::Square => match nodes.split_first() {
+                Some((operator, [init @ .., second_last_argument, last_argument])) => {
+                    fn left_associativitify(
+                        operator: MacroExpandedNode,
+                        last_argument: MacroExpandedNode,
+                        second_last_argument: MacroExpandedNode,
+                        init: &[MacroExpandedNode],
+                    ) -> MacroExpandedNode {
+                        match init.split_last() {
+                            None => MacroExpandedNode::List(MacroExpandedList {
+                                nodes: Box::new(NonEmpty {
+                                    head: operator.clone(),
+                                    tail: vec![second_last_argument, last_argument],
+                                }),
+                            }),
+                            Some((third_last_argument, init)) => {
+                                MacroExpandedNode::List(MacroExpandedList {
+                                    nodes: Box::new(NonEmpty {
+                                        head: operator.clone(),
+                                        tail: vec![
+                                            left_associativitify(
+                                                operator,
+                                                second_last_argument,
+                                                third_last_argument.clone(),
+                                                init,
+                                            ),
+                                            last_argument,
+                                        ],
+                                    }),
+                                })
+                            }
+                        }
+                    }
+                    left_associativitify(
+                        operator.clone(),
+                        last_argument.clone(),
+                        second_last_argument.clone(),
+                        init,
+                    )
+                }
+                Some((operator, [first_argument])) => MacroExpandedNode::List(MacroExpandedList {
+                    nodes: Box::new(NonEmpty {
+                        head: operator.clone(),
+                        tail: vec![first_argument.clone()],
+                    }),
+                }),
+                Some((operator, [])) => operator.clone(),
+                None => MacroExpandedNode::Unit {
+                    bracket: self.bracket.clone(),
+                },
+            },
         }
     }
 }
