@@ -46,7 +46,6 @@ pub struct ImportSpecificationAlias {
 
 #[derive(Debug, Clone)]
 pub struct EntryStatement {
-    pub keyword_entry: Token,
     pub expression: Expression,
 }
 
@@ -174,9 +173,8 @@ pub enum TypeAnnotation {
         type_arguments: Option<TypeArguments>,
     },
     Record {
-        left_curly_bracket: Token,
+        prefix: Token,
         key_type_annotation_pairs: Vec<(Token, TypeAnnotation)>,
-        right_curly_bracket: Token,
     },
     Array {
         hash_left_square_bracket: Token,
@@ -228,10 +226,9 @@ pub enum DestructurePattern {
         payload: Option<Box<DestructurePattern>>,
     },
     Record {
-        left_curly_bracket: Token,
+        prefix: Token,
         wildcard: Option<Token>,
         key_value_pairs: Vec<DestructuredRecordKeyValue>,
-        right_curly_bracket: Token,
     },
     Parenthesized {
         left_parenthesis: Token,
@@ -271,6 +268,13 @@ pub struct DestructuredRecordKeyValue {
     pub key: Token,
     pub type_annotation: Option<TypeAnnotation>,
     pub as_value: Option<DestructurePattern>,
+}
+impl DestructuredRecordKeyValue {
+    pub fn position(&self) -> Position {
+        self.key
+            .position
+            .join_maybe(self.as_value.as_ref().map(|node| node.position()))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -313,10 +317,9 @@ pub enum Expression {
 
     FunctionCall(Box<FunctionCall>),
     Record {
-        left_curly_bracket: Token,
+        prefix: Token,
         wildcard: Option<Token>,
         key_value_pairs: Vec<RecordKeyValue>,
-        right_curly_bracket: Token,
     },
     RecordAccess {
         expression: Box<Expression>,
@@ -324,9 +327,7 @@ pub enum Expression {
     },
     RecordUpdate {
         expression: Box<Expression>,
-        left_curly_bracket: Token,
         updates: Vec<RecordUpdate>,
-        right_curly_bracket: Token,
     },
     Array {
         hash_left_square_bracket: Token,
@@ -334,7 +335,6 @@ pub enum Expression {
         right_square_bracket: Token,
     },
     Let {
-        keyword_let: Token,
         left: DestructurePattern,
         right: Box<Expression>,
         type_annotation: Option<TypeAnnotation>,
@@ -388,6 +388,11 @@ pub enum RecordUpdate {
 pub struct RecordKeyValue {
     pub key: Token,
     pub value: Expression,
+}
+impl RecordKeyValue {
+    pub fn position(&self) -> Position {
+        self.key.position.join(self.value.position())
+    }
 }
 
 #[derive(Debug, Clone)]

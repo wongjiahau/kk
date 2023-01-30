@@ -308,12 +308,14 @@ pub fn unify_statements(
                 let expected_type =
                     type_annotation_to_type(&mut module, &let_statement.type_annotation)
                         .map_err(|unify_error| unify_error.into_compile_error(source.clone()))?;
+
                 let right = infer_expression_type(
                     &mut module,
                     Some(expected_type.clone()),
                     &let_statement.expression,
                 )
                 .map_err(|unify_error| unify_error.into_compile_error(source.clone()))?;
+
                 Ok(InferredStatement::Let {
                     access: let_statement.access,
                     left: InferredDestructurePattern {
@@ -350,6 +352,7 @@ pub fn unify_statements(
                 .map_err(|unify_error| unify_error.into_compile_error(source))
         })
         .collect::<Result<Vec<_>, CompileError>>()?;
+
     Ok(UnifyProgramResult {
         entrypoint: InferredModule {
             module,
@@ -1078,12 +1081,14 @@ impl Positionable for TypeAnnotation {
                 .position
                 .join(right_square_bracket.position),
             TypeAnnotation::Record {
-                left_curly_bracket,
-                right_curly_bracket,
+                prefix,
+                key_type_annotation_pairs,
                 ..
-            } => left_curly_bracket
-                .position
-                .join(right_curly_bracket.position),
+            } => prefix.position.join_maybe(
+                key_type_annotation_pairs
+                    .last()
+                    .map(|node| node.1.position()),
+            ),
             TypeAnnotation::Named {
                 name,
                 type_arguments,
@@ -1127,12 +1132,12 @@ impl Positionable for DestructurePattern {
                 right_parenthesis,
             } => left_parenthesis.position.join(right_parenthesis.position),
             DestructurePattern::Record {
-                left_curly_bracket,
-                right_curly_bracket,
+                prefix,
+                key_value_pairs,
                 ..
-            } => left_curly_bracket
+            } => prefix
                 .position
-                .join(right_curly_bracket.position),
+                .join_maybe(key_value_pairs.last().map(|node| node.position())),
             DestructurePattern::Array {
                 left_square_bracket,
                 right_square_bracket,
@@ -1218,20 +1223,15 @@ impl Positionable for Expression {
                 property_name,
             } => expression.position().join(property_name.position),
             Expression::Record {
-                left_curly_bracket,
-                right_curly_bracket,
+                prefix,
+                key_value_pairs,
                 ..
-            } => left_curly_bracket
-                .position
-                .join(right_curly_bracket.position),
-            Expression::RecordUpdate {
-                expression,
-                right_curly_bracket,
-                ..
-            } => expression
-                .as_ref()
-                .position()
-                .join(right_curly_bracket.position),
+            } => prefix.position.join_maybe(
+                key_value_pairs
+                    .last()
+                    .map(|key_value_pair| key_value_pair.position()),
+            ),
+            Expression::RecordUpdate { expression, .. } => expression.as_ref().position(),
             Expression::FunctionCall(function_call) => {
                 let argument_position = function_call.argument.as_ref().position();
                 let function_position = function_call.function.as_ref().position();
@@ -1249,9 +1249,7 @@ impl Positionable for Expression {
                 right_parenthesis,
                 ..
             } => left_parenthesis.position.join(right_parenthesis.position),
-            Expression::Let {
-                keyword_let, body, ..
-            } => keyword_let.position.join(body.position()),
+            Expression::Let { left, body, .. } => left.position().join(body.position()),
             Expression::Statements { current, next } => current.position().join(next.position()),
             Expression::CpsBang { argument, bang } => argument.position().join(bang.position),
             Expression::Keyword(identifier) => identifier.position,
@@ -1297,10 +1295,7 @@ impl Positionable for Statement {
                     .last()
                     .map(|constructor| constructor.position()),
             ),
-            Statement::Entry(entry_statement) => entry_statement
-                .keyword_entry
-                .position
-                .join(entry_statement.expression.position()),
+            Statement::Entry(entry_statement) => entry_statement.expression.position(),
             Statement::Import(import_statement) => import_statement
                 .keyword_import
                 .position
@@ -2293,7 +2288,7 @@ fn infer_expression_type_(
                                 // Use dummy type
                                 type_value: Type::Unit,
                                 kind: InferredDestructurePatternKind::Record {
-                                    left_curly_bracket: Token::dummy(),
+                                    prefix: Token::dummy(),
                                     key_pattern_pairs: implicit_variables
                                         .into_iter()
                                         .map(|(name, (symbol_uid, type_value))| {
@@ -2314,7 +2309,6 @@ fn infer_expression_type_(
                                             )
                                         })
                                         .collect(),
-                                    right_curly_bracket: Token::dummy(),
                                 },
                             };
                             InferredExpression::BranchedFunction(Box::new(
@@ -2341,9 +2335,8 @@ fn infer_expression_type_(
         }
         Expression::Record {
             key_value_pairs,
-            left_curly_bracket,
-            right_curly_bracket,
             wildcard,
+            prefix,
             ..
         } => {
             // Check for duplicated keys
@@ -2362,9 +2355,11 @@ fn infer_expression_type_(
                 }
             }
 
-            let record_position = left_curly_bracket
-                .position
-                .join(right_curly_bracket.position);
+            let record_position = prefix.position.join_maybe(
+                key_value_pairs
+                    .last()
+                    .map(|key_value_pair| key_value_pair.position()),
+            );
 
             let key_value_pairs = match wildcard {
                 None => Ok(key_value_pairs.clone()),
@@ -3204,9 +3199,8 @@ pub fn to_checkable_pattern(
             }
         },
         InferredDestructurePatternKind::Record {
-            left_curly_bracket,
+            prefix,
             key_pattern_pairs,
-            right_curly_bracket,
         } => {
             let expanded_key_pattern_pairs = key_pattern_pairs
                 .iter()
@@ -3225,8 +3219,7 @@ pub fn to_checkable_pattern(
                         .iter()
                         .any(|(_, pattern)| pattern.is_result_of_expansion),
                     kind: CheckablePatternKind::Record {
-                        left_curly_bracket: left_curly_bracket.clone(),
-                        right_curly_bracket: right_curly_bracket.clone(),
+                        prefix: prefix.clone(),
                         key_pattern_pairs,
                     },
                 })
@@ -3809,8 +3802,7 @@ fn infer_destructure_pattern_(
         DestructurePattern::Record {
             wildcard,
             key_value_pairs,
-            left_curly_bracket,
-            right_curly_bracket,
+            prefix,
             ..
         } => {
             let expected_key_type_pairs = match expected_type {
@@ -3931,8 +3923,7 @@ fn infer_destructure_pattern_(
                         .collect(),
                 },
                 kind: InferredDestructurePatternKind::Record {
-                    left_curly_bracket: left_curly_bracket.clone(),
-                    right_curly_bracket: right_curly_bracket.clone(),
+                    prefix: prefix.clone(),
                     key_pattern_pairs: typechecked_key_pattern_pairs
                         .iter()
                         .map(|(key, pattern)| (PropertyName(key.clone()), pattern.clone()))
@@ -4150,9 +4141,8 @@ fn match_bindings(
             }
         },
         InferredDestructurePatternKind::Record {
-            left_curly_bracket,
+            prefix,
             key_pattern_pairs,
-            right_curly_bracket,
         } => {
             // We use fold instead of map because we need to exhaust expected_bindings with each iteration
             let init = Ok((vec![], expected_bindings));
@@ -4176,9 +4166,8 @@ fn match_bindings(
                 pattern: InferredDestructurePattern {
                     type_value: source.type_value,
                     kind: InferredDestructurePatternKind::Record {
-                        left_curly_bracket,
+                        prefix,
                         key_pattern_pairs,
-                        right_curly_bracket,
                     },
                 },
             })

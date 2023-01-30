@@ -5,7 +5,7 @@ use crate::{
     raw_ast::{InfinitePatternKind, Position},
     tokenize::{StringLiteral, Token},
     typ::Type,
-    unify::InferExpressionResult,
+    unify::{InferExpressionResult, Positionable},
 };
 /// The syntax tree here represents the syntax tree that is type-checked
 /// Which contain information necessary for the transpilation
@@ -155,9 +155,8 @@ pub enum InferredDestructurePatternKind {
         payload: Option<Box<InferredDestructurePattern>>,
     },
     Record {
-        left_curly_bracket: Token,
+        prefix: Token,
         key_pattern_pairs: Vec<(PropertyName, InferredDestructurePattern)>,
-        right_curly_bracket: Token,
     },
     Array {
         left_square_bracket: Token,
@@ -198,12 +197,12 @@ impl InferredDestructurePatternKind {
                 Some(payload) => constructor_name.position.join(payload.kind.position()),
             },
             InferredDestructurePatternKind::Record {
-                left_curly_bracket,
-                right_curly_bracket,
+                prefix,
+                key_pattern_pairs,
                 ..
-            } => left_curly_bracket
+            } => prefix
                 .position
-                .join(right_curly_bracket.position),
+                .join_maybe(key_pattern_pairs.last().map(|node| node.1.position())),
             InferredDestructurePatternKind::Array {
                 left_square_bracket,
                 right_square_bracket,

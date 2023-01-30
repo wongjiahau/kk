@@ -216,14 +216,18 @@ pub mod interpretable {
                 Expression::Int(int) => format!("{}", int),
                 Expression::EnumConstructor { tag, payload } => match payload {
                     Some(payload) => {
-                        format!("#{} ({})", tag, payload.print())
+                        format!("{{tag: \"{}\", payload: {}}}", tag, payload.print())
                     }
                     None => {
-                        format!("#{}", tag)
+                        format!("{{tag: \"{}\"}})", tag)
                     }
                 },
-                Expression::HasTag { expression, tag } => todo!(),
-                Expression::GetEnumPayload(_) => todo!(),
+                Expression::HasTag { expression, tag } => {
+                    format!("{}.tag === '{}'", expression.print(), tag)
+                }
+                Expression::GetEnumPayload(payload) => {
+                    format!("{}", payload.print())
+                }
                 Expression::TupleAccess { tuple, index } => todo!(),
                 Expression::Tuple(_) => todo!(),
                 Expression::InnateFunctionCall { function, argument } => {

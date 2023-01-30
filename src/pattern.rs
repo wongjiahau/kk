@@ -63,9 +63,8 @@ pub enum CheckablePatternKind {
         payload: Option<Box<CheckablePattern>>,
     },
     Record {
-        left_curly_bracket: Token,
+        prefix: Token,
         key_pattern_pairs: Vec<(PropertyName, CheckablePattern)>,
-        right_curly_bracket: Token,
     },
     Tuple {
         patterns: Box<NonEmpty<CheckablePatternKind>>,
@@ -95,12 +94,14 @@ impl Positionable for CheckablePatternKind {
                 None => constructor_name.position,
             },
             CheckablePatternKind::Record {
-                left_curly_bracket,
-                right_curly_bracket,
+                prefix,
+                key_pattern_pairs,
                 ..
-            } => left_curly_bracket
-                .position
-                .join(right_curly_bracket.position),
+            } => prefix.position.join_maybe(
+                key_pattern_pairs
+                    .last()
+                    .map(|(_, pattern)| pattern.kind.position()),
+            ),
             CheckablePatternKind::Tuple { .. } => {
                 panic!("")
             }
