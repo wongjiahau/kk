@@ -17,6 +17,150 @@ pub trait ToDoc {
     }
 }
 
+impl SExpr {
+    pub fn list(nodes: Vec<SExpr>) -> SExpr {
+        Self::List {
+            opening: "(".to_string(),
+            nodes,
+            closing: ")".to_string(),
+        }
+    }
+
+    pub fn atom<'a>(representation: &'a str) -> SExpr {
+        Self::Atom {
+            representation: representation.to_string(),
+            is_keyword: false,
+        }
+    }
+}
+
+pub enum SExpr {
+    List {
+        opening: String,
+        nodes: Vec<SExpr>,
+        closing: String,
+    },
+    Atom {
+        representation: String,
+        is_keyword: bool,
+    },
+}
+impl SExpr {
+    fn is_keyword(&self) -> bool {
+        match self {
+            SExpr::Atom {
+                is_keyword: true, ..
+            } => true,
+            _ => false,
+        }
+    }
+}
+
+impl ToDoc for SExpr {
+    fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
+        match self {
+            SExpr::Atom { representation, .. } => arena.text(representation),
+            SExpr::List {
+                opening,
+                nodes,
+                closing,
+            } => {
+                match nodes.split_first() {
+                    None => arena.text(format!("{}{}", opening, closing)),
+                    Some((head, tail)) => {
+                        #[derive(Debug, Clone)]
+
+                        struct KeywordGroup<'a, T> {
+                            function: &'a T,
+                            continuous_keywords: Vec<&'a T>,
+                            arguments: Vec<&'a T>,
+                        }
+
+                        // Group each keyword as its onw group
+                        // For example:
+                        //
+                        //   f 0 g 1 2 z 3 4
+                        //
+                        // Will be grouped as:
+                        //
+                        //   (f 0) (g 1 2) (z 3 4)
+                        //
+                        // And formatted like:
+                        //
+                        //   f 0
+                        //     g 1 2
+                        //     z 3 4
+                        //
+                        let mut groups = NonEmpty {
+                            head: KeywordGroup {
+                                function: head,
+                                continuous_keywords: vec![],
+                                arguments: vec![],
+                            },
+                            tail: vec![],
+                        };
+                        let mut previous_argument_is_keyword = true;
+                        for argument in tail {
+                            match argument.is_keyword() {
+                                true => {
+                                    if !previous_argument_is_keyword {
+                                        previous_argument_is_keyword = true;
+                                        groups.tail.push(KeywordGroup {
+                                            function: argument,
+                                            continuous_keywords: vec![],
+                                            arguments: vec![],
+                                        })
+                                    } else {
+                                        groups.last_mut().continuous_keywords.push(argument)
+                                    }
+                                }
+                                _ => {
+                                    previous_argument_is_keyword = false;
+                                    groups.last_mut().arguments.push(argument)
+                                }
+                            }
+                        }
+
+                        let groups = groups.into_vector();
+                        let internal = arena
+                            .intersperse(
+                                groups.into_iter().map(|keyword_group| {
+                                    keyword_group
+                                        .function
+                                        .to_doc(arena)
+                                        .append(arena.concat(
+                                            keyword_group.continuous_keywords.iter().map(|token| {
+                                                arena.softline().append(token.to_doc(arena))
+                                            }),
+                                        ))
+                                        .append(
+                                            arena
+                                                .concat(keyword_group.arguments.iter().map(
+                                                    |argument| {
+                                                        arena
+                                                            .line()
+                                                            .append(argument.to_doc(arena))
+                                                            .nest(2)
+                                                    },
+                                                ))
+                                                .group(),
+                                        )
+                                }),
+                                arena.line().nest(2),
+                            )
+                            .group();
+
+                        arena
+                            .text(opening)
+                            .append(internal)
+                            .append(arena.text(closing))
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn brackets<'a>(
     opening: &'a str,
     doc: DocBuilder<'a, Arena<'a, ()>>,
@@ -97,6 +241,11 @@ impl ToDoc for Node {
     fn to_doc<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         match self {
             Node::List(List { nodes, bracket }) => {
+                let brackets = match bracket.kind {
+                    BracketKind::Round => ("(", ")"),
+                    BracketKind::Square => ("[", "]"),
+                    BracketKind::Curly => ("{", "}"),
+                };
                 match nodes.split_first() {
                     None => arena.text("()"),
                     Some((head, tail)) => {

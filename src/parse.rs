@@ -442,13 +442,23 @@ impl MacroExpandedList {
         let first = self.nodes.first().to_identifier(None)?;
         match first.representation.as_str() {
             "enum" => {
-                let name = self.get(1)?.to_identifier(None)?;
+                let (name, type_variables_declaration) = {
+                    match self.get(1)? {
+                        MacroExpandedNode::List(list) => {
+                            let name = list.get(0)?.to_identifier(None)?;
+                            let type_variables_declaration =
+                                list.skip(1)?.to_type_variables_declaration()?;
+                            (name, Some(type_variables_declaration))
+                        }
+                        other => (other.to_identifier(None)?, None),
+                    }
+                };
                 let constructors = self.skip(2)?.into_enum_constructor_definitions(state)?;
                 Ok(Statement::Enum(EnumStatement {
                     access: Access::Protected,
                     keyword_enum: first,
                     name,
-                    type_variables_declaration: None,
+                    type_variables_declaration,
                     constructors,
                 }))
             }
@@ -1117,8 +1127,56 @@ impl MacroExpandedList {
                 }))
             }
 
+            // CPS closure
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "~" => {
+                let bind_function = Box::new(self.get(1)?.to_expression(state)?);
+
+                let expression = {
+                    let expression = Box::new(self.get(2)?.to_expression(state)?);
+                    self.nodes.get(3).should_be_none()?;
+                    expression
+                }; // Collect CpsBangs
+                let (bangs, expression) =
+                    expression.clone().collect_cps_bangs(state, &bind_function);
+
+                let expression = bangs.into_iter().fold(expression, |expression, bang| {
+                    Expression::FunctionCall(Box::new(FunctionCall {
+                        function: Box::new(Expression::FunctionCall(Box::new(FunctionCall {
+                            function: Box::new(bang.function),
+                            argument: Box::new(bang.argument),
+                            type_arguments: None,
+                        }))),
+                        argument: Box::new(Expression::Function(Box::new(Function {
+                            branches: NonEmpty {
+                                head: FunctionBranch {
+                                    parameter: Box::new(bang.temporary_variable),
+                                    body: Box::new(expression),
+                                },
+                                tail: vec![],
+                            },
+                        }))),
+                        type_arguments: None,
+                    }))
+                });
+                Ok(Expression::TildeClosure(TildeClosure {
+                    tilde: id.clone(),
+                    bind_function,
+                    expression: Box::new(expression),
+                }))
+            }
+
+            // CPS bang
+            MacroExpandedNode::Literal(Literal::Identifier(id)) if id.representation == "!" => {
+                Ok(Expression::CpsBang {
+                    bang: id.clone(),
+                    argument: {
+                        let expression = Box::new(self.get(1)?.to_expression(state)?);
+                        self.nodes.get(2).should_be_none()?;
+                        expression
+                    },
+                })
+            }
             // Function call
-            //
             // For example: (a b c) means ((a b) c)
             _ => {
                 if self.nodes.len() == 1 {

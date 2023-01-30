@@ -1,8 +1,10 @@
+use crate::formatter::{self, SExpr, ToDoc};
 use crate::intrinsic::IntrinsicFunction;
 use crate::non_empty::NonEmpty;
 use crate::tokenize::Token;
 use crate::transpile::interpretable::{self, *};
 use futures::future::{BoxFuture, FutureExt};
+use pretty::DocAllocator;
 use std::collections::HashMap;
 
 use itertools::Itertools;
@@ -35,7 +37,33 @@ struct ValueObject {
 }
 
 impl Value {
+    fn to_sexpr(&self) -> SExpr {
+        match self {
+            Value::Int(int) => SExpr::atom(format!("{}", int).as_str()),
+            Value::Float(float) => SExpr::atom(format!("{}", float).as_str()),
+            Value::Boolean(boolean) => SExpr::atom(format!("{}", boolean).as_str()),
+            Value::String(string) => SExpr::atom(format!("\"{}\"", string).as_str()),
+            Value::TagOnlyVariant(tag) => SExpr::atom(format!("{}", tag).as_str()),
+            Value::Variant { tag, payload } => {
+                SExpr::list(vec![SExpr::atom(tag.as_str()), payload.to_sexpr()])
+            }
+            Value::Object(object) => SExpr::list(
+                vec![SExpr::atom("%")]
+                    .into_iter()
+                    .chain(object.pairs.iter().map(|pair| {
+                        SExpr::list(vec![SExpr::atom(pair.0.as_str()), pair.1.to_sexpr()])
+                    }))
+                    .collect::<Vec<_>>(),
+            ),
+            Value::Function(_) => todo!(),
+            Value::Unit => todo!(),
+            Value::Array(_) => todo!(),
+            Value::Tuple(_) => todo!(),
+        }
+    }
     fn print(&self) -> String {
+        return self.to_sexpr().to_pretty();
+        // return self.to_pretty();
         match self {
             Value::Int(integer) => integer.to_string(),
             Value::Float(float) => float.to_string(),
@@ -62,6 +90,13 @@ impl Value {
                     .join(", ")
             ),
             Value::Tuple(_) => todo!(),
+        }
+    }
+
+    fn is_keyword(&self) -> bool {
+        match self {
+            Value::Object(_) | Value::Function(_) | Value::Array(_) | Value::Tuple(_) => false,
+            _ => true,
         }
     }
 }

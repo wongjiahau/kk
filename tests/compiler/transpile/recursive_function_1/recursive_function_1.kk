@@ -1,6 +1,10 @@
-enum Nat { zero, succ (Nat) };
+(enum Nat Zero (Succ Nat))
 
-let ((x : Nat).add (y : Nat) : Nat) =
-  (x, y).[(zero, n) -> n, (succ (n), a) -> n.add (a).succ];
+(defn
+  ((x Nat) add (y Nat) Nat)
+  (match
+    (% x y)
+    ((% (x Zero) y) y)
+    ((% (x (Succ n)) y) [. n (add y) Succ])))
 
-(one = zero.succ; one.add (one).print)
+(do (let one (. Zero Succ)) [. one (add one) print])
