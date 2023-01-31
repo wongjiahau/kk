@@ -32,7 +32,7 @@ EXIT CODE
 ============
 STDOUT
 ============
-(some (% (x "hi") (z none) (y 2)))
+(some (% (x "hi") (y 2) (z none)))
 
 ============
 STDERR

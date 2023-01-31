@@ -1,9 +1,10 @@
-use crate::formatter::{self, SExpr, ToDoc};
+use crate::formatter::{SExpr, ToDoc};
 use crate::intrinsic::IntrinsicFunction;
 use crate::non_empty::NonEmpty;
 use crate::tokenize::Token;
 use crate::transpile::interpretable::{self, *};
 use futures::future::{BoxFuture, FutureExt};
+use indexmap::IndexMap;
 use pretty::DocAllocator;
 use std::collections::HashMap;
 
@@ -33,7 +34,7 @@ struct ValueFunction {
 
 #[derive(Clone, Debug)]
 struct ValueObject {
-    pairs: HashMap<String, Value>,
+    pairs: IndexMap<String, Value>,
 }
 
 impl Value {
@@ -62,35 +63,7 @@ impl Value {
         }
     }
     fn print(&self) -> String {
-        return self.to_sexpr().to_pretty();
-        // return self.to_pretty();
-        match self {
-            Value::Int(integer) => integer.to_string(),
-            Value::Float(float) => float.to_string(),
-            Value::Boolean(boolean) => boolean.to_string(),
-            Value::TagOnlyVariant(tag) => tag.clone(),
-            Value::Variant { tag, payload } => format!("{}({})", tag, payload.print()),
-            Value::Object(object) => {
-                let mut values = object
-                    .pairs
-                    .iter()
-                    .sorted_by(|a, b| a.0.cmp(&b.0))
-                    .map(|(name, value)| format!("{} = {}", name, value.print()));
-                format!("{{ {} }}", values.join(", "))
-            }
-            Value::Function(_) => format!("<function>"),
-            Value::String(string) => format!("\"{}\"", string.to_string()),
-            Value::Unit => "()".to_string(),
-            Value::Array(values) => format!(
-                "[ {} ]",
-                values
-                    .into_iter()
-                    .map(|value| value.print())
-                    .collect_vec()
-                    .join(", ")
-            ),
-            Value::Tuple(_) => todo!(),
-        }
+        self.to_sexpr().to_pretty()
     }
 
     fn is_keyword(&self) -> bool {
@@ -386,7 +359,7 @@ impl Eval for interpretable::Expression {
                 vec![],
             )),
             interpretable::Expression::Object(key_values) => {
-                let mut pairs = HashMap::new();
+                let mut pairs = IndexMap::new();
                 let mut promises = vec![];
                 for key_value in key_values {
                     let (value, new_promises) = key_value.value.eval(env)?;
@@ -564,6 +537,6 @@ impl Eval for Vec<interpretable::Statement> {
 
 fn unit() -> Value {
     Value::Object(ValueObject {
-        pairs: HashMap::new(),
+        pairs: IndexMap::new(),
     })
 }
