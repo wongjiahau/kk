@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 clap = "3.0.0-beta.2"
-prettytable-rs = "^0.8"
+prettytable = "0.10.0"
 difference = "2.0.0"
 diff = "0.1.12"
 peeking_take_while = "0.1.2"
