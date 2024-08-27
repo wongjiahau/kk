@@ -212,9 +212,16 @@ fn include_dir_dir_to_directory(dir: &include_dir::Dir<'_>) -> Directory {
     Directory {
         sources: dir
             .files()
-            .map(|file| Source {
-                path: file.path().to_str().unwrap().to_string(),
-                code: std::str::from_utf8(file.contents()).unwrap().to_string(),
+            .filter_map(|file| {
+                let path = file.path().to_str().unwrap().to_string();
+                if path.ends_with(".kk") {
+                    Some(Source {
+                        path,
+                        code: std::str::from_utf8(file.contents()).unwrap().to_string(),
+                    })
+                } else {
+                    None
+                }
             })
             .collect(),
     }

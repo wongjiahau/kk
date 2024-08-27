@@ -1,4 +1,9 @@
-use crate::{module::Access, non_empty::NonEmpty, tokenize::Character, unify::Positionable};
+use crate::{
+    module::Access,
+    non_empty::NonEmpty,
+    tokenize::Character,
+    unify::{FunctionCallLike, Positionable},
+};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -16,6 +21,40 @@ pub enum Statement {
     /// This represents the entry points of a module.
     /// Will be ignored for imported modules.
     Entry(EntryStatement),
+    /// Function declaration
+    Function(FunctionStatement),
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionStatement {
+    pub access: Access,
+    pub keyword_fn: Token,
+    pub type_variables: Vec<TypeArguments>,
+    pub signature: FunctionCallLike<Parameter>,
+    pub return_type: TypeAnnotation,
+    pub body: Expression,
+    pub right_curly_bracket: Token,
+}
+impl FunctionStatement {
+    pub(crate) fn position(&self) -> Position {
+        self.keyword_fn
+            .position
+            .join(self.right_curly_bracket.position)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum FunctionStatementComponent {
+    Parameter(Parameter),
+    Identifier(Token),
+}
+impl FunctionStatementComponent {
+    pub(crate) fn position(&self) -> Position {
+        match self {
+            FunctionStatementComponent::Parameter(parameter) => parameter.position(),
+            FunctionStatementComponent::Identifier(identifier) => identifier.position.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +103,14 @@ pub struct LetStatement {
 pub struct Parameter {
     pub pattern: DestructurePattern,
     pub type_annotation: TypeAnnotation,
+}
+
+impl Positionable for Parameter {
+    fn position(&self) -> Position {
+        self.pattern
+            .position()
+            .join(self.type_annotation.position())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -381,6 +428,29 @@ pub struct FunctionCall {
     pub argument: Box<Expression>,
     pub type_arguments: Option<TypeArguments>,
 }
+
+#[derive(Debug, Clone)]
+pub struct NewFunctionCall {
+    pub name: FunctionName,
+    pub arguments: Vec<Expression>,
+}
+
+impl NewFunctionCall {
+    pub(crate) fn position(&self) -> Position {
+        self.name
+            .position()
+            .join_maybe(self.arguments.last().map(|argument| argument.position()))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionName(pub(crate) NonEmpty<(usize, Token)>);
+impl FunctionName {
+    fn position(&self) -> Position {
+        self.0.head.1.position.join(self.0.last().1.position)
+    }
+}
+
 impl FunctionCall {
     pub fn position(&self) -> Position {
         self.function.position().join(self.argument.position())
@@ -529,6 +599,7 @@ pub enum TokenType {
     KeywordType,
     KeywordImport,
     KeywordPublic,
+    KeywordFn,
     KeywordExport,
     KeywordGiven,
     KeywordClass,

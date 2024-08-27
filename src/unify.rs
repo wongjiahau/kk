@@ -13,7 +13,7 @@ use crate::pattern::*;
 use crate::raw_ast::*;
 use crate::typ::*;
 use indexmap::IndexMap;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use std::{collections::HashSet, rc::Rc};
 use std::{iter, path::PathBuf};
 
@@ -122,6 +122,71 @@ pub struct File {
     statements: Vec<Statement>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct FunctionCallLike<T: Positionable + Clone> {
+    components: NonEmpty<FunctionCallLikeComponent<T>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum FunctionCallLikeComponent<T: Positionable> {
+    Identifier(Token),
+    Other(T),
+}
+
+impl<T: Positionable> Positionable for FunctionCallLikeComponent<T> {
+    fn position(&self) -> Position {
+        match self {
+            FunctionCallLikeComponent::Identifier(token) => token.position.clone(),
+            FunctionCallLikeComponent::Other(t) => t.position(),
+        }
+    }
+}
+
+impl<T: Positionable + Clone> FunctionCallLike<T> {
+    pub(crate) fn new(components: NonEmpty<FunctionCallLikeComponent<T>>) -> Self {
+        Self { components }
+    }
+
+    /// This is a temporary function to adhere to existing API
+    /// We should remove it once we change the global dict to use FunctionCallLike instead of
+    /// String as ID
+    pub(crate) fn as_one_token(&self) -> Token {
+        Token {
+            token_type: TokenType::Identifier,
+            position: self
+                .components
+                .head
+                .position()
+                .join(self.components.last().position()),
+            representation: self
+                .components
+                .clone()
+                .into_vector()
+                .into_iter()
+                .enumerate()
+                .filter_map(|(index, component)| match component {
+                    FunctionCallLikeComponent::Identifier(token) => {
+                        Some(format!("({}){}", index, token.representation))
+                    }
+                    FunctionCallLikeComponent::Other(_) => None,
+                })
+                .join(" "),
+        }
+    }
+
+    pub(crate) fn others(&self) -> Vec<T> {
+        self.components
+            .clone()
+            .into_vector()
+            .into_iter()
+            .filter_map(|component| match component {
+                FunctionCallLikeComponent::Identifier(_) => None,
+                FunctionCallLikeComponent::Other(other) => Some(other),
+            })
+            .collect()
+    }
+}
+
 pub fn unify_statements(
     module_meta: ModuleMeta,
     files: Vec<File>,
@@ -186,6 +251,91 @@ pub fn unify_statements(
                     }
                     Statement::Import(import_statement) => {
                         import_statements.push((file.source.clone(), import_statement))
+                    }
+                    Statement::Function(function_statement) => {
+                        let_statements.push((file.source.clone(), {
+                            let parameters = function_statement
+                                .signature
+                                .components
+                                .clone()
+                                .into_vector()
+                                .into_iter()
+                                .filter_map(|component| match component {
+                                    FunctionCallLikeComponent::Identifier(_) => None,
+                                    FunctionCallLikeComponent::Other(parameter) => Some(parameter),
+                                })
+                                .collect_vec();
+                            LetStatement {
+                                access: function_statement.access,
+                                keyword_let: function_statement.keyword_fn,
+                                name: function_statement.signature.as_one_token(),
+                                doc_string: None,
+                                type_annotation: {
+                                    let last = parameters
+                                        .last()
+                                        .map(|parameter| parameter.type_annotation.clone())
+                                        .unwrap_or(TypeAnnotation::Unit {
+                                            left_parenthesis: Token::dummy_identifier(
+                                                "(".to_string(),
+                                            ),
+                                            right_parenthesis: Token::dummy_identifier(
+                                                ")".to_string(),
+                                            ),
+                                        });
+                                    parameters.clone().into_iter().rev().fold(
+                                        last,
+                                        |result, parameter| {
+                                            TypeAnnotation::Function(FunctionTypeAnnotation {
+                                                parameter: Box::new(parameter.type_annotation),
+                                                return_type: Box::new(result),
+                                                type_constraints: None,
+                                            })
+                                        },
+                                    )
+                                },
+
+                                expression: {
+                                    let last_pattern = parameters
+                                        .last()
+                                        .map(|parameter| parameter.pattern.clone())
+                                        .unwrap_or(DestructurePattern::Unit {
+                                            left_parenthesis: Token::dummy_identifier(
+                                                "(".to_string(),
+                                            ),
+                                            right_parenthesis: Token::dummy_identifier(
+                                                ")".to_string(),
+                                            ),
+                                        });
+                                    let innermost_function =
+                                        Expression::Function(Box::new(Function {
+                                            branches: NonEmpty::new(
+                                                FunctionBranch {
+                                                    parameter: Box::new(last_pattern),
+                                                    body: Box::new(function_statement.body),
+                                                    right_square_bracket: function_statement
+                                                        .right_curly_bracket,
+                                                },
+                                                vec![],
+                                            ),
+                                        }));
+                                    parameters.into_iter().rev().fold(
+                                        innermost_function,
+                                        |result, parameter| {
+                                            Expression::Function(Box::new(Function {
+                                                branches: NonEmpty::new(
+                                                    FunctionBranch {
+                                                        parameter: Box::new(parameter.pattern),
+                                                        body: Box::new(result),
+                                                        right_square_bracket: Token::dummy(),
+                                                    },
+                                                    vec![],
+                                                ),
+                                            }))
+                                        },
+                                    )
+                                },
+                            }
+                        }))
                     }
                 }
             }
@@ -1294,6 +1444,7 @@ impl Positionable for Statement {
                     None => None,
                     Some(specification) => Some(specification.position()),
                 }),
+            Statement::Function(function) => function.position(),
         }
     }
 }

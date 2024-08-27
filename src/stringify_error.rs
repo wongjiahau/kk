@@ -227,6 +227,18 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
             (range, error)
         }
         ParseErrorKind::TokenizeError(tokenize_error) => get_tokenize_error(tokenize_error),
+        ParseErrorKind::FunctionStatementMustHaveAtLeastOneComponent { position } => {
+            let position = position;
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            let error = StringifiedError {
+                summary: "Expected at least one function component".to_string(),
+                body: "".to_string(),
+            };
+            (range, error)
+        },
     };
     print_error(filename, code, range, error)
 }
@@ -276,6 +288,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordClass => todo!(),
         TokenType::KeywordInnate => todo!(),
         TokenType::HashLeftSquareBracket => todo!(),
+        TokenType::KeywordFn => "used for declaring functions",
 
     }
 }
@@ -424,6 +437,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordType => "type",
         TokenType::KeywordImport => "import",
         TokenType::KeywordPublic => "public",
+        TokenType::KeywordFn => "fn",
         TokenType::KeywordEntry => "entry",
         TokenType::KeywordGiven => "given",
         TokenType::Whitespace => " ",

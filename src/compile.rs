@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use include_dir::{include_dir, Dir};
 use indexmap::IndexMap;
+use itertools::Itertools;
 
 use crate::interpret::interpret_statements;
 use crate::module::fs_readdir_to_directory;
@@ -49,18 +50,20 @@ pub fn compile(path: PathBuf) {
             folder_relative_path.display(),
             error
         ),
-        Ok(dir) => match read_module(
-            &module_meta,
-            &IndexMap::new(),
-            uid,
-            fs_readdir_to_directory(dir),
-            Some(&to_relative_path(path).unwrap()),
-        ) {
-            Err(compile_error) => print_compile_error(compile_error),
-            Ok(result) => {
-                let ast = transpile_program(result);
-                interpret_statements(ast);
+        Ok(dir) => {
+            match read_module(
+                &module_meta,
+                &IndexMap::new(),
+                uid,
+                fs_readdir_to_directory(dir),
+                Some(&to_relative_path(path).unwrap()),
+            ) {
+                Err(compile_error) => print_compile_error(compile_error),
+                Ok(result) => {
+                    let ast = transpile_program(result);
+                    interpret_statements(ast);
+                }
             }
-        },
+        }
     }
 }

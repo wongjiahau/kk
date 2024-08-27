@@ -97,7 +97,22 @@ impl Environment {
     fn global() -> Environment {
         Environment {
             parent: None,
-            bindings: HashMap::new(),
+            bindings: {
+                [("print".to_string(), {
+                    let param = uuid::Uuid::new_v4().to_string();
+                    Value::Function(ValueFunction {
+                        closure: Environment::new(None),
+                        parameter: param.clone(),
+                        body: [Statement::Expression(Expression::InnateFunctionCall {
+                            function: InnateFunction::Print,
+                            argument: Box::new(Expression::Variable(Identifier(param))),
+                        })]
+                        .to_vec(),
+                    })
+                })]
+                .into_iter()
+                .collect()
+            },
         }
     }
     fn get_value(&self, name: &Token) -> Result<Value, ControlFlow> {

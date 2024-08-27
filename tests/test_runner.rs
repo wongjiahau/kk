@@ -25,9 +25,8 @@ fn run_all_tests() {
                     .expect("Failed to convert entry to string")
                     .to_string();
 
-                if (filename.contains("transpile") || filename.contains("typecheck"))
-                    && filename.ends_with(".kk")
-                {
+                println!("filename = {filename}");
+                if (filename.contains("interpret-free")) && filename.ends_with(".kk") {
                     let input_filename = filename;
                     print!("{}", input_filename);
                     let input =

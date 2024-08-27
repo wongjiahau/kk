@@ -1,4 +1,7 @@
+use itertools::{Either, Itertools};
+
 use crate::module::Access;
+use crate::unify::{FunctionCallLike, FunctionCallLikeComponent};
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
 use crate::{raw_ast::*, tokenize::TokenizeError};
 
@@ -22,6 +25,9 @@ pub enum ParseErrorKind {
         position: Position,
     },
     ExpectedPattern {
+        position: Position,
+    },
+    FunctionStatementMustHaveAtLeastOneComponent {
         position: Position,
     },
 }
@@ -190,7 +196,17 @@ impl<'a> Parser<'a> {
                     let token = self.next_meaningful_token()?.unwrap();
                     self.parse_import_statement(access, token).map(vectorized)
                 }
-                _ => Err(Parser::invalid_token(token, None)),
+                TokenType::KeywordFn => {
+                    let keyword_fn = self.next_meaningful_token()?.unwrap();
+                    let vectorized = vectorized(Statement::Function(
+                        self.parse_fn_statement(keyword_fn, access)?,
+                    ));
+                    Ok(vectorized)
+                }
+                _ => Ok(vectorized(Statement::Entry(EntryStatement {
+                    keyword_entry: Token::dummy(),
+                    expression: self.parse_top_level_expression()?,
+                }))),
             },
             None => Err(Parser::unexpected_eof(context)),
         }
@@ -713,16 +729,80 @@ impl<'a> Parser<'a> {
     ) -> Result<Expression, ParseError> {
         if self.try_eat_token(TokenType::Semicolon)?.is_some() {
             let next = self.parse_mid_precedence_expression()?;
-            self.try_parse_statement_expression(Expression::Statements {
+            Ok(self.try_parse_statement_expression(Expression::Statements {
                 current: Box::new(expression),
                 next: Box::new(next),
-            })
+            })?)
         } else {
             Ok(expression)
         }
     }
 
     pub fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
+        let mut expressions = vec![];
+        let expressions = loop {
+            if let Ok(Some(Token {
+                token_type: TokenType::RightCurlyBracket,
+                ..
+            })) = self.peek_next_meaningful_token()
+            {
+                break expressions;
+            } else if let Ok(expression) = self.parse_high_precedence_expression() {
+                expressions.push(expression)
+            } else {
+                break expressions;
+            }
+        };
+
+        let components = expressions
+            .into_iter()
+            .map(|expression| match expression {
+                Expression::Identifier(identifier) => {
+                    FunctionCallLikeComponent::Identifier(identifier)
+                }
+                _ => FunctionCallLikeComponent::Other(expression),
+            })
+            .collect_vec();
+
+        let function_call_like = match components.split_first() {
+            Some((head, tail)) => FunctionCallLike::new(NonEmpty::new(head.clone(), tail.to_vec())),
+            None => {
+                return Err(ParseError {
+                    context: None,
+                    kind: ParseErrorKind::FunctionStatementMustHaveAtLeastOneComponent {
+                        position: Position::dummy(),
+                    },
+                })
+            }
+        };
+        let function_name = function_call_like.as_one_token();
+
+        let arguments = function_call_like.others();
+        let (head_argument, tail_arguments) = match arguments.split_first() {
+            Some((head, tail)) => (head.clone(), tail.to_vec()),
+            None => (
+                Expression::Unit {
+                    left_parenthesis: Token::dummy(),
+                    right_parenthesis: Token::dummy(),
+                },
+                vec![],
+            ),
+        };
+        return Ok(Expression::FunctionCall(Box::new(
+            tail_arguments.into_iter().fold(
+                FunctionCall {
+                    type_arguments: None,
+                    function: Box::new(Expression::Identifier(function_name)),
+                    argument: Box::new(head_argument),
+                },
+                |function_call, argument| FunctionCall {
+                    type_arguments: None,
+                    function: Box::new(Expression::FunctionCall(Box::new(function_call))),
+                    argument: Box::new(argument),
+                },
+            ),
+        )));
+        panic!("expressions = {expressions:?}");
         if let Some(token) = self.try_eat_token(TokenType::Underscore)? {
             Ok(Expression::Identifier(token))
         } else if let Some(operator) = self.try_eat_token(TokenType::Operator)? {
@@ -1379,6 +1459,62 @@ impl<'a> Parser<'a> {
             body: Box::new(expression),
             right_square_bracket,
         })
+    }
+
+    fn parse_fn_statement(
+        &mut self,
+        keyword_fn: Token,
+        access: Access,
+    ) -> Result<FunctionStatement, ParseError> {
+        let mut components = vec![];
+        let components = loop {
+            if let Ok(Some(_)) = self.try_eat_token(TokenType::Colon) {
+                break components;
+            } else if let Ok(Some(left_parenthesis)) =
+                self.try_eat_token(TokenType::LeftParenthesis)
+            {
+                components.push(FunctionCallLikeComponent::Other(
+                    self.parse_parameter(left_parenthesis)?,
+                ))
+            } else {
+                components.push(FunctionCallLikeComponent::Identifier(
+                    self.eat_token(TokenType::Identifier, None)?,
+                ))
+            }
+        };
+        let components = match components.split_first() {
+            Some((head, tail)) => FunctionCallLike::new(NonEmpty {
+                head: head.clone(),
+                tail: tail.to_vec(),
+            }),
+            None => {
+                return Err(ParseError {
+                    kind: ParseErrorKind::FunctionStatementMustHaveAtLeastOneComponent {
+                        position: keyword_fn.position,
+                    },
+                    context: None,
+                })
+            }
+        };
+        let return_type = self.parse_type_annotation(None)?;
+        self.eat_token(TokenType::LeftCurlyBracket, None)?;
+        let body = self.parse_low_precedence_expression()?;
+        let right_curly_bracket = self.eat_token(TokenType::RightCurlyBracket, None)?;
+        Ok(FunctionStatement {
+            access,
+            keyword_fn,
+            type_variables: Default::default(),
+            signature: components,
+            return_type,
+            body,
+            right_curly_bracket,
+        })
+    }
+
+    fn parse_top_level_expression(&mut self) -> Result<Expression, ParseError> {
+        let expression = self.parse_mid_precedence_expression()?;
+        self.try_eat_token(TokenType::Semicolon)?;
+        Ok(expression)
     }
 }
 
