@@ -101,8 +101,6 @@ pub fn read_module(
                         kind: CompileErrorKind::ParseError(Box::new(error)),
                     })?;
 
-                    // println!("user_written_statements = {:#?}", user_written_statements);
-
                     injected_statements
                         .into_iter()
                         .chain(user_written_statements.into_iter())
@@ -124,7 +122,7 @@ pub struct File {
 
 #[derive(Debug, Clone)]
 pub(crate) struct FunctionCallLike<T: Positionable + Clone> {
-    components: NonEmpty<FunctionCallLikeComponent<T>>,
+    pub(crate) components: NonEmpty<FunctionCallLikeComponent<T>>,
 }
 
 #[derive(Debug, Clone)]
@@ -158,22 +156,22 @@ impl<T: Positionable + Clone> FunctionCallLike<T> {
                 .head
                 .position()
                 .join(self.components.last().position()),
-            representation: self
-                .components
-                .clone()
-                .into_vector()
-                .into_iter()
-                .enumerate()
-                .filter_map(|(index, component)| match component {
-                    FunctionCallLikeComponent::Identifier(token) => {
-                        Some(format!("({}){}", index, token.representation))
-                    }
-                    FunctionCallLikeComponent::Other(_) => None,
-                })
-                .join(" "),
+            representation: components_name(
+                self.components
+                    .clone()
+                    .into_vector()
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(index, component)| match component {
+                        FunctionCallLikeComponent::Identifier(token) => {
+                            Some((index, token.representation))
+                        }
+                        FunctionCallLikeComponent::Other(_) => None,
+                    })
+                    .collect_vec(),
+            ),
         }
     }
-
     pub(crate) fn others(&self) -> Vec<T> {
         self.components
             .clone()
@@ -185,6 +183,10 @@ impl<T: Positionable + Clone> FunctionCallLike<T> {
             })
             .collect()
     }
+}
+
+pub(crate) fn components_name(components: Vec<(usize, String)>) -> String {
+    components.into_iter().map(|(_, name)| name).join(" ")
 }
 
 pub fn unify_statements(
@@ -252,91 +254,8 @@ pub fn unify_statements(
                     Statement::Import(import_statement) => {
                         import_statements.push((file.source.clone(), import_statement))
                     }
-                    Statement::Function(function_statement) => {
-                        let_statements.push((file.source.clone(), {
-                            let parameters = function_statement
-                                .signature
-                                .components
-                                .clone()
-                                .into_vector()
-                                .into_iter()
-                                .filter_map(|component| match component {
-                                    FunctionCallLikeComponent::Identifier(_) => None,
-                                    FunctionCallLikeComponent::Other(parameter) => Some(parameter),
-                                })
-                                .collect_vec();
-                            LetStatement {
-                                access: function_statement.access,
-                                keyword_let: function_statement.keyword_fn,
-                                name: function_statement.signature.as_one_token(),
-                                doc_string: None,
-                                type_annotation: {
-                                    let last = parameters
-                                        .last()
-                                        .map(|parameter| parameter.type_annotation.clone())
-                                        .unwrap_or(TypeAnnotation::Unit {
-                                            left_parenthesis: Token::dummy_identifier(
-                                                "(".to_string(),
-                                            ),
-                                            right_parenthesis: Token::dummy_identifier(
-                                                ")".to_string(),
-                                            ),
-                                        });
-                                    parameters.clone().into_iter().rev().fold(
-                                        last,
-                                        |result, parameter| {
-                                            TypeAnnotation::Function(FunctionTypeAnnotation {
-                                                parameter: Box::new(parameter.type_annotation),
-                                                return_type: Box::new(result),
-                                                type_constraints: None,
-                                            })
-                                        },
-                                    )
-                                },
-
-                                expression: {
-                                    let last_pattern = parameters
-                                        .last()
-                                        .map(|parameter| parameter.pattern.clone())
-                                        .unwrap_or(DestructurePattern::Unit {
-                                            left_parenthesis: Token::dummy_identifier(
-                                                "(".to_string(),
-                                            ),
-                                            right_parenthesis: Token::dummy_identifier(
-                                                ")".to_string(),
-                                            ),
-                                        });
-                                    let innermost_function =
-                                        Expression::Function(Box::new(Function {
-                                            branches: NonEmpty::new(
-                                                FunctionBranch {
-                                                    parameter: Box::new(last_pattern),
-                                                    body: Box::new(function_statement.body),
-                                                    right_square_bracket: function_statement
-                                                        .right_curly_bracket,
-                                                },
-                                                vec![],
-                                            ),
-                                        }));
-                                    parameters.into_iter().rev().fold(
-                                        innermost_function,
-                                        |result, parameter| {
-                                            Expression::Function(Box::new(Function {
-                                                branches: NonEmpty::new(
-                                                    FunctionBranch {
-                                                        parameter: Box::new(parameter.pattern),
-                                                        body: Box::new(result),
-                                                        right_square_bracket: Token::dummy(),
-                                                    },
-                                                    vec![],
-                                                ),
-                                            }))
-                                        },
-                                    )
-                                },
-                            }
-                        }))
-                    }
+                    Statement::Function(function_statement) => let_statements
+                        .push((file.source.clone(), function_statement.into_let_statement())),
                 }
             }
         }
@@ -556,6 +475,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::String(_)
         | Expression::CpsBang { .. }
         | Expression::Keyword(_)
+        | Expression::Pass
         | Expression::Function(_) => None,
         Expression::InnateFunctionCall(innate_function_call) => {
             Some(innate_function_call.position())
@@ -1398,6 +1318,7 @@ impl Positionable for Expression {
                 .position
                 .join(tilde_closure.expression.position()),
             Expression::InnateFunctionCall(innate_function_call) => innate_function_call.position(),
+            Expression::Pass => Position::dummy(),
         }
     }
 }
@@ -2735,6 +2656,12 @@ fn infer_expression_type_(
                 })),
             })
         }
+        Expression::Pass => Ok(InferExpressionResult {
+            expression: InferredExpression::Unit,
+            type_value: Type::ImplicitTypeVariable(ImplicitTypeVariable {
+                name: module.get_next_type_variable_name(),
+            }),
+        }),
     }?;
     Ok(InferExpressionResult {
         type_value: module.apply_subtitution_to_type(&result.type_value),

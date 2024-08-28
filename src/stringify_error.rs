@@ -289,7 +289,7 @@ fn explain_token_type_usage(token_type: TokenType) -> &'static str {
         TokenType::KeywordInnate => todo!(),
         TokenType::HashLeftSquareBracket => todo!(),
         TokenType::KeywordFn => "used for declaring functions",
-
+        
     }
 }
 
@@ -477,7 +477,7 @@ fn stringify_token_type(token_type: TokenType) -> &'static str {
         TokenType::KeywordClass => todo!(),
         TokenType::KeywordInnate => todo!(),
         TokenType::HashLeftSquareBracket => todo!(),
-    }
+        }
 }
 
 pub fn print_compile_error(CompileError { kind, source }: CompileError) {

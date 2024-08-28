@@ -588,7 +588,7 @@ impl<'a> Parser<'a> {
     fn try_parse_type_variables_declaration(
         &mut self,
     ) -> Result<Option<TypeVariablesDeclaration>, ParseError> {
-        if self.try_eat_token(TokenType::LessThan)?.is_some() {
+        if self.try_eat_token(TokenType::LeftSquareBracket)?.is_some() {
             Ok(Some(self.parse_type_variables_declaration()?))
         } else {
             Ok(None)
@@ -603,7 +603,7 @@ impl<'a> Parser<'a> {
             if self.try_eat_token(TokenType::Comma)?.is_some() {
                 tail.push(self.eat_token(TokenType::Identifier, context)?);
             } else {
-                self.eat_token(TokenType::MoreThan, context)?;
+                self.eat_token(TokenType::RightSquareBracket, context)?;
                 break;
             }
         }
@@ -741,16 +741,18 @@ impl<'a> Parser<'a> {
     pub fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         let mut expressions = vec![];
         let expressions = loop {
-            if let Ok(Some(Token {
-                token_type: TokenType::RightCurlyBracket,
-                ..
-            })) = self.peek_next_meaningful_token()
-            {
-                break expressions;
-            } else if let Ok(expression) = self.parse_high_precedence_expression() {
-                expressions.push(expression)
-            } else {
-                break expressions;
+            match self.peek_next_meaningful_token() {
+                Ok(Some(Token {
+                    token_type: TokenType::RightCurlyBracket | TokenType::RightParenthesis,
+                    ..
+                })) => break expressions,
+                _ => {
+                    if self.try_eat_token(TokenType::Semicolon)?.is_some() {
+                        break expressions;
+                    } else {
+                        expressions.push(self.parse_high_precedence_expression()?)
+                    }
+                }
             }
         };
 
@@ -765,6 +767,14 @@ impl<'a> Parser<'a> {
             .collect_vec();
 
         let function_call_like = match components.split_first() {
+            Some((head, [])) => {
+                return Ok(match head.to_owned() {
+                    FunctionCallLikeComponent::Identifier(identifier) => {
+                        Expression::Identifier(identifier)
+                    }
+                    FunctionCallLikeComponent::Other(expression) => expression,
+                })
+            }
             Some((head, tail)) => FunctionCallLike::new(NonEmpty::new(head.clone(), tail.to_vec())),
             None => {
                 return Err(ParseError {
@@ -775,34 +785,28 @@ impl<'a> Parser<'a> {
                 })
             }
         };
-        let function_name = function_call_like.as_one_token();
-
-        let arguments = function_call_like.others();
-        let (head_argument, tail_arguments) = match arguments.split_first() {
-            Some((head, tail)) => (head.clone(), tail.to_vec()),
-            None => (
-                Expression::Unit {
-                    left_parenthesis: Token::dummy(),
-                    right_parenthesis: Token::dummy(),
-                },
-                vec![],
-            ),
+        let name = function_call_like.as_one_token();
+        let arguments = function_call_like.others().into_iter().rev().collect_vec();
+        let result = match arguments.split_first() {
+            Some((last, init)) => {
+                let (last_argument, head_arguments) = (last.clone(), init.to_vec());
+                Expression::FunctionCall(Box::new(head_arguments.into_iter().fold(
+                    FunctionCall {
+                        type_arguments: None,
+                        function: Box::new(Expression::Identifier(name)),
+                        argument: Box::new(last_argument),
+                    },
+                    |function_call, argument| FunctionCall {
+                        type_arguments: None,
+                        function: Box::new(Expression::FunctionCall(Box::new(function_call))),
+                        argument: Box::new(argument),
+                    },
+                )))
+            }
+            None => Expression::Identifier(name),
         };
-        return Ok(Expression::FunctionCall(Box::new(
-            tail_arguments.into_iter().fold(
-                FunctionCall {
-                    type_arguments: None,
-                    function: Box::new(Expression::Identifier(function_name)),
-                    argument: Box::new(head_argument),
-                },
-                |function_call, argument| FunctionCall {
-                    type_arguments: None,
-                    function: Box::new(Expression::FunctionCall(Box::new(function_call))),
-                    argument: Box::new(argument),
-                },
-            ),
-        )));
-        panic!("expressions = {expressions:?}");
+        return Ok(result);
+        return unreachable!();
         if let Some(token) = self.try_eat_token(TokenType::Underscore)? {
             Ok(Expression::Identifier(token))
         } else if let Some(operator) = self.try_eat_token(TokenType::Operator)? {
@@ -1466,46 +1470,14 @@ impl<'a> Parser<'a> {
         keyword_fn: Token,
         access: Access,
     ) -> Result<FunctionStatement, ParseError> {
-        let mut components = vec![];
-        let components = loop {
-            if let Ok(Some(_)) = self.try_eat_token(TokenType::Colon) {
-                break components;
-            } else if let Ok(Some(left_parenthesis)) =
-                self.try_eat_token(TokenType::LeftParenthesis)
-            {
-                components.push(FunctionCallLikeComponent::Other(
-                    self.parse_parameter(left_parenthesis)?,
-                ))
-            } else {
-                components.push(FunctionCallLikeComponent::Identifier(
-                    self.eat_token(TokenType::Identifier, None)?,
-                ))
-            }
-        };
-        let components = match components.split_first() {
-            Some((head, tail)) => FunctionCallLike::new(NonEmpty {
-                head: head.clone(),
-                tail: tail.to_vec(),
-            }),
-            None => {
-                return Err(ParseError {
-                    kind: ParseErrorKind::FunctionStatementMustHaveAtLeastOneComponent {
-                        position: keyword_fn.position,
-                    },
-                    context: None,
-                })
-            }
-        };
-        let return_type = self.parse_type_annotation(None)?;
+        let signature = self.parse_function_signature(keyword_fn)?;
         self.eat_token(TokenType::LeftCurlyBracket, None)?;
-        let body = self.parse_low_precedence_expression()?;
+        let body = self.parse_mid_precedence_expression()?;
         let right_curly_bracket = self.eat_token(TokenType::RightCurlyBracket, None)?;
         Ok(FunctionStatement {
             access,
-            keyword_fn,
             type_variables: Default::default(),
-            signature: components,
-            return_type,
+            signature,
             body,
             right_curly_bracket,
         })
@@ -1515,6 +1487,52 @@ impl<'a> Parser<'a> {
         let expression = self.parse_mid_precedence_expression()?;
         self.try_eat_token(TokenType::Semicolon)?;
         Ok(expression)
+    }
+
+    fn parse_function_signature(
+        &mut self,
+        keyword_fn: Token,
+    ) -> Result<FunctionSignature, ParseError> {
+        let type_variables = self.try_parse_type_variables_declaration()?;
+        let components = {
+            let mut components = vec![];
+            let components = loop {
+                if let Ok(Some(_)) = self.try_eat_token(TokenType::Colon) {
+                    break components;
+                } else if let Ok(Some(left_parenthesis)) =
+                    self.try_eat_token(TokenType::LeftParenthesis)
+                {
+                    components.push(FunctionCallLikeComponent::Other(
+                        self.parse_parameter(left_parenthesis)?,
+                    ))
+                } else {
+                    components.push(FunctionCallLikeComponent::Identifier(
+                        self.eat_token(TokenType::Identifier, None)?,
+                    ))
+                }
+            };
+            match components.split_first() {
+                Some((head, tail)) => FunctionCallLike::new(NonEmpty {
+                    head: head.clone(),
+                    tail: tail.to_vec(),
+                }),
+                None => {
+                    return Err(ParseError {
+                        kind: ParseErrorKind::FunctionStatementMustHaveAtLeastOneComponent {
+                            position: keyword_fn.position,
+                        },
+                        context: None,
+                    })
+                }
+            }
+        };
+        let return_type = self.parse_type_annotation(None)?;
+        Ok(FunctionSignature {
+            keyword_fn,
+            components,
+            return_type,
+            type_variables,
+        })
     }
 }
 

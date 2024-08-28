@@ -1,7 +1,8 @@
 use crate::innate_function::InnateFunction;
 use crate::non_empty::NonEmpty;
-use crate::raw_ast::Token;
+use crate::raw_ast::{FunctionName, Token};
 use crate::transpile::interpretable::{self, *};
+use crate::unify::{components_name, FunctionCallLike, FunctionCallLikeComponent};
 use futures::future::{BoxFuture, FutureExt};
 use std::collections::HashMap;
 
@@ -98,7 +99,7 @@ impl Environment {
         Environment {
             parent: None,
             bindings: {
-                [("print".to_string(), {
+                [(components_name(vec![(0, "print".to_string())]), {
                     let param = uuid::Uuid::new_v4().to_string();
                     Value::Function(ValueFunction {
                         closure: Environment::new(None),
@@ -120,7 +121,7 @@ impl Environment {
             Some(value) => Ok(value.clone()),
             None => match &self.parent {
                 Some(env) => env.get_value(name),
-                None => unreachable!(),
+                None => unreachable!("Cannot find {}", name.representation),
             },
         }
     }
@@ -344,7 +345,7 @@ impl Eval for interpretable::Expression {
 
                 let function = match function {
                     Value::Function(function) => function,
-                    _ => unreachable!(),
+                    value => unreachable!("value = {value:?} argument = {argument:?}"),
                 };
 
                 let (result, promises3) = call_function(env, function, argument)?;

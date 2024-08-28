@@ -1,0 +1,26 @@
+---
+source: tests/test_runner.rs
+expression: stripped_actual_output.trim()
+---
+============
+INPUT
+============
+fn say hello world (x : String) : () {
+    print (x)
+}
+
+say hello world "yo";
+
+============
+EXIT CODE
+============
+0
+
+============
+STDOUT
+============
+"yo"
+
+============
+STDERR
+============

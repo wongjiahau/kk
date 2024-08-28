@@ -1,5 +1,5 @@
-fn say hello world (x : String) : String {
+fn say hello world (x : String) : () {
     print (x)
 }
 
-say hello world "123"
+say hello world "yo";

@@ -1,4 +1,4 @@
-use crate::{compile::compile, formatter::prettify_code};
+use crate::compile::compile;
 use clap::Clap;
 use std::path::PathBuf;
 

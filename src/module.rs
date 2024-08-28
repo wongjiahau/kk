@@ -854,6 +854,7 @@ impl Module {
         expected_type: &Type,
         scope_name: usize,
     ) -> Result<Option<GetValueSymbolResult>, UnifyError> {
+        // println!("\n\n\nlooking up {}", symbol_name.representation);
         // Firstly, search for value symbols based on name and expected type
         let matching_symbols = self
             .symbol_entries
