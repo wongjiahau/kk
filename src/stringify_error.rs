@@ -239,6 +239,18 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
             };
             (range, error)
         },
+        ParseErrorKind::FunctionSignaturePeriodMustPrecedeByOneAndOnlyOneParameter { position } => {
+            let position = position;
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            let error = StringifiedError {
+                summary: "Function signature period must precede by one and only one parameter".to_string(),
+                body: "".to_string(),
+            };
+            (range, error)
+        },
     };
     print_error(filename, code, range, error)
 }

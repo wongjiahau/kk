@@ -185,6 +185,42 @@ impl<T: Positionable + Clone> FunctionCallLike<T> {
     }
 }
 
+impl FunctionCallLike<Expression> {
+    pub(crate) fn into_expression(self, first_argument: Option<Expression>) -> Expression {
+        if self.components.len() == 1 {
+            return match self.components.head.to_owned() {
+                FunctionCallLikeComponent::Identifier(identifier) => {
+                    Expression::Identifier(identifier)
+                }
+                FunctionCallLikeComponent::Other(expression) => expression,
+            };
+        }
+        let name = self.as_one_token();
+        let arguments = first_argument
+            .into_iter()
+            .chain(self.others().into_iter())
+            .collect_vec();
+        match arguments.split_first() {
+            Some((head, tail)) => {
+                let (first_argument, tail_arguments) = (head.clone(), tail.to_vec());
+                Expression::FunctionCall(Box::new(tail_arguments.into_iter().fold(
+                    FunctionCall {
+                        type_arguments: None,
+                        function: Box::new(Expression::Identifier(name)),
+                        argument: Box::new(first_argument),
+                    },
+                    |function_call, argument| FunctionCall {
+                        type_arguments: None,
+                        function: Box::new(Expression::FunctionCall(Box::new(function_call))),
+                        argument: Box::new(argument),
+                    },
+                )))
+            }
+            None => Expression::Identifier(name),
+        }
+    }
+}
+
 pub(crate) fn components_name(components: Vec<(usize, String)>) -> String {
     components.into_iter().map(|(_, name)| name).join(" ")
 }

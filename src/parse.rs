@@ -30,6 +30,9 @@ pub enum ParseErrorKind {
     FunctionStatementMustHaveAtLeastOneComponent {
         position: Position,
     },
+    FunctionSignaturePeriodMustPrecedeByOneAndOnlyOneParameter {
+        position: Position,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -720,7 +723,25 @@ impl<'a> Parser<'a> {
 
     pub fn parse_low_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         let expression = self.parse_mid_precedence_expression()?;
-        self.try_parse_statement_expression(expression)
+        self.try_parse_left_assoc_function_call(expression)
+    }
+    fn try_parse_left_assoc_function_call(
+        &mut self,
+        first_argument: Expression,
+    ) -> Result<Expression, ParseError> {
+        if self.peek_next_meaningful_token()?.is_none() {
+            panic!();
+            return Ok(first_argument);
+        }
+        if self.try_eat_token(TokenType::Period)?.is_some() {
+            let function_call_like = self.parse_function_call_like_expressions()?;
+            self.try_parse_left_assoc_function_call(
+                function_call_like.into_expression(Some(first_argument)),
+            )
+        } else {
+            Ok(first_argument)
+            // self.try_parse_statement_expression(expression)
+        }
     }
 
     fn try_parse_statement_expression(
@@ -737,15 +758,22 @@ impl<'a> Parser<'a> {
             Ok(expression)
         }
     }
-
-    pub fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
+    fn parse_function_call_like_expressions(
+        &mut self,
+    ) -> Result<FunctionCallLike<Expression>, ParseError> {
         let mut expressions = vec![];
         let expressions = loop {
             match self.peek_next_meaningful_token() {
-                Ok(Some(Token {
-                    token_type: TokenType::RightCurlyBracket | TokenType::RightParenthesis,
-                    ..
-                })) => break expressions,
+                Ok(
+                    Some(Token {
+                        token_type:
+                            TokenType::RightCurlyBracket
+                            | TokenType::RightParenthesis
+                            | TokenType::Period,
+                        ..
+                    })
+                    | None,
+                ) => break expressions,
                 _ => {
                     if self.try_eat_token(TokenType::Semicolon)?.is_some() {
                         break expressions;
@@ -767,14 +795,6 @@ impl<'a> Parser<'a> {
             .collect_vec();
 
         let function_call_like = match components.split_first() {
-            Some((head, [])) => {
-                return Ok(match head.to_owned() {
-                    FunctionCallLikeComponent::Identifier(identifier) => {
-                        Expression::Identifier(identifier)
-                    }
-                    FunctionCallLikeComponent::Other(expression) => expression,
-                })
-            }
             Some((head, tail)) => FunctionCallLike::new(NonEmpty::new(head.clone(), tail.to_vec())),
             None => {
                 return Err(ParseError {
@@ -785,26 +805,13 @@ impl<'a> Parser<'a> {
                 })
             }
         };
-        let name = function_call_like.as_one_token();
-        let arguments = function_call_like.others().into_iter().rev().collect_vec();
-        let result = match arguments.split_first() {
-            Some((last, init)) => {
-                let (last_argument, head_arguments) = (last.clone(), init.to_vec());
-                Expression::FunctionCall(Box::new(head_arguments.into_iter().fold(
-                    FunctionCall {
-                        type_arguments: None,
-                        function: Box::new(Expression::Identifier(name)),
-                        argument: Box::new(last_argument),
-                    },
-                    |function_call, argument| FunctionCall {
-                        type_arguments: None,
-                        function: Box::new(Expression::FunctionCall(Box::new(function_call))),
-                        argument: Box::new(argument),
-                    },
-                )))
-            }
-            None => Expression::Identifier(name),
-        };
+
+        Ok(function_call_like)
+    }
+
+    pub fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
+        let function_call_like = self.parse_function_call_like_expressions()?;
+        let result = function_call_like.into_expression(None);
         return Ok(result);
         return unreachable!();
         if let Some(token) = self.try_eat_token(TokenType::Underscore)? {
@@ -1472,7 +1479,7 @@ impl<'a> Parser<'a> {
     ) -> Result<FunctionStatement, ParseError> {
         let signature = self.parse_function_signature(keyword_fn)?;
         self.eat_token(TokenType::LeftCurlyBracket, None)?;
-        let body = self.parse_mid_precedence_expression()?;
+        let body = self.parse_low_precedence_expression()?;
         let right_curly_bracket = self.eat_token(TokenType::RightCurlyBracket, None)?;
         Ok(FunctionStatement {
             access,
@@ -1494,6 +1501,7 @@ impl<'a> Parser<'a> {
         keyword_fn: Token,
     ) -> Result<FunctionSignature, ParseError> {
         let type_variables = self.try_parse_type_variables_declaration()?;
+        let mut associativity = None;
         let components = {
             let mut components = vec![];
             let components = loop {
@@ -1505,6 +1513,13 @@ impl<'a> Parser<'a> {
                     components.push(FunctionCallLikeComponent::Other(
                         self.parse_parameter(left_parenthesis)?,
                     ))
+                } else if let Some(period) = self.try_eat_token(TokenType::Period)? {
+                    match components.split_first() {
+                        Some((FunctionCallLikeComponent::Other(_), [])) => {
+                            associativity = Some(FunctionSignatureAssociativity::LeftAssociative)
+                        }
+                        _ => return Err(ParseError{context: None, kind: ParseErrorKind::FunctionSignaturePeriodMustPrecedeByOneAndOnlyOneParameter {position: period.position}})
+                    }
                 } else {
                     components.push(FunctionCallLikeComponent::Identifier(
                         self.eat_token(TokenType::Identifier, None)?,
@@ -1532,6 +1547,7 @@ impl<'a> Parser<'a> {
             components,
             return_type,
             type_variables,
+            associativity,
         })
     }
 }

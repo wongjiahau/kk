@@ -34,7 +34,15 @@ pub(crate) struct FunctionSignature {
     pub(crate) components: FunctionCallLike<Parameter>,
     pub(crate) return_type: TypeAnnotation,
     pub(crate) type_variables: Option<TypeVariablesDeclaration>,
+    pub(crate) associativity: Option<FunctionSignatureAssociativity>,
 }
+
+#[derive(Debug, Clone)]
+pub(crate) enum FunctionSignatureAssociativity {
+    LeftAssociative,
+    RightAssociative,
+}
+
 impl FunctionSignature {
     fn parameters(&self) -> Vec<Parameter> {
         self.components
