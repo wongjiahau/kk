@@ -251,6 +251,18 @@ pub fn print_parse_error(filename: String, code: String, parse_error: ParseError
             };
             (range, error)
         },
+        ParseErrorKind::CannotBeConvertedToName { position } => {
+            let position = position;
+            let range = ErrorRange {
+                character_index_start: position.character_index_start,
+                character_index_end: position.character_index_end,
+            };
+            let error = StringifiedError {
+                summary: "Cannot be converted to name".to_string(),
+                body: "".to_string(),
+            };
+            (range, error)
+        },
     };
     print_error(filename, code, range, error)
 }

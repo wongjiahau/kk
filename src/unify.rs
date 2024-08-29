@@ -2,7 +2,7 @@ use crate::{
     compile::{CompileError, CompileErrorKind, Source},
     innate_function::InnateFunction,
     non_empty::NonEmpty,
-    parse::Parser,
+    parse::{ParseError, Parser},
     tokenize::{Character, Tokenizer},
     utils::to_relative_path,
 };
@@ -183,6 +183,10 @@ impl<T: Positionable + Clone> FunctionCallLike<T> {
             })
             .collect()
     }
+
+    fn position(&self) -> Position {
+        self.components.position()
+    }
 }
 
 impl FunctionCallLike<Expression> {
@@ -217,6 +221,18 @@ impl FunctionCallLike<Expression> {
                 )))
             }
             None => Expression::Identifier(name),
+        }
+    }
+    pub(crate) fn into_name(self) -> Result<Token, ParseError> {
+        if !self.others().is_empty() {
+            Err(ParseError {
+                context: None,
+                kind: crate::parse::ParseErrorKind::CannotBeConvertedToName {
+                    position: self.position(),
+                },
+            })
+        } else {
+            Ok(self.as_one_token())
         }
     }
 }
@@ -1364,11 +1380,8 @@ pub trait Positionable {
 }
 
 impl<T: Positionable> NonEmpty<T> {
-    pub fn position(self) -> Position {
-        let init = self.first().position();
-        self.into_vector()
-            .into_iter()
-            .fold(init, |result, current| result.join(current.position()))
+    pub fn position(&self) -> Position {
+        self.first().position().join(self.last().position())
     }
 }
 

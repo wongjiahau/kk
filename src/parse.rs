@@ -33,6 +33,9 @@ pub enum ParseErrorKind {
     FunctionSignaturePeriodMustPrecedeByOneAndOnlyOneParameter {
         position: Position,
     },
+    CannotBeConvertedToName {
+        position: Position,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -228,6 +231,20 @@ impl<'a> Parser<'a> {
         keyword_let: Token,
     ) -> Result<LetStatement, ParseError> {
         let context = Some(ParseContext::StatementLet);
+        let name = self.parse_function_call_like_expressions()?.into_name()?;
+        self.eat_token(TokenType::Colon, context)?;
+        let type_annotation = self.parse_type_annotation(context)?;
+        self.eat_token(TokenType::Equals, context)?;
+        let expression = self.parse_low_precedence_expression()?;
+        self.eat_token(TokenType::Semicolon, context)?;
+        return Ok(LetStatement {
+            access,
+            keyword_let,
+            name,
+            doc_string: None,
+            type_annotation,
+            expression,
+        });
 
         let type_variables_declaration = self.try_parse_type_variables_declaration()?;
 
@@ -763,24 +780,10 @@ impl<'a> Parser<'a> {
     ) -> Result<FunctionCallLike<Expression>, ParseError> {
         let mut expressions = vec![];
         let expressions = loop {
-            match self.peek_next_meaningful_token() {
-                Ok(
-                    Some(Token {
-                        token_type:
-                            TokenType::RightCurlyBracket
-                            | TokenType::RightParenthesis
-                            | TokenType::Period,
-                        ..
-                    })
-                    | None,
-                ) => break expressions,
-                _ => {
-                    if self.try_eat_token(TokenType::Semicolon)?.is_some() {
-                        break expressions;
-                    } else {
-                        expressions.push(self.parse_high_precedence_expression()?)
-                    }
-                }
+            if self.next_token_is_terminating()? {
+                break expressions;
+            } else {
+                expressions.push(self.parse_high_precedence_expression()?)
             }
         };
 
@@ -1287,6 +1290,7 @@ impl<'a> Parser<'a> {
                     | TokenType::Equals
                     | TokenType::KeywordLet
                     | TokenType::RightParenthesis
+                    | TokenType::Period
                     | TokenType::RightCurlyBracket
                     | TokenType::RightSquareBracket
                     | TokenType::KeywordType
