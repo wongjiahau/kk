@@ -26,6 +26,7 @@ impl ToDoc for Statement {
             Statement::Enum(enum_statement) => enum_statement.to_doc(),
             Statement::Import(_) => todo!(),
             Statement::Entry(_) => todo!(),
+            Statement::Function(_) => todo!(),
         }
     }
 }

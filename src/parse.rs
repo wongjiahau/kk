@@ -1,4 +1,7 @@
+use itertools::{Either, Itertools};
+
 use crate::module::Access;
+use crate::unify::{FunctionCallLike, FunctionCallLikeComponent};
 use crate::{non_empty::NonEmpty, tokenize::Tokenizer, unify::Positionable};
 use crate::{raw_ast::*, tokenize::TokenizeError};
 
@@ -22,6 +25,15 @@ pub enum ParseErrorKind {
         position: Position,
     },
     ExpectedPattern {
+        position: Position,
+    },
+    FunctionStatementMustHaveAtLeastOneComponent {
+        position: Position,
+    },
+    FunctionSignaturePeriodMustPrecedeByOneAndOnlyOneParameter {
+        position: Position,
+    },
+    CannotBeConvertedToName {
         position: Position,
     },
 }
@@ -190,7 +202,17 @@ impl<'a> Parser<'a> {
                     let token = self.next_meaningful_token()?.unwrap();
                     self.parse_import_statement(access, token).map(vectorized)
                 }
-                _ => Err(Parser::invalid_token(token, None)),
+                TokenType::KeywordFn => {
+                    let keyword_fn = self.next_meaningful_token()?.unwrap();
+                    let vectorized = vectorized(Statement::Function(
+                        self.parse_fn_statement(keyword_fn, access)?,
+                    ));
+                    Ok(vectorized)
+                }
+                _ => Ok(vectorized(Statement::Entry(EntryStatement {
+                    keyword_entry: Token::dummy(),
+                    expression: self.parse_top_level_expression()?,
+                }))),
             },
             None => Err(Parser::unexpected_eof(context)),
         }
@@ -209,6 +231,20 @@ impl<'a> Parser<'a> {
         keyword_let: Token,
     ) -> Result<LetStatement, ParseError> {
         let context = Some(ParseContext::StatementLet);
+        let name = self.parse_function_call_like_expressions()?.into_name()?;
+        self.eat_token(TokenType::Colon, context)?;
+        let type_annotation = self.parse_type_annotation(context)?;
+        self.eat_token(TokenType::Equals, context)?;
+        let expression = self.parse_low_precedence_expression()?;
+        self.eat_token(TokenType::Semicolon, context)?;
+        return Ok(LetStatement {
+            access,
+            keyword_let,
+            name,
+            doc_string: None,
+            type_annotation,
+            expression,
+        });
 
         let type_variables_declaration = self.try_parse_type_variables_declaration()?;
 
@@ -572,7 +608,7 @@ impl<'a> Parser<'a> {
     fn try_parse_type_variables_declaration(
         &mut self,
     ) -> Result<Option<TypeVariablesDeclaration>, ParseError> {
-        if self.try_eat_token(TokenType::LessThan)?.is_some() {
+        if self.try_eat_token(TokenType::LeftSquareBracket)?.is_some() {
             Ok(Some(self.parse_type_variables_declaration()?))
         } else {
             Ok(None)
@@ -587,7 +623,7 @@ impl<'a> Parser<'a> {
             if self.try_eat_token(TokenType::Comma)?.is_some() {
                 tail.push(self.eat_token(TokenType::Identifier, context)?);
             } else {
-                self.eat_token(TokenType::MoreThan, context)?;
+                self.eat_token(TokenType::RightSquareBracket, context)?;
                 break;
             }
         }
@@ -704,7 +740,25 @@ impl<'a> Parser<'a> {
 
     pub fn parse_low_precedence_expression(&mut self) -> Result<Expression, ParseError> {
         let expression = self.parse_mid_precedence_expression()?;
-        self.try_parse_statement_expression(expression)
+        self.try_parse_left_assoc_function_call(expression)
+    }
+    fn try_parse_left_assoc_function_call(
+        &mut self,
+        first_argument: Expression,
+    ) -> Result<Expression, ParseError> {
+        if self.peek_next_meaningful_token()?.is_none() {
+            panic!();
+            return Ok(first_argument);
+        }
+        if self.try_eat_token(TokenType::Period)?.is_some() {
+            let function_call_like = self.parse_function_call_like_expressions()?;
+            self.try_parse_left_assoc_function_call(
+                function_call_like.into_expression(Some(first_argument)),
+            )
+        } else {
+            Ok(first_argument)
+            // self.try_parse_statement_expression(expression)
+        }
     }
 
     fn try_parse_statement_expression(
@@ -713,16 +767,56 @@ impl<'a> Parser<'a> {
     ) -> Result<Expression, ParseError> {
         if self.try_eat_token(TokenType::Semicolon)?.is_some() {
             let next = self.parse_mid_precedence_expression()?;
-            self.try_parse_statement_expression(Expression::Statements {
+            Ok(self.try_parse_statement_expression(Expression::Statements {
                 current: Box::new(expression),
                 next: Box::new(next),
-            })
+            })?)
         } else {
             Ok(expression)
         }
     }
+    fn parse_function_call_like_expressions(
+        &mut self,
+    ) -> Result<FunctionCallLike<Expression>, ParseError> {
+        let mut expressions = vec![];
+        let expressions = loop {
+            if self.next_token_is_terminating()? {
+                break expressions;
+            } else {
+                expressions.push(self.parse_high_precedence_expression()?)
+            }
+        };
+
+        let components = expressions
+            .into_iter()
+            .map(|expression| match expression {
+                Expression::Identifier(identifier) => {
+                    FunctionCallLikeComponent::Identifier(identifier)
+                }
+                _ => FunctionCallLikeComponent::Other(expression),
+            })
+            .collect_vec();
+
+        let function_call_like = match components.split_first() {
+            Some((head, tail)) => FunctionCallLike::new(NonEmpty::new(head.clone(), tail.to_vec())),
+            None => {
+                return Err(ParseError {
+                    context: None,
+                    kind: ParseErrorKind::FunctionStatementMustHaveAtLeastOneComponent {
+                        position: Position::dummy(),
+                    },
+                })
+            }
+        };
+
+        Ok(function_call_like)
+    }
 
     pub fn parse_mid_precedence_expression(&mut self) -> Result<Expression, ParseError> {
+        let function_call_like = self.parse_function_call_like_expressions()?;
+        let result = function_call_like.into_expression(None);
+        return Ok(result);
+        return unreachable!();
         if let Some(token) = self.try_eat_token(TokenType::Underscore)? {
             Ok(Expression::Identifier(token))
         } else if let Some(operator) = self.try_eat_token(TokenType::Operator)? {
@@ -1196,6 +1290,7 @@ impl<'a> Parser<'a> {
                     | TokenType::Equals
                     | TokenType::KeywordLet
                     | TokenType::RightParenthesis
+                    | TokenType::Period
                     | TokenType::RightCurlyBracket
                     | TokenType::RightSquareBracket
                     | TokenType::KeywordType
@@ -1378,6 +1473,85 @@ impl<'a> Parser<'a> {
             parameter: Box::new(DestructurePattern::Underscore(left_square_bracket)),
             body: Box::new(expression),
             right_square_bracket,
+        })
+    }
+
+    fn parse_fn_statement(
+        &mut self,
+        keyword_fn: Token,
+        access: Access,
+    ) -> Result<FunctionStatement, ParseError> {
+        let signature = self.parse_function_signature(keyword_fn)?;
+        self.eat_token(TokenType::LeftCurlyBracket, None)?;
+        let body = self.parse_low_precedence_expression()?;
+        let right_curly_bracket = self.eat_token(TokenType::RightCurlyBracket, None)?;
+        Ok(FunctionStatement {
+            access,
+            type_variables: Default::default(),
+            signature,
+            body,
+            right_curly_bracket,
+        })
+    }
+
+    fn parse_top_level_expression(&mut self) -> Result<Expression, ParseError> {
+        let expression = self.parse_mid_precedence_expression()?;
+        self.try_eat_token(TokenType::Semicolon)?;
+        Ok(expression)
+    }
+
+    fn parse_function_signature(
+        &mut self,
+        keyword_fn: Token,
+    ) -> Result<FunctionSignature, ParseError> {
+        let type_variables = self.try_parse_type_variables_declaration()?;
+        let mut associativity = None;
+        let components = {
+            let mut components = vec![];
+            let components = loop {
+                if let Ok(Some(_)) = self.try_eat_token(TokenType::Colon) {
+                    break components;
+                } else if let Ok(Some(left_parenthesis)) =
+                    self.try_eat_token(TokenType::LeftParenthesis)
+                {
+                    components.push(FunctionCallLikeComponent::Other(
+                        self.parse_parameter(left_parenthesis)?,
+                    ))
+                } else if let Some(period) = self.try_eat_token(TokenType::Period)? {
+                    match components.split_first() {
+                        Some((FunctionCallLikeComponent::Other(_), [])) => {
+                            associativity = Some(FunctionSignatureAssociativity::LeftAssociative)
+                        }
+                        _ => return Err(ParseError{context: None, kind: ParseErrorKind::FunctionSignaturePeriodMustPrecedeByOneAndOnlyOneParameter {position: period.position}})
+                    }
+                } else {
+                    components.push(FunctionCallLikeComponent::Identifier(
+                        self.eat_token(TokenType::Identifier, None)?,
+                    ))
+                }
+            };
+            match components.split_first() {
+                Some((head, tail)) => FunctionCallLike::new(NonEmpty {
+                    head: head.clone(),
+                    tail: tail.to_vec(),
+                }),
+                None => {
+                    return Err(ParseError {
+                        kind: ParseErrorKind::FunctionStatementMustHaveAtLeastOneComponent {
+                            position: keyword_fn.position,
+                        },
+                        context: None,
+                    })
+                }
+            }
+        };
+        let return_type = self.parse_type_annotation(None)?;
+        Ok(FunctionSignature {
+            keyword_fn,
+            components,
+            return_type,
+            type_variables,
+            associativity,
         })
     }
 }

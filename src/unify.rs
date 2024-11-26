@@ -2,7 +2,7 @@ use crate::{
     compile::{CompileError, CompileErrorKind, Source},
     innate_function::InnateFunction,
     non_empty::NonEmpty,
-    parse::Parser,
+    parse::{ParseError, Parser},
     tokenize::{Character, Tokenizer},
     utils::to_relative_path,
 };
@@ -13,7 +13,7 @@ use crate::pattern::*;
 use crate::raw_ast::*;
 use crate::typ::*;
 use indexmap::IndexMap;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use std::{collections::HashSet, rc::Rc};
 use std::{iter, path::PathBuf};
 
@@ -101,8 +101,6 @@ pub fn read_module(
                         kind: CompileErrorKind::ParseError(Box::new(error)),
                     })?;
 
-                    // println!("user_written_statements = {:#?}", user_written_statements);
-
                     injected_statements
                         .into_iter()
                         .chain(user_written_statements.into_iter())
@@ -120,6 +118,127 @@ pub fn read_module(
 pub struct File {
     source: Rc<Source>,
     statements: Vec<Statement>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FunctionCallLike<T: Positionable + Clone> {
+    pub(crate) components: NonEmpty<FunctionCallLikeComponent<T>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum FunctionCallLikeComponent<T: Positionable> {
+    Identifier(Token),
+    Other(T),
+}
+
+impl<T: Positionable> Positionable for FunctionCallLikeComponent<T> {
+    fn position(&self) -> Position {
+        match self {
+            FunctionCallLikeComponent::Identifier(token) => token.position.clone(),
+            FunctionCallLikeComponent::Other(t) => t.position(),
+        }
+    }
+}
+
+impl<T: Positionable + Clone> FunctionCallLike<T> {
+    pub(crate) fn new(components: NonEmpty<FunctionCallLikeComponent<T>>) -> Self {
+        Self { components }
+    }
+
+    /// This is a temporary function to adhere to existing API
+    /// We should remove it once we change the global dict to use FunctionCallLike instead of
+    /// String as ID
+    pub(crate) fn as_one_token(&self) -> Token {
+        Token {
+            token_type: TokenType::Identifier,
+            position: self
+                .components
+                .head
+                .position()
+                .join(self.components.last().position()),
+            representation: components_name(
+                self.components
+                    .clone()
+                    .into_vector()
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(index, component)| match component {
+                        FunctionCallLikeComponent::Identifier(token) => {
+                            Some((index, token.representation))
+                        }
+                        FunctionCallLikeComponent::Other(_) => None,
+                    })
+                    .collect_vec(),
+            ),
+        }
+    }
+    pub(crate) fn others(&self) -> Vec<T> {
+        self.components
+            .clone()
+            .into_vector()
+            .into_iter()
+            .filter_map(|component| match component {
+                FunctionCallLikeComponent::Identifier(_) => None,
+                FunctionCallLikeComponent::Other(other) => Some(other),
+            })
+            .collect()
+    }
+
+    fn position(&self) -> Position {
+        self.components.position()
+    }
+}
+
+impl FunctionCallLike<Expression> {
+    pub(crate) fn into_expression(self, first_argument: Option<Expression>) -> Expression {
+        if self.components.len() == 1 {
+            return match self.components.head.to_owned() {
+                FunctionCallLikeComponent::Identifier(identifier) => {
+                    Expression::Identifier(identifier)
+                }
+                FunctionCallLikeComponent::Other(expression) => expression,
+            };
+        }
+        let name = self.as_one_token();
+        let arguments = first_argument
+            .into_iter()
+            .chain(self.others().into_iter())
+            .collect_vec();
+        match arguments.split_first() {
+            Some((head, tail)) => {
+                let (first_argument, tail_arguments) = (head.clone(), tail.to_vec());
+                Expression::FunctionCall(Box::new(tail_arguments.into_iter().fold(
+                    FunctionCall {
+                        type_arguments: None,
+                        function: Box::new(Expression::Identifier(name)),
+                        argument: Box::new(first_argument),
+                    },
+                    |function_call, argument| FunctionCall {
+                        type_arguments: None,
+                        function: Box::new(Expression::FunctionCall(Box::new(function_call))),
+                        argument: Box::new(argument),
+                    },
+                )))
+            }
+            None => Expression::Identifier(name),
+        }
+    }
+    pub(crate) fn into_name(self) -> Result<Token, ParseError> {
+        if !self.others().is_empty() {
+            Err(ParseError {
+                context: None,
+                kind: crate::parse::ParseErrorKind::CannotBeConvertedToName {
+                    position: self.position(),
+                },
+            })
+        } else {
+            Ok(self.as_one_token())
+        }
+    }
+}
+
+pub(crate) fn components_name(components: Vec<(usize, String)>) -> String {
+    components.into_iter().map(|(_, name)| name).join(" ")
 }
 
 pub fn unify_statements(
@@ -187,6 +306,8 @@ pub fn unify_statements(
                     Statement::Import(import_statement) => {
                         import_statements.push((file.source.clone(), import_statement))
                     }
+                    Statement::Function(function_statement) => let_statements
+                        .push((file.source.clone(), function_statement.into_let_statement())),
                 }
             }
         }
@@ -406,6 +527,7 @@ fn has_direct_function_call(expression: &Expression) -> Option<Position> {
         | Expression::String(_)
         | Expression::CpsBang { .. }
         | Expression::Keyword(_)
+        | Expression::Pass
         | Expression::Function(_) => None,
         Expression::InnateFunctionCall(innate_function_call) => {
             Some(innate_function_call.position())
@@ -1248,6 +1370,7 @@ impl Positionable for Expression {
                 .position
                 .join(tilde_closure.expression.position()),
             Expression::InnateFunctionCall(innate_function_call) => innate_function_call.position(),
+            Expression::Pass => Position::dummy(),
         }
     }
 }
@@ -1257,11 +1380,8 @@ pub trait Positionable {
 }
 
 impl<T: Positionable> NonEmpty<T> {
-    pub fn position(self) -> Position {
-        let init = self.first().position();
-        self.into_vector()
-            .into_iter()
-            .fold(init, |result, current| result.join(current.position()))
+    pub fn position(&self) -> Position {
+        self.first().position().join(self.last().position())
     }
 }
 
@@ -1294,6 +1414,7 @@ impl Positionable for Statement {
                     None => None,
                     Some(specification) => Some(specification.position()),
                 }),
+            Statement::Function(function) => function.position(),
         }
     }
 }
@@ -2584,6 +2705,12 @@ fn infer_expression_type_(
                 })),
             })
         }
+        Expression::Pass => Ok(InferExpressionResult {
+            expression: InferredExpression::Unit,
+            type_value: Type::ImplicitTypeVariable(ImplicitTypeVariable {
+                name: module.get_next_type_variable_name(),
+            }),
+        }),
     }?;
     Ok(InferExpressionResult {
         type_value: module.apply_subtitution_to_type(&result.type_value),

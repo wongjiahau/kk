@@ -1,4 +1,12 @@
-use crate::{module::Access, non_empty::NonEmpty, tokenize::Character, unify::Positionable};
+use itertools::Itertools;
+
+use crate::{
+    module::Access,
+    non_empty::NonEmpty,
+    parse::ParseError,
+    tokenize::Character,
+    unify::{FunctionCallLike, FunctionCallLikeComponent, Positionable},
+};
 /// The syntax tree here represents raw syntax tree that is not type checked
 
 #[derive(Debug, Clone)]
@@ -16,6 +24,137 @@ pub enum Statement {
     /// This represents the entry points of a module.
     /// Will be ignored for imported modules.
     Entry(EntryStatement),
+    /// Function declaration
+    Function(FunctionStatement),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FunctionSignature {
+    pub(crate) keyword_fn: Token,
+    pub(crate) components: FunctionCallLike<Parameter>,
+    pub(crate) return_type: TypeAnnotation,
+    pub(crate) type_variables: Option<TypeVariablesDeclaration>,
+    pub(crate) associativity: Option<FunctionSignatureAssociativity>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum FunctionSignatureAssociativity {
+    LeftAssociative,
+    RightAssociative,
+}
+
+impl FunctionSignature {
+    fn parameters(&self) -> Vec<Parameter> {
+        self.components
+            .components
+            .clone()
+            .into_vector()
+            .into_iter()
+            .filter_map(|component| match component {
+                FunctionCallLikeComponent::Identifier(_) => None,
+                FunctionCallLikeComponent::Other(parameter) => Some(parameter),
+            })
+            .collect_vec()
+    }
+
+    fn type_annotation(&self) -> TypeAnnotation {
+        let parameters = self.parameters();
+        parameters
+            .clone()
+            .into_iter()
+            .rev()
+            .fold(self.return_type.clone(), |result, parameter| {
+                let type_annotation = TypeAnnotation::Function(FunctionTypeAnnotation {
+                    parameter: Box::new(parameter.type_annotation),
+                    return_type: Box::new(result),
+                    type_constraints: None,
+                });
+                self.type_variables
+                    .clone()
+                    .map(|type_variables| TypeAnnotation::Scheme {
+                        type_variables,
+                        type_annotation: Box::new(type_annotation.clone()),
+                    })
+                    .unwrap_or(type_annotation)
+            })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionStatement {
+    pub access: Access,
+    pub type_variables: Vec<TypeArguments>,
+    pub signature: FunctionSignature,
+    pub body: Expression,
+    pub right_curly_bracket: Token,
+}
+impl FunctionStatement {
+    pub(crate) fn position(&self) -> Position {
+        self.signature
+            .keyword_fn
+            .position
+            .join(self.right_curly_bracket.position)
+    }
+
+    pub(crate) fn into_let_statement(self) -> LetStatement {
+        let parameters = self.signature.parameters();
+        LetStatement {
+            access: self.access,
+            keyword_let: self.signature.keyword_fn.clone(),
+            name: self.signature.components.as_one_token(),
+            doc_string: None,
+            type_annotation: self.signature.type_annotation(),
+
+            expression: {
+                let last_pattern = parameters
+                    .last()
+                    .map(|parameter| parameter.pattern.clone())
+                    .unwrap_or(DestructurePattern::Unit {
+                        left_parenthesis: Token::dummy_identifier("(".to_string()),
+                        right_parenthesis: Token::dummy_identifier(")".to_string()),
+                    });
+                let innermost_function = Expression::Function(Box::new(Function {
+                    branches: NonEmpty::new(
+                        FunctionBranch {
+                            parameter: Box::new(last_pattern),
+                            body: Box::new(self.body),
+                            right_square_bracket: self.right_curly_bracket,
+                        },
+                        vec![],
+                    ),
+                }));
+                parameters.into_iter().rev().skip(1).fold(
+                    innermost_function,
+                    |result, parameter| {
+                        Expression::Function(Box::new(Function {
+                            branches: NonEmpty::new(
+                                FunctionBranch {
+                                    parameter: Box::new(parameter.pattern),
+                                    body: Box::new(result),
+                                    right_square_bracket: Token::dummy(),
+                                },
+                                vec![],
+                            ),
+                        }))
+                    },
+                )
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum FunctionStatementComponent {
+    Parameter(Parameter),
+    Identifier(Token),
+}
+impl FunctionStatementComponent {
+    pub(crate) fn position(&self) -> Position {
+        match self {
+            FunctionStatementComponent::Parameter(parameter) => parameter.position(),
+            FunctionStatementComponent::Identifier(identifier) => identifier.position.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +203,14 @@ pub struct LetStatement {
 pub struct Parameter {
     pub pattern: DestructurePattern,
     pub type_annotation: TypeAnnotation,
+}
+
+impl Positionable for Parameter {
+    fn position(&self) -> Position {
+        self.pattern
+            .position()
+            .join(self.type_annotation.position())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -331,6 +478,7 @@ pub enum Expression {
     },
     TildeClosure(TildeClosure),
     InnateFunctionCall(InnateFunctionCall),
+    Pass,
 }
 
 #[derive(Debug, Clone)]
@@ -381,6 +529,29 @@ pub struct FunctionCall {
     pub argument: Box<Expression>,
     pub type_arguments: Option<TypeArguments>,
 }
+
+#[derive(Debug, Clone)]
+pub struct NewFunctionCall {
+    pub name: FunctionName,
+    pub arguments: Vec<Expression>,
+}
+
+impl NewFunctionCall {
+    pub(crate) fn position(&self) -> Position {
+        self.name
+            .position()
+            .join_maybe(self.arguments.last().map(|argument| argument.position()))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionName(pub(crate) NonEmpty<(usize, Token)>);
+impl FunctionName {
+    fn position(&self) -> Position {
+        self.0.head.1.position.join(self.0.last().1.position)
+    }
+}
+
 impl FunctionCall {
     pub fn position(&self) -> Position {
         self.function.position().join(self.argument.position())
@@ -529,6 +700,7 @@ pub enum TokenType {
     KeywordType,
     KeywordImport,
     KeywordPublic,
+    KeywordFn,
     KeywordExport,
     KeywordGiven,
     KeywordClass,

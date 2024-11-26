@@ -28,7 +28,7 @@ pub mod interpretable {
 
     #[derive(Debug, Clone)]
     pub enum Expression {
-        /// Namely, something like (a, b, c), but not that this is not a tuple in JavaScript.
+        /// Namely, something like (a, b, c), but note that this is not a tuple in JavaScript.
         /// Refer https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Comma_Operator
         Sequence(Box<NonEmpty<Expression>>),
         LogicalOr {

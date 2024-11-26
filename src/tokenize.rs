@@ -570,11 +570,26 @@ impl Tokenizer {
                         _ => panic!(),
                     }
                 }
-                ':' => Ok(Some(Token {
-                    token_type: TokenType::Colon,
-                    representation: ":".to_string(),
-                    position: make_position(character, None),
-                })),
+                ':' => {
+                    let characters = self
+                        .characters_iterator
+                        .by_ref()
+                        .peeking_take_while(|character| character.value == ':')
+                        .collect::<Vec<Character>>();
+                    match characters.len() {
+                        0 => Ok(Some(Token {
+                            token_type: TokenType::Colon,
+                            representation: ":".to_string(),
+                            position: make_position(character, None),
+                        })),
+                        1 => Ok(Some(Token {
+                            token_type: TokenType::DoubleColon,
+                            representation: "::".to_string(),
+                            position: make_position(character, characters.last()),
+                        })),
+                        _ => panic!(),
+                    }
+                }
                 '=' => Ok(Some(Token {
                     token_type: TokenType::Equals,
                     representation: "=".to_string(),
@@ -692,6 +707,7 @@ pub fn get_token_type(s: String) -> TokenType {
         "import" => TokenType::KeywordImport,
         "public" => TokenType::KeywordPublic,
         "export" => TokenType::KeywordExport,
+        "fn" => TokenType::KeywordFn,
         "given" => TokenType::KeywordGiven,
         "class" => TokenType::KeywordClass,
         "innate" => TokenType::KeywordInnate,
